@@ -41,6 +41,8 @@ dependencies {
     implementation 'io.agentscope:agentscope-agui-spring-boot-starter:2.0.1'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    // 架构守护：分包规范（依赖方向/无环/落位规则）由 ArchUnit 测试强制
+    testImplementation 'com.tngtech.archunit:archunit-junit5:1.5.0'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 

@@ -1,10 +1,13 @@
 # 构建阶段
 FROM node:22-alpine AS build
+ENV CI=true
 RUN corepack enable
 WORKDIR /workspace
 COPY package.json pnpm-workspace.yaml ./
-RUN pnpm install --frozen-lockfile=false
+ARG NPM_REGISTRY=https://registry.npmjs.org/
+RUN pnpm install --frozen-lockfile=false --registry=${NPM_REGISTRY}
 COPY . .
+RUN mkdir -p public
 RUN pnpm build
 
 # 运行阶段（Next standalone）

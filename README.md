@@ -4,7 +4,8 @@
 
 架构设计：[docs/plans/2026-08-18-投资分析AI-Agent一期设计.md](docs/plans/2026-08-18-投资分析AI-Agent一期设计.md) ·
 决策记录：[docs/adr/](docs/adr/) ·
-实施计划：[docs/plans/2026-08-18-一期实施计划.md](docs/plans/2026-08-18-一期实施计划.md)
+实施计划：[docs/plans/2026-08-18-一期实施计划.md](docs/plans/2026-08-18-一期实施计划.md) ·
+后端分包规范：[docs/backend-package-conventions.md](docs/backend-package-conventions.md)（ArchUnit 强制）
 
 ## 能力一览（一期）
 
