@@ -1,0 +1,9 @@
+{
+  "QuotationCodeTable": {
+    "Data": [
+      { "Code": "600519", "Name": "贵州茅台", "MktNum": "1", "SecurityTypeName": "沪A" },
+      { "Code": "000858", "Name": "五粮液", "MktNum": "0", "SecurityTypeName": "深A" },
+      { "Code": "000001", "Name": "上证指数", "MktNum": "1", "SecurityTypeName": "指数" }
+    ]
+  }
+}

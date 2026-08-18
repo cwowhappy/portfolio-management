@@ -1,0 +1,16 @@
+{
+  "version": null, "result": {
+    "pages": 1, "data": [
+      {
+        "REPORT_DATE": "2025-12-31 00:00:00", "EPSJB": 68.26, "BPS": 210.32,
+        "TOTALOPERATEREVE": 174100000000.0, "PARENTNETPROFIT": 86200000000.0,
+        "ROEJQ": 34.12, "XSMLL": 91.90
+      },
+      {
+        "REPORT_DATE": "2024-12-31 00:00:00", "EPSJB": 62.00, "BPS": 195.10,
+        "TOTALOPERATEREVE": 164900000000.0, "PARENTNETPROFIT": 81500000000.0,
+        "ROEJQ": 33.50, "XSMLL": 91.60
+      }
+    ]
+  }, "success": true, "message": "ok", "code": 0
+}

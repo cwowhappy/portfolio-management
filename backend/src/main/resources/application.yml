@@ -1,0 +1,50 @@
+spring:
+  application:
+    name: invest-agent
+  http:
+    client:
+      connect-timeout: 3s
+      read-timeout: 5s
+
+server:
+  port: ${PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+
+agentscope:
+  agui:
+    path-prefix: /agui
+    # Agent bean 名与 agent id 均为 invest
+    default-agent-id: invest
+    # 前端持有完整历史，后端不存会话（ADR-0004）
+    server-side-memory: false
+    enable-reasoning: true
+    emit-tool-call-args: true
+    emit-token-usage: true
+    # 经 Next.js 同源反代，无需 CORS
+    cors-enabled: false
+    run-timeout: 5m
+
+invest:
+  llm:
+    provider: deepseek
+    model: ${DEEPSEEK_MODEL:deepseek-chat}
+    base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+  market:
+    connect-timeout: 3s
+    read-timeout: 5s
+    rate-limit-per-second: 5
+    cache:
+      quote-ttl: 15s
+      kline-ttl: 5m
+      search-ttl: 10m
+      financials-ttl: 1h
+      news-ttl: 5m
+      overview-ttl: 15s
