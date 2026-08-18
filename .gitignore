@@ -29,3 +29,6 @@ frontend/.env*.local
 
 # Browser automation logs
 .browser-logs/
+
+# Local tool configs
+config/
