@@ -10,19 +10,29 @@ function ChatShell() {
   const [health, setHealth] = useState<{ llmKey: boolean; marketOk: boolean } | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     const refresh = () =>
       fetchHealth()
-        .then((h) => setHealth({ llmKey: h.llm.keyConfigured, marketOk: h.market.ok }))
-        .catch(() => setHealth(null));
+        .then((h) => {
+          if (!cancelled) setHealth({ llmKey: h.llm.keyConfigured, marketOk: h.market.ok });
+        })
+        .catch(() => {
+          // 失败保持“检测中”，避免误判为未配置
+          if (!cancelled) setHealth(null);
+        });
     refresh();
     const timer = setInterval(refresh, 60_000);
-    return () => clearInterval(timer);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
   }, []);
 
   return (
     <div className="flex h-full">
       <Sidebar health={health} />
-      <ThreadArea llmReady={health?.llmKey ?? false} />
+      {/* null=检测中，true=已配置，false=确实未配置 */}
+      <ThreadArea llmReady={health ? health.llmKey : null} />
     </div>
   );
 }

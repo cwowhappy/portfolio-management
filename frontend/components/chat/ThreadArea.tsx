@@ -111,7 +111,7 @@ const EXAMPLES = [
   "搜索一下宁德时代最近的新闻",
 ];
 
-function EmptyState({ llmReady }: { llmReady: boolean }) {
+function EmptyState({ llmReady }: { llmReady: boolean | null }) {
   return (
     <div className="animate-rise flex flex-col items-center pt-[10vh] text-center">
       <p className="font-[family-name:var(--font-display)] text-[26px] leading-snug tracking-wide text-[color:var(--color-ink)]">
@@ -121,7 +121,7 @@ function EmptyState({ llmReady }: { llmReady: boolean }) {
         基于实时行情数据与 DeepSeek 大模型的 A股投研助手。
         Agent 会自动调用行情、财务与新闻工具，为你整理数据并给出分析。
       </p>
-      {!llmReady && (
+      {llmReady === false && (
         <p className="mt-5 max-w-md rounded-lg border border-[color:var(--color-amber)]/40 bg-[color:var(--color-panel)] px-4 py-3 text-[12px] leading-relaxed text-[color:var(--color-amber)]">
           未检测到 DEEPSEEK_API_KEY：对话功能暂不可用。请在 backend 的 .env
           中配置后重启服务；行情数据页仍可正常浏览。
@@ -182,7 +182,7 @@ function Composer() {
 
 // ———— 会话区 ————
 
-export default function ThreadArea({ llmReady }: { llmReady: boolean }) {
+export default function ThreadArea({ llmReady }: { llmReady: boolean | null }) {
   return (
     <ThreadPrimitive.Root className="flex h-full min-w-0 flex-1 flex-col">
       <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto">
