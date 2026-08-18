@@ -36,3 +36,4 @@ config/
 # Local package caches
 .npm-cache/
 .cache/
+.pnpm-store/
