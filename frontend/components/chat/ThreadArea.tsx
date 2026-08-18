@@ -9,7 +9,6 @@ import {
   type ToolCallMessagePartProps,
 } from "@assistant-ui/react";
 import remarkGfm from "remark-gfm";
-import { useChatRuntime } from "./RuntimeProvider";
 import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
 import ToolCallCard from "./ToolCallCard";
 

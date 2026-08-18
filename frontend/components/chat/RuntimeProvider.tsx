@@ -8,7 +8,6 @@ import { useAgUiRuntime } from "@assistant-ui/react-ag-ui";
 import { HttpAgent } from "@ag-ui/client";
 import {
   createContext,
-  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -25,14 +24,11 @@ import {
 } from "@/lib/sessions";
 import type { ChatMessage } from "@/lib/types";
 
-// ———— 会话上下文（Sidebar 等 UI 消费） ————
+// ———— 会话上下文（Sidebar 读取当前会话 + 列表元数据） ————
 
 interface ChatRuntimeContextValue {
   sessions: SessionMeta[];
   currentThreadId: string;
-  switchThread: (id: string) => void;
-  newThread: () => void;
-  removeThread: (id: string) => void;
 }
 
 const ChatRuntimeContext = createContext<ChatRuntimeContextValue | null>(null);
@@ -59,11 +55,16 @@ function aguiMessageOf(m: ChatMessage) {
   return { id: m.id, role: m.role, content: m.content };
 }
 
+function refreshSessions(): SessionMeta[] {
+  return listSessions();
+}
+
 // ———— Provider ————
 
 /**
  * assistant-ui AG-UI Runtime：HttpAgent 直连 /api/chat，
- * threadList 适配器对接 localStorage 会话（ADR-0004 前端持有历史）。
+ * threadList 适配器对接 localStorage 会话（ADR-0004 前端持有历史），
+ * 会话列表由官方 ThreadListPrimitive 渲染。
  */
 export function RuntimeProvider({ children }: { children: ReactNode }) {
   const [sessions, setSessions] = useState<SessionMeta[]>([]);
@@ -73,7 +74,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   });
 
   useEffect(() => {
-    setSessions(listSessions());
+    setSessions(refreshSessions());
   }, []);
 
   // 每个会话一个 HttpAgent（threadId 即会话 id）
@@ -97,6 +98,13 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   const threadListAdapter = useMemo(
     () => ({
       threadId: currentThreadId,
+      // 会话列表（localStorage → 官方 ThreadListPrimitive 渲染）
+      threads: sessions.map((s) => ({
+        status: "regular" as const,
+        id: s.id,
+        title: s.title,
+        custom: { updatedAt: s.updatedAt },
+      })),
       onSwitchToNewThread: async () => {
         setCurrentThreadId(newThreadId());
       },
@@ -104,8 +112,15 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         setCurrentThreadId(threadId);
         return { messages: historyToThreadMessages(loadMessages(threadId)) };
       },
+      onDelete: async (threadId: string) => {
+        deleteSession(threadId);
+        setSessions(refreshSessions());
+        if (threadId === currentThreadId) {
+          setCurrentThreadId(newThreadId());
+        }
+      },
     }),
-    [currentThreadId],
+    [currentThreadId, sessions],
   );
 
   const runtime = useAgUiRuntime({
@@ -134,34 +149,13 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       }));
       if (saved.some((m) => m.content)) {
         saveMessages(currentThreadId, saved);
-        setSessions(listSessions());
+        setSessions(refreshSessions());
       }
     });
   }, [runtime, currentThreadId]);
 
-  const switchThread = useCallback((id: string) => {
-    void threadListAdapter.onSwitchToThread(id);
-  }, [threadListAdapter]);
-
-  const newThread = useCallback(() => {
-    void threadListAdapter.onSwitchToNewThread();
-  }, [threadListAdapter]);
-
-  const removeThread = useCallback(
-    (id: string) => {
-      deleteSession(id);
-      setSessions(listSessions());
-      if (id === currentThreadId) {
-        void threadListAdapter.onSwitchToNewThread();
-      }
-    },
-    [currentThreadId, threadListAdapter],
-  );
-
   return (
-    <ChatRuntimeContext.Provider
-      value={{ sessions, currentThreadId, switchThread, newThread, removeThread }}
-    >
+    <ChatRuntimeContext.Provider value={{ sessions, currentThreadId }}>
       <AssistantRuntimeProvider runtime={runtime}>{children}</AssistantRuntimeProvider>
     </ChatRuntimeContext.Provider>
   );

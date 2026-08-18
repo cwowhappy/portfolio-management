@@ -1,6 +1,10 @@
 "use client";
 
-import type { SessionMeta } from "@/lib/sessions";
+import {
+  ThreadListPrimitive,
+  ThreadListItemPrimitive,
+} from "@assistant-ui/react";
+import { useChatRuntime } from "./RuntimeProvider";
 
 function timeAgo(ts: number): string {
   const diff = Date.now() - ts;
@@ -13,70 +17,64 @@ function timeAgo(ts: number): string {
 }
 
 export default function Sidebar({
-  sessions,
-  activeId,
   health,
-  onSelect,
-  onNew,
-  onDelete,
 }: {
-  sessions: SessionMeta[];
-  activeId: string | null;
   health: { llmKey: boolean; marketOk: boolean } | null;
-  onSelect: (id: string) => void;
-  onNew: () => void;
-  onDelete: (id: string) => void;
 }) {
+  const { sessions, currentThreadId } = useChatRuntime();
+
   return (
     <aside className="flex h-full w-64 shrink-0 flex-col border-r border-[color:var(--color-line)] bg-[color:var(--color-bg-soft)]/60">
-      <div className="p-3">
-        <button
-          type="button"
-          onClick={onNew}
-          className="w-full rounded-lg border border-[color:var(--color-line)] bg-[color:var(--color-panel)] px-3 py-2 text-[13px] text-[color:var(--color-ink)] transition-all hover:border-[color:var(--color-up)] hover:shadow-[var(--shadow-glow)]"
-        >
-          ＋ 新对话
-        </button>
-      </div>
+      <ThreadListPrimitive.Root className="flex min-h-0 flex-1 flex-col">
+        <div className="p-3">
+          <ThreadListPrimitive.New className="w-full rounded-lg border border-[color:var(--color-line)] bg-[color:var(--color-panel)] px-3 py-2 text-[13px] text-[color:var(--color-ink)] transition-all hover:border-[color:var(--color-up)] hover:shadow-[var(--shadow-glow)]">
+            ＋ 新对话
+          </ThreadListPrimitive.New>
+        </div>
 
-      <nav className="flex-1 overflow-y-auto px-2 pb-3">
-        {sessions.length === 0 && (
-          <p className="px-3 pt-8 text-center text-[12px] leading-relaxed text-[color:var(--color-ink-faint)]">
-            还没有会话
-            <br />
-            从一句提问开始吧
-          </p>
-        )}
-        <ul className="space-y-0.5">
-          {sessions.map((s) => (
-            <li key={s.id} className="group relative">
-              <button
-                type="button"
-                onClick={() => onSelect(s.id)}
-                className={
-                  "w-full rounded-lg px-3 py-2 text-left transition-colors " +
-                  (s.id === activeId
-                    ? "bg-[color:var(--color-panel-2)] text-[color:var(--color-ink)]"
-                    : "text-[color:var(--color-ink-dim)] hover:bg-[color:var(--color-panel)] hover:text-[color:var(--color-ink)]")
-                }
-              >
-                <span className="block truncate text-[13px]">{s.title}</span>
-                <span className="mt-0.5 block text-[11px] text-[color:var(--color-ink-faint)]">
-                  {timeAgo(s.updatedAt)}
-                </span>
-              </button>
-              <button
-                type="button"
-                aria-label="删除会话"
-                onClick={() => onDelete(s.id)}
-                className="absolute right-1.5 top-1/2 hidden -translate-y-1/2 rounded p-1 text-[color:var(--color-ink-faint)] hover:text-[color:var(--color-up)] group-hover:block"
-              >
-                ✕
-              </button>
-            </li>
-          ))}
-        </ul>
-      </nav>
+        <nav className="flex-1 overflow-y-auto px-2 pb-3">
+          {sessions.length === 0 && (
+            <p className="px-3 pt-8 text-center text-[12px] leading-relaxed text-[color:var(--color-ink-faint)]">
+              还没有会话
+              <br />
+              从一句提问开始吧
+            </p>
+          )}
+          <ThreadListPrimitive.Items>
+            {({ threadListItem }) => {
+              const active = threadListItem.id === currentThreadId;
+              const updatedAt = threadListItem.custom?.updatedAt as number | undefined;
+              return (
+                <ThreadListItemPrimitive.Root className="group relative">
+                  <ThreadListItemPrimitive.Trigger
+                    className={
+                      "w-full rounded-lg px-3 py-2 text-left transition-colors " +
+                      (active
+                        ? "bg-[color:var(--color-panel-2)] text-[color:var(--color-ink)]"
+                        : "text-[color:var(--color-ink-dim)] hover:bg-[color:var(--color-panel)] hover:text-[color:var(--color-ink)]")
+                    }
+                  >
+                    <span className="block truncate text-[13px]">
+                      <ThreadListItemPrimitive.Title />
+                    </span>
+                    {updatedAt != null && (
+                      <span className="mt-0.5 block text-[11px] text-[color:var(--color-ink-faint)]">
+                        {timeAgo(updatedAt)}
+                      </span>
+                    )}
+                  </ThreadListItemPrimitive.Trigger>
+                  <ThreadListItemPrimitive.Delete
+                    aria-label="删除会话"
+                    className="absolute right-1.5 top-1/2 hidden -translate-y-1/2 rounded p-1 text-[color:var(--color-ink-faint)] hover:text-[color:var(--color-up)] group-hover:block"
+                  >
+                    ✕
+                  </ThreadListItemPrimitive.Delete>
+                </ThreadListItemPrimitive.Root>
+              );
+            }}
+          </ThreadListPrimitive.Items>
+        </nav>
+      </ThreadListPrimitive.Root>
 
       <footer className="border-t border-[color:var(--color-line-soft)] p-3 text-[11px] leading-relaxed text-[color:var(--color-ink-faint)]">
         <div className="mb-2 flex items-center gap-2">
