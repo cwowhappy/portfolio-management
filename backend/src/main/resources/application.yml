@@ -9,6 +9,13 @@ spring:
 server:
   port: ${PORT:8080}
 
+logging:
+  level:
+    # AgentScope starter 的 MVC 控制器在客户端断开 SSE 流时打印无害噪音
+    # （SSE connection error / ResponseBodyEmitter has already completed），予以关闭；
+    # 真正的 AG-UI 异常会抛给我们的 GlobalExceptionHandler 记录。
+    io.agentscope.spring.boot.agui.mvc.AguiMvcController: OFF
+
 management:
   endpoints:
     web:

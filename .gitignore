@@ -37,3 +37,6 @@ config/
 .npm-cache/
 .cache/
 .pnpm-store/
+
+# Runtime logs
+logs/

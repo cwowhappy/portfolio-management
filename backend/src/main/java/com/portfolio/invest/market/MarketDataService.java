@@ -62,7 +62,7 @@ public class MarketDataService {
             acquire();
             q = MarketDataParser.parseQuote(eastmoney.quote(ref.secid()));
         } catch (MarketDataException e) {
-            log.warn("东财行情失败({}), 降级新浪: {}", ref.code(), e.getMessage());
+            log.info("东财行情失败({}), 降级新浪: {}", ref.code(), e.getMessage());
             acquire();
             q = MarketDataParser.parseSinaQuote(sina.rawQuote(ref.sinaPrefix(), ref.code()), ref.code());
         }
@@ -94,7 +94,7 @@ public class MarketDataService {
             acquire();
             bars = MarketDataParser.parseKline(eastmoney.kline(ref.secid(), klt, n));
         } catch (MarketDataException e) {
-            log.warn("东财K线失败({}), 降级腾讯: {}", ref.code(), e.getMessage());
+            log.info("东财K线失败({}), 降级腾讯: {}", ref.code(), e.getMessage());
             acquire();
             bars = MarketDataParser.parseTencentKline(
                     tencent.kline(ref.sinaPrefix() + ref.code(), periodStr, n),
@@ -207,7 +207,7 @@ public class MarketDataService {
             acquire();
             o = MarketDataParser.buildOverview(eastmoney.overview());
         } catch (MarketDataException e) {
-            log.warn("东财指数失败({}), 降级新浪", e.getMessage());
+            log.info("东财指数失败({}), 降级新浪", e.getMessage());
             acquire();
             o = MarketDataParser.buildSinaOverview(sina.rawIndices());
         }

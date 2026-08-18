@@ -42,6 +42,18 @@ public class GlobalExceptionHandler {
                 .body(new ApiError("AGUI_ERROR", e.getMessage()));
     }
 
+    /**
+     * 客户端在 SSE 流传输中主动断开（用户停止/关页）——这是正常行为，
+     * 不记 ERROR、不尝试向已关闭的流写错误体（否则触发无转换器的二次异常）。
+     */
+    @ExceptionHandler({
+        org.springframework.web.context.request.async.AsyncRequestNotUsableException.class,
+        java.io.IOException.class,
+    })
+    public void clientDisconnected(Exception e) {
+        log.debug("SSE 客户端断开，忽略: {}", e.getMessage());
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiError> generic(Exception e) {
         log.error("未处理异常", e);
