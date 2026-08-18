@@ -14,6 +14,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 /** 纯函数解析器：JsonNode → DTO，全部可离线单测（fixture 驱动）。 */
@@ -129,6 +130,41 @@ public final class MarketDataParser {
         if (bars.isEmpty()) {
             throw new MarketDataException("BAD_RESPONSE", "K线数据为空");
         }
+        return bars;
+    }
+
+    /**
+     * 腾讯 K线兜底：data.{symbol}.{qfq+period} 为 [date, open, close, high, low, volume(手)] 数组，
+     * 成交量统一转股，按日期升序。
+     */
+    public static List<KlineBar> parseTencentKline(JsonNode root, String symbol, String period) {
+        JsonNode data = root.path("data").path(symbol);
+        JsonNode arr = data.path("qfq" + period);
+        if (arr.isMissingNode() || !arr.isArray()) {
+            arr = data.path(period);
+        }
+        if (!arr.isArray()) {
+            throw new MarketDataException("BAD_RESPONSE", "腾讯K线数据为空");
+        }
+        List<KlineBar> bars = new ArrayList<>();
+        for (JsonNode row : arr) {
+            if (!row.isArray() || row.size() < 6) {
+                continue;
+            }
+            bars.add(new KlineBar(
+                    row.get(0).asText(),
+                    numOrZero(row.get(1)),
+                    numOrZero(row.get(2)),
+                    numOrZero(row.get(3)),
+                    numOrZero(row.get(4)),
+                    parseLongOrZero(row.get(5).asText()) * 100,
+                    numOrZero(row.get(6)),
+                    numOrZero(row.get(7))));
+        }
+        if (bars.isEmpty()) {
+            throw new MarketDataException("BAD_RESPONSE", "腾讯K线数据为空");
+        }
+        bars.sort(Comparator.comparing(KlineBar::date));
         return bars;
     }
 

@@ -112,6 +112,16 @@ class MarketDataParserTest {
     }
 
     @Test
+    void parsesTencentKlineFallback() throws IOException {
+        List<KlineBar> bars = MarketDataParser.parseTencentKline(
+                fixture("tencent-kline.json"), "sh600519", "day");
+        assertThat(bars).hasSize(3);
+        assertThat(bars.get(0).date()).isEqualTo("2026-08-14");
+        assertThat(bars.get(2).close()).isEqualTo(1297.99);
+        assertThat(bars.get(2).volume()).isEqualTo(3872300L); // 手 → 股
+    }
+
+    @Test
     void parsesSinaIndicesFallback() throws IOException {
         MarketOverview o = MarketDataParser.buildSinaOverview(fixtureText("sina-indices.txt"));
         assertThat(o.indices()).hasSize(3);

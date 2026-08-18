@@ -22,13 +22,16 @@ public class MarketDataService {
 
     private final EastmoneyClient eastmoney;
     private final SinaClient sina;
+    private final TencentClient tencent;
     private final InvestProperties props;
     private final TtlCache cache = new TtlCache();
     private final RateLimiter limiter;
 
-    public MarketDataService(EastmoneyClient eastmoney, SinaClient sina, InvestProperties props) {
+    public MarketDataService(
+            EastmoneyClient eastmoney, SinaClient sina, TencentClient tencent, InvestProperties props) {
         this.eastmoney = eastmoney;
         this.sina = sina;
+        this.tencent = tencent;
         this.props = props;
         this.limiter = new RateLimiter(props.getMarket().getRateLimitPerSecond());
     }
@@ -75,14 +78,29 @@ public class MarketDataService {
             case "month" -> 103;
             default -> throw new MarketDataException("INVALID_PERIOD", "period 仅支持 day/week/month");
         };
+        String periodStr = switch (period == null ? "day" : period) {
+            case "day" -> "day";
+            case "week" -> "week";
+            case "month" -> "month";
+            default -> throw new MarketDataException("INVALID_PERIOD", "period 仅支持 day/week/month");
+        };
         int n = Math.max(5, Math.min(limit <= 0 ? 120 : limit, MAX_LIMIT));
         String key = "k:" + ref.code() + ":" + klt + ":" + n;
         List<KlineBar> bars = cache.get(key);
         if (bars != null) {
             return bars;
         }
-        acquire();
-        bars = MarketDataParser.parseKline(eastmoney.kline(ref.secid(), klt, n));
+        try {
+            acquire();
+            bars = MarketDataParser.parseKline(eastmoney.kline(ref.secid(), klt, n));
+        } catch (MarketDataException e) {
+            log.warn("东财K线失败({}), 降级腾讯: {}", ref.code(), e.getMessage());
+            acquire();
+            bars = MarketDataParser.parseTencentKline(
+                    tencent.kline(ref.sinaPrefix() + ref.code(), periodStr, n),
+                    ref.sinaPrefix() + ref.code(),
+                    periodStr);
+        }
         cache.put(key, bars, props.getMarket().getCache().getKlineTtl());
         return bars;
     }
