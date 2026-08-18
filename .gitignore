@@ -1,0 +1,24 @@
+# Java / Gradle
+backend/.gradle/
+backend/build/
+backend/**/build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Node / Next.js
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.env*.local
+
+# IDE / OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+
+# Env / secrets
+.env
+*.local
+
+# AgentScope runtime artifacts
+.agentscope/
