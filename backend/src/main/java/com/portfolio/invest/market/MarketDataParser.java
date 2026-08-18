@@ -220,6 +220,28 @@ public final class MarketDataParser {
                 LocalDateTime.now().format(TIME_FMT), indices);
     }
 
+    /** 新浪指数兜底：多行 var hq_str_s_sh000001="上证指数,3990.30,7.65,0.19,..."; */
+    public static MarketOverview buildSinaOverview(String raw) {
+        List<IndexQuote> list = new ArrayList<>();
+        String[] lines = raw.split(";");
+        for (String line : lines) {
+            int start = line.indexOf('"');
+            int end = line.lastIndexOf('"');
+            if (start < 0 || end <= start) {
+                continue;
+            }
+            String[] f = line.substring(start + 1, end).split(",");
+            if (f.length < 4) {
+                continue;
+            }
+            list.add(new IndexQuote("", f[0], numOrZero(f[1]), numOrZero(f[2]), numOrZero(f[3])));
+        }
+        if (list.isEmpty()) {
+            throw new MarketDataException("BAD_RESPONSE", "新浪指数数据为空");
+        }
+        return new MarketOverview(LocalDateTime.now().format(TIME_FMT), list);
+    }
+
     public static Financials buildFinancials(String code, String name, Double pe, Double pb, JsonNode root) {
         return new Financials(code, name, pe, pb, parseFinancialIndicators(root));
     }

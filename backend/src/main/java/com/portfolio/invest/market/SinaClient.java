@@ -24,16 +24,37 @@ public class SinaClient {
      */
     public String rawQuote(String sinaPrefix, String code) {
         String url = "https://hq.sinajs.cn/list=" + sinaPrefix + code;
-        try {
-            byte[] bytes = client.get().uri(URI.create(url)).retrieve().body(byte[].class);
-            if (bytes == null || bytes.length == 0) {
-                throw new MarketDataException("UPSTREAM_UNAVAILABLE", "新浪接口返回空");
+        return fetch(url);
+    }
+
+    /** 指数速览兜底：s_sh000001=上证 s_sz399001=深成 s_sz399006=创业板。 */
+    public String rawIndices() {
+        return fetch("https://hq.sinajs.cn/list=s_sh000001,s_sz399001,s_sz399006");
+    }
+
+    private String fetch(String url) {
+        Exception last = null;
+        for (int attempt = 0; attempt < 3; attempt++) {
+            try {
+                byte[] bytes = client.get().uri(URI.create(url)).retrieve().body(byte[].class);
+                if (bytes == null || bytes.length == 0) {
+                    throw new MarketDataException("UPSTREAM_UNAVAILABLE", "新浪接口返回空");
+                }
+                return new String(bytes, GBK);
+            } catch (MarketDataException e) {
+                throw e;
+            } catch (Exception e) {
+                last = e;
+                if (attempt < 2) {
+                    try {
+                        Thread.sleep(300L * (attempt + 1));
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
             }
-            return new String(bytes, GBK);
-        } catch (MarketDataException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new MarketDataException("UPSTREAM_UNAVAILABLE", "新浪接口不可用: " + e.getMessage(), e);
         }
+        throw new MarketDataException("UPSTREAM_UNAVAILABLE", "新浪接口不可用: " + last.getMessage(), last);
     }
 }

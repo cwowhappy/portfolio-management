@@ -24,6 +24,24 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(status).body(new ApiError(e.getCode(), e.getMessage()));
     }
 
+    /** Agent 未注册（未配置 DEEPSEEK_API_KEY 时）→ 友好提示。 */
+    @ExceptionHandler(io.agentscope.core.agui.AguiException.AgentNotFoundException.class)
+    public ResponseEntity<ApiError> agentNotFound(
+            io.agentscope.core.agui.AguiException.AgentNotFoundException e) {
+        log.warn("AG-UI 请求到达但 Agent 未注册: {}", e.getMessage());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(new ApiError(
+                        "AGENT_NOT_CONFIGURED",
+                        "AI 模型尚未配置：请在后端环境变量中设置 DEEPSEEK_API_KEY 后重启服务"));
+    }
+
+    @ExceptionHandler(io.agentscope.core.agui.AguiException.class)
+    public ResponseEntity<ApiError> agui(io.agentscope.core.agui.AguiException e) {
+        log.warn("AG-UI 异常: {}", e.getMessage());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(new ApiError("AGUI_ERROR", e.getMessage()));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiError> generic(Exception e) {
         log.error("未处理异常", e);

@@ -185,8 +185,14 @@ public class MarketDataService {
         if (o != null) {
             return o;
         }
-        acquire();
-        o = MarketDataParser.buildOverview(eastmoney.overview());
+        try {
+            acquire();
+            o = MarketDataParser.buildOverview(eastmoney.overview());
+        } catch (MarketDataException e) {
+            log.warn("东财指数失败({}), 降级新浪", e.getMessage());
+            acquire();
+            o = MarketDataParser.buildSinaOverview(sina.rawIndices());
+        }
         cache.put(key, o, props.getMarket().getCache().getOverviewTtl());
         return o;
     }

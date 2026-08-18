@@ -17,6 +17,8 @@ public final class RestClientFactory {
         HttpClient http = HttpClient.newBuilder()
                 .connectTimeout(props.getMarket().getConnectTimeout())
                 .followRedirects(HttpClient.Redirect.NORMAL)
+                // 东财等免费接口对 HTTP/2 偶发不兼容（空响应），强制 HTTP/1.1
+                .version(HttpClient.Version.HTTP_1_1)
                 .build();
         JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(http);
         factory.setReadTimeout(props.getMarket().getReadTimeout());

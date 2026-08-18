@@ -25,9 +25,13 @@ repositories {
 }
 
 dependencies {
-    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation('org.springframework.boot:spring-boot-starter-web') {
+        // 移除默认的 Jackson 3，改用 Jackson 2（AgentScope AG-UI 模型基于 Jackson 2 注解）
+        exclude group: 'org.springframework.boot', module: 'spring-boot-starter-jackson'
+    }
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    implementation 'org.springframework.boot:spring-boot-jackson2'
 
     // AgentScope Java 2.0.1
     implementation 'io.agentscope:agentscope-core:2.0.1'

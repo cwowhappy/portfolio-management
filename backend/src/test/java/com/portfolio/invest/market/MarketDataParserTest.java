@@ -112,6 +112,15 @@ class MarketDataParserTest {
     }
 
     @Test
+    void parsesSinaIndicesFallback() throws IOException {
+        MarketOverview o = MarketDataParser.buildSinaOverview(fixtureText("sina-indices.txt"));
+        assertThat(o.indices()).hasSize(3);
+        assertThat(o.indices().get(0).name()).isEqualTo("上证指数");
+        assertThat(o.indices().get(0).price()).isEqualTo(3990.30);
+        assertThat(o.indices().get(1).changePct()).isEqualTo(-0.56);
+    }
+
+    @Test
     void normalizesQuoteVolumeToShares() {
         assertThat(MarketDataParser.normalizeVolume(38723, 5.007e9, 1297.99)).isEqualTo(3872300L);
         assertThat(MarketDataParser.normalizeVolume(3872283, 5.007e9, 1297.99)).isEqualTo(3872283L);

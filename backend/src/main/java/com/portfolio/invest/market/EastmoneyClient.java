@@ -107,12 +107,24 @@ public class EastmoneyClient {
     }
 
     private String getText(String url) {
-        try {
-            // 注意：不能用 uri(String)（URI 模板展开会把 % 二次编码），必须直传 URI
-            return client.get().uri(URI.create(url)).retrieve().body(String.class);
-        } catch (Exception e) {
-            throw new MarketDataException("UPSTREAM_UNAVAILABLE", "东方财富接口不可用: " + e.getMessage(), e);
+        Exception last = null;
+        for (int attempt = 0; attempt < 3; attempt++) {
+            try {
+                // 注意：不能用 uri(String)（URI 模板展开会把 % 二次编码），必须直传 URI
+                return client.get().uri(URI.create(url)).retrieve().body(String.class);
+            } catch (Exception e) {
+                last = e;
+                if (attempt < 2) {
+                    try {
+                        Thread.sleep(300L * (attempt + 1));
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+            }
         }
+        throw new MarketDataException("UPSTREAM_UNAVAILABLE", "东方财富接口不可用: " + last.getMessage(), last);
     }
 
     private static String encode(String s) {
