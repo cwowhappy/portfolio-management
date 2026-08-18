@@ -2,14 +2,6 @@
 
 import { useState } from "react";
 
-export interface ToolCallState {
-  toolCallId: string;
-  name: string;
-  args: string;
-  result: string | null;
-  status: "running" | "done" | "error";
-}
-
 const TOOL_LABELS: Record<string, string> = {
   search_stock: "搜索股票",
   get_quote: "实时行情",
@@ -23,10 +15,10 @@ function labelOf(name: string) {
   return TOOL_LABELS[name] ?? name;
 }
 
-function prettyArgs(name: string, args: string): string {
-  if (!args) return "";
+function prettyArgs(argsText: string): string {
+  if (!argsText) return "";
   try {
-    const obj = JSON.parse(args);
+    const obj = JSON.parse(argsText);
     const parts: string[] = [];
     if (obj.code) parts.push(String(obj.code));
     if (obj.query) parts.push(String(obj.query));
@@ -34,19 +26,40 @@ function prettyArgs(name: string, args: string): string {
     if (obj.limit) parts.push("近" + String(obj.limit) + "根");
     return parts.join(" · ");
   } catch {
-    return args.slice(0, 60);
+    return argsText.slice(0, 60);
   }
 }
 
-export default function ToolCallCard({ tool }: { tool: ToolCallState }) {
+export interface ToolCallCardProps {
+  toolCallId: string;
+  toolName: string;
+  argsText: string;
+  result?: unknown;
+  isError?: boolean;
+  /** assistant-ui MessagePartState.status（含 running/complete/incomplete/requires-action） */
+  status?: { type: string; reason?: string };
+}
+
+/** 工具进度卡片：running 脉冲动画，展开折叠展示参数与结果。 */
+export default function ToolCallCard({
+  toolName,
+  argsText,
+  result,
+  isError,
+  status,
+}: ToolCallCardProps) {
   const [open, setOpen] = useState(false);
-  const summary = prettyArgs(tool.name, tool.args);
+  const running = status?.type === "running" || status?.type === "requires-action";
+  const failed = isError || status?.type === "incomplete";
+  const summary = prettyArgs(argsText);
+  const resultText =
+    typeof result === "string" ? result : result != null ? JSON.stringify(result) : null;
 
   return (
     <div
       className={
         "tool-card my-2 w-full max-w-[560px] overflow-hidden " +
-        (tool.status === "running" ? "running" : "")
+        (running ? "running" : "")
       }
     >
       <button
@@ -55,9 +68,9 @@ export default function ToolCallCard({ tool }: { tool: ToolCallState }) {
         className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left"
       >
         <span className="grid h-5 w-5 shrink-0 place-items-center rounded border border-[color:var(--color-line)] text-[10px] text-[color:var(--color-up)]">
-          {tool.status === "running" ? <span className="tool-pulse" /> : "✓"}
+          {running ? <span className="tool-pulse" /> : failed ? "!" : "✓"}
         </span>
-        <span className="text-[13px] text-[color:var(--color-ink)]">{labelOf(tool.name)}</span>
+        <span className="text-[13px] text-[color:var(--color-ink)]">{labelOf(toolName)}</span>
         {summary && (
           <span className="tabular truncate text-[12px] text-[color:var(--color-ink-faint)]">
             {summary}
@@ -66,7 +79,9 @@ export default function ToolCallCard({ tool }: { tool: ToolCallState }) {
         <span
           className={
             "ml-auto text-[11px] transition-transform duration-200 " +
-            (open ? "rotate-180 text-[color:var(--color-ink-dim)]" : "text-[color:var(--color-ink-faint)]")
+            (open
+              ? "rotate-180 text-[color:var(--color-ink-dim)]"
+              : "text-[color:var(--color-ink-faint)]")
           }
         >
           ▾
@@ -75,7 +90,13 @@ export default function ToolCallCard({ tool }: { tool: ToolCallState }) {
       {open && (
         <div className="border-t border-[color:var(--color-line-soft)] px-3.5 py-2.5">
           <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-all font-[family-name:var(--font-mono)] text-[11px] leading-relaxed text-[color:var(--color-ink-dim)]">
-            {tool.result ?? (tool.status === "running" ? tool.args || "执行中…" : "无结果")}
+            {resultText
+              ? resultText.length > 2000
+                ? resultText.slice(0, 2000) + "…"
+                : resultText
+              : running
+                ? argsText || "执行中…"
+                : "无结果"}
           </pre>
         </div>
       )}
