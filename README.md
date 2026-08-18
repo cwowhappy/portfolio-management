@@ -11,7 +11,7 @@
 
 - **对话式投研问答**：自然语言问行情、走势、财务、新闻，Agent 自动调用 6 个数据工具并流式输出分析（AG-UI 协议，思考过程/工具进度可视化）
 - **行情数据台**：指数速览、股票搜索、实时报价、K线（日/周/月 + MA5/MA20）、财务指标、新闻
-- **技术栈**：Spring Boot 4.0.3 + AgentScope Java 2.0.1 + DeepSeek · Next.js 15 + React 19 · 东方财富公开接口（新浪兜底）
+- **技术栈**：Spring Boot 4.0.3 + AgentScope Java 2.0.1 + DeepSeek · Next.js 15 + React 19 + assistant-ui（AG-UI 前端）· 东方财富公开接口（新浪兜底）
 
 ## 快速开始
 
