@@ -4,6 +4,7 @@ import {
   MessagePrimitive,
   ThreadPrimitive,
   ComposerPrimitive,
+  ActionBarPrimitive,
   type TextMessagePartProps,
   type ReasoningMessagePartProps,
   type ToolCallMessagePartProps,
@@ -11,6 +12,7 @@ import {
 import remarkGfm from "remark-gfm";
 import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
 import ToolCallCard from "./ToolCallCard";
+import { CodeHeader, SyntaxHighlighter } from "./CodeHighlight";
 
 // ———— 消息部件（保留“研报终端”设计体系） ————
 
@@ -22,6 +24,7 @@ function TextPart({ status }: TextMessagePartProps) {
         className="md-body"
         defer
         remarkPlugins={[remarkGfm]}
+        components={{ CodeHeader, SyntaxHighlighter }}
       />
       {status?.type === "running" && (
         <span className="animate-caret ml-0.5 inline-block h-4 w-[7px] translate-y-[3px] bg-[color:var(--color-up)]" />
@@ -75,14 +78,28 @@ function UserMessage() {
 
 function AssistantMessage() {
   return (
-    <div className="animate-rise my-5 flex gap-3.5">
+    <MessagePrimitive.Root className="animate-rise my-5 flex gap-3.5">
       <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-md border border-[color:var(--color-line)] bg-[color:var(--color-panel)] text-[13px] text-[color:var(--color-up)]">
         砚
       </span>
       <div className="min-w-0 flex-1">
         <MessagePrimitive.Parts components={assistantParts} />
+        <ActionBarPrimitive.Root className="mt-1.5 flex items-center gap-1 opacity-35 transition-opacity hover:opacity-100">
+          <ActionBarPrimitive.FeedbackPositive
+            aria-label="回答有帮助"
+            className="rounded px-1.5 py-0.5 text-[12px] text-[color:var(--color-ink-faint)] transition-colors hover:text-[color:var(--color-down)]"
+          >
+            👍
+          </ActionBarPrimitive.FeedbackPositive>
+          <ActionBarPrimitive.FeedbackNegative
+            aria-label="回答需要改进"
+            className="rounded px-1.5 py-0.5 text-[12px] text-[color:var(--color-ink-faint)] transition-colors hover:text-[color:var(--color-up)]"
+          >
+            👎
+          </ActionBarPrimitive.FeedbackNegative>
+        </ActionBarPrimitive.Root>
       </div>
-    </div>
+    </MessagePrimitive.Root>
   );
 }
 

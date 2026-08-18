@@ -123,10 +123,27 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     [currentThreadId, sessions],
   );
 
+  // 反馈适配器：👍/👎 存本地（后端持久化留待后续期）
+  const feedbackAdapter = useMemo(
+    () => ({
+      submit: ({ message, type }: { message: { id: string }; type: "positive" | "negative" }) => {
+        try {
+          localStorage.setItem(
+            "invest.feedback." + message.id,
+            JSON.stringify({ type, at: Date.now() }),
+          );
+        } catch {
+          // 忽略存储失败
+        }
+      },
+    }),
+    [],
+  );
+
   const runtime = useAgUiRuntime({
     agent,
     showThinking: true,
-    adapters: { threadList: threadListAdapter },
+    adapters: { threadList: threadListAdapter, feedback: feedbackAdapter },
   });
 
   // 持久化：thread 消息变化 → localStorage（并刷新会话列表）

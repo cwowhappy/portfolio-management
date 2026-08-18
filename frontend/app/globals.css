@@ -120,6 +120,37 @@ body::after {
   padding: 0.08em 0.35em;
   color: var(--color-amber);
 }
+
+/* 代码块（SyntaxHighlighter 渲染，紧贴 CodeHeader） */
+.md-body pre {
+  border: 1px solid var(--color-line-soft);
+  border-radius: 0 0 8px 8px;
+  background: var(--color-bg-soft);
+  margin: 0.1em 0 1em;
+}
+.md-body pre code.hljs {
+  display: block;
+  background: transparent;
+  border: none;
+  padding: 0.75em 1em;
+  color: var(--color-ink-dim);
+  font-size: 0.82rem;
+  line-height: 1.7;
+  overflow-x: auto;
+}
+/* highlight.js 标记配色（贴合研报暖色系） */
+.hljs-comment, .hljs-quote { color: #6e6759; font-style: italic; }
+.hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-type { color: #e0553f; }
+.hljs-string, .hljs-regexp, .hljs-addition { color: #3ba98c; }
+.hljs-number, .hljs-symbol, .hljs-bullet { color: #d9a441; }
+.hljs-title, .hljs-section, .hljs-name { color: #ece7dc; }
+.hljs-attr, .hljs-attribute, .hljs-variable, .hljs-template-variable { color: #a89f8e; }
+.hljs-built_in, .hljs-function .hljs-title { color: #7d9bd9; }
+.hljs-deletion { color: #e0553f; }
+.hljs-meta { color: #716a5c; }
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: 600; }
+
 .md-body table {
   width: 100%;
   border-collapse: collapse;
