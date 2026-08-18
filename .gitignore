@@ -26,3 +26,6 @@ frontend/.env*.local
 # Gradle local homes (kept inside workspace in this env)
 .gradle-home/
 .gradle-native/
+
+# Browser automation logs
+.browser-logs/
