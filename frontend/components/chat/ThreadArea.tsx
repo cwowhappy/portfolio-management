@@ -8,16 +8,22 @@ import {
   type ReasoningMessagePartProps,
   type ToolCallMessagePartProps,
 } from "@assistant-ui/react";
+import remarkGfm from "remark-gfm";
 import { useChatRuntime } from "./RuntimeProvider";
-import Markdown from "./Markdown";
+import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
 import ToolCallCard from "./ToolCallCard";
 
 // ———— 消息部件（保留“研报终端”设计体系） ————
 
-function TextPart({ text, status }: TextMessagePartProps) {
+function TextPart({ status }: TextMessagePartProps) {
   return (
     <>
-      <Markdown content={text} />
+      {/* 官方 Markdown 部件：读当前 text part 上下文，内置平滑流式 */}
+      <MarkdownTextPrimitive
+        className="md-body"
+        defer
+        remarkPlugins={[remarkGfm]}
+      />
       {status?.type === "running" && (
         <span className="animate-caret ml-0.5 inline-block h-4 w-[7px] translate-y-[3px] bg-[color:var(--color-up)]" />
       )}
