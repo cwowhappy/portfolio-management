@@ -21,6 +21,18 @@ const handler = createCopilotRuntimeHandler({
   basePath: "/api/copilotkit",
 });
 
-export const GET = handler;
-export const POST = handler;
-export const OPTIONS = handler;
+// 给所有响应加 no-store，避免浏览器缓存 /info 的 404 导致连接走 single 模式
+async function noStore(req: Request) {
+  const res = await handler(req);
+  const headers = new Headers(res.headers);
+  headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
+  return new Response(res.body, {
+    status: res.status,
+    statusText: res.statusText,
+    headers,
+  });
+}
+
+export const GET = noStore;
+export const POST = noStore;
+export const OPTIONS = noStore;
