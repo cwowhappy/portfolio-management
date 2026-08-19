@@ -5,6 +5,8 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
+  useMemo,
   useState,
   type ReactNode,
 } from "react";
@@ -70,11 +72,18 @@ export function agentMessagesToHistory(messages: Message[]): ChatMessage[] {
 // ———— Provider ————
 
 export function RuntimeProvider({ children }: { children: ReactNode }) {
-  const [sessions, setSessions] = useState<SessionMeta[]>(() => listSessions());
-  const [currentThreadId, setCurrentThreadId] = useState<string>(() => {
+  // 服务端与客户端初始状态保持一致（空），避免 hydration 不匹配；
+  // 真实会话在客户端挂载后（useEffect）才从 localStorage 解析。
+  const [sessions, setSessions] = useState<SessionMeta[]>([]);
+  const [currentThreadId, setCurrentThreadId] = useState<string>("");
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
     const list = listSessions();
-    return list.length > 0 ? list[0].id : newThreadId();
-  });
+    setSessions(list);
+    setCurrentThreadId(list.length > 0 ? list[0].id : newThreadId());
+    setReady(true);
+  }, []);
 
   const refresh = useCallback(() => setSessions(listSessions()), []);
 
@@ -97,14 +106,20 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     [refresh],
   );
 
-  const value = {
-    sessions,
-    currentThreadId,
-    newThread,
-    switchThread,
-    deleteThread,
-    persistMessages,
-  };
+  const value = useMemo(
+    () => ({
+      sessions,
+      currentThreadId,
+      newThread,
+      switchThread,
+      deleteThread,
+      persistMessages,
+    }),
+    [sessions, currentThreadId, newThread, switchThread, deleteThread, persistMessages],
+  );
+
+  // 未解析出 threadId 前不渲染聊天内容（服务端/客户端首帧一致，避免 hydration 错误）
+  if (!ready) return null;
 
   return (
     <ChatRuntimeContext.Provider value={value}>
