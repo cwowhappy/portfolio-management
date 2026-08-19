@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import "./globals.css";
+import { Providers } from "./providers";
 
 export const metadata: Metadata = {
   title: "砚台 · A股投研助手",
@@ -11,6 +12,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="zh-CN">
       <body>
+        <Providers>
         <header className="fixed top-0 left-0 right-0 z-40 border-b border-[color:var(--color-line)] bg-[color:var(--color-bg)]/85 backdrop-blur-sm">
           <div className="mx-auto flex h-12 max-w-[1400px] items-center gap-6 px-5">
             <Link href="/" className="group flex items-center gap-2.5">
@@ -46,6 +48,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </div>
         </header>
         <main className="h-dvh pt-12">{children}</main>
+        </Providers>
       </body>
     </html>
   );
