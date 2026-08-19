@@ -15,35 +15,42 @@ function labelOf(name: string) {
   return TOOL_LABELS[name] ?? name;
 }
 
-function prettyArgs(argsText: string): string {
-  if (!argsText) return "";
-  try {
-    const obj = JSON.parse(argsText);
-    const parts: string[] = [];
-    if (obj.code) parts.push(String(obj.code));
-    if (obj.query) parts.push(String(obj.query));
-    if (obj.period) parts.push(String(obj.period));
-    if (obj.limit) parts.push("近" + String(obj.limit) + "根");
-    return parts.join(" · ");
-  } catch {
-    return argsText.slice(0, 60);
+function prettyArgs(parameters: unknown): string {
+  if (parameters == null) return "";
+  let obj: Record<string, unknown> | null = null;
+  if (typeof parameters === "string") {
+    try {
+      obj = JSON.parse(parameters) as Record<string, unknown>;
+    } catch {
+      return parameters.slice(0, 60);
+    }
+  } else if (typeof parameters === "object") {
+    obj = parameters as Record<string, unknown>;
   }
+  if (!obj) return "";
+  const parts: string[] = [];
+  if (obj.code) parts.push(String(obj.code));
+  if (obj.query) parts.push(String(obj.query));
+  if (obj.period) parts.push(String(obj.period));
+  if (obj.limit) parts.push("近" + String(obj.limit) + "根");
+  return parts.join(" · ");
 }
 
 export interface ToolCallCardProps {
   toolCallId: string;
   toolName: string;
-  argsText: string;
+  /** 解析后的工具参数（流式期间为 Partial） */
+  parameters?: unknown;
   result?: unknown;
   isError?: boolean;
-  /** AG-UI ToolCall.status（inProgress/executing/complete） */
+  /** CopilotKit RenderToolProps.status（inProgress/executing/complete） */
   status?: "inProgress" | "executing" | "complete";
 }
 
 /** 工具进度卡片：running 脉冲动画，展开折叠展示参数与结果。 */
 export default function ToolCallCard({
   toolName,
-  argsText,
+  parameters,
   result,
   isError,
   status,
@@ -54,7 +61,7 @@ export default function ToolCallCard({
     typeof result === "string" ? result : result != null ? JSON.stringify(result) : null;
   const failed =
     isError || (status === "complete" && resultText != null && /error/i.test(resultText));
-  const summary = prettyArgs(argsText);
+  const summary = prettyArgs(parameters);
 
   return (
     <div
@@ -96,7 +103,7 @@ export default function ToolCallCard({
                 ? resultText.slice(0, 2000) + "…"
                 : resultText
               : running
-                ? argsText || "执行中…"
+                ? summary || "执行中…"
                 : "无结果"}
           </pre>
         </div>

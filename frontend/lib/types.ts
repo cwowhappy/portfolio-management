@@ -7,24 +7,6 @@ export interface ChatMessage {
   createdAt: number;
 }
 
-/** CopilotKit / AG-UI 会话消息（宽松类型，防御性读取） */
-export interface AgentMessage {
-  id: string;
-  role: string;
-  content?: unknown;
-  reasoning?: string;
-  toolCalls?: ToolCallMessage[];
-  [key: string]: unknown;
-}
-
-export interface ToolCallMessage {
-  id: string;
-  name: string;
-  arguments?: string;
-  result?: unknown;
-  status?: "inProgress" | "executing" | "complete";
-}
-
 // —— 行情数据 ——
 
 export interface IndexQuote {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useAgent, UseAgentUpdate } from "@copilotkit/react-core/v2";
+import type { Message } from "@ag-ui/client";
 import {
   createContext,
   useCallback,
@@ -18,9 +19,15 @@ import {
   saveMessages,
   type SessionMeta,
 } from "@/lib/sessions";
-import type { AgentMessage, ChatMessage } from "@/lib/types";
+import type { ChatMessage } from "@/lib/types";
 
 export const AGENT_ID = "invest";
+
+// useAgent 的 thread 作用域三件套（agentId/runtimeAgentId/threadId）必填；
+// agentId 必须是每个线程唯一的本地注册名，runtimeAgentId 才指向运行时 agent。
+export function localAgentId(threadId: string): string {
+  return `${AGENT_ID}:${threadId}`;
+}
 
 // ———— 会话上下文（Sidebar / ThreadArea 读取） ————
 
@@ -40,13 +47,18 @@ export function useChatRuntime(): ChatRuntimeContextValue {
   return ctx;
 }
 
-// ———— 历史格式转换 ————
+// ———— 历史格式转换（ChatMessage ↔ AG-UI Message） ————
 
-function historyToAgentMessages(msgs: ChatMessage[]): AgentMessage[] {
-  return msgs.map((m) => ({ id: m.id, role: m.role, content: m.content }));
+function historyToAgentMessages(msgs: ChatMessage[]): Message[] {
+  return msgs.map(
+    (m): Message =>
+      m.role === "user"
+        ? { id: m.id, role: "user", content: m.content }
+        : { id: m.id, role: "assistant", content: m.content },
+  );
 }
 
-function agentMessagesToHistory(messages: AgentMessage[]): ChatMessage[] {
+function agentMessagesToHistory(messages: Message[]): ChatMessage[] {
   const out: ChatMessage[] = [];
   for (const m of messages) {
     if (m.role !== "user" && m.role !== "assistant") continue;
@@ -67,7 +79,8 @@ function AgentSync({
   onPersist: (threadId: string, msgs: ChatMessage[]) => void;
 }) {
   const { agent } = useAgent({
-    agentId: AGENT_ID,
+    agentId: localAgentId(threadId),
+    runtimeAgentId: AGENT_ID,
     threadId,
     updates: [UseAgentUpdate.OnMessagesChanged],
   });

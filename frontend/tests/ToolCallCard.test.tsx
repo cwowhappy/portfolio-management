@@ -8,7 +8,7 @@ describe("ToolCallCard", () => {
       <ToolCallCard
         toolCallId="c1"
         toolName="get_quote"
-        argsText='{"code":"600519"}'
+        parameters={{ code: "600519" }}
         status="inProgress"
       />,
     );
@@ -22,7 +22,7 @@ describe("ToolCallCard", () => {
       <ToolCallCard
         toolCallId="c2"
         toolName="get_financials"
-        argsText='{"code":"600519"}'
+        parameters={{ code: "600519" }}
         result='{"pe":19.95}'
         status="complete"
       />,
@@ -36,7 +36,7 @@ describe("ToolCallCard", () => {
       <ToolCallCard
         toolCallId="c3"
         toolName="get_kline"
-        argsText='{"code":"600519"}'
+        parameters={{ code: "600519" }}
         isError
         status="complete"
         result='{"error":"..."}'

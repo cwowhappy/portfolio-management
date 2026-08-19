@@ -8,8 +8,8 @@ export function Providers({ children }: { children: ReactNode }) {
   return (
     <CopilotKit
       runtimeUrl="/api/copilotkit"
-      onError={({ code, error }) => {
-        console.error("[copilotkit]", code, error);
+      onError={(errorEvent) => {
+        console.error("[copilotkit]", errorEvent.type, errorEvent.error);
       }}
     >
       {children}

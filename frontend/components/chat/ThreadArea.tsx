@@ -1,13 +1,19 @@
 "use client";
 
-import { useAgent, useCopilotKit, UseAgentUpdate } from "@copilotkit/react-core/v2";
+import {
+  useAgent,
+  useCopilotKit,
+  useDefaultRenderTool,
+  useRenderToolCall,
+  UseAgentUpdate,
+} from "@copilotkit/react-core/v2";
+import type { Message } from "@ag-ui/client";
 import { useCallback, useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { AGENT_ID, useChatRuntime } from "./RuntimeProvider";
+import { AGENT_ID, localAgentId, useChatRuntime } from "./RuntimeProvider";
 import ToolCallCard from "./ToolCallCard";
 import { CodeBlock, InlineCode } from "./CodeHighlight";
-import type { AgentMessage } from "@/lib/types";
 
 // ———— 思考折叠 ————
 
@@ -23,6 +29,23 @@ function Reasoning({ text }: { text: string }) {
       </p>
     </details>
   );
+}
+
+// ———— 工具卡通配渲染器（通配兜底） ————
+
+function ToolCallRenderers() {
+  useDefaultRenderTool({
+    render: ({ name, toolCallId, parameters, status, result }) => (
+      <ToolCallCard
+        toolCallId={toolCallId}
+        toolName={name}
+        parameters={parameters}
+        status={status}
+        result={result}
+      />
+    ),
+  });
+  return null;
 }
 
 // ———— 反馈 ————
@@ -83,9 +106,22 @@ function UserMessage({ content }: { content: string }) {
   );
 }
 
-function AssistantMessage({ message }: { message: AgentMessage }) {
-  const toolCalls = message.toolCalls ?? [];
-  const reasoning = message.reasoning;
+function ReasoningMessage({ text }: { text: string }) {
+  return (
+    <div className="animate-rise my-5 flex gap-3.5">
+      <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-md border border-[color:var(--color-line)] bg-[color:var(--color-panel)] text-[13px] text-[color:var(--color-up)]">
+        砚
+      </span>
+      <div className="min-w-0 flex-1">
+        <Reasoning text={text} />
+      </div>
+    </div>
+  );
+}
+
+function AssistantMessage({ message }: { message: Message }) {
+  const renderToolCall = useRenderToolCall();
+  const toolCalls = message.role === "assistant" ? (message.toolCalls ?? []) : [];
   const content = typeof message.content === "string" ? message.content : "";
 
   return (
@@ -94,16 +130,8 @@ function AssistantMessage({ message }: { message: AgentMessage }) {
         砚
       </span>
       <div className="min-w-0 flex-1">
-        {reasoning && <Reasoning text={reasoning} />}
         {toolCalls.map((tc) => (
-          <ToolCallCard
-            key={tc.id}
-            toolCallId={tc.id}
-            toolName={tc.name}
-            argsText={tc.arguments ?? ""}
-            result={tc.result}
-            status={tc.status}
-          />
+          <div key={tc.id}>{renderToolCall({ toolCall: tc })}</div>
         ))}
         {content && (
           <div className="md-body text-[14px] leading-relaxed text-[color:var(--color-ink)]">
@@ -245,7 +273,8 @@ function Composer({
 export default function ThreadArea({ llmReady }: { llmReady: boolean | null }) {
   const { currentThreadId } = useChatRuntime();
   const { agent } = useAgent({
-    agentId: AGENT_ID,
+    agentId: localAgentId(currentThreadId),
+    runtimeAgentId: AGENT_ID,
     threadId: currentThreadId,
     updates: [UseAgentUpdate.OnMessagesChanged, UseAgentUpdate.OnRunStatusChanged],
   });
@@ -266,18 +295,29 @@ export default function ThreadArea({ llmReady }: { llmReady: boolean | null }) {
 
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col">
+      <ToolCallRenderers />
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-[860px] px-5 py-8">
           {isEmpty ? (
             <EmptyState llmReady={llmReady} onPick={(p) => void send(p)} />
           ) : (
-            messages.map((m: AgentMessage) =>
-              m.role === "user" ? (
-                <UserMessage key={m.id} content={String(m.content ?? "")} />
-              ) : (
-                <AssistantMessage key={m.id} message={m} />
-              ),
-            )
+            messages.map((m) => {
+              if (m.role === "user") {
+                return (
+                  <UserMessage
+                    key={m.id}
+                    content={typeof m.content === "string" ? m.content : ""}
+                  />
+                );
+              }
+              if (m.role === "assistant") {
+                return <AssistantMessage key={m.id} message={m} />;
+              }
+              if (m.role === "reasoning") {
+                return <ReasoningMessage key={m.id} text={m.content} />;
+              }
+              return null;
+            })
           )}
           <div className="h-6" />
         </div>
