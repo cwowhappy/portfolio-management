@@ -1,13 +1,10 @@
 "use client";
 
-import { useAgent, UseAgentUpdate } from "@copilotkit/react-core/v2";
 import type { Message } from "@ag-ui/client";
 import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
-  useMemo,
   useState,
   type ReactNode,
 } from "react";
@@ -37,6 +34,7 @@ interface ChatRuntimeContextValue {
   newThread: () => void;
   switchThread: (threadId: string) => void;
   deleteThread: (threadId: string) => void;
+  persistMessages: (threadId: string, msgs: ChatMessage[]) => void;
 }
 
 const ChatRuntimeContext = createContext<ChatRuntimeContextValue | null>(null);
@@ -49,7 +47,7 @@ export function useChatRuntime(): ChatRuntimeContextValue {
 
 // ———— 历史格式转换（ChatMessage ↔ AG-UI Message） ————
 
-function historyToAgentMessages(msgs: ChatMessage[]): Message[] {
+export function historyToAgentMessages(msgs: ChatMessage[]): Message[] {
   return msgs.map(
     (m): Message =>
       m.role === "user"
@@ -58,7 +56,7 @@ function historyToAgentMessages(msgs: ChatMessage[]): Message[] {
   );
 }
 
-function agentMessagesToHistory(messages: Message[]): ChatMessage[] {
+export function agentMessagesToHistory(messages: Message[]): ChatMessage[] {
   const out: ChatMessage[] = [];
   for (const m of messages) {
     if (m.role !== "user" && m.role !== "assistant") continue;
@@ -67,39 +65,6 @@ function agentMessagesToHistory(messages: Message[]): ChatMessage[] {
     out.push({ id: m.id, role: m.role, content, createdAt: Date.now() });
   }
   return out;
-}
-
-// ———— 历史回灌 + 持久化（须在 CopilotKit Provider 内） ————
-
-function AgentSync({
-  threadId,
-  onPersist,
-}: {
-  threadId: string;
-  onPersist: (threadId: string, msgs: ChatMessage[]) => void;
-}) {
-  const { agent } = useAgent({
-    agentId: localAgentId(threadId),
-    runtimeAgentId: AGENT_ID,
-    threadId,
-    updates: [UseAgentUpdate.OnMessagesChanged],
-  });
-
-  // 切换/首次加载：本地历史回灌 agent（后端 server-side-memory=false，需完整历史）
-  useEffect(() => {
-    const history = loadMessages(threadId);
-    if (history.length > 0) {
-      agent.setMessages(historyToAgentMessages(history));
-    }
-  }, [agent, threadId]);
-
-  // 消息变化 → localStorage 持久化 + 刷新会话列表
-  useEffect(() => {
-    const saved = agentMessagesToHistory(agent.messages ?? []);
-    if (saved.length > 0) onPersist(threadId, saved);
-  }, [agent.messages, threadId, onPersist]);
-
-  return null;
 }
 
 // ———— Provider ————
@@ -124,7 +89,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     [currentThreadId, refresh],
   );
 
-  const onPersist = useCallback(
+  const persistMessages = useCallback(
     (threadId: string, msgs: ChatMessage[]) => {
       saveMessages(threadId, msgs);
       refresh();
@@ -132,14 +97,17 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     [refresh],
   );
 
-  const value = useMemo(
-    () => ({ sessions, currentThreadId, newThread, switchThread, deleteThread }),
-    [sessions, currentThreadId, newThread, switchThread, deleteThread],
-  );
+  const value = {
+    sessions,
+    currentThreadId,
+    newThread,
+    switchThread,
+    deleteThread,
+    persistMessages,
+  };
 
   return (
     <ChatRuntimeContext.Provider value={value}>
-      <AgentSync threadId={currentThreadId} onPersist={onPersist} />
       {children}
     </ChatRuntimeContext.Provider>
   );

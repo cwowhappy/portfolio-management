@@ -11,7 +11,14 @@ import type { Message } from "@ag-ui/client";
 import { useCallback, useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { AGENT_ID, localAgentId, useChatRuntime } from "./RuntimeProvider";
+import {
+  AGENT_ID,
+  agentMessagesToHistory,
+  historyToAgentMessages,
+  localAgentId,
+  useChatRuntime,
+} from "./RuntimeProvider";
+import { loadMessages } from "@/lib/sessions";
 import ToolCallCard from "./ToolCallCard";
 import { CodeBlock, InlineCode } from "./CodeHighlight";
 
@@ -271,8 +278,8 @@ function Composer({
 // ———— 会话区 ————
 
 export default function ThreadArea({ llmReady }: { llmReady: boolean | null }) {
-  const { currentThreadId } = useChatRuntime();
-  const { agent } = useAgent({
+  const { currentThreadId, persistMessages } = useChatRuntime();
+  const { agent, isReady } = useAgent({
     agentId: localAgentId(currentThreadId),
     runtimeAgentId: AGENT_ID,
     threadId: currentThreadId,
@@ -289,6 +296,21 @@ export default function ThreadArea({ llmReady }: { llmReady: boolean | null }) {
     },
     [agent, copilotkit],
   );
+
+  // 历史回灌：真实 agent 就绪后，把本地历史种回去（后端 server-side-memory=false）
+  useEffect(() => {
+    if (!isReady) return;
+    const history = loadMessages(currentThreadId);
+    if (history.length > 0) {
+      agent.setMessages(historyToAgentMessages(history));
+    }
+  }, [agent, isReady, currentThreadId]);
+
+  // 消息变化 → localStorage 持久化 + 刷新会话列表
+  useEffect(() => {
+    const saved = agentMessagesToHistory(agent.messages ?? []);
+    if (saved.length > 0) persistMessages(currentThreadId, saved);
+  }, [agent.messages, currentThreadId, persistMessages]);
 
   const messages = agent.messages ?? [];
   const isEmpty = messages.length === 0;
