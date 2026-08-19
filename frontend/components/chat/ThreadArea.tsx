@@ -15,7 +15,6 @@ import {
   AGENT_ID,
   agentMessagesToHistory,
   historyToAgentMessages,
-  localAgentId,
   useChatRuntime,
 } from "./RuntimeProvider";
 import { loadMessages } from "@/lib/sessions";
@@ -280,9 +279,7 @@ function Composer({
 export default function ThreadArea({ llmReady }: { llmReady: boolean | null }) {
   const { currentThreadId, persistMessages } = useChatRuntime();
   const { agent, isReady } = useAgent({
-    agentId: localAgentId(currentThreadId),
-    runtimeAgentId: AGENT_ID,
-    threadId: currentThreadId,
+    agentId: AGENT_ID,
     updates: [UseAgentUpdate.OnMessagesChanged, UseAgentUpdate.OnRunStatusChanged],
   });
   const { copilotkit } = useCopilotKit();
@@ -300,10 +297,7 @@ export default function ThreadArea({ llmReady }: { llmReady: boolean | null }) {
   // 历史回灌：真实 agent 就绪后，把本地历史种回去（后端 server-side-memory=false）
   useEffect(() => {
     if (!isReady) return;
-    const history = loadMessages(currentThreadId);
-    if (history.length > 0) {
-      agent.setMessages(historyToAgentMessages(history));
-    }
+    agent.setMessages(historyToAgentMessages(loadMessages(currentThreadId)));
   }, [agent, isReady, currentThreadId]);
 
   // 消息变化 → localStorage 持久化 + 刷新会话列表

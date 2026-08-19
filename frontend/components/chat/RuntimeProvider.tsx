@@ -22,12 +22,6 @@ import type { ChatMessage } from "@/lib/types";
 
 export const AGENT_ID = "invest";
 
-// useAgent 的 thread 作用域三件套（agentId/runtimeAgentId/threadId）必填；
-// agentId 必须是每个线程唯一的本地注册名，runtimeAgentId 才指向运行时 agent。
-export function localAgentId(threadId: string): string {
-  return `${AGENT_ID}:${threadId}`;
-}
-
 // ———— 会话上下文（Sidebar / ThreadArea 读取） ————
 
 interface ChatRuntimeContextValue {
