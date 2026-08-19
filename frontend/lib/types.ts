@@ -7,37 +7,22 @@ export interface ChatMessage {
   createdAt: number;
 }
 
-export interface AguiRequestMessage {
-  id?: string;
-  role: "user" | "assistant" | "system";
-  content: string;
-}
-
-export interface RunAgentInput {
-  threadId: string;
-  runId: string;
-  messages: AguiRequestMessage[];
-  state: Record<string, unknown>;
-  tools: unknown[];
-  forwardedProps: Record<string, unknown>;
-}
-
-/** AG-UI 事件（宽松类型 + 常用字段）。 */
-export interface AguiEvent {
-  type: string;
-  threadId?: string;
-  runId?: string;
-  messageId?: string;
-  toolCallId?: string;
-  toolCallName?: string;
-  delta?: string;
-  role?: string;
+/** CopilotKit / AG-UI 会话消息（宽松类型，防御性读取） */
+export interface AgentMessage {
+  id: string;
+  role: string;
   content?: unknown;
-  message?: string;
-  code?: string;
-  name?: string;
-  value?: unknown;
+  reasoning?: string;
+  toolCalls?: ToolCallMessage[];
   [key: string]: unknown;
+}
+
+export interface ToolCallMessage {
+  id: string;
+  name: string;
+  arguments?: string;
+  result?: unknown;
+  status?: "inProgress" | "executing" | "complete";
 }
 
 // —— 行情数据 ——
