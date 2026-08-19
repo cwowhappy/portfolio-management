@@ -30,6 +30,10 @@ function fmtYi(v: number | null | undefined): string {
   return yi.toFixed(2) + " 亿";
 }
 
+function upCls(v: number): string {
+  return v > 0 ? "up" : v < 0 ? "down" : "flat";
+}
+
 export default function MarketBoard() {
   const [overview, setOverview] = useState<MarketOverview | null>(null);
   const [query, setQuery] = useState("");
@@ -43,13 +47,29 @@ export default function MarketBoard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const requestSeqRef = useRef(0);
 
   useEffect(() => {
-    fetchOverview().then(setOverview).catch(() => setOverview(null));
-    const t = setInterval(() => {
-      fetchOverview().then(setOverview).catch(() => {});
-    }, 30_000);
-    return () => clearInterval(t);
+    let cancelled = false;
+    const load = () => {
+      fetchOverview()
+        .then((o) => {
+          if (!cancelled) setOverview(o);
+        })
+        .catch(() => {});
+    };
+    load();
+    const t = setInterval(load, 30_000);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
   }, []);
 
   const onQuery = useCallback((q: string) => {
@@ -69,6 +89,8 @@ export default function MarketBoard() {
   }, []);
 
   const select = useCallback(async (hit: StockHit) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    const seq = ++requestSeqRef.current;
     setSelected(hit);
     setHits([]);
     setQuery(hit.name);
@@ -81,14 +103,20 @@ export default function MarketBoard() {
         fetchFinancials(hit.code),
         fetchNews(hit.code, 8),
       ]);
+      if (seq !== requestSeqRef.current) return; // 已被更新的请求取代，丢弃过期响应
       setQuote(q);
       setKline(k);
       setFinancials(f);
       setNews(n);
     } catch (e) {
+      if (seq !== requestSeqRef.current) return;
+      setQuote(null);
+      setKline([]);
+      setFinancials(null);
+      setNews([]);
       setError(e instanceof Error ? e.message : "数据加载失败");
     } finally {
-      setLoading(false);
+      if (seq === requestSeqRef.current) setLoading(false);
     }
   }, []);
 
@@ -96,16 +124,16 @@ export default function MarketBoard() {
     async (p: "day" | "week" | "month") => {
       setPeriod(p);
       if (!selected) return;
+      const seq = ++requestSeqRef.current;
       try {
-        setKline(await fetchKline(selected.code, p, 120));
+        const bars = await fetchKline(selected.code, p, 120);
+        if (seq === requestSeqRef.current) setKline(bars);
       } catch {
         // 保持旧图
       }
     },
     [selected],
   );
-
-  const upCls = (v: number) => (v > 0 ? "up" : v < 0 ? "down" : "flat");
 
   return (
     <div className="mx-auto max-w-[1240px] px-6 pb-16 pt-8">
@@ -207,7 +235,7 @@ export default function MarketBoard() {
                   ["最高", fmt(quote.high)],
                   ["最低", fmt(quote.low)],
                   ["昨收", fmt(quote.prevClose)],
-                  ["成交量", (quote.volume / 10000).toFixed(2) + " 万手"],
+                  ["成交量", (quote.volume / 1_000_000).toFixed(2) + " 万手"],
                   ["成交额", fmtYi(quote.amount)],
                   ["市盈率", fmt(quote.pe ?? financials?.pe)],
                   ["市净率", fmt(quote.pb ?? financials?.pb)],

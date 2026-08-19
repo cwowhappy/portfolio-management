@@ -26,9 +26,15 @@ export default function KlineChart({ bars }: { bars: KlineBar[] }) {
     const n = bars.length;
     const step = (W - PAD.l - PAD.r) / n;
     const bodyW = Math.max(2, Math.min(11, step * 0.62));
-    const priceMin = Math.min(...bars.map((b) => b.low));
-    const priceMax = Math.max(...bars.map((b) => b.high));
-    const volMax = Math.max(...bars.map((b) => b.volume));
+    // 用循环求 min/max，避免超大数组的 Math.min(...spread) 参数上限与空数组的 Infinity
+    let priceMin = Infinity;
+    let priceMax = -Infinity;
+    let volMax = 0;
+    for (const b of bars) {
+      if (b.low < priceMin) priceMin = b.low;
+      if (b.high > priceMax) priceMax = b.high;
+      if (b.volume > volMax) volMax = b.volume;
+    }
     const priceH = H - PAD.t - PAD.b - VOL_H;
     const y = (p: number) => PAD.t + priceH * (1 - (p - priceMin) / (priceMax - priceMin || 1));
     const vy = (v: number) => H - PAD.b - VOL_H * (v / (volMax || 1));
@@ -48,6 +54,10 @@ export default function KlineChart({ bars }: { bars: KlineBar[] }) {
         .replace(/^L/, "M");
     return { n, step, bodyW, priceMin, priceMax, volMax, y, vy, ma5, ma20, linePath };
   }, [bars]);
+
+  if (bars.length === 0) {
+    return null;
+  }
 
   const last = bars[bars.length - 1];
   const lastUp = last.close >= last.open;

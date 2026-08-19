@@ -3,7 +3,10 @@ package com.portfolio.invest.market;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.portfolio.invest.config.InvestProperties;
+import java.io.IOException;
 import java.net.URI;
+import java.net.http.HttpClient;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
@@ -12,10 +15,19 @@ import org.springframework.web.client.RestClient;
 public class TencentClient {
 
     private final RestClient client;
+    private final HttpExecutor executor;
     private final ObjectMapper mapper = new ObjectMapper();
 
-    public TencentClient(InvestProperties props) {
-        this.client = RestClientFactory.builder(props, "https://gu.qq.com/").build();
+    @Autowired
+    public TencentClient(InvestProperties props, HttpClient http, RateLimiter limiter) {
+        this.client = RestClientFactory.builder(http, props, "https://gu.qq.com/").build();
+        this.executor = HttpExecutor.fromProps(limiter, props, "腾讯K线");
+    }
+
+    /** 测试注入：直接提供 RestClient，退避为 0 且不限流。 */
+    TencentClient(RestClient client) {
+        this.client = client;
+        this.executor = HttpExecutor.forTests(new RateLimiter(1000), "腾讯K线");
     }
 
     /** symbol 形如 sh600519；period ∈ day/week/month。 */
@@ -27,11 +39,12 @@ public class TencentClient {
         };
         String url = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param="
                 + symbol + "," + p + ",,," + limit + ",qfq";
+        String body = executor.execute(
+                () -> client.get().uri(URI.create(url)).retrieve().body(String.class));
         try {
-            String body = client.get().uri(URI.create(url)).retrieve().body(String.class);
             return mapper.readTree(body);
-        } catch (Exception e) {
-            throw new MarketDataException("UPSTREAM_UNAVAILABLE", "腾讯K线接口不可用: " + e.getMessage(), e);
+        } catch (IOException e) {
+            throw new MarketDataException("BAD_RESPONSE", "腾讯K线响应解析失败", e);
         }
     }
 }

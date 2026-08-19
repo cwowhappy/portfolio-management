@@ -35,9 +35,14 @@ make dev                      # 后端 :8080 + 前端 :3000（.env 自动加载�
 ### 测试与冒烟
 
 ```bash
-make test                     # 后端 17 个单测 + 前端 3 个单测
-make smoke                    # 端到端冒烟（含真实行情接口）
+make test                     # 后端单元/架构测试（含 ArchUnit 分包规范）+ 前端单元测试（vitest）
+                              # 覆盖率强制门槛：后端 JaCoCo 指令/分支 ≥ 80%，前端 V8 语句/分支 ≥ 80%
+make smoke                    # 端到端冒烟（含真实行情接口 + AI 对话）
+cd frontend && pnpm test:e2e  # 浏览器端到端（Playwright）：导航 / 行情台 / AI 对话
+                              #   自动拉起后端+前端（已运行时复用）；AI 用例需配置 DEEPSEEK_API_KEY
 ```
+
+Playwright e2e 位于 `frontend/e2e/`，配置见 `frontend/playwright.config.ts`；行情用例走真实公开接口，偶发波动由重试吸收。
 
 ## 接口
 
@@ -69,7 +74,7 @@ scripts/    smoke.sh 冒烟脚本
 | 环境变量 | 默认 | 说明 |
 |---|---|---|
 | DEEPSEEK_API_KEY | - | 必填（AI 对话）；不填仅行情可用 |
-| DEEPSEEK_MODEL | deepseek-chat | 模型名（deepseek-reasoner 亦可） |
+| DEEPSEEK_MODEL | deepseek-v4-flash | 模型名（deepseek-v4-pro 亦可） |
 | DEEPSEEK_BASE_URL | https://api.deepseek.com | 兼容代理可覆盖 |
 | BACKEND_URL | http://localhost:8080 | 前端反代目标 |
 | PORT | 8080 | 后端端口 |

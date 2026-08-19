@@ -3,9 +3,9 @@ FROM node:22-alpine AS build
 ENV CI=true
 RUN corepack enable
 WORKDIR /workspace
-COPY package.json pnpm-workspace.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 ARG NPM_REGISTRY=https://registry.npmjs.org/
-RUN pnpm install --frozen-lockfile=false --registry=${NPM_REGISTRY}
+RUN pnpm install --frozen-lockfile=true --registry=${NPM_REGISTRY}
 COPY . .
 RUN mkdir -p public
 RUN pnpm build

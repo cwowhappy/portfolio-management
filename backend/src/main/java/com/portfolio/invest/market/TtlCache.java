@@ -1,33 +1,60 @@
 package com.portfolio.invest.market;
 
 import java.time.Duration;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.function.LongSupplier;
 
-/** 极简本地 TTL 缓存：读时惰性过期，定时清理极端膨胀的过期条目。 */
+/**
+ * 极简本地 TTL 缓存：读时惰性过期 + 有界 LRU 淘汰。
+ * 键空间可能无界（如搜索按用户输入为 key），故以 maxEntries 上限 + LRU 淘汰防内存耗尽。
+ */
 public class TtlCache {
 
-    private record Entry(Object value, long expiresAt) {}
+    private record CacheEntry(Object value, long expiresAt) {}
 
-    private final ConcurrentHashMap<String, Entry> map = new ConcurrentHashMap<>();
+    private final int maxEntries;
+    private final LongSupplier nowMillis;
+    private final Map<String, CacheEntry> map;
+
+    public TtlCache(int maxEntries) {
+        this(maxEntries, System::currentTimeMillis);
+    }
+
+    /** 测试注入：自定义时钟（避免真实墙钟等待）。 */
+    TtlCache(int maxEntries, LongSupplier nowMillis) {
+        if (maxEntries <= 0) {
+            throw new IllegalArgumentException("maxEntries 必须为正数: " + maxEntries);
+        }
+        this.maxEntries = maxEntries;
+        this.nowMillis = nowMillis;
+        // access-order=true：get 即视为最近使用，配合 removeEldestEntry 实现 LRU
+        this.map = new LinkedHashMap<>(16, 0.75f, true) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<String, CacheEntry> eldest) {
+                return size() > maxEntries;
+            }
+        };
+    }
 
     @SuppressWarnings("unchecked")
-    public <T> T get(String key) {
-        Entry e = map.get(key);
+    public synchronized <T> T get(String key) {
+        CacheEntry e = map.get(key);
         if (e == null) {
             return null;
         }
-        if (System.currentTimeMillis() > e.expiresAt()) {
+        if (nowMillis.getAsLong() > e.expiresAt()) {
             map.remove(key);
             return null;
         }
         return (T) e.value();
     }
 
-    public void put(String key, Object value, Duration ttl) {
-        map.put(key, new Entry(value, System.currentTimeMillis() + ttl.toMillis()));
+    public synchronized void put(String key, Object value, Duration ttl) {
+        map.put(key, new CacheEntry(value, nowMillis.getAsLong() + ttl.toMillis()));
     }
 
-    public long size() {
+    public synchronized long size() {
         return map.size();
     }
 }

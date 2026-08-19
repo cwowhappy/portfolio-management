@@ -1,10 +1,6 @@
 spring:
   application:
     name: invest-agent
-  http:
-    client:
-      connect-timeout: 3s
-      read-timeout: 5s
 
 server:
   port: ${PORT:8080}
@@ -42,13 +38,17 @@ agentscope:
 invest:
   llm:
     provider: deepseek
-    model: ${DEEPSEEK_MODEL:deepseek-chat}
+    model: ${DEEPSEEK_MODEL:deepseek-v4-flash}
     base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
   market:
     connect-timeout: 3s
     read-timeout: 5s
     rate-limit-per-second: 5
+    max-attempts: 3
+    retry-backoff-millis: 300
+    acquire-timeout-millis: 2000
     cache:
+      max-entries: 10000
       quote-ttl: 15s
       kline-ttl: 5m
       search-ttl: 10m

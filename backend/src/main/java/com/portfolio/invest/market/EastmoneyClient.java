@@ -7,7 +7,9 @@ import com.portfolio.invest.config.InvestProperties;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URLEncoder;
+import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
@@ -16,11 +18,27 @@ import org.springframework.web.client.RestClient;
 public class EastmoneyClient {
 
     private final RestClient client;
+    private final HttpExecutor executor;
     private final ObjectMapper mapper = new ObjectMapper();
 
-    /** 超时来自 invest.market.connect-timeout / read-timeout。 */
-    public EastmoneyClient(InvestProperties props) {
-        this.client = RestClientFactory.builder(props, "https://quote.eastmoney.com/").build();
+    /** 东财搜索接口的公开 token（非密钥，仅用于匿名搜索请求）。 */
+    private static final String SEARCH_TOKEN = "D43BF722C8E33BDC906FB84D85E326E8";
+
+    /** K线结束日期（未来日期即取最新）；搜索/财务的默认页参数。 */
+    private static final String KLINE_END = "20500101";
+    private static final int SEARCH_COUNT = 10;
+    private static final int FINANCIALS_PAGE_SIZE = 8;
+
+    @Autowired
+    public EastmoneyClient(InvestProperties props, HttpClient http, RateLimiter limiter) {
+        this.client = RestClientFactory.builder(http, props, "https://quote.eastmoney.com/").build();
+        this.executor = HttpExecutor.fromProps(limiter, props, "东方财富");
+    }
+
+    /** 测试注入：直接提供 RestClient（绕过真实 HTTP 与超时配置），退避为 0 且不限流。 */
+    EastmoneyClient(RestClient client) {
+        this.client = client;
+        this.executor = HttpExecutor.forTests(new RateLimiter(1000), "东方财富");
     }
 
     /** 实时行情。 */
@@ -34,14 +52,14 @@ public class EastmoneyClient {
     public JsonNode kline(String secid, int klt, int limit) {
         String url = "https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=" + secid
                 + "&klt=" + klt + "&fqt=1&lmt=" + limit
-                + "&end=20500101&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58";
+                + "&end=" + KLINE_END + "&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58";
         return get(url);
     }
 
     /** 股票搜索。 */
     public JsonNode search(String query) {
         String url = "https://searchapi.eastmoney.com/api/suggest/get?input="
-                + encode(query) + "&type=14&token=D43BF722C8E33BDC906FB84D85E326E8&count=10";
+                + encode(query) + "&type=14&token=" + SEARCH_TOKEN + "&count=" + SEARCH_COUNT;
         return get(url);
     }
 
@@ -52,7 +70,8 @@ public class EastmoneyClient {
                 + "?reportName=RPT_F10_FINANCE_MAINFINADATA"
                 + "&columns=REPORT_DATE,EPSJB,BPS,TOTALOPERATEREVE,PARENTNETPROFIT,ROEJQ,XSMLL"
                 + "&filter=" + filter
-                + "&pageNumber=1&pageSize=8&sortTypes=-1&sortColumns=REPORT_DATE&source=HSF10&client=PC";
+                + "&pageNumber=1&pageSize=" + FINANCIALS_PAGE_SIZE
+                + "&sortTypes=-1&sortColumns=REPORT_DATE&source=HSF10&client=PC";
         return get(url);
     }
 
@@ -107,24 +126,9 @@ public class EastmoneyClient {
     }
 
     private String getText(String url) {
-        Exception last = null;
-        for (int attempt = 0; attempt < 3; attempt++) {
-            try {
-                // 注意：不能用 uri(String)（URI 模板展开会把 % 二次编码），必须直传 URI
-                return client.get().uri(URI.create(url)).retrieve().body(String.class);
-            } catch (Exception e) {
-                last = e;
-                if (attempt < 2) {
-                    try {
-                        Thread.sleep(300L * (attempt + 1));
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        break;
-                    }
-                }
-            }
-        }
-        throw new MarketDataException("UPSTREAM_UNAVAILABLE", "东方财富接口不可用: " + last.getMessage(), last);
+        // 注意：不能用 uri(String)（URI 模板展开会把 % 二次编码），必须直传 URI
+        return executor.execute(
+                () -> client.get().uri(URI.create(url)).retrieve().body(String.class));
     }
 
     private static String encode(String s) {

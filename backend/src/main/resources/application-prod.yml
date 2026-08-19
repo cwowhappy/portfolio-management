@@ -1,0 +1,5 @@
+# 生产环境覆盖（SPRING_PROFILES_ACTIVE=prod 时生效），避免向公网暴露健康检查内部详情。
+management:
+  endpoint:
+    health:
+      show-details: never

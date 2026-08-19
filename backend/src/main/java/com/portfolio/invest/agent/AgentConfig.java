@@ -8,7 +8,7 @@ import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ModelCreationContext;
 import io.agentscope.core.model.ModelRegistry;
 import io.agentscope.core.tool.Toolkit;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -22,7 +22,7 @@ import org.springframework.context.annotation.Configuration;
 public class AgentConfig {
 
     @Bean
-    @ConditionalOnProperty(name = "DEEPSEEK_API_KEY")
+    @ConditionalOnExpression("T(org.springframework.util.StringUtils).hasText('${DEEPSEEK_API_KEY:}')")
     public Model investModel(InvestProperties props) {
         return ModelRegistry.resolve(
                 props.getLlm().getProvider() + ":" + props.getLlm().getModel(),
@@ -39,7 +39,7 @@ public class AgentConfig {
     }
 
     @Bean(name = "invest")
-    @ConditionalOnProperty(name = "DEEPSEEK_API_KEY")
+    @ConditionalOnExpression("T(org.springframework.util.StringUtils).hasText('${DEEPSEEK_API_KEY:}')")
     public Agent investAgent(Model investModel, InvestTools investTools) {
         Toolkit toolkit = new Toolkit();
         toolkit.registerTool(investTools);

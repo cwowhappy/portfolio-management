@@ -29,7 +29,8 @@ public class HealthController {
     public Map<String, Object> health() {
         Map<String, Object> body = new LinkedHashMap<>();
 
-        boolean keyConfigured = env.getProperty("DEEPSEEK_API_KEY") != null;
+        String apiKey = env.getProperty("DEEPSEEK_API_KEY");
+        boolean keyConfigured = apiKey != null && !apiKey.isBlank();
         Map<String, Object> llm = new LinkedHashMap<>();
         llm.put("provider", props.getLlm().getProvider());
         llm.put("model", props.getLlm().getModel());

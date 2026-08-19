@@ -2,3 +2,4 @@ allowBuilds:
   '@scarf/scarf': true
   esbuild: true
   sharp: true
+  unrs-resolver: true

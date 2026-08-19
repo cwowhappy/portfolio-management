@@ -28,7 +28,7 @@ public class InvestProperties {
 
     public static class Llm {
         private String provider = "deepseek";
-        private String model = "deepseek-chat";
+        private String model = "deepseek-v4-flash";
         private String baseUrl = "https://api.deepseek.com";
 
         public String getProvider() {
@@ -60,6 +60,9 @@ public class InvestProperties {
         private Duration connectTimeout = Duration.ofSeconds(3);
         private Duration readTimeout = Duration.ofSeconds(5);
         private int rateLimitPerSecond = 5;
+        private int maxAttempts = 3;
+        private long retryBackoffMillis = 300;
+        private long acquireTimeoutMillis = 2000;
         private Cache cache = new Cache();
 
         public Duration getConnectTimeout() {
@@ -86,6 +89,30 @@ public class InvestProperties {
             this.rateLimitPerSecond = rateLimitPerSecond;
         }
 
+        public int getMaxAttempts() {
+            return maxAttempts;
+        }
+
+        public void setMaxAttempts(int maxAttempts) {
+            this.maxAttempts = maxAttempts;
+        }
+
+        public long getRetryBackoffMillis() {
+            return retryBackoffMillis;
+        }
+
+        public void setRetryBackoffMillis(long retryBackoffMillis) {
+            this.retryBackoffMillis = retryBackoffMillis;
+        }
+
+        public long getAcquireTimeoutMillis() {
+            return acquireTimeoutMillis;
+        }
+
+        public void setAcquireTimeoutMillis(long acquireTimeoutMillis) {
+            this.acquireTimeoutMillis = acquireTimeoutMillis;
+        }
+
         public Cache getCache() {
             return cache;
         }
@@ -96,12 +123,21 @@ public class InvestProperties {
     }
 
     public static class Cache {
+        private int maxEntries = 10000;
         private Duration quoteTtl = Duration.ofSeconds(15);
         private Duration klineTtl = Duration.ofMinutes(5);
         private Duration searchTtl = Duration.ofMinutes(10);
         private Duration financialsTtl = Duration.ofHours(1);
         private Duration newsTtl = Duration.ofMinutes(5);
         private Duration overviewTtl = Duration.ofSeconds(15);
+
+        public int getMaxEntries() {
+            return maxEntries;
+        }
+
+        public void setMaxEntries(int maxEntries) {
+            this.maxEntries = maxEntries;
+        }
 
         public Duration getQuoteTtl() {
             return quoteTtl;

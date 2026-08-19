@@ -19,7 +19,10 @@ public class GlobalExceptionHandler {
         HttpStatus status = switch (e.getCode()) {
             case "INVALID_CODE", "INVALID_PERIOD", "INVALID_QUERY" -> HttpStatus.BAD_REQUEST;
             case "RATE_LIMITED" -> HttpStatus.TOO_MANY_REQUESTS;
-            default -> HttpStatus.BAD_GATEWAY;
+            default -> {
+                log.warn("未识别的行情错误码 {}，按 502 处理: {}", e.getCode(), e.getMessage());
+                yield HttpStatus.BAD_GATEWAY;
+            }
         };
         return ResponseEntity.status(status).body(new ApiError(e.getCode(), e.getMessage()));
     }
@@ -45,10 +48,11 @@ public class GlobalExceptionHandler {
     /**
      * 客户端在 SSE 流传输中主动断开（用户停止/关页）——这是正常行为，
      * 不记 ERROR、不尝试向已关闭的流写错误体（否则触发无转换器的二次异常）。
+     * 只精确匹配「客户端断开」两类信号，避免吞掉业务层的真实 IOException。
      */
     @ExceptionHandler({
         org.springframework.web.context.request.async.AsyncRequestNotUsableException.class,
-        java.io.IOException.class,
+        org.apache.catalina.connector.ClientAbortException.class,
     })
     public void clientDisconnected(Exception e) {
         log.debug("SSE 客户端断开，忽略: {}", e.getMessage());

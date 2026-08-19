@@ -17,7 +17,7 @@ export default function Sidebar({
 }: {
   health: { llmKey: boolean; marketOk: boolean } | null;
 }) {
-  const { sessions, currentThreadId, newThread, switchThread, deleteThread } =
+  const { sessions, currentThreadId, running, newThread, switchThread, deleteThread } =
     useChatRuntime();
 
   return (
@@ -26,7 +26,8 @@ export default function Sidebar({
         <div className="p-3">
           <button
             onClick={newThread}
-            className="w-full rounded-lg border border-[color:var(--color-line)] bg-[color:var(--color-panel)] px-3 py-2 text-[13px] text-[color:var(--color-ink)] transition-all hover:border-[color:var(--color-up)] hover:shadow-[var(--shadow-glow)]"
+            disabled={running}
+            className="w-full rounded-lg border border-[color:var(--color-line)] bg-[color:var(--color-panel)] px-3 py-2 text-[13px] text-[color:var(--color-ink)] transition-all hover:border-[color:var(--color-up)] hover:shadow-[var(--shadow-glow)] disabled:cursor-not-allowed disabled:opacity-50"
           >
             ＋ 新对话
           </button>
@@ -47,8 +48,10 @@ export default function Sidebar({
                 <li key={s.id} className="group relative">
                   <button
                     onClick={() => switchThread(s.id)}
+                    disabled={running}
+                    aria-current={active ? "true" : undefined}
                     className={
-                      "w-full rounded-lg px-3 py-2 text-left transition-colors " +
+                      "w-full rounded-lg px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 " +
                       (active
                         ? "bg-[color:var(--color-panel-2)] text-[color:var(--color-ink)]"
                         : "text-[color:var(--color-ink-dim)] hover:bg-[color:var(--color-panel)] hover:text-[color:var(--color-ink)]")
@@ -62,7 +65,7 @@ export default function Sidebar({
                   <button
                     onClick={() => deleteThread(s.id)}
                     aria-label="删除会话"
-                    className="absolute right-1.5 top-1/2 hidden -translate-y-1/2 rounded p-1 text-[color:var(--color-ink-faint)] hover:text-[color:var(--color-up)] group-hover:block"
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-[color:var(--color-ink-faint)] opacity-0 transition-opacity hover:text-[color:var(--color-up)] group-hover:opacity-100 focus-visible:opacity-100"
                   >
                     ✕
                   </button>

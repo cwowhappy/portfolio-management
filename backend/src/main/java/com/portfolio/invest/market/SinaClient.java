@@ -2,7 +2,9 @@ package com.portfolio.invest.market;
 
 import com.portfolio.invest.config.InvestProperties;
 import java.net.URI;
+import java.net.http.HttpClient;
 import java.nio.charset.Charset;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
@@ -13,9 +15,18 @@ public class SinaClient {
     private static final Charset GBK = Charset.forName("GBK");
 
     private final RestClient client;
+    private final HttpExecutor executor;
 
-    public SinaClient(InvestProperties props) {
-        this.client = RestClientFactory.builder(props, "https://finance.sina.com.cn/").build();
+    @Autowired
+    public SinaClient(InvestProperties props, HttpClient http, RateLimiter limiter) {
+        this.client = RestClientFactory.builder(http, props, "https://finance.sina.com.cn/").build();
+        this.executor = HttpExecutor.fromProps(limiter, props, "新浪");
+    }
+
+    /** 测试注入：直接提供 RestClient，退避为 0 且不限流。 */
+    SinaClient(RestClient client) {
+        this.client = client;
+        this.executor = HttpExecutor.forTests(new RateLimiter(1000), "新浪");
     }
 
     /**
@@ -33,28 +44,12 @@ public class SinaClient {
     }
 
     private String fetch(String url) {
-        Exception last = null;
-        for (int attempt = 0; attempt < 3; attempt++) {
-            try {
-                byte[] bytes = client.get().uri(URI.create(url)).retrieve().body(byte[].class);
-                if (bytes == null || bytes.length == 0) {
-                    throw new MarketDataException("UPSTREAM_UNAVAILABLE", "新浪接口返回空");
-                }
-                return new String(bytes, GBK);
-            } catch (MarketDataException e) {
-                throw e;
-            } catch (Exception e) {
-                last = e;
-                if (attempt < 2) {
-                    try {
-                        Thread.sleep(300L * (attempt + 1));
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        break;
-                    }
-                }
+        return executor.execute(() -> {
+            byte[] bytes = client.get().uri(URI.create(url)).retrieve().body(byte[].class);
+            if (bytes == null || bytes.length == 0) {
+                throw new MarketDataException("UPSTREAM_UNAVAILABLE", "新浪接口返回空");
             }
-        }
-        throw new MarketDataException("UPSTREAM_UNAVAILABLE", "新浪接口不可用: " + last.getMessage(), last);
+            return new String(bytes, GBK);
+        });
     }
 }

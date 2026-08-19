@@ -87,6 +87,16 @@ class MarketDataParserTest {
     }
 
     @Test
+    void parsesSearchMapsBeijingMarket() throws IOException {
+        JsonNode node = MAPPER.readTree(
+                "{\"QuotationCodeTable\":{\"Data\":["
+                        + "{\"Code\":\"830799\",\"Name\":\"艾融软件\",\"MktNum\":\"0\",\"SecurityTypeName\":\"北A\"}]}}");
+        List<StockHit> hits = MarketDataParser.parseSearch(node);
+        assertThat(hits).hasSize(1);
+        assertThat(hits.get(0).marketName()).isEqualTo("北交所");
+    }
+
+    @Test
     void parsesFinancials() {
         Financials f = MarketDataParser.buildFinancials("600519", "贵州茅台", 21.35, 7.82, financialsJson);
         assertThat(f.pe()).isEqualTo(21.35);
@@ -119,6 +129,8 @@ class MarketDataParserTest {
         assertThat(bars.get(0).date()).isEqualTo("2026-08-14");
         assertThat(bars.get(2).close()).isEqualTo(1297.99);
         assertThat(bars.get(2).volume()).isEqualTo(3872300L); // 手 → 股
+        assertThat(bars.get(2).amount()).isEqualTo(0.0); // 腾讯无成交额字段
+        assertThat(bars.get(2).amplitudePct()).isEqualTo(0.0); // 腾讯无振幅字段
     }
 
     @Test

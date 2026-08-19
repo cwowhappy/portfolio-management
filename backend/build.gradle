@@ -1,7 +1,13 @@
 plugins {
     id 'java'
+    id 'jacoco'
     id 'org.springframework.boot' version '4.0.3'
     id 'io.spring.dependency-management' version '1.1.7'
+}
+
+jacoco {
+    // 0.8.13 完整支持 Java 21 字节码（record / switch 表达式）
+    toolVersion = '0.8.13'
 }
 
 group = 'com.portfolio'
@@ -48,4 +54,34 @@ dependencies {
 
 tasks.named('test') {
     useJUnitPlatform()
+    // 每次跑测试即生成覆盖率报告并执行门槛校验（指令/分支 ≥ 80%）
+    finalizedBy jacocoTestReport, jacocoTestCoverageVerification
+}
+
+jacocoTestReport {
+    dependsOn test
+    reports {
+        xml.required = true
+        html.required = true
+        csv.required = false
+    }
+}
+
+jacocoTestCoverageVerification {
+    dependsOn test
+    violationRules {
+        rule {
+            element = 'BUNDLE'
+            limit {
+                counter = 'INSTRUCTION'
+                value = 'COVEREDRATIO'
+                minimum = 0.80
+            }
+            limit {
+                counter = 'BRANCH'
+                value = 'COVEREDRATIO'
+                minimum = 0.80
+            }
+        }
+    }
 }

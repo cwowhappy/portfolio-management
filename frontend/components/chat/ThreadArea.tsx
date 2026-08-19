@@ -8,7 +8,7 @@ import {
   UseAgentUpdate,
 } from "@copilotkit/react-core/v2";
 import type { Message } from "@ag-ui/client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -17,9 +17,12 @@ import {
   historyToAgentMessages,
   useChatRuntime,
 } from "./RuntimeProvider";
-import { loadMessages } from "@/lib/sessions";
+import { loadMessages, newThreadId } from "@/lib/sessions";
 import ToolCallCard from "./ToolCallCard";
 import { CodeBlock, InlineCode } from "./CodeHighlight";
+
+// 模块级常量：避免每次渲染新建数组触发潜在的重订阅
+const AGENT_UPDATES = [UseAgentUpdate.OnMessagesChanged, UseAgentUpdate.OnRunStatusChanged];
 
 // ———— 思考折叠 ————
 
@@ -78,6 +81,7 @@ function FeedbackBar({ messageId }: { messageId: string }) {
     <div className="mt-1.5 flex items-center gap-1 opacity-35 transition-opacity hover:opacity-100">
       <button
         aria-label="回答有帮助"
+        aria-pressed={voted === "positive"}
         onClick={() => vote("positive")}
         className={
           "rounded px-1.5 py-0.5 text-[12px] transition-colors " +
@@ -88,6 +92,7 @@ function FeedbackBar({ messageId }: { messageId: string }) {
       </button>
       <button
         aria-label="回答需要改进"
+        aria-pressed={voted === "negative"}
         onClick={() => vote("negative")}
         className={
           "rounded px-1.5 py-0.5 text-[12px] transition-colors " +
@@ -145,12 +150,17 @@ function AssistantMessage({ message }: { message: Message }) {
               remarkPlugins={[remarkGfm]}
               components={{
                 pre: (p) => <>{p.children}</>,
-                code: ({ className, children }) =>
-                  /language-[\w-]+/.test(className ?? "") ? (
+                code: ({ className, children }) => {
+                  // 有语言类名，或含换行（无语言围栏代码块）均按块渲染
+                  const isBlock =
+                    /language-[\w-]+/.test(className ?? "") ||
+                    String(children ?? "").includes("\n");
+                  return isBlock ? (
                     <CodeBlock className={className}>{children}</CodeBlock>
                   ) : (
                     <InlineCode>{children}</InlineCode>
-                  ),
+                  );
+                },
               }}
             >
               {content}
@@ -212,24 +222,29 @@ function EmptyState({
 
 function Composer({
   isRunning,
+  ready,
   onSend,
   onStop,
 }: {
   isRunning: boolean;
+  ready: boolean;
   onSend: (text: string) => void;
   onStop: () => void;
 }) {
   const [draft, setDraft] = useState("");
+  const taRef = useRef<HTMLTextAreaElement>(null);
   const submit = () => {
     const t = draft.trim();
-    if (!t || isRunning) return;
+    if (!t || isRunning || !ready) return;
     setDraft("");
+    if (taRef.current) taRef.current.style.height = "auto"; // 重置自增高
     onSend(t);
   };
   return (
     <div className="border-t border-[color:var(--color-line)] bg-[color:var(--color-bg)]/80 px-4 pb-4 pt-3 backdrop-blur-sm">
       <div className="composer mx-auto max-w-[860px] p-2">
         <textarea
+          ref={taRef}
           rows={1}
           autoFocus
           value={draft}
@@ -262,7 +277,7 @@ function Composer({
           ) : (
             <button
               onClick={submit}
-              disabled={!draft.trim()}
+              disabled={!ready || !draft.trim()}
               className="rounded-md bg-[color:var(--color-up)] px-4 py-1 text-[12px] text-white transition-all enabled:hover:brightness-110 disabled:opacity-30"
             >
               发送
@@ -277,33 +292,52 @@ function Composer({
 // ———— 会话区 ————
 
 export default function ThreadArea({ llmReady }: { llmReady: boolean | null }) {
-  const { currentThreadId, persistMessages } = useChatRuntime();
+  const { currentThreadId, persistMessages, setRunning } = useChatRuntime();
   const { agent, isReady } = useAgent({
     agentId: AGENT_ID,
-    updates: [UseAgentUpdate.OnMessagesChanged, UseAgentUpdate.OnRunStatusChanged],
+    updates: AGENT_UPDATES,
   });
   const { copilotkit } = useCopilotKit();
+  const [sendError, setSendError] = useState<string | null>(null);
+  const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 同步运行状态到 Provider，供 Sidebar 在运行中禁用切换/新建
+  useEffect(() => {
+    setRunning(agent.isRunning);
+  }, [agent.isRunning, setRunning]);
 
   const send = useCallback(
     async (text: string) => {
       const t = text.trim();
-      if (!t || agent.isRunning) return;
-      agent.addMessage({ id: crypto.randomUUID(), role: "user", content: t });
-      await copilotkit.runAgent({ agent });
+      if (!t || agent.isRunning || !isReady) return;
+      setSendError(null);
+      agent.addMessage({ id: newThreadId(), role: "user", content: t });
+      try {
+        await copilotkit.runAgent({ agent });
+      } catch (e) {
+        setSendError(e instanceof Error ? e.message : "请求失败，请稍后重试");
+      }
     },
-    [agent, copilotkit],
+    [agent, copilotkit, isReady],
   );
 
   // 历史回灌：真实 agent 就绪后，把本地历史种回去（后端 server-side-memory=false）
   useEffect(() => {
     if (!isReady) return;
+    if (agent.isRunning) agent.abortRun(); // 切换线程时停止旧流，避免跨线程串写
     agent.setMessages(historyToAgentMessages(loadMessages(currentThreadId)));
   }, [agent, isReady, currentThreadId]);
 
-  // 消息变化 → localStorage 持久化 + 刷新会话列表
+  // 消息变化 → 防抖持久化（流式期间高频触发，避免每个 token 都整段重写 localStorage）
   useEffect(() => {
-    const saved = agentMessagesToHistory(agent.messages ?? []);
-    if (saved.length > 0) persistMessages(currentThreadId, saved);
+    if (persistTimer.current) clearTimeout(persistTimer.current);
+    persistTimer.current = setTimeout(() => {
+      const saved = agentMessagesToHistory(agent.messages ?? [], loadMessages(currentThreadId));
+      if (saved.length > 0) persistMessages(currentThreadId, saved);
+    }, 400);
+    return () => {
+      if (persistTimer.current) clearTimeout(persistTimer.current);
+    };
   }, [agent.messages, currentThreadId, persistMessages]);
 
   const messages = agent.messages ?? [];
@@ -313,7 +347,7 @@ export default function ThreadArea({ llmReady }: { llmReady: boolean | null }) {
     <div className="flex h-full min-w-0 flex-1 flex-col">
       <ToolCallRenderers />
       <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-[860px] px-5 py-8">
+        <div className="mx-auto max-w-[860px] px-5 py-8" aria-live="polite">
           {isEmpty ? (
             <EmptyState llmReady={llmReady} onPick={(p) => void send(p)} />
           ) : (
@@ -338,8 +372,23 @@ export default function ThreadArea({ llmReady }: { llmReady: boolean | null }) {
           <div className="h-6" />
         </div>
       </div>
+      {sendError && (
+        <div className="mx-auto w-full max-w-[860px] px-5 pb-2">
+          <p className="flex items-center justify-between rounded-lg border border-[color:var(--color-amber)]/40 bg-[color:var(--color-panel)] px-4 py-2.5 text-[13px] text-[color:var(--color-amber)]">
+            <span>{sendError}</span>
+            <button
+              onClick={() => setSendError(null)}
+              aria-label="关闭错误提示"
+              className="ml-3 text-[color:var(--color-ink-faint)] hover:text-[color:var(--color-ink)]"
+            >
+              ✕
+            </button>
+          </p>
+        </div>
+      )}
       <Composer
         isRunning={agent.isRunning}
+        ready={isReady}
         onSend={(t) => void send(t)}
         onStop={() => agent.abortRun()}
       />

@@ -8,7 +8,7 @@ export GRADLE_OPTS := -Dorg.gradle.native.dir=$(PWD)/.gradle-native
 -include .env
 export
 
-.PHONY: dev dev-backend dev-frontend test test-backend test-frontend build up down smoke
+.PHONY: dev dev-backend dev-frontend test test-backend test-frontend test-e2e build up down smoke
 
 ## 本地开发：同时启动后端(8080)与前端(3000)
 dev:
@@ -28,6 +28,9 @@ test-backend:
 
 test-frontend:
 	cd frontend && pnpm test
+
+test-e2e:
+	cd frontend && CI=true pnpm test:e2e
 
 ## 构建
 build:

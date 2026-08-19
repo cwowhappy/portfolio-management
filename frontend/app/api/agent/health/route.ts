@@ -10,11 +10,13 @@ export async function GET() {
       cache: "no-store",
     });
     const body = await upstream.text();
+    const contentType = upstream.headers.get("content-type") ?? "application/json; charset=utf-8";
     return new Response(body, {
       status: upstream.status,
-      headers: { "Content-Type": "application/json; charset=utf-8" },
+      headers: { "Content-Type": contentType },
     });
-  } catch {
+  } catch (e) {
+    console.error("[health proxy] 上游请求失败:", e instanceof Error ? e.message : e);
     return Response.json({ status: "degraded", message: "后端不可达" }, { status: 502 });
   }
 }

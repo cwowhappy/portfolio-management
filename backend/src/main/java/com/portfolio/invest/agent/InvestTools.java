@@ -1,5 +1,6 @@
 package com.portfolio.invest.agent;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.portfolio.invest.market.MarketDataService;
 import com.portfolio.invest.market.MarketDataException;
@@ -117,9 +118,21 @@ public class InvestTools {
             return supplier.get();
         } catch (MarketDataException e) {
             log.warn("工具数据获取失败: code={}, msg={}", e.getCode(), e.getMessage());
-            return "{\"error\":\"" + e.getMessage() + "\",\"hint\":\"数据源暂不可用，请稍后重试或换个问法\"}";
+            return toError(e.getMessage(), "数据源暂不可用，请稍后重试或换个问法");
         } catch (Exception e) {
             log.error("工具执行异常", e);
+            return toError("工具执行失败", "请稍后重试");
+        }
+    }
+
+    /** 用 ObjectMapper 序列化错误，避免手工拼 JSON 导致非法输出。 */
+    private String toError(String message, String hint) {
+        try {
+            Map<String, String> body = new LinkedHashMap<>();
+            body.put("error", message);
+            body.put("hint", hint);
+            return mapper.writeValueAsString(body);
+        } catch (JsonProcessingException e) {
             return "{\"error\":\"工具执行失败\",\"hint\":\"请稍后重试\"}";
         }
     }

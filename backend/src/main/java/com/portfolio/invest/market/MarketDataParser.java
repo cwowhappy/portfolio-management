@@ -21,6 +21,7 @@ import java.util.List;
 public final class MarketDataParser {
 
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+    private static final ZoneId MARKET_ZONE = ZoneId.of("Asia/Shanghai");
 
     private MarketDataParser() {}
 
@@ -34,9 +35,9 @@ public final class MarketDataParser {
         if (price <= 0) {
             throw new MarketDataException("BAD_RESPONSE", "行情价格为空或无效");
         }
-        Long f86 = data.path("f86").asLong();
-        String time = f86 != null && f86 > 0
-                ? LocalDateTime.ofInstant(Instant.ofEpochSecond(f86), ZoneId.systemDefault()).format(TIME_FMT)
+        long f86 = data.path("f86").asLong();
+        String time = f86 > 0
+                ? LocalDateTime.ofInstant(Instant.ofEpochSecond(f86), MARKET_ZONE).format(TIME_FMT)
                 : "";
         double amount = numOrZero(data.path("f48"));
         long volume = normalizeVolume(data.path("f47").asLong(), amount, price);
@@ -135,7 +136,7 @@ public final class MarketDataParser {
 
     /**
      * 腾讯 K线兜底：data.{symbol}.{qfq+period} 为 [date, open, close, high, low, volume(手)] 数组，
-     * 成交量统一转股，按日期升序。
+     * 成交量统一转股，按日期升序。腾讯仅返回 6 列（无成交额/振幅），amount 与 amplitudePct 置 0。
      */
     public static List<KlineBar> parseTencentKline(JsonNode root, String symbol, String period) {
         JsonNode data = root.path("data").path(symbol);
@@ -158,8 +159,8 @@ public final class MarketDataParser {
                     numOrZero(row.get(3)),
                     numOrZero(row.get(4)),
                     parseLongOrZero(row.get(5).asText()) * 100,
-                    numOrZero(row.get(6)),
-                    numOrZero(row.get(7))));
+                    row.size() > 6 ? numOrZero(row.get(6)) : 0,
+                    row.size() > 7 ? numOrZero(row.get(7)) : 0));
         }
         if (bars.isEmpty()) {
             throw new MarketDataException("BAD_RESPONSE", "腾讯K线数据为空");
@@ -168,31 +169,44 @@ public final class MarketDataParser {
         return bars;
     }
 
-    /** 股票搜索。 */
+    /** 股票搜索（过滤指数/板块/基金/债券/期货等非A股条目）。 */
     public static List<StockHit> parseSearch(JsonNode root) {
         JsonNode data = root.path("QuotationCodeTable").path("Data");
         List<StockHit> hits = new ArrayList<>();
         if (data.isArray()) {
             for (JsonNode item : data) {
                 String typeName = item.path("SecurityTypeName").asText("");
-                if (typeName.contains("指数") || typeName.contains("板块") || typeName.contains("基金")) {
+                if (typeName.contains("指数") || typeName.contains("板块") || typeName.contains("基金")
+                        || typeName.contains("债") || typeName.contains("期货")) {
                     continue;
                 }
+                String code = item.path("Code").asText("");
                 String mkt = item.path("MktNum").asText("1");
                 hits.add(new StockHit(
-                        item.path("Code").asText(""),
+                        code,
                         item.path("Name").asText(""),
                         mkt,
-                        "1".equals(mkt) ? "沪市" : "深市"));
+                        marketNameOf(code, mkt)));
             }
         }
         return hits;
     }
 
+    /** 市场名称：以代码前缀为准（与 StockRef 规则一致），北交所单独识别。 */
+    private static String marketNameOf(String code, String mkt) {
+        if (code.startsWith("4") || code.startsWith("8")) {
+            return "北交所";
+        }
+        if (code.startsWith("6") || code.startsWith("9") || "1".equals(mkt)) {
+            return "沪市";
+        }
+        return "深市";
+    }
+
     /** 财务指标序列（东财 F10 数据中台）。 */
     public static List<FinancialIndicator> parseFinancialIndicators(JsonNode root) {
         JsonNode data = root.path("result").path("data");
-        if (data.isMissingNode() || data.isNull()) {
+        if (data.isMissingNode() || data.isNull() || !data.isArray()) {
             throw new MarketDataException("BAD_RESPONSE", "财务数据为空");
         }
         List<FinancialIndicator> list = new ArrayList<>();
@@ -253,7 +267,7 @@ public final class MarketDataParser {
             throw new MarketDataException("BAD_RESPONSE", "指数数据为空");
         }
         return new MarketOverview(
-                LocalDateTime.now().format(TIME_FMT), indices);
+                LocalDateTime.now(MARKET_ZONE).format(TIME_FMT), indices);
     }
 
     /** 新浪指数兜底：多行 var hq_str_s_sh000001="上证指数,3990.30,7.65,0.19,..."; */
@@ -270,12 +284,25 @@ public final class MarketDataParser {
             if (f.length < 4) {
                 continue;
             }
-            list.add(new IndexQuote("", f[0], numOrZero(f[1]), numOrZero(f[2]), numOrZero(f[3])));
+            list.add(new IndexQuote(
+                    extractIndexCode(line, start), f[0], numOrZero(f[1]), numOrZero(f[2]), numOrZero(f[3])));
         }
         if (list.isEmpty()) {
             throw new MarketDataException("BAD_RESPONSE", "新浪指数数据为空");
         }
-        return new MarketOverview(LocalDateTime.now().format(TIME_FMT), list);
+        return new MarketOverview(LocalDateTime.now(MARKET_ZONE).format(TIME_FMT), list);
+    }
+
+    /** 从 var hq_str_s_sh000001 提取指数代码 000001（去掉 sh/sz/bj 前缀）。 */
+    private static String extractIndexCode(String line, int firstQuote) {
+        int eq = line.indexOf('=');
+        if (eq <= 0) {
+            return "";
+        }
+        String varName = line.substring(0, eq).trim();
+        int underscore = varName.lastIndexOf('_');
+        String id = underscore >= 0 ? varName.substring(underscore + 1) : varName;
+        return id.length() > 2 ? id.substring(2) : id;
     }
 
     public static Financials buildFinancials(String code, String name, Double pe, Double pb, JsonNode root) {
@@ -283,7 +310,7 @@ public final class MarketDataParser {
     }
 
     private static double numOrZero(JsonNode n) {
-        return n == null ? 0 : n.asDouble();
+        return n.asDouble();
     }
 
     private static double numOrZero(String s) {
