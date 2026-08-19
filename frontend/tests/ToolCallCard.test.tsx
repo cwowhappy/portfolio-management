@@ -9,7 +9,7 @@ describe("ToolCallCard", () => {
         toolCallId="c1"
         toolName="get_quote"
         argsText='{"code":"600519"}'
-        status={{ type: "running" }}
+        status="inProgress"
       />,
     );
     expect(html).toContain("实时行情");
@@ -24,7 +24,7 @@ describe("ToolCallCard", () => {
         toolName="get_financials"
         argsText='{"code":"600519"}'
         result='{"pe":19.95}'
-        status={{ type: "complete" }}
+        status="complete"
       />,
     );
     expect(html).toContain("财务指标");
@@ -38,7 +38,8 @@ describe("ToolCallCard", () => {
         toolName="get_kline"
         argsText='{"code":"600519"}'
         isError
-        status={{ type: "incomplete", reason: "error" }}
+        status="complete"
+        result='{"error":"..."}'
       />,
     );
     expect(html).toContain("!");

@@ -36,8 +36,8 @@ export interface ToolCallCardProps {
   argsText: string;
   result?: unknown;
   isError?: boolean;
-  /** assistant-ui MessagePartState.status（含 running/complete/incomplete/requires-action） */
-  status?: { type: string; reason?: string };
+  /** AG-UI ToolCall.status（inProgress/executing/complete） */
+  status?: "inProgress" | "executing" | "complete";
 }
 
 /** 工具进度卡片：running 脉冲动画，展开折叠展示参数与结果。 */
@@ -49,11 +49,12 @@ export default function ToolCallCard({
   status,
 }: ToolCallCardProps) {
   const [open, setOpen] = useState(false);
-  const running = status?.type === "running" || status?.type === "requires-action";
-  const failed = isError || status?.type === "incomplete";
-  const summary = prettyArgs(argsText);
+  const running = status === "inProgress" || status === "executing";
   const resultText =
     typeof result === "string" ? result : result != null ? JSON.stringify(result) : null;
+  const failed =
+    isError || (status === "complete" && resultText != null && /error/i.test(resultText));
+  const summary = prettyArgs(argsText);
 
   return (
     <div
