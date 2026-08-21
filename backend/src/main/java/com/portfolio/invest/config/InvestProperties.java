@@ -9,6 +9,7 @@ public class InvestProperties {
 
     private Llm llm = new Llm();
     private Market market = new Market();
+    private Admin admin = new Admin();
 
     public Llm getLlm() {
         return llm;
@@ -24,6 +25,14 @@ public class InvestProperties {
 
     public void setMarket(Market market) {
         this.market = market;
+    }
+
+    public Admin getAdmin() {
+        return admin;
+    }
+
+    public void setAdmin(Admin admin) {
+        this.admin = admin;
     }
 
     public static class Llm {
@@ -186,5 +195,14 @@ public class InvestProperties {
         public void setOverviewTtl(Duration overviewTtl) {
             this.overviewTtl = overviewTtl;
         }
+    }
+
+    public static class Admin {
+        private String username = "";
+        private String password = "";
+        public String getUsername() { return username; }
+        public void setUsername(String username) { this.username = username; }
+        public String getPassword() { return password; }
+        public void setPassword(String password) { this.password = password; }
     }
 }

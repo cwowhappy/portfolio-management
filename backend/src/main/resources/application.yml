@@ -56,6 +56,9 @@ invest:
     provider: deepseek
     model: ${DEEPSEEK_MODEL:deepseek-v4-flash}
     base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+  admin:
+    username: ${ADMIN_USERNAME:}
+    password: ${ADMIN_PASSWORD:}
   market:
     connect-timeout: 3s
     read-timeout: 5s
