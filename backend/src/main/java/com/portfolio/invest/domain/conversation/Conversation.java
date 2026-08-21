@@ -26,6 +26,10 @@ public final class Conversation {
         return new Conversation(id, userId, DEFAULT_TITLE, now, now);
     }
 
+    public static Conversation reconstitute(String id, Long userId, String title, Instant createdAt, Instant updatedAt) {
+        return new Conversation(id, userId, title, createdAt, updatedAt);
+    }
+
     /** 标题仍为默认值且存在首条用户消息时，取前 24 字设为标题（幂等）。 */
     public Conversation renameIfDefault(String firstUserContent) {
         if (!DEFAULT_TITLE.equals(title) || firstUserContent == null) {
