@@ -48,7 +48,7 @@ class ConversationControllerIntegrationTest extends IntegrationTestBase {
         // A 保存消息 → 204，并生成标题
         mockMvc.perform(put("/api/conversations/{id}/messages", convA).session(sessionA)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("[{\"id\":\"m-1\",\"role\":\"user\",\"content\":\"你好\",\"createdAtMs\":1700000000000}]"))
+                        .content("[{\"id\":\"m-1\",\"role\":\"user\",\"content\":\"你好\",\"createdAt\":1700000000000}]"))
                 .andExpect(status().isNoContent());
 
         // A 读回消息
@@ -79,7 +79,7 @@ class ConversationControllerIntegrationTest extends IntegrationTestBase {
         // A 向 B 的会话保存消息 → 404
         mockMvc.perform(put("/api/conversations/{id}/messages", convB).session(sessionA)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("[{\"id\":\"m-x\",\"role\":\"user\",\"content\":\"越权\",\"createdAtMs\":1700000000000}]"))
+                        .content("[{\"id\":\"m-x\",\"role\":\"user\",\"content\":\"越权\",\"createdAt\":1700000000000}]"))
                 .andExpect(status().isNotFound());
 
         // A 删除 B 的会话 → 404
