@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import "./globals.css";
 import { Providers } from "./providers";
+import { AuthProvider } from "@/lib/auth";
+import { AuthNav } from "@/components/auth/AuthNav";
 
 export const metadata: Metadata = {
   title: "砚台 · A股投研助手",
@@ -13,6 +15,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="zh-CN">
       <body>
         <Providers>
+        <AuthProvider>
         <header className="fixed top-0 left-0 right-0 z-40 border-b border-[color:var(--color-line)] bg-[color:var(--color-bg)]/85 backdrop-blur-sm">
           <div className="mx-auto flex h-12 max-w-[1400px] items-center gap-6 px-5">
             <Link href="/" className="group flex items-center gap-2.5">
@@ -44,10 +47,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               >
                 一期 v0.1
               </a>
+              <span className="mx-1 h-4 w-px bg-[color:var(--color-line)]" aria-hidden="true" />
+              <AuthNav />
             </nav>
           </div>
         </header>
         <main className="h-dvh pt-12">{children}</main>
+        </AuthProvider>
         </Providers>
       </body>
     </html>

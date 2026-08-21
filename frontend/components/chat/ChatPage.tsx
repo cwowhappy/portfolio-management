@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { fetchHealth } from "@/lib/api";
+import { RequireAuth } from "@/components/auth/RequireAuth";
 import Sidebar from "./Sidebar";
 import { RuntimeProvider } from "./RuntimeProvider";
 import ThreadArea from "./ThreadArea";
@@ -39,8 +40,10 @@ function ChatShell() {
 
 export default function ChatPage() {
   return (
-    <RuntimeProvider>
-      <ChatShell />
-    </RuntimeProvider>
+    <RequireAuth>
+      <RuntimeProvider>
+        <ChatShell />
+      </RuntimeProvider>
+    </RequireAuth>
   );
 }
