@@ -1,0 +1,64 @@
+package com.portfolio.invest.application.auth;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import com.portfolio.invest.domain.user.User;
+import com.portfolio.invest.domain.user.UserException;
+import com.portfolio.invest.domain.user.UserRepository;
+import com.portfolio.invest.domain.user.UserStatus;
+import java.util.Optional;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.security.crypto.password.PasswordEncoder;
+
+class AuthApplicationServiceTest {
+
+    private final UserRepository repo = mock(UserRepository.class);
+    private final PasswordEncoder encoder = mock(PasswordEncoder.class);
+    private AuthApplicationService service;
+
+    @BeforeEach
+    void setUp() {
+        service = new AuthApplicationService(repo, encoder);
+    }
+
+    @Test
+    void 注册创建PENDING用户并哈希密码() {
+        when(encoder.encode("abc12345")).thenReturn("$2a$hash");
+        when(repo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        UserView v = service.register(new RegisterCommand("alice", "abc12345"));
+        assertThat(v.username()).isEqualTo("alice");
+        assertThat(v.status()).isEqualTo(UserStatus.PENDING);
+        verify(encoder).encode("abc12345");
+    }
+
+    @Test
+    void 弱密码被拒() {
+        assertThatThrownBy(() -> service.register(new RegisterCommand("alice", "short1")))
+                .isInstanceOf(UserException.class).hasMessageContaining("至少8位");
+    }
+
+    @Test
+    void 用户名已存在且非REJECTED被拒() {
+        when(repo.findByUsername("alice")).thenReturn(Optional.of(User.register("alice", "h").approve()));
+        assertThatThrownBy(() -> service.register(new RegisterCommand("alice", "abc12345")))
+                .isInstanceOf(UserException.class).hasMessageContaining("用户名已存在");
+    }
+
+    @Test
+    void 被拒用户同名重新注册复用行() {
+        User rejected = User.register("alice", "h").reject();
+        when(repo.findByUsername("alice")).thenReturn(Optional.of(rejected));
+        when(encoder.encode("abc12345")).thenReturn("$2a$hash");
+        when(repo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        UserView v = service.register(new RegisterCommand("alice", "abc12345"));
+        assertThat(v.status()).isEqualTo(UserStatus.PENDING);
+        verify(repo).save(argThat(u -> u.passwordHash().equals("$2a$hash")));
+    }
+}

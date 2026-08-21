@@ -52,7 +52,10 @@ class PackageConventionsTest {
 
     @ArchTest
     static final ArchRule webOnlyAccessWhitelistedPackages =
-            onlyAccess(WEB, WEB, APPLICATION, AGENT, DOMAIN, CONFIG);
+            // 额外放行 infrastructure.security：AuthController 需访问 AuthenticatedUser（安全主体）
+            // 以在登录成功后读取领域 User 做状态分流（ACCOUNT_PENDING/REJECTED/DISABLED）。
+            onlyAccess(WEB, WEB, APPLICATION, AGENT, DOMAIN, CONFIG,
+                    ROOT + ".infrastructure.security..");
 
     @ArchTest
     static final ArchRule applicationOnlyAccessWhitelistedPackages =
