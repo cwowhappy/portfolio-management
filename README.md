@@ -5,7 +5,9 @@
 架构设计：[docs/plans/2026-08-18-投资分析AI-Agent一期设计.md](docs/plans/2026-08-18-投资分析AI-Agent一期设计.md) ·
 决策记录：[docs/adr/](docs/adr/) ·
 实施计划：[docs/plans/2026-08-18-一期实施计划.md](docs/plans/2026-08-18-一期实施计划.md) ·
-后端分包规范：[docs/backend-package-conventions.md](docs/backend-package-conventions.md)（ArchUnit 强制）
+后端分包规范：[docs/backend-package-conventions.md](docs/backend-package-conventions.md)（ArchUnit 强制）·
+产品功能：[docs/function/](docs/function/) ·
+技术文档：[docs/technology/](docs/technology/)
 
 ## 能力一览（一期）
 
@@ -65,7 +67,7 @@ Playwright e2e 位于 `frontend/e2e/`，配置见 `frontend/playwright.config.ts
 ```
 backend/    Spring Boot 4 + AgentScope Java（agent 工具 / market 数据服务 / web 层）
 frontend/   Next.js 15（聊天 UI / 行情台 / API 反代）
-docs/       设计文档、ADR、AgentScope 官方资料
+docs/       function/（产品功能）· technology/（技术文档）· 设计文档、ADR、AgentScope 资料
 scripts/    smoke.sh 冒烟脚本
 ```
 
