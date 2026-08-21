@@ -5,6 +5,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.portfolio.invest.domain.market.MarketDataException;
+import com.portfolio.invest.domain.user.UserException;
 import io.agentscope.core.agui.AguiException;
 import org.apache.catalina.connector.ClientAbortException;
 import org.junit.jupiter.api.BeforeEach;
@@ -40,6 +41,14 @@ class GlobalExceptionHandlerTest {
         ResponseEntity<ApiError> res = assertStatus(
                 new MarketDataException("UPSTREAM_UNAVAILABLE", "上游挂了"), HttpStatus.BAD_GATEWAY);
         assertThat(res.getBody()).isEqualTo(new ApiError("UPSTREAM_UNAVAILABLE", "上游挂了"));
+    }
+
+    @Test
+    void 用户异常FORBIDDEN映射403() {
+        ResponseEntity<ApiError> res = handler.user(
+                new UserException("FORBIDDEN", "不能对管理员账号执行此操作"));
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(res.getBody()).isEqualTo(new ApiError("FORBIDDEN", "不能对管理员账号执行此操作"));
     }
 
     @Test

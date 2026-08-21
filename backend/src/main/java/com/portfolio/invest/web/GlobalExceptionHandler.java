@@ -31,6 +31,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> user(com.portfolio.invest.domain.user.UserException e) {
         HttpStatus status = switch (e.getCode()) {
             case "USERNAME_TAKEN", "INVALID_USERNAME", "WEAK_PASSWORD" -> HttpStatus.BAD_REQUEST;
+            case "FORBIDDEN" -> HttpStatus.FORBIDDEN;
             default -> HttpStatus.BAD_REQUEST;
         };
         return ResponseEntity.status(status).body(new ApiError(e.getCode(), e.getMessage()));
