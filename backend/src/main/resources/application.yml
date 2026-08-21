@@ -1,9 +1,25 @@
 spring:
   application:
     name: invest-agent
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/invest}
+    username: ${POSTGRES_USER:invest}
+    password: ${POSTGRES_PASSWORD:invest}
+  jpa:
+    hibernate:
+      ddl-auto: none        # 由 Flyway 管 schema
+    open-in-view: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
 
 server:
   port: ${PORT:8080}
+  servlet:
+    session:
+      cookie:
+        http-only: true
+        same-site: lax      # 同源反代 + Lax → 关 CSRF 的安全前提（ADR-0007）
 
 logging:
   level:
