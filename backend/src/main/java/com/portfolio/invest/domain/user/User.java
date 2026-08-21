@@ -31,6 +31,12 @@ public final class User {
                 UserStatus.PENDING, true, Instant.now(), Instant.now());
     }
 
+    /** 从持久化还原：不做状态校验（语义不同于 register 的业务注册）。 */
+    public static User reconstitute(Long id, String username, String passwordHash, UserRole role,
+                                    UserStatus status, boolean enabled, Instant createdAt, Instant updatedAt) {
+        return new User(id, username, passwordHash, role, status, enabled, createdAt, updatedAt);
+    }
+
     /** 被拒用户重新注册：复用同一行，换密码、恢复 PENDING。 */
     public User reRegister(String passwordHash) {
         requireStatus(UserStatus.REJECTED, "状态非拒绝，仅被拒绝用户可重新注册");
