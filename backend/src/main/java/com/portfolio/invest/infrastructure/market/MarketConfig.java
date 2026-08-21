@@ -7,7 +7,7 @@ import org.springframework.context.annotation.Configuration;
 
 /**
  * 行情能力域的共享基础设施装配：单个 JDK HttpClient（三客户端共用连接池/selector 线程）与单个 RateLimiter。
- * 位于 market 包（bean 装配属于本域，见 docs/backend-package-conventions.md）。
+ * 位于 infrastructure.market 包（bean 装配属于本域，见 docs/backend-package-conventions.md）。
  */
 @Configuration
 public class MarketConfig {

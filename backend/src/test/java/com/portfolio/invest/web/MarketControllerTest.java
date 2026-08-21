@@ -10,7 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.portfolio.invest.domain.market.MarketDataException;
 import com.portfolio.invest.domain.market.Quote;
-import com.portfolio.invest.market.MarketDataService;
+import com.portfolio.invest.application.market.MarketDataService;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

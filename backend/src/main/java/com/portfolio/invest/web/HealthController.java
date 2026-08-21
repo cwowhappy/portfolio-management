@@ -2,7 +2,7 @@ package com.portfolio.invest.web;
 
 import com.portfolio.invest.config.InvestProperties;
 import com.portfolio.invest.domain.market.MarketDataException;
-import com.portfolio.invest.market.MarketDataService;
+import com.portfolio.invest.application.market.MarketDataService;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.springframework.core.env.Environment;

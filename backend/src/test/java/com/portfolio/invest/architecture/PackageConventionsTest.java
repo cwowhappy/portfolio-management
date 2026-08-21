@@ -43,17 +43,16 @@ class PackageConventionsTest {
     private static final String INFRASTRUCTURE = ROOT + ".infrastructure..";
     private static final String AGENT = ROOT + ".agent..";
     private static final String CONFIG = ROOT + ".config..";
-    private static final String MARKET = ROOT + ".market.."; // TRANSITIONAL: P1 迁移期间仍存在
 
     @ArchTest
     static final ArchRule rootPackageOnlyBootApplication =
             classes().that().resideInAPackage(ROOT)
-                    .and().resideOutsideOfPackages(WEB, APPLICATION, DOMAIN, INFRASTRUCTURE, AGENT, CONFIG, MARKET)
+                    .and().resideOutsideOfPackages(WEB, APPLICATION, DOMAIN, INFRASTRUCTURE, AGENT, CONFIG)
                     .should().beAnnotatedWith(SpringBootApplication.class);
 
     @ArchTest
     static final ArchRule webOnlyAccessWhitelistedPackages =
-            onlyAccess(WEB, WEB, APPLICATION, AGENT, DOMAIN, CONFIG, MARKET); // TRANSITIONAL: MARKET
+            onlyAccess(WEB, WEB, APPLICATION, AGENT, DOMAIN, CONFIG);
 
     @ArchTest
     static final ArchRule applicationOnlyAccessWhitelistedPackages =
@@ -67,11 +66,11 @@ class PackageConventionsTest {
 
     @ArchTest
     static final ArchRule infrastructureOnlyAccessWhitelistedPackages =
-            onlyAccess(INFRASTRUCTURE, INFRASTRUCTURE, DOMAIN, APPLICATION, CONFIG, MARKET).allowEmptyShould(true); // TRANSITIONAL: MARKET
+            onlyAccess(INFRASTRUCTURE, INFRASTRUCTURE, DOMAIN, APPLICATION, CONFIG).allowEmptyShould(true);
 
     @ArchTest
     static final ArchRule agentOnlyAccessWhitelistedPackages =
-            onlyAccess(AGENT, AGENT, APPLICATION, DOMAIN, CONFIG, MARKET); // TRANSITIONAL: MARKET
+            onlyAccess(AGENT, AGENT, APPLICATION, DOMAIN, CONFIG);
 
     @ArchTest
     static final ArchRule configOnlyAccessItself =
@@ -79,7 +78,7 @@ class PackageConventionsTest {
 
     @ArchTest
     static final ArchRule noPackageMayDependOnWeb =
-            classes().that().resideInAPackage(ROOT)
+            classes().that().resideInAPackage(ROOT + "..")
                     .and().resideOutsideOfPackage(WEB)
                     .should().onlyDependOnClassesThat().resideOutsideOfPackage(WEB);
 

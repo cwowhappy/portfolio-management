@@ -6,7 +6,7 @@ import com.portfolio.invest.domain.market.MarketOverview;
 import com.portfolio.invest.domain.market.NewsItem;
 import com.portfolio.invest.domain.market.Quote;
 import com.portfolio.invest.domain.market.StockHit;
-import com.portfolio.invest.market.MarketDataService;
+import com.portfolio.invest.application.market.MarketDataService;
 import java.util.List;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
