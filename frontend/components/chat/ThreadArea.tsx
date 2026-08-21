@@ -17,7 +17,7 @@ import {
   historyToAgentMessages,
   useChatRuntime,
 } from "./RuntimeProvider";
-import { loadMessages, newThreadId } from "@/lib/sessions";
+import { loadMessages, newThreadId } from "@/lib/conversations";
 import ToolCallCard from "./ToolCallCard";
 import { CodeBlock, InlineCode } from "./CodeHighlight";
 
@@ -321,19 +321,40 @@ export default function ThreadArea({ llmReady }: { llmReady: boolean | null }) {
     [agent, copilotkit, isReady],
   );
 
-  // 历史回灌：真实 agent 就绪后，把本地历史种回去（后端 server-side-memory=false）
+  // 历史回灌：真实 agent 就绪后，把服务端历史种回去（后端 server-side-memory=false）
   useEffect(() => {
     if (!isReady) return;
-    if (agent.isRunning) agent.abortRun(); // 切换线程时停止旧流，避免跨线程串写
-    agent.setMessages(historyToAgentMessages(loadMessages(currentThreadId)));
+    let cancelled = false;
+    (async () => {
+      try {
+        const history = await loadMessages(currentThreadId);
+        if (cancelled) return;
+        if (agent.isRunning) agent.abortRun(); // 切换线程时停止旧流，避免跨线程串写
+        agent.setMessages(historyToAgentMessages(history));
+      } catch (e) {
+        if (!cancelled) console.error("[ThreadArea] 加载会话历史失败", currentThreadId, e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [agent, isReady, currentThreadId]);
 
-  // 消息变化 → 防抖持久化（流式期间高频触发，避免每个 token 都整段重写 localStorage）
+  // 消息变化 → 防抖持久化（流式期间高频触发，避免每个 token 都整段重写；400ms 后先拉取现有历史再整体 PUT）
   useEffect(() => {
     if (persistTimer.current) clearTimeout(persistTimer.current);
     persistTimer.current = setTimeout(() => {
-      const saved = agentMessagesToHistory(agent.messages ?? [], loadMessages(currentThreadId));
-      if (saved.length > 0) persistMessages(currentThreadId, saved);
+      (async () => {
+        try {
+          const saved = agentMessagesToHistory(
+            agent.messages ?? [],
+            await loadMessages(currentThreadId),
+          );
+          if (saved.length > 0) await persistMessages(currentThreadId, saved);
+        } catch (e) {
+          console.error("[ThreadArea] 持久化会话失败", currentThreadId, e);
+        }
+      })();
     }, 400);
     return () => {
       if (persistTimer.current) clearTimeout(persistTimer.current);

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Message } from "@ag-ui/client";
 import ThreadArea from "@/components/chat/ThreadArea";
 import { RuntimeProvider } from "@/components/chat/RuntimeProvider";
+import { installConversationsApi } from "@/tests/mockConversationsApi";
 
 // ———— CopilotKit hooks mock ————
 
@@ -44,8 +45,11 @@ function renderThread(llmReady: boolean | null = null) {
 
 const composerPlaceholder = "问行情、看走势、读财报… 例如：帮我看看贵州茅台最近的走势和估值";
 
+let api: ReturnType<typeof installConversationsApi>;
+
 beforeEach(() => {
   localStorage.clear();
+  api = installConversationsApi();
   mocks.agent.messages = [];
   mocks.agent.isRunning = false;
   mocks.isReady = true;
@@ -58,7 +62,10 @@ beforeEach(() => {
   mocks.defaultToolRender = null;
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 describe("ThreadArea", () => {
   it("空会话渲染空状态与示例问题", async () => {
@@ -153,39 +160,35 @@ describe("ThreadArea", () => {
     await waitFor(() => expect(container.querySelector(".animate-rise")).toBeNull());
   });
 
-  it("Agent 就绪后回灌本地历史", async () => {
-    localStorage.setItem(
-      "invest.messages.t1",
-      JSON.stringify([{ id: "m1", role: "user", content: "历史问题", createdAt: 1 }]),
-    );
-    localStorage.setItem(
-      "invest.sessions",
-      JSON.stringify([{ id: "t1", title: "历史", updatedAt: 2 }]),
-    );
+  it("Agent 就绪后回灌服务端历史", async () => {
+    api = installConversationsApi({
+      list: [{ id: "t1", title: "历史", updatedAt: 2 }],
+      messages: { t1: [{ id: "m1", role: "user", content: "历史问题", createdAt: 1 }] },
+    });
     renderThread();
     await waitFor(() => expect(mocks.agent.setMessages).toHaveBeenCalled());
     const arg = mocks.agent.setMessages.mock.calls[0][0] as Message[];
     expect(arg).toEqual([{ id: "m1", role: "user", content: "历史问题" }]);
   });
 
-  it("消息变化后持久化到 localStorage", async () => {
-    localStorage.setItem(
-      "invest.sessions",
-      JSON.stringify([{ id: "t1", title: "会话", updatedAt: 2 }]),
-    );
+  it("消息变化后持久化到服务端", async () => {
+    api = installConversationsApi({
+      list: [{ id: "t1", title: "会话", updatedAt: 2 }],
+    });
     mocks.agent.messages = [agentMessage({ id: "u1", role: "user", content: "新消息" })];
     renderThread();
     await waitFor(() => {
-      const saved = localStorage.getItem("invest.messages.t1");
-      expect(saved).toContain("新消息");
+      expect(api.state.messages.get("t1")).toContainEqual(
+        expect.objectContaining({ id: "u1", role: "user", content: "新消息" }),
+      );
     });
   });
 
-  it("无消息时不写入 localStorage", async () => {
+  it("无消息时不调用持久化接口", async () => {
     renderThread();
     await waitFor(() => expect(mocks.agent.setMessages).toHaveBeenCalled());
-    const keys = Object.keys(localStorage);
-    expect(keys.some((k) => k.startsWith("invest.messages."))).toBe(false);
+    const putCalls = api.fetchMock.mock.calls.filter(([, init]) => init?.method === "PUT");
+    expect(putCalls).toHaveLength(0);
   });
 
   it("默认工具渲染器渲染 ToolCallCard", async () => {

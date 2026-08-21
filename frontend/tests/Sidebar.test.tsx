@@ -1,9 +1,13 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Sidebar from "@/components/chat/Sidebar";
 import { RuntimeProvider } from "@/components/chat/RuntimeProvider";
+import { installConversationsApi } from "@/tests/mockConversationsApi";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 beforeEach(() => {
   localStorage.clear();
@@ -24,21 +28,26 @@ function renderSidebar(health: { llmKey: boolean; marketOk: boolean } | null) {
 }
 
 describe("Sidebar", () => {
-  it("无会话时显示空状态", async () => {
+  it("后端不可达时显示空状态", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("network down");
+      }),
+    );
     renderSidebar(null);
     await waitFor(() => expect(screen.getByText(/还没有会话/)).toBeTruthy());
   });
 
   it("时间标签覆盖 刚刚/分钟/小时/天 四个分支", async () => {
-    localStorage.setItem(
-      "invest.sessions",
-      JSON.stringify([
+    installConversationsApi({
+      list: [
         session("t1", "会话一", now - 1_000),
         session("t2", "会话二", now - 5 * 60_000),
         session("t3", "会话三", now - 3 * 3_600_000),
         session("t4", "会话四", now - 2 * 86_400_000),
-      ]),
-    );
+      ],
+    });
     renderSidebar(null);
     await waitFor(() => expect(screen.getByText("会话一")).toBeTruthy());
     expect(screen.getByText("刚刚")).toBeTruthy();
@@ -48,13 +57,12 @@ describe("Sidebar", () => {
   });
 
   it("当前会话高亮，点击其他会话切换", async () => {
-    localStorage.setItem(
-      "invest.sessions",
-      JSON.stringify([
+    installConversationsApi({
+      list: [
         session("t1", "会话一", now - 1_000),
         session("t2", "会话二", now - 2_000),
-      ]),
-    );
+      ],
+    });
     renderSidebar(null);
     await waitFor(() => expect(screen.getByText("会话一")).toBeTruthy());
 
@@ -72,10 +80,9 @@ describe("Sidebar", () => {
   });
 
   it("点击新对话按钮生成新线程", async () => {
-    localStorage.setItem(
-      "invest.sessions",
-      JSON.stringify([session("t1", "会话一", now - 1_000)]),
-    );
+    installConversationsApi({
+      list: [session("t1", "会话一", now - 1_000)],
+    });
     renderSidebar(null);
     await waitFor(() => expect(screen.getByText("会话一")).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "＋ 新对话" }));
@@ -85,13 +92,12 @@ describe("Sidebar", () => {
   });
 
   it("点击删除按钮移除会话", async () => {
-    localStorage.setItem(
-      "invest.sessions",
-      JSON.stringify([
+    installConversationsApi({
+      list: [
         session("t1", "会话一", now - 1_000),
         session("t2", "会话二", now - 2_000),
-      ]),
-    );
+      ],
+    });
     renderSidebar(null);
     await waitFor(() => expect(screen.getByText("会话一")).toBeTruthy());
     const del = screen.getAllByRole("button", { name: "删除会话" })[0];

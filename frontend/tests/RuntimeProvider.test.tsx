@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Message } from "@ag-ui/client";
 import {
   AGENT_ID,
@@ -9,8 +9,12 @@ import {
   useChatRuntime,
 } from "@/components/chat/RuntimeProvider";
 import type { ChatMessage } from "@/lib/types";
+import { installConversationsApi } from "@/tests/mockConversationsApi";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 beforeEach(() => {
   localStorage.clear();
@@ -65,12 +69,18 @@ function Probe() {
     <div>
       <span data-testid="thread">{ctx.currentThreadId}</span>
       <span data-testid="count">{ctx.sessions.length}</span>
-      <button data-testid="new" onClick={ctx.newThread}>新</button>
-      <button data-testid="switch" onClick={() => ctx.switchThread("t2")}>切</button>
-      <button data-testid="del" onClick={() => ctx.deleteThread("t1")}>删</button>
+      <button data-testid="new" onClick={() => void ctx.newThread()}>
+        新
+      </button>
+      <button data-testid="switch" onClick={() => ctx.switchThread("t2")}>
+        切
+      </button>
+      <button data-testid="del" onClick={() => void ctx.deleteThread("t1")}>
+        删
+      </button>
       <button
         data-testid="persist"
-        onClick={() => ctx.persistMessages("t1", [msg("user", "你好")])}
+        onClick={() => void ctx.persistMessages("t1", [msg("user", "你好")])}
       >
         存
       </button>
@@ -79,14 +89,13 @@ function Probe() {
 }
 
 describe("RuntimeProvider", () => {
-  it("就绪前不渲染子内容，挂载后从 localStorage 恢复会话", async () => {
-    localStorage.setItem(
-      "invest.sessions",
-      JSON.stringify([
+  it("就绪前不渲染子内容，挂载后从服务端恢复会话", async () => {
+    installConversationsApi({
+      list: [
         { id: "t1", title: "会话一", updatedAt: 200 },
         { id: "t2", title: "会话二", updatedAt: 100 },
-      ]),
-    );
+      ],
+    });
     render(
       <RuntimeProvider>
         <Probe />
@@ -96,25 +105,26 @@ describe("RuntimeProvider", () => {
     expect(screen.getByTestId("count").textContent).toBe("2");
   });
 
-  it("无历史会话时生成新 threadId", async () => {
+  it("服务端无会话时创建首个会话", async () => {
+    const api = installConversationsApi();
     render(
       <RuntimeProvider>
         <Probe />
       </RuntimeProvider>,
     );
-    await waitFor(() =>
-      expect(screen.getByTestId("thread").textContent).not.toBe(""),
-    );
+    await waitFor(() => expect(screen.getByTestId("thread").textContent).not.toBe(""));
+    expect(api.state.list).toHaveLength(1);
+    expect(api.state.list[0].id).toBe(screen.getByTestId("thread").textContent);
+    expect(screen.getByTestId("count").textContent).toBe("1");
   });
 
   it("新对话 / 切换会话", async () => {
-    localStorage.setItem(
-      "invest.sessions",
-      JSON.stringify([
+    installConversationsApi({
+      list: [
         { id: "t1", title: "一", updatedAt: 200 },
         { id: "t2", title: "二", updatedAt: 100 },
-      ]),
-    );
+      ],
+    });
     render(
       <RuntimeProvider>
         <Probe />
@@ -124,16 +134,17 @@ describe("RuntimeProvider", () => {
     fireEvent.click(screen.getByTestId("switch"));
     expect(screen.getByTestId("thread").textContent).toBe("t2");
     fireEvent.click(screen.getByTestId("new"));
-    const id = screen.getByTestId("thread").textContent;
-    expect(id).not.toBe("t2");
-    expect(id).not.toBe("");
+    await waitFor(() => {
+      const id = screen.getByTestId("thread").textContent;
+      expect(id).not.toBe("t2");
+      expect(id).not.toBe("");
+    });
   });
 
-  it("删除当前会话后自动切换到新线程", async () => {
-    localStorage.setItem(
-      "invest.sessions",
-      JSON.stringify([{ id: "t1", title: "一", updatedAt: 200 }]),
-    );
+  it("删除当前会话后自动创建并切换到新线程", async () => {
+    const api = installConversationsApi({
+      list: [{ id: "t1", title: "一", updatedAt: 200 }],
+    });
     render(
       <RuntimeProvider>
         <Probe />
@@ -142,19 +153,19 @@ describe("RuntimeProvider", () => {
     await waitFor(() => expect(screen.getByTestId("thread").textContent).toBe("t1"));
     fireEvent.click(screen.getByTestId("del"));
     await waitFor(() => {
-      expect(screen.getByTestId("count").textContent).toBe("0");
       expect(screen.getByTestId("thread").textContent).not.toBe("t1");
     });
+    expect(api.state.list).toHaveLength(1);
+    expect(api.state.list[0].id).toBe(screen.getByTestId("thread").textContent);
   });
 
   it("删除非当前会话时保持当前线程", async () => {
-    localStorage.setItem(
-      "invest.sessions",
-      JSON.stringify([
+    installConversationsApi({
+      list: [
         { id: "t1", title: "一", updatedAt: 200 },
         { id: "t2", title: "二", updatedAt: 100 },
-      ]),
-    );
+      ],
+    });
     render(
       <RuntimeProvider>
         <Probe />
@@ -164,11 +175,12 @@ describe("RuntimeProvider", () => {
     fireEvent.click(screen.getByTestId("switch"));
     await waitFor(() => expect(screen.getByTestId("thread").textContent).toBe("t2"));
     fireEvent.click(screen.getByTestId("del")); // 删除 t1（非当前）
+    await waitFor(() => expect(screen.getByTestId("count").textContent).toBe("1"));
     expect(screen.getByTestId("thread").textContent).toBe("t2");
-    expect(screen.getByTestId("count").textContent).toBe("1");
   });
 
-  it("持久化消息并刷新会话列表", async () => {
+  it("持久化消息到服务端并刷新会话列表", async () => {
+    const api = installConversationsApi();
     render(
       <RuntimeProvider>
         <Probe />
@@ -176,8 +188,32 @@ describe("RuntimeProvider", () => {
     );
     await waitFor(() => expect(screen.getByTestId("thread").textContent).not.toBe(""));
     fireEvent.click(screen.getByTestId("persist"));
-    await waitFor(() => expect(screen.getByTestId("count").textContent).toBe("1"));
-    expect(localStorage.getItem("invest.messages.t1")).toContain("你好");
+    await waitFor(() => {
+      expect(api.state.messages.get("t1")).toContainEqual({
+        id: "m1",
+        role: "user",
+        content: "你好",
+        createdAt: 1_700_000_000_000,
+      });
+    });
+    // PUT 后触发 refresh → 重新 GET 会话列表
+    expect(api.fetchMock.mock.calls.some(([, init]) => init?.method === "PUT")).toBe(true);
+  });
+
+  it("初始化失败时回退为空线程（不白屏）", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("network down");
+      }),
+    );
+    render(
+      <RuntimeProvider>
+        <Probe />
+      </RuntimeProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId("thread").textContent).not.toBe(""));
+    expect(screen.getByTestId("count").textContent).toBe("0");
   });
 
   it("Provider 外使用 useChatRuntime 抛错", () => {

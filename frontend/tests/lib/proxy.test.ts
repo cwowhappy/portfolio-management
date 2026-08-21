@@ -1,5 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { inboundCookie, relay } from "@/lib/proxy";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 function upstream(opts: {
   status?: number;
@@ -55,5 +59,36 @@ describe("反代中继（lib/proxy）", () => {
   it("inboundCookie：有 Cookie 头时原样透传", () => {
     const headers = new Headers({ Cookie: "JSESSIONID=abc" });
     expect(inboundCookie({ headers })).toEqual({ Cookie: "JSESSIONID=abc" });
+  });
+
+  it("path 形式：透传入站 Cookie 并转发到上游", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response('{"ok":true}', {
+        status: 200,
+        headers: { "Content-Type": "application/json", "set-cookie": "JSESSIONID=abc; Path=/" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+    const req = { headers: new Headers({ Cookie: "JSESSIONID=abc" }) } as unknown as Request;
+    const res = await relay("/api/conversations", "GET", req);
+    expect(res.status).toBe(200);
+    await expect(res.text()).resolves.toBe('{"ok":true}');
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://localhost:8080/api/conversations");
+    const headers = init.headers as Record<string, string>;
+    expect(headers.Cookie).toBe("JSESSIONID=abc");
+    expect(headers["Content-Type"]).toBeUndefined();
+  });
+
+  it("path 形式：body 存在时补 Content-Type 并透传", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchSpy);
+    const req = { headers: new Headers() } as unknown as Request;
+    await relay("/api/conversations", "POST", req, '{"id":"x"}');
+    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(init.method).toBe("POST");
+    expect(init.body).toBe('{"id":"x"}');
+    const headers = init.headers as Record<string, string>;
+    expect(headers["Content-Type"]).toContain("application/json");
   });
 });

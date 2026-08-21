@@ -1,11 +1,42 @@
 // 同源反代中继：把上游响应原样带回浏览器。
 // 关键点：透传状态码、Content-Type，以及所有 Set-Cookie（登录/登出可能同时下发
 // JSESSIONID 与 remember-me 等多个 cookie，必须逐个 append，不能用 set 覆盖）。
-// 供 /api/auth/**（以及后续 /api/admin/**）反代路由复用。
+//
+// 提供两种调用方式：
+// 1. relay(upstream: Response) —— 调用方自行 fetch 上游后中继（/api/auth/**、/api/admin/**）。
+// 2. relay(path, method, req, body?) —— 内部 fetch 上游并透传入站 Cookie（/api/conversations/**）。
+//    透传入站 Cookie 保证后端会话识别；body 存在时补 Content-Type: application/json。
 
 export const BACKEND = process.env.BACKEND_URL ?? "http://localhost:8080";
 
-export async function relay(upstream: Response): Promise<Response> {
+export async function relay(upstream: Response): Promise<Response>;
+export async function relay(
+  path: string,
+  method: string,
+  req: Request,
+  body?: BodyInit,
+): Promise<Response>;
+export async function relay(
+  a: Response | string,
+  b?: string,
+  req?: Request,
+  body?: BodyInit,
+): Promise<Response> {
+  let upstream: Response;
+  if (typeof a === "string") {
+    const cookie = req?.headers.get("cookie") ?? "";
+    upstream = await fetch(BACKEND + a, {
+      method: b ?? "GET",
+      headers: {
+        ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+        ...(cookie ? { Cookie: cookie } : {}),
+      },
+      body,
+      cache: "no-store",
+    });
+  } else {
+    upstream = a;
+  }
   const text = await upstream.text();
   const headers = new Headers();
   headers.set(
@@ -22,7 +53,10 @@ export async function relay(upstream: Response): Promise<Response> {
   for (const sc of cookies) {
     headers.append("Set-Cookie", sc);
   }
-  return new Response(text, { status: upstream.status, headers });
+  // 204/205/304 等状态不允许携带响应体（否则 Response 构造抛错），需置空 body
+  const status = upstream.status;
+  const responseBody = status === 204 || status === 205 || status === 304 ? null : text;
+  return new Response(responseBody, { status, headers });
 }
 
 /** 读取入站 Cookie 头，透传为上游请求的 Cookie（保留会话/remember-me）。 */
