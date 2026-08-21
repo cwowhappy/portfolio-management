@@ -2,10 +2,10 @@ package com.portfolio.invest.agent;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.portfolio.invest.domain.market.FinancialIndicator;
+import com.portfolio.invest.domain.market.Financials;
+import com.portfolio.invest.domain.market.MarketDataException;
 import com.portfolio.invest.market.MarketDataService;
-import com.portfolio.invest.market.MarketDataException;
-import com.portfolio.invest.market.dto.FinancialIndicator;
-import com.portfolio.invest.market.dto.Financials;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import java.util.ArrayList;

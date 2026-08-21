@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import com.portfolio.invest.market.MarketDataException;
+import com.portfolio.invest.domain.market.MarketDataException;
 import io.agentscope.core.agui.AguiException;
 import org.apache.catalina.connector.ClientAbortException;
 import org.junit.jupiter.api.BeforeEach;

@@ -1,4 +1,4 @@
-package com.portfolio.invest.market;
+package com.portfolio.invest.domain.market;
 
 /** 股票代码规范化结果：code=6位代码, market=东财市场号(1沪/0深), secid, sina前缀, secuCode。 */
 public record StockRef(String code, String market, String secid, String sinaPrefix, String secuCode) {

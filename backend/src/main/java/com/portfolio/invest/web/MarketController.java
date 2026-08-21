@@ -1,12 +1,12 @@
 package com.portfolio.invest.web;
 
+import com.portfolio.invest.domain.market.Financials;
+import com.portfolio.invest.domain.market.KlineBar;
+import com.portfolio.invest.domain.market.MarketOverview;
+import com.portfolio.invest.domain.market.NewsItem;
+import com.portfolio.invest.domain.market.Quote;
+import com.portfolio.invest.domain.market.StockHit;
 import com.portfolio.invest.market.MarketDataService;
-import com.portfolio.invest.market.dto.Financials;
-import com.portfolio.invest.market.dto.KlineBar;
-import com.portfolio.invest.market.dto.MarketOverview;
-import com.portfolio.invest.market.dto.NewsItem;
-import com.portfolio.invest.market.dto.Quote;
-import com.portfolio.invest.market.dto.StockHit;
 import java.util.List;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;

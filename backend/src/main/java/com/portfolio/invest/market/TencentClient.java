@@ -3,6 +3,7 @@ package com.portfolio.invest.market;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.portfolio.invest.config.InvestProperties;
+import com.portfolio.invest.domain.market.MarketDataException;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;

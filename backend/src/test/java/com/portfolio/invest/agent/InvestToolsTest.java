@@ -4,15 +4,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import com.portfolio.invest.market.MarketDataException;
+import com.portfolio.invest.domain.market.FinancialIndicator;
+import com.portfolio.invest.domain.market.Financials;
+import com.portfolio.invest.domain.market.KlineBar;
+import com.portfolio.invest.domain.market.MarketDataException;
+import com.portfolio.invest.domain.market.MarketOverview;
+import com.portfolio.invest.domain.market.NewsItem;
+import com.portfolio.invest.domain.market.Quote;
+import com.portfolio.invest.domain.market.StockHit;
 import com.portfolio.invest.market.MarketDataService;
-import com.portfolio.invest.market.dto.FinancialIndicator;
-import com.portfolio.invest.market.dto.Financials;
-import com.portfolio.invest.market.dto.KlineBar;
-import com.portfolio.invest.market.dto.MarketOverview;
-import com.portfolio.invest.market.dto.NewsItem;
-import com.portfolio.invest.market.dto.Quote;
-import com.portfolio.invest.market.dto.StockHit;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -102,7 +102,7 @@ class InvestToolsTest {
 
     @Test
     void getMarketOverview序列化指数() {
-        var idx = new com.portfolio.invest.market.dto.IndexQuote("sh000001", "上证指数", 3000.1, 10.2, 0.34);
+        var idx = new com.portfolio.invest.domain.market.IndexQuote("sh000001", "上证指数", 3000.1, 10.2, 0.34);
         when(market.overview()).thenReturn(new MarketOverview("2026-08-18 15:00", List.of(idx)));
         String json = tools.getMarketOverview();
         assertThat(json).contains("上证指数").contains("3000.1");

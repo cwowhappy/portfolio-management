@@ -5,8 +5,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.portfolio.invest.market.dto.Quote;
-import com.portfolio.invest.market.dto.StockHit;
+import com.portfolio.invest.domain.market.MarketDataException;
+import com.portfolio.invest.domain.market.MarketDataParser;
+import com.portfolio.invest.domain.market.Quote;
+import com.portfolio.invest.domain.market.StockHit;
+import com.portfolio.invest.domain.market.StockRef;
 import java.io.IOException;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -126,7 +129,7 @@ class MarketDataParserEdgeCasesTest {
 
     @Test
     void parseTencentKline缺qfq前缀时回退裸周期键() {
-        List<com.portfolio.invest.market.dto.KlineBar> bars = MarketDataParser.parseTencentKline(
+        List<com.portfolio.invest.domain.market.KlineBar> bars = MarketDataParser.parseTencentKline(
                 json("{\"data\":{\"sh600519\":{\"day\":[[\"2026-08-18\",\"1\",\"2\",\"3\",\"1\",\"100\"]]}}}"),
                 "sh600519", "day");
         assertThat(bars).hasSize(1);
@@ -143,7 +146,7 @@ class MarketDataParserEdgeCasesTest {
 
     @Test
     void parseTencentKline短行跳过并按日期升序排序() {
-        List<com.portfolio.invest.market.dto.KlineBar> bars = MarketDataParser.parseTencentKline(
+        List<com.portfolio.invest.domain.market.KlineBar> bars = MarketDataParser.parseTencentKline(
                 json("{\"data\":{\"sh600519\":{\"qfqday\":["
                         + "[\"2026-08-18\",\"1\",\"2\",\"3\",\"1\",\"100\"],"
                         + "[\"short\"],"

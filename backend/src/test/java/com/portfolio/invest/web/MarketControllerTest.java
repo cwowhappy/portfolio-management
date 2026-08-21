@@ -8,9 +8,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.portfolio.invest.market.MarketDataException;
+import com.portfolio.invest.domain.market.MarketDataException;
+import com.portfolio.invest.domain.market.Quote;
 import com.portfolio.invest.market.MarketDataService;
-import com.portfolio.invest.market.dto.Quote;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

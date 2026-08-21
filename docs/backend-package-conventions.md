@@ -79,7 +79,7 @@ infrastructure ──→ {domain, application, config}
 
 | 包 | 允许依赖的项目内包 | 禁止 |
 |---|---|---|
-| `web` | `application`、`agent`、`config` | 被任何包依赖；直接访问外部数据源 |
+| `web` | `application`、`agent`、`domain`、`config` | 被任何包依赖；直接访问外部数据源 |
 | `application` | `domain`、`config` | 依赖 `web`、`agent` |
 | `domain` | 无（只能依赖自身与 JDK/外部库） | 依赖项目内任何包；出现 Spring/JPA 注解 |
 | `infrastructure` | `domain`、`application`、`config` | 依赖 `web` |

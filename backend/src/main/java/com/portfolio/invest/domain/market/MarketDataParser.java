@@ -1,14 +1,6 @@
-package com.portfolio.invest.market;
+package com.portfolio.invest.domain.market;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.portfolio.invest.market.dto.FinancialIndicator;
-import com.portfolio.invest.market.dto.Financials;
-import com.portfolio.invest.market.dto.IndexQuote;
-import com.portfolio.invest.market.dto.KlineBar;
-import com.portfolio.invest.market.dto.MarketOverview;
-import com.portfolio.invest.market.dto.NewsItem;
-import com.portfolio.invest.market.dto.Quote;
-import com.portfolio.invest.market.dto.StockHit;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;

@@ -1,4 +1,4 @@
-package com.portfolio.invest.market.dto;
+package com.portfolio.invest.domain.market;
 
 /** 单根 K 线。 */
 public record KlineBar(

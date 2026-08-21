@@ -1,13 +1,16 @@
 package com.portfolio.invest.market;
 
 import com.portfolio.invest.config.InvestProperties;
-import com.portfolio.invest.market.dto.FinancialIndicator;
-import com.portfolio.invest.market.dto.Financials;
-import com.portfolio.invest.market.dto.KlineBar;
-import com.portfolio.invest.market.dto.MarketOverview;
-import com.portfolio.invest.market.dto.NewsItem;
-import com.portfolio.invest.market.dto.Quote;
-import com.portfolio.invest.market.dto.StockHit;
+import com.portfolio.invest.domain.market.FinancialIndicator;
+import com.portfolio.invest.domain.market.Financials;
+import com.portfolio.invest.domain.market.KlineBar;
+import com.portfolio.invest.domain.market.MarketDataException;
+import com.portfolio.invest.domain.market.MarketDataParser;
+import com.portfolio.invest.domain.market.MarketOverview;
+import com.portfolio.invest.domain.market.NewsItem;
+import com.portfolio.invest.domain.market.Quote;
+import com.portfolio.invest.domain.market.StockHit;
+import com.portfolio.invest.domain.market.StockRef;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;

@@ -1,16 +1,10 @@
-package com.portfolio.invest.market;
+package com.portfolio.invest.domain.market;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.portfolio.invest.market.dto.Financials;
-import com.portfolio.invest.market.dto.KlineBar;
-import com.portfolio.invest.market.dto.MarketOverview;
-import com.portfolio.invest.market.dto.NewsItem;
-import com.portfolio.invest.market.dto.Quote;
-import com.portfolio.invest.market.dto.StockHit;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;

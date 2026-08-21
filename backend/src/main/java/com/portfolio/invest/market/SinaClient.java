@@ -1,6 +1,7 @@
 package com.portfolio.invest.market;
 
 import com.portfolio.invest.config.InvestProperties;
+import com.portfolio.invest.domain.market.MarketDataException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.nio.charset.Charset;

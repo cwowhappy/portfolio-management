@@ -1,4 +1,4 @@
-package com.portfolio.invest.market;
+package com.portfolio.invest.domain.market;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

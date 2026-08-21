@@ -7,6 +7,7 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import com.portfolio.invest.domain.market.MarketDataException;
 import java.nio.charset.Charset;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

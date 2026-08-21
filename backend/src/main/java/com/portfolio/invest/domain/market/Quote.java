@@ -1,4 +1,4 @@
-package com.portfolio.invest.market.dto;
+package com.portfolio.invest.domain.market;
 
 /** 实时行情快照。 */
 public record Quote(
