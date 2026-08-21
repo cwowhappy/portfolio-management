@@ -7,6 +7,8 @@ import java.util.Optional;
 public interface ConversationRepository {
     Optional<Conversation> findByIdAndUserId(String id, Long userId);
     List<Conversation> findByUserId(Long userId);
+    /** 全局存在性检查（不做归属过滤）：用于 create 时判定 id 是否被他人占用。 */
+    boolean existsById(String id);
     Conversation save(Conversation conversation);
     void delete(String id);
     List<ChatMessage> findMessages(String conversationId);

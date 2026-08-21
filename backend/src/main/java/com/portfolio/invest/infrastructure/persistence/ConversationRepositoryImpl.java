@@ -31,6 +31,11 @@ public class ConversationRepositoryImpl implements ConversationRepository {
     }
 
     @Override
+    public boolean existsById(String id) {
+        return conversationJpa.existsById(id);
+    }
+
+    @Override
     @Transactional
     public Conversation save(Conversation conversation) {
         return conversationJpa.save(ConversationJpaEntity.fromDomain(conversation)).toDomain();

@@ -26,10 +26,17 @@ public class ConversationApplicationService {
     @Transactional
     public ConversationView create(Long userId, String id) {
         validateId(id);
-        return repository.findByIdAndUserId(id, userId)
-                .map(ConversationView::from)
-                .orElseGet(() -> ConversationView.from(
-                        repository.save(Conversation.create(id, userId, Instant.now()))));
+        var owned = repository.findByIdAndUserId(id, userId);
+        if (owned.isPresent()) {
+            return ConversationView.from(owned.get()); // 本人已有 → 幂等返回
+        }
+        if (repository.existsById(id)) {
+            // id 已被他人占用：直接 404（不泄露存在性），绝不落到 save——
+            // ConversationJpaEntity 为 assigned @Id 且无 @Version，Spring Data save 会走
+            // EntityManager.merge 把 user_id 改成当前用户，导致越权接管他人会话。
+            throw new ConversationException("NOT_FOUND", "会话不存在");
+        }
+        return ConversationView.from(repository.save(Conversation.create(id, userId, Instant.now())));
     }
 
     public List<ChatMessageWire> messages(Long userId, String conversationId) {

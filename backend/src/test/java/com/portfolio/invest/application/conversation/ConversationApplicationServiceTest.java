@@ -70,6 +70,25 @@ class ConversationApplicationServiceTest {
     }
 
     @Test
+    void 创建时id已被他人占用抛NOT_FOUND且不save() {
+        when(repo.findByIdAndUserId("t-1", 2L)).thenReturn(Optional.empty());
+        when(repo.existsById("t-1")).thenReturn(true);
+        assertThatThrownBy(() -> service.create(2L, "t-1"))
+                .isInstanceOf(ConversationException.class).hasMessageContaining("不存在");
+        verify(repo, never()).save(any());
+    }
+
+    @Test
+    void 创建时id未被任何人占用则save() {
+        when(repo.findByIdAndUserId("t-new", 1L)).thenReturn(Optional.empty());
+        when(repo.existsById("t-new")).thenReturn(false);
+        when(repo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        service.create(1L, "t-new");
+        verify(repo).existsById("t-new");
+        verify(repo).save(argThat(c -> c.id().equals("t-new") && c.userId().equals(1L)));
+    }
+
+    @Test
     void 读取非本人会话抛NOT_FOUND() {
         when(repo.findByIdAndUserId("t-1", 1L)).thenReturn(Optional.empty());
         assertThatThrownBy(() -> service.messages(1L, "t-1"))

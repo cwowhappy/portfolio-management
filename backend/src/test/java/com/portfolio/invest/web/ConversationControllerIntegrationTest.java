@@ -95,6 +95,49 @@ class ConversationControllerIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void 他人占用id创建返回404且不改写归属() throws Exception {
+        register("conv_take_a", "abc12345");
+        register("conv_take_b", "abc12345");
+        approve("conv_take_a");
+        approve("conv_take_b");
+        MockHttpSession sessionA = login("conv_take_a", "abc12345");
+        MockHttpSession sessionB = login("conv_take_b", "abc12345");
+
+        String sharedId = UUID.randomUUID().toString();
+
+        // A 创建会话并保存消息
+        mockMvc.perform(post("/api/conversations").session(sessionA)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"id\":\"" + sharedId + "\"}"))
+                .andExpect(status().isCreated());
+        mockMvc.perform(put("/api/conversations/{id}/messages", sharedId).session(sessionA)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("[{\"id\":\"m-1\",\"role\":\"user\",\"content\":\"A的私聊\",\"createdAt\":1700000000000}]"))
+                .andExpect(status().isNoContent());
+
+        // B 用同一 id POST → 404（不泄露存在性），不得被 merge 改写归属
+        mockMvc.perform(post("/api/conversations").session(sessionB)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"id\":\"" + sharedId + "\"}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("NOT_FOUND"));
+
+        // A 的会话仍存在、归属未变、消息未变
+        mockMvc.perform(get("/api/conversations").session(sessionA))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(sharedId))
+                .andExpect(jsonPath("$[0].title").value("A的私聊"));
+        mockMvc.perform(get("/api/conversations/{id}/messages", sharedId).session(sessionA))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].content").value("A的私聊"));
+
+        // B 的列表为空（会话未被接管）
+        mockMvc.perform(get("/api/conversations").session(sessionB))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+    }
+
+    @Test
     void 创建会话校验空id返回400() throws Exception {
         register("conv_carol", "abc12345");
         approve("conv_carol");
