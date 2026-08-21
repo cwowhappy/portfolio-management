@@ -36,6 +36,16 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(status).body(new ApiError(e.getCode(), e.getMessage()));
     }
 
+    @ExceptionHandler(com.portfolio.invest.domain.conversation.ConversationException.class)
+    public ResponseEntity<ApiError> conversation(com.portfolio.invest.domain.conversation.ConversationException e) {
+        HttpStatus status = switch (e.getCode()) {
+            case "NOT_FOUND" -> HttpStatus.NOT_FOUND;
+            case "INVALID_ID" -> HttpStatus.BAD_REQUEST;
+            default -> HttpStatus.BAD_REQUEST;
+        };
+        return ResponseEntity.status(status).body(new ApiError(e.getCode(), e.getMessage()));
+    }
+
     /** Agent 未注册（未配置 DEEPSEEK_API_KEY 时）→ 友好提示。 */
     @ExceptionHandler(io.agentscope.core.agui.AguiException.AgentNotFoundException.class)
     public ResponseEntity<ApiError> agentNotFound(
