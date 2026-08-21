@@ -1,4 +1,4 @@
-package com.portfolio.invest.market;
+package com.portfolio.invest.infrastructure.market;
 
 import com.portfolio.invest.config.InvestProperties;
 import com.portfolio.invest.domain.market.MarketDataException;

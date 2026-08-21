@@ -1,4 +1,4 @@
-package com.portfolio.invest.market;
+package com.portfolio.invest.infrastructure.market;
 
 import java.time.Duration;
 import java.util.LinkedHashMap;

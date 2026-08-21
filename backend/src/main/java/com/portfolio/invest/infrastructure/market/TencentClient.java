@@ -1,4 +1,4 @@
-package com.portfolio.invest.market;
+package com.portfolio.invest.infrastructure.market;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;

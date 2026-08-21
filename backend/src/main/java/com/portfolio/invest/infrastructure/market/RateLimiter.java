@@ -1,4 +1,4 @@
-package com.portfolio.invest.market;
+package com.portfolio.invest.infrastructure.market;
 
 import java.util.function.LongConsumer;
 import java.util.function.LongSupplier;
