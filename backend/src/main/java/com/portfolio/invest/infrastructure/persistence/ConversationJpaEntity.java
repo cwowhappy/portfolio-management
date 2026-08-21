@@ -12,7 +12,7 @@ import java.time.Instant;
 public class ConversationJpaEntity {
 
     @Id
-    @Column(columnDefinition = "uuid")
+    @Column(columnDefinition = "varchar(64)")
     private String id;
 
     @Column(name = "user_id", nullable = false)
