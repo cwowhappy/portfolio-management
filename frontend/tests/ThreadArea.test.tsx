@@ -184,6 +184,58 @@ describe("ThreadArea", () => {
     });
   });
 
+  it("持久化前先快照消息，避免 await 期间切线程串写", async () => {
+    // 自定义 mock：第一次 GET /messages（历史回灌）立即返回空；第二次（持久化的 loadMessages）挂起，
+    // 以此模拟 await 窗口内 agent.messages 被切线程替换的竞态。
+    let getCount = 0;
+    let resolveGate!: (r: Response) => void;
+    const gate = new Promise<Response>((res) => {
+      resolveGate = res;
+    });
+    const putBodies: Array<Array<{ content: string }>> = [];
+    const json = (body: unknown) =>
+      new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    const noContent = () => new Response(null, { status: 204 });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        if (url === "/api/conversations" && method === "GET")
+          return json([{ id: "t1", title: "会话", updatedAt: 2 }]);
+        if (url === "/api/conversations" && method === "POST")
+          return json({ id: "x", title: "新会话", updatedAt: 3 });
+        if (url === "/api/conversations/t1/messages" && method === "GET") {
+          getCount += 1;
+          if (getCount === 1) return json([]); // 历史回灌立即返回
+          return gate; // 持久化的 loadMessages 挂起
+        }
+        if (url === "/api/conversations/t1/messages" && method === "PUT") {
+          putBodies.push(JSON.parse(String(init?.body)) as Array<{ content: string }>);
+          return noContent();
+        }
+        return json({ message: "not found" });
+      }),
+    );
+
+    mocks.agent.messages = [agentMessage({ id: "u1", role: "user", content: "旧线程消息" })];
+    renderThread();
+    await waitFor(() => expect(mocks.agent.setMessages).toHaveBeenCalled());
+    // 等持久化 IIFE 发起 loadMessages 并挂起（getCount === 2）
+    await waitFor(() => expect(getCount).toBe(2));
+    // 模拟切线程 + 历史回灌把 agent.messages 替换成新线程消息
+    mocks.agent.messages = [agentMessage({ id: "u2", role: "user", content: "新线程消息" })];
+    resolveGate(json([])); // 放行持久化的 loadMessages
+    await waitFor(() => expect(putBodies.length).toBeGreaterThan(0));
+    // PUT body 必须使用 await 前快照（旧线程消息），而非被替换后的新线程消息
+    const firstPut = putBodies[0];
+    expect(firstPut.map((m) => m.content)).toEqual(["旧线程消息"]);
+    expect(firstPut.map((m) => m.content)).not.toContain("新线程消息");
+  });
+
   it("无消息时不调用持久化接口", async () => {
     renderThread();
     await waitFor(() => expect(mocks.agent.setMessages).toHaveBeenCalled());

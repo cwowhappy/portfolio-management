@@ -124,9 +124,9 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     setSessions(await listConversations());
   }, []);
 
-  // 运行中禁止切换/新建线程：共享 agent 的流式输出仍在追加，切换会把 A 线程内容串写进 B 线程
-  const newThread = useCallback(async () => {
-    if (running) return;
+  // 创建新会话并设为当前线程。删除当前线程的替代复用此路径（不受 running 闸门限制，
+  // 避免运行中删除后 currentThreadId 悬空指向已删除会话）。
+  const createAndSelectThread = useCallback(async () => {
     const id = newThreadId();
     try {
       await createConversation(id);
@@ -137,7 +137,13 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       console.error("[RuntimeProvider] 新建会话失败", e);
       setCurrentThreadId(id);
     }
-  }, [running, refresh]);
+  }, [refresh]);
+
+  // 运行中禁止切换/新建线程：共享 agent 的流式输出仍在追加，切换会把 A 线程内容串写进 B 线程
+  const newThread = useCallback(async () => {
+    if (running) return;
+    await createAndSelectThread();
+  }, [running, createAndSelectThread]);
 
   const switchThread = useCallback(
     (id: string) => {
@@ -153,12 +159,12 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         await deleteConversation(id);
         await refresh();
         // 删除的是当前线程时，切换到一个真实存在的会话（创建新线程），避免悬空 threadId
-        if (id === currentThreadId) await newThread();
+        if (id === currentThreadId) await createAndSelectThread();
       } catch (e) {
         console.error("[RuntimeProvider] 删除会话失败", id, e);
       }
     },
-    [currentThreadId, newThread, refresh],
+    [currentThreadId, createAndSelectThread, refresh],
   );
 
   const persistMessages = useCallback(

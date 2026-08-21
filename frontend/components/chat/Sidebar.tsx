@@ -64,8 +64,9 @@ export default function Sidebar({
                   </button>
                   <button
                     onClick={() => deleteThread(s.id)}
+                    disabled={running}
                     aria-label="删除会话"
-                    className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-[color:var(--color-ink-faint)] opacity-0 transition-opacity hover:text-[color:var(--color-up)] group-hover:opacity-100 focus-visible:opacity-100"
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-[color:var(--color-ink-faint)] opacity-0 transition-opacity hover:text-[color:var(--color-up)] group-hover:opacity-100 focus-visible:opacity-100 disabled:cursor-not-allowed disabled:opacity-30"
                   >
                     ✕
                   </button>

@@ -346,10 +346,10 @@ export default function ThreadArea({ llmReady }: { llmReady: boolean | null }) {
     persistTimer.current = setTimeout(() => {
       (async () => {
         try {
-          const saved = agentMessagesToHistory(
-            agent.messages ?? [],
-            await loadMessages(currentThreadId),
-          );
+          // 先在 await 前快照消息：若等待 loadMessages 期间发生切线程 + 历史回灌 setMessages，
+          // agent.messages 会变成新线程的，若不快照会把新线程消息写进旧线程记录。
+          const msgs = agent.messages ?? [];
+          const saved = agentMessagesToHistory(msgs, await loadMessages(currentThreadId));
           if (saved.length > 0) await persistMessages(currentThreadId, saved);
         } catch (e) {
           console.error("[ThreadArea] 持久化会话失败", currentThreadId, e);

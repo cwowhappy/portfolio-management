@@ -75,6 +75,9 @@ function Probe() {
       <button data-testid="switch" onClick={() => ctx.switchThread("t2")}>
         切
       </button>
+      <button data-testid="run" onClick={() => ctx.setRunning(true)}>
+        运行
+      </button>
       <button data-testid="del" onClick={() => void ctx.deleteThread("t1")}>
         删
       </button>
@@ -155,6 +158,26 @@ describe("RuntimeProvider", () => {
     await waitFor(() => {
       expect(screen.getByTestId("thread").textContent).not.toBe("t1");
     });
+    expect(api.state.list).toHaveLength(1);
+    expect(api.state.list[0].id).toBe(screen.getByTestId("thread").textContent);
+  });
+
+  it("运行中删除当前会话仍创建替代会话（不悬空）", async () => {
+    const api = installConversationsApi({
+      list: [{ id: "t1", title: "一", updatedAt: 200 }],
+    });
+    render(
+      <RuntimeProvider>
+        <Probe />
+      </RuntimeProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId("thread").textContent).toBe("t1"));
+    fireEvent.click(screen.getByTestId("run")); // running = true
+    fireEvent.click(screen.getByTestId("del")); // 删除当前 t1
+    await waitFor(() => {
+      expect(screen.getByTestId("thread").textContent).not.toBe("t1");
+    });
+    // 替代会话已创建并成为当前线程，而非悬空
     expect(api.state.list).toHaveLength(1);
     expect(api.state.list[0].id).toBe(screen.getByTestId("thread").textContent);
   });
