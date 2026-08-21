@@ -164,7 +164,7 @@ function AdminPanel() {
                     {u.enabled ? "是" : "否"}
                   </td>
                   <td className="px-4 py-2.5 text-right">
-                    {u.role !== "ADMIN" ? (
+                    {u.role !== "ADMIN" && u.status === "APPROVED" ? (
                       <div className="flex justify-end gap-2">
                         <button
                           type="button"
