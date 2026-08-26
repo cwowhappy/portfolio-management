@@ -87,7 +87,7 @@ agentscope:
   agui:
     path-prefix: /agui
     default-agent-id: invest
-    server-side-memory: false      # 前端持有历史（ADR-0004）
+    server-side-memory: false      # 前端持有工作内存，历史服务端持久化（ADR-0008）
     enable-reasoning: true         # 输出思考过程
     emit-tool-call-args: true      # 输出工具参数
     emit-token-usage: true         # 输出 token 用量（CUSTOM 事件）

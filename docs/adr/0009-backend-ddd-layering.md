@@ -35,7 +35,7 @@
 ### 依赖方向白名单
 
 ```
-web → {application, agent, domain, config}     application → {domain, config}
+web → {application, agent, domain, config, infrastructure.security}     application → {domain, config}
 domain →（不依赖任何项目内包）                    infrastructure → {domain, application, config}
 agent → {application, domain, config}           config →（无）
 ```
