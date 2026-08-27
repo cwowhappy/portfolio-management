@@ -45,4 +45,42 @@ class ValuationRepositoryImplTest extends IntegrationTestBase {
         assertThat(industries.get(0).industryName()).isEqualTo("银行");
         assertThat(valuationRepository.findAllTreasuryYields()).hasSize(1);
     }
+
+    @Test
+    @Transactional
+    void 查询全部快照() {
+        seed();
+        var snapshots = valuationRepository.findAllSnapshots();
+        assertThat(snapshots).hasSize(1);
+        assertThat(snapshots.get(0).peMedian()).isEqualByComparingTo("19.14");
+        assertThat(snapshots.get(0).pbMedian()).isEqualByComparingTo("1.68");
+    }
+
+    @Test
+    @Transactional
+    void 按代码查询指数估值历史() {
+        seed();
+        var indexVals = valuationRepository.findIndexValuations("000300");
+        assertThat(indexVals).hasSize(1);
+        assertThat(indexVals.get(0).indexName()).isEqualTo("沪深300");
+        assertThat(indexVals.get(0).dividendYield()).isEqualByComparingTo("2.35");
+    }
+
+    @Test
+    @Transactional
+    void 查询全部申万行业映射() {
+        jdbcTemplate.update("INSERT INTO shenwan_industry_mapping(stock_code, stock_name, industry_code, industry_name) VALUES (?, ?, ?, ?)",
+                "600000", "浦发银行", "801780", "银行");
+        var mappings = valuationRepository.findAllIndustryMappings();
+        assertThat(mappings).hasSize(1);
+        assertThat(mappings.get(0).stockCode()).isEqualTo("600000");
+        assertThat(mappings.get(0).stockName()).isEqualTo("浦发银行");
+        assertThat(mappings.get(0).industryName()).isEqualTo("银行");
+    }
+
+    @Test
+    @Transactional
+    void 空表时最新快照为空() {
+        assertThat(valuationRepository.findLatestSnapshot()).isNull();
+    }
 }
