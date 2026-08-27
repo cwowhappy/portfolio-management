@@ -23,6 +23,12 @@ describe("ToolCallCard", () => {
     expect(screen.getByText("custom_tool")).toBeTruthy();
   });
 
+  it("get_valuation 显示中文标签", () => {
+    render(<ToolCallCard toolCallId="c1" toolName="get_valuation" parameters={{}} status="complete" />);
+    expect(screen.getByText("估值查询")).toBeTruthy();
+    expect(screen.getByText("查询市场估值")).toBeTruthy();
+  });
+
   it("参数为 JSON 字符串时解析出摘要", () => {
     render(
       <ToolCallCard

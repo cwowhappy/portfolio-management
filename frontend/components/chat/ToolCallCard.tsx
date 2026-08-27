@@ -9,16 +9,23 @@ const TOOL_LABELS: Record<string, string> = {
   get_financials: "财务指标",
   get_news: "个股新闻",
   get_market_overview: "大盘速览",
+  get_valuation: "估值查询",
+};
+
+/** 无参工具在参数为空时显示的友好文案 */
+const TOOL_EMPTY_SUMMARY: Record<string, string> = {
+  get_valuation: "查询市场估值",
 };
 
 function labelOf(name: string) {
   return TOOL_LABELS[name] ?? name;
 }
 
-function prettyArgs(parameters: unknown): string {
-  if (parameters == null) return "";
+function prettyArgs(toolName: string, parameters: unknown): string {
+  if (parameters == null) return TOOL_EMPTY_SUMMARY[toolName] ?? "";
   let obj: Record<string, unknown> | null = null;
   if (typeof parameters === "string") {
+    if (parameters.trim() === "") return TOOL_EMPTY_SUMMARY[toolName] ?? "";
     try {
       obj = JSON.parse(parameters) as Record<string, unknown>;
     } catch {
@@ -27,13 +34,14 @@ function prettyArgs(parameters: unknown): string {
   } else if (typeof parameters === "object") {
     obj = parameters as Record<string, unknown>;
   }
-  if (!obj) return "";
+  if (!obj) return TOOL_EMPTY_SUMMARY[toolName] ?? "";
   const parts: string[] = [];
   if (obj.code) parts.push(String(obj.code));
   if (obj.query) parts.push(String(obj.query));
   if (obj.period) parts.push(String(obj.period));
   if (obj.limit) parts.push("近" + String(obj.limit) + "根");
-  return parts.join(" · ");
+  if (parts.length > 0) return parts.join(" · ");
+  return TOOL_EMPTY_SUMMARY[toolName] ?? "";
 }
 
 export interface ToolCallCardProps {
@@ -61,7 +69,7 @@ export default function ToolCallCard({
     typeof result === "string" ? result : result != null ? JSON.stringify(result) : null;
   const failed =
     isError || (status === "complete" && resultText != null && /error/i.test(resultText));
-  const summary = prettyArgs(parameters);
+  const summary = prettyArgs(toolName, parameters);
 
   return (
     <div
