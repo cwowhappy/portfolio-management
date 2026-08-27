@@ -70,24 +70,69 @@ def test_fetch_index_valuation_normalizes_columns(monkeypatch):
     assert df.iloc[0]["dividend_yield"] == pytest.approx(2.1)
 
 
-def test_fetch_shenwan_mapping_normalizes_columns(monkeypatch):
+def test_fetch_shenwan_mapping_uses_sw2021_members():
+    industries = pd.DataFrame(
+        {
+            "index_code": ["801010.SI", "801030.SI"],
+            "industry_name": ["农林牧渔", "基础化工"],
+        }
+    )
+    members = {
+        "801010.SI": pd.DataFrame(
+            {
+                "l1_code": ["801010.SI", "801010.SI"],
+                "l1_name": ["农林牧渔", "农林牧渔"],
+                "ts_code": ["600598.SH", "000998.SZ"],
+                "name": ["北大荒", "隆平高科"],
+                "is_new": ["Y", "Y"],
+            }
+        ),
+        "801030.SI": pd.DataFrame(
+            {
+                "l1_code": ["801030.SI", "801030.SI"],
+                "l1_name": ["基础化工", "基础化工"],
+                "ts_code": ["600309.SH", "002460.SZ"],
+                "name": ["万华化学", "赣锋锂业"],
+                "is_new": ["Y", "Y"],
+            }
+        ),
+    }
+
+    class FakePro:
+        def index_classify(self, level, src):
+            assert level == "L1"
+            assert src == "SW2021"
+            return industries
+
+        def index_member_all(self, l1_code):
+            return members[l1_code]
+
+    df = industry.fetch_shenwan_mapping(FakePro())
+    assert list(df.columns) == ["code", "industry_name"]
+    assert len(df) == 4
+    mapping = dict(zip(df["code"], df["industry_name"]))
+    assert mapping["600598"] == "农林牧渔"
+    assert mapping["000998"] == "农林牧渔"
+    assert mapping["600309"] == "基础化工"
+    assert mapping["002460"] == "基础化工"
+
+
+def test_fetch_shenwan_industries_returns_l1_list():
     raw = pd.DataFrame(
         {
-            "ts_code": ["600519.SH", "000858.SZ"],
-            "name": ["贵州茅台", "五粮液"],
-            "industry": ["白酒", "白酒"],
+            "index_code": ["801010.SI", "801030.SI"],
+            "industry_name": ["农林牧渔", "基础化工"],
         }
     )
 
     class FakePro:
         @staticmethod
-        def stock_basic(exchange, list_status, fields):
-            assert exchange == ""
-            assert list_status == "L"
+        def index_classify(level, src):
+            assert level == "L1"
+            assert src == "SW2021"
             return raw
 
-    df = industry.fetch_shenwan_mapping(FakePro())
-    assert list(df.columns) == ["code", "industry_name"]
-    assert df.iloc[0]["code"] == "600519"
-    assert df.iloc[1]["code"] == "000858"
-    assert df.iloc[0]["industry_name"] == "白酒"
+    df = industry.fetch_shenwan_industries(FakePro())
+    assert list(df.columns) == ["index_code", "industry_name"]
+    assert len(df) == 2
+    assert df.iloc[0]["index_code"] == "801010.SI"

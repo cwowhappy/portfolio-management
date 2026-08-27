@@ -12,12 +12,22 @@ def fetch_shenwan_industries(pro) -> pd.DataFrame:
 
 
 def fetch_shenwan_mapping(pro) -> pd.DataFrame:
-    """个股 → 行业名映射（stock_basic 的 industry 字段）。
+    """个股 → 申万一级行业名映射。
+
+    先取申万一级行业列表（SW2021），再对每个一级行业调 index_member_all(l1_code=...)
+    获取其成分股。index_member_all 默认 is_new="Y"（仅当前成分），返回的 l1_name
+    即申万一级行业名（注意：不能用 stock_basic 的 industry 字段，那是证监会行业，
+    非申万）。
 
     Returns:
         DataFrame(code, industry_name)
     """
-    df = pro.stock_basic(exchange="", list_status="L", fields="ts_code,name,industry")
-    df = df.rename(columns={"ts_code": "code", "industry": "industry_name"})
-    df["code"] = df["code"].str.split(".").str[0]
-    return df[["code", "industry_name"]]
+    industries = pro.index_classify(level="L1", src="SW2021")
+    frames = []
+    for code in industries["index_code"]:
+        members = pro.index_member_all(l1_code=code)
+        frames.append(members[["ts_code", "l1_name"]])
+    result = pd.concat(frames, ignore_index=True)
+    result = result.rename(columns={"ts_code": "code", "l1_name": "industry_name"})
+    result["code"] = result["code"].str.split(".").str[0]
+    return result[["code", "industry_name"]]
