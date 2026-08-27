@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { fetchValuationOverview, fetchValuationHistory, fetchValuationIndustries } from "@/lib/valuationApi";
 import type { ValuationOverview, ValuationHistory, IndustryValuation } from "@/lib/types";
+import StatCard from "./StatCard";
+import IndexValuationTable from "./IndexValuationTable";
 
 export default function ValuationBoard() {
   const [overview, setOverview] = useState<ValuationOverview | null>(null);
@@ -45,7 +47,15 @@ export default function ValuationBoard() {
         )}
       </div>
       {/* 指标区由 Task 3/4 填充 */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4" data-testid="stat-grid" />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4" data-testid="stat-grid">
+        <StatCard title="全A PE 中位数" value={overview.latestSnapshot?.peMedian ?? null} percentile={overview.pePercentile} />
+        <StatCard title="全A PB 中位数" value={overview.latestSnapshot?.pbMedian ?? null} percentile={overview.pbPercentile} />
+        <StatCard title="破净股占比" value={overview.latestSnapshot ? Number((overview.latestSnapshot.netBreakerRatio * 100).toFixed(2)) : null} unit="%" percentile={overview.netBreakerPercentile} />
+        <StatCard title="股债利差 (ERP)" value={overview.erp} unit="%" percentile={overview.erpPercentile} />
+      </div>
+      <div className="mt-6">
+        <IndexValuationTable indices={overview.indices} />
+      </div>
       <div data-testid="charts" />
       <div data-testid="industries" />
     </div>
