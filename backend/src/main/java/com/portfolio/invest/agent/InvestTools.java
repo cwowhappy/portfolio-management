@@ -25,11 +25,17 @@ public class InvestTools {
 
     private final MarketDataService market;
     private final ValuationApplicationService valuationApplicationService;
-    private final ObjectMapper mapper = new ObjectMapper();
+    private final ObjectMapper mapper;
 
-    public InvestTools(MarketDataService market, ValuationApplicationService valuationApplicationService) {
+    public InvestTools(
+            MarketDataService market,
+            ValuationApplicationService valuationApplicationService,
+            ObjectMapper mapper) {
         this.market = market;
         this.valuationApplicationService = valuationApplicationService;
+        // 注入 Spring Boot 已配置的 ObjectMapper（已注册 JavaTimeModule 并按 ISO 日期序列化），
+        // 使 getValuation 能正确序列化 ValuationSnapshot.tradingDay(LocalDate)。
+        this.mapper = mapper;
     }
 
     @Tool(

@@ -49,7 +49,6 @@ export default function ValuationBoard() {
           <span className="text-xs text-[color:var(--color-amber)]">数据积累中 · 分位仅供参考</span>
         )}
       </div>
-      {/* 指标区由 Task 3/4 填充 */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4" data-testid="stat-grid">
         <StatCard title="全A PE 中位数" value={overview.latestSnapshot?.peMedian ?? null} percentile={overview.pePercentile} />
         <StatCard title="全A PB 中位数" value={overview.latestSnapshot?.pbMedian ?? null} percentile={overview.pbPercentile} />

@@ -4,6 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.portfolio.invest.domain.market.FinancialIndicator;
 import com.portfolio.invest.domain.market.Financials;
 import com.portfolio.invest.domain.market.KlineBar;
@@ -15,12 +18,14 @@ import com.portfolio.invest.domain.market.StockHit;
 import com.portfolio.invest.application.market.MarketDataService;
 import com.portfolio.invest.application.valuation.ValuationApplicationService;
 import com.portfolio.invest.application.valuation.ValuationOverviewView;
+import com.portfolio.invest.domain.valuation.ValuationSnapshot;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-/** 6 个 Agent 工具的 JSON 输出与错误兜底。 */
+/** 7 个 Agent 工具的 JSON 输出与错误兜底。 */
 class InvestToolsTest {
 
     private MarketDataService market;
@@ -31,7 +36,11 @@ class InvestToolsTest {
     void setUp() {
         market = mock(MarketDataService.class);
         valuationService = mock(ValuationApplicationService.class);
-        tools = new InvestTools(market, valuationService);
+        // 复刻 Spring Boot 对 ObjectMapper 的配置（JavaTimeModule + ISO 日期，不写时间戳）
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.registerModule(new JavaTimeModule());
+        mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        tools = new InvestTools(market, valuationService, mapper);
     }
 
     private static Quote quote(String code, Double pe, Double pb) {
@@ -141,5 +150,29 @@ class InvestToolsTest {
                 null, null, null, null, null, null, new BigDecimal("80"), List.of(), true));
         String json = tools.getValuation();
         assertThat(json).contains("\"thermometer\":80");
+    }
+
+    @Test
+    void getValuation序列化快照的LocalDate与完整字段() {
+        var snapshot = new ValuationSnapshot(
+                LocalDate.of(2026, 8, 27), new BigDecimal("19.14"), new BigDecimal("1.68"), 220,
+                new BigDecimal("0.041"));
+        var idx = new ValuationOverviewView.IndexValuationView(
+                "sh000001", "上证指数", new BigDecimal("14.5"), new BigDecimal("1.4"),
+                new BigDecimal("2.1"), new BigDecimal("55.0"), new BigDecimal("60.0"));
+        when(valuationService.overview()).thenReturn(new ValuationOverviewView(
+                snapshot,
+                new BigDecimal("20.0"), new BigDecimal("30.0"), new BigDecimal("40.0"),
+                new BigDecimal("5.5"), new BigDecimal("10.0"), new BigDecimal("80"),
+                List.of(idx), true));
+        String json = tools.getValuation();
+        // 回归：LocalDate 必须按 ISO 序列化（裸 ObjectMapper 无 JavaTimeModule 会抛异常 → 「工具执行失败」）
+        assertThat(json).contains("\"tradingDay\":\"2026-08-27\"");
+        // 完整字段序列化：快照数值、指数列表、布尔标志
+        assertThat(json)
+                .contains("19.14").contains("1.68")
+                .contains("220").contains("0.041")
+                .contains("上证指数")
+                .contains("\"dataAccumulating\":true");
     }
 }
