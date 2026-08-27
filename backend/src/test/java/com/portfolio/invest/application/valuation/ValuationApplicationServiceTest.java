@@ -4,6 +4,7 @@ import com.portfolio.invest.domain.valuation.ValuationRepository;
 import com.portfolio.invest.domain.valuation.ValuationSnapshot;
 import com.portfolio.invest.domain.valuation.TreasuryYield;
 import com.portfolio.invest.domain.valuation.IndexValuation;
+import com.portfolio.invest.domain.valuation.IndustryValuation;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -60,5 +61,90 @@ class ValuationApplicationServiceTest {
 
         // ERP = 沪深300 股息率 2.35 − 10y 国债 2.21 = 0.14
         assertThat(view.erp()).isEqualByComparingTo("0.14");
+    }
+
+    @Test
+    void overview满数据时计算温度计且非积累期() {
+        List<ValuationSnapshot> snapshots = List.of(
+                new ValuationSnapshot(LocalDate.of(2026, 8, 21), new BigDecimal("18.00"), new BigDecimal("1.50"), 200, new BigDecimal("0.0300")),
+                new ValuationSnapshot(LocalDate.of(2026, 8, 24), new BigDecimal("18.50"), new BigDecimal("1.55"), 210, new BigDecimal("0.0350")),
+                new ValuationSnapshot(LocalDate.of(2026, 8, 25), new BigDecimal("18.80"), new BigDecimal("1.60"), 215, new BigDecimal("0.0380")),
+                new ValuationSnapshot(LocalDate.of(2026, 8, 26), new BigDecimal("19.00"), new BigDecimal("1.65"), 218, new BigDecimal("0.0400")),
+                new ValuationSnapshot(LocalDate.of(2026, 8, 27), new BigDecimal("19.20"), new BigDecimal("1.68"), 220, new BigDecimal("0.0420")));
+        when(repo.findLatestSnapshot()).thenReturn(snapshots.get(4));
+        when(repo.findAllSnapshots()).thenReturn(snapshots);
+        when(repo.findAllTreasuryYields()).thenReturn(List.of(
+                new TreasuryYield(LocalDate.of(2026, 8, 27), new BigDecimal("2.21"))));
+        when(repo.findIndexValuations("000300")).thenReturn(List.of(
+                new IndexValuation(LocalDate.of(2026, 8, 27), "000300", "沪深300", new BigDecimal("12.8"), new BigDecimal("1.42"), new BigDecimal("2.35"))));
+        when(repo.findIndexValuations("000016")).thenReturn(List.of(
+                new IndexValuation(LocalDate.of(2026, 8, 27), "000016", "上证50", new BigDecimal("10.0"), new BigDecimal("1.20"), new BigDecimal("3.0"))));
+
+        var view = service.overview();
+
+        // 5 个快照 → 非积累期
+        assertThat(view.dataAccumulating()).isFalse();
+        // PE 分位 80.00、ERP 分位 0.00、破净分位 80.00 → 温度计 = 80*0.4 + 100*0.4 + 20*0.2 = 76
+        assertThat(view.pePercentile()).isNotNull();
+        assertThat(view.erpPercentile()).isNotNull();
+        assertThat(view.thermometer()).isEqualByComparingTo("76");
+        // 五个指数：000016/000300 有数据，其余空 → 非空分支与空分支均覆盖
+        assertThat(view.indices()).hasSize(5);
+        assertThat(view.indices().get(1).indexCode()).isEqualTo("000300");
+    }
+
+    @Test
+    void industries空仓库返回空列表() {
+        when(repo.findLatestSnapshot()).thenReturn(null);
+
+        assertThat(service.industries("pe")).isEmpty();
+        assertThat(service.industries(null)).isEmpty();
+    }
+
+    @Test
+    void industries按指标排序且空值排最后() {
+        LocalDate day = LocalDate.of(2026, 8, 27);
+        when(repo.findLatestSnapshot()).thenReturn(new ValuationSnapshot(
+                day, new BigDecimal("19.14"), new BigDecimal("1.68"), 220, new BigDecimal("0.0410")));
+        when(repo.findIndustryValuationsByDay(day)).thenReturn(List.of(
+                new IndustryValuation(day, "801010", "农林牧渔", new BigDecimal("25.0"), new BigDecimal("2.5"), new BigDecimal("8.0"), new BigDecimal("1.2")),
+                new IndustryValuation(day, "801030", "基础化工", new BigDecimal("15.0"), new BigDecimal("1.5"), new BigDecimal("12.0"), new BigDecimal("2.0")),
+                new IndustryValuation(day, "801120", "食品饮料", null, null, null, null)));
+
+        var byPe = service.industries("pe");
+        assertThat(byPe).hasSize(3);
+        assertThat(byPe.get(0).industryCode()).isEqualTo("801030"); // 15.0 最小在前
+        assertThat(byPe.get(1).industryCode()).isEqualTo("801010");
+        assertThat(byPe.get(2).industryCode()).isEqualTo("801120"); // null 排最后
+
+        var byPb = service.industries("pb");
+        assertThat(byPb.get(0).industryCode()).isEqualTo("801030"); // 1.5 < 2.5
+        assertThat(byPb.get(2).industryCode()).isEqualTo("801120");
+
+        var byRoe = service.industries("roe");
+        assertThat(byRoe.get(0).industryCode()).isEqualTo("801010"); // 8.0 < 12.0
+        assertThat(byRoe.get(2).industryCode()).isEqualTo("801120");
+
+        var byDividend = service.industries("dividend");
+        assertThat(byDividend.get(0).industryCode()).isEqualTo("801010"); // 1.2 < 2.0
+        assertThat(byDividend.get(2).industryCode()).isEqualTo("801120");
+    }
+
+    @Test
+    void history返回各序列() {
+        List<ValuationSnapshot> snapshots = List.of(new ValuationSnapshot(
+                LocalDate.of(2026, 8, 27), new BigDecimal("19.14"), new BigDecimal("1.68"), 220, new BigDecimal("0.0410")));
+        List<TreasuryYield> yields = List.of(new TreasuryYield(LocalDate.of(2026, 8, 27), new BigDecimal("2.21")));
+        List<IndexValuation> indices = List.of(new IndexValuation(
+                LocalDate.of(2026, 8, 27), "000300", "沪深300", new BigDecimal("12.8"), new BigDecimal("1.42"), new BigDecimal("2.35")));
+        when(repo.findAllSnapshots()).thenReturn(snapshots);
+        when(repo.findAllTreasuryYields()).thenReturn(yields);
+        when(repo.findIndexValuations("000300")).thenReturn(indices);
+
+        var view = service.history();
+
+        assertThat(view.snapshots()).isSameAs(snapshots);
+        assertThat(view.treasuryYields()).isSameAs(yields);
+        assertThat(view.indexValuations()).isSameAs(indices);
     }
 }
