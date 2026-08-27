@@ -6,6 +6,7 @@ import com.portfolio.invest.domain.market.FinancialIndicator;
 import com.portfolio.invest.domain.market.Financials;
 import com.portfolio.invest.domain.market.MarketDataException;
 import com.portfolio.invest.application.market.MarketDataService;
+import com.portfolio.invest.application.valuation.ValuationApplicationService;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import java.util.ArrayList;
@@ -16,17 +17,19 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
-/** 投研 Agent 的 6 个数据工具：返回 JSON 文本；失败返回结构化错误（不抛异常）。 */
+/** 投研 Agent 的 7 个数据工具：返回 JSON 文本；失败返回结构化错误（不抛异常）。 */
 @Component
 public class InvestTools {
 
     private static final Logger log = LoggerFactory.getLogger(InvestTools.class);
 
     private final MarketDataService market;
+    private final ValuationApplicationService valuationApplicationService;
     private final ObjectMapper mapper = new ObjectMapper();
 
-    public InvestTools(MarketDataService market) {
+    public InvestTools(MarketDataService market, ValuationApplicationService valuationApplicationService) {
         this.market = market;
+        this.valuationApplicationService = valuationApplicationService;
     }
 
     @Tool(
@@ -111,6 +114,15 @@ public class InvestTools {
             concurrencySafe = true)
     public String getMarketOverview() {
         return run(() -> mapper.writeValueAsString(market.overview()));
+    }
+
+    @Tool(
+            name = "get_valuation",
+            description = "查询市场估值：全A股PE/PB中位数及历史分位、股债利差(ERP)、主要指数估值、市场情绪温度计。用于回答「现在市场贵不贵/估值高不高」类问题。",
+            readOnly = true,
+            concurrencySafe = true)
+    public String getValuation() {
+        return run(() -> mapper.writeValueAsString(valuationApplicationService.overview()));
     }
 
     private String run(JsonSupplier supplier) {

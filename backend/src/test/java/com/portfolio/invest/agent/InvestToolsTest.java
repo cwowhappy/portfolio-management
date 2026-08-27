@@ -13,6 +13,9 @@ import com.portfolio.invest.domain.market.NewsItem;
 import com.portfolio.invest.domain.market.Quote;
 import com.portfolio.invest.domain.market.StockHit;
 import com.portfolio.invest.application.market.MarketDataService;
+import com.portfolio.invest.application.valuation.ValuationApplicationService;
+import com.portfolio.invest.application.valuation.ValuationOverviewView;
+import java.math.BigDecimal;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -21,12 +24,14 @@ import org.junit.jupiter.api.Test;
 class InvestToolsTest {
 
     private MarketDataService market;
+    private ValuationApplicationService valuationService;
     private InvestTools tools;
 
     @BeforeEach
     void setUp() {
         market = mock(MarketDataService.class);
-        tools = new InvestTools(market);
+        valuationService = mock(ValuationApplicationService.class);
+        tools = new InvestTools(market, valuationService);
     }
 
     private static Quote quote(String code, Double pe, Double pb) {
@@ -128,5 +133,13 @@ class InvestToolsTest {
         when(market.financials("600519")).thenReturn(new Financials("600519", "贵州茅台", null, null, List.of(i)));
         String json = tools.getFinancials("600519");
         assertThat(json).contains("\"营收(亿元)\":-12.3").contains("\"净利润(亿元)\":-4.56");
+    }
+
+    @Test
+    void getValuation返回包含温度计的JSON() {
+        when(valuationService.overview()).thenReturn(new ValuationOverviewView(
+                null, null, null, null, null, null, new BigDecimal("80"), List.of(), true));
+        String json = tools.getValuation();
+        assertThat(json).contains("\"thermometer\":80");
     }
 }
