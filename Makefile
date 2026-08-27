@@ -47,3 +47,14 @@ down:
 ## 端到端冒烟
 smoke:
 	bash scripts/smoke.sh
+
+## 估值数据采集（Python collector）
+.PHONY: collect collect-test
+
+## 运行一次估值采集任务
+collect:
+	cd collector && python -m collector.run_once
+
+## 运行 collector 测试（覆盖率 >= 80%）
+collect-test:
+	cd collector && pytest -q --cov=collector --cov-fail-under=80
