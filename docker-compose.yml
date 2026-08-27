@@ -51,5 +51,17 @@ services:
       backend:
         condition: service_healthy
 
+  collector:
+    build: ./collector
+    container_name: invest-agent-collector
+    environment:
+      # 数据库名与 db 服务保持一致（默认 invest，随 ${POSTGRES_DB} 统一切换）
+      DATABASE_URL: postgresql://${POSTGRES_USER:-invest}:${POSTGRES_PASSWORD:-invest}@db:5432/${POSTGRES_DB:-invest}
+      TUSHARE_TOKEN: ${TUSHARE_TOKEN}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   pgdata:
