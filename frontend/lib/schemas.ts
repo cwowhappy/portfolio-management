@@ -90,3 +90,64 @@ export const HealthSchema = z.object({
     message: z.string().optional(),
   }),
 });
+
+// —— 市场估值（/api/valuation/**，与后端 ValuationController 的 DTO 对齐）——
+
+export const ValuationSnapshotSchema = z.object({
+  tradingDay: z.string(),
+  peMedian: z.number(),
+  pbMedian: z.number(),
+  netBreakerCount: z.number(),
+  netBreakerRatio: z.number(),
+});
+
+export const IndexValuationPointSchema = z.object({
+  indexCode: z.string(),
+  indexName: z.string(),
+  pe: z.number().nullable(),
+  pb: z.number().nullable(),
+  dividendYield: z.number().nullable(),
+  pePercentile: z.number().nullable(),
+  pbPercentile: z.number().nullable(),
+});
+
+export const ValuationOverviewSchema = z.object({
+  latestSnapshot: ValuationSnapshotSchema.nullable(),
+  pePercentile: z.number().nullable(),
+  pbPercentile: z.number().nullable(),
+  netBreakerPercentile: z.number().nullable(),
+  erp: z.number().nullable(),
+  erpPercentile: z.number().nullable(),
+  thermometer: z.number().nullable(),
+  indices: z.array(IndexValuationPointSchema),
+  dataAccumulating: z.boolean(),
+});
+
+export const IndustryValuationSchema = z.object({
+  industryCode: z.string(),
+  industryName: z.string(),
+  pe: z.number().nullable(),
+  pb: z.number().nullable(),
+  roe: z.number().nullable(),
+  dividendYield: z.number().nullable(),
+});
+
+export const TreasuryYieldSchema = z.object({
+  tradingDay: z.string(),
+  yield10y: z.number(),
+});
+
+export const IndexValuationSeriesSchema = z.object({
+  tradingDay: z.string(),
+  indexCode: z.string(),
+  indexName: z.string(),
+  pe: z.number().nullable(),
+  pb: z.number().nullable(),
+  dividendYield: z.number().nullable(),
+});
+
+export const ValuationHistorySchema = z.object({
+  snapshots: z.array(ValuationSnapshotSchema),
+  treasuryYields: z.array(TreasuryYieldSchema),
+  indexValuations: z.array(IndexValuationSeriesSchema),
+});

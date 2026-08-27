@@ -88,3 +88,64 @@ export interface Health {
   llm: { provider: string; model: string; baseUrl: string; keyConfigured: boolean };
   market: { ok: boolean; latencyMs?: number; message?: string };
 }
+
+// —— 市场估值 ——
+
+export interface ValuationSnapshot {
+  tradingDay: string;
+  peMedian: number;
+  pbMedian: number;
+  netBreakerCount: number;
+  netBreakerRatio: number;
+}
+
+export interface IndexValuationPoint {
+  indexCode: string;
+  indexName: string;
+  pe: number | null;
+  pb: number | null;
+  dividendYield: number | null;
+  pePercentile: number | null;
+  pbPercentile: number | null;
+}
+
+export interface ValuationOverview {
+  latestSnapshot: ValuationSnapshot | null;
+  pePercentile: number | null;
+  pbPercentile: number | null;
+  netBreakerPercentile: number | null;
+  erp: number | null;
+  erpPercentile: number | null;
+  thermometer: number | null;
+  indices: IndexValuationPoint[];
+  dataAccumulating: boolean;
+}
+
+export interface IndustryValuation {
+  industryCode: string;
+  industryName: string;
+  pe: number | null;
+  pb: number | null;
+  roe: number | null;
+  dividendYield: number | null;
+}
+
+export interface TreasuryYieldPoint {
+  tradingDay: string;
+  yield10y: number;
+}
+
+export interface IndexValuationSeries {
+  tradingDay: string;
+  indexCode: string;
+  indexName: string;
+  pe: number | null;
+  pb: number | null;
+  dividendYield: number | null;
+}
+
+export interface ValuationHistory {
+  snapshots: ValuationSnapshot[];
+  treasuryYields: TreasuryYieldPoint[];
+  indexValuations: IndexValuationSeries[];
+}
