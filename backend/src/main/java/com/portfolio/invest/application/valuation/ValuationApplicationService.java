@@ -48,11 +48,12 @@ public class ValuationApplicationService {
     }
 
     public List<IndustryValuationView> industries(String sort) {
-        LocalDate latest = repository.findLatestSnapshot() == null ? null : repository.findLatestSnapshot().tradingDay();
+        ValuationSnapshot latest = repository.findLatestSnapshot();
         if (latest == null) {
             return List.of();
         }
-        List<IndustryValuationView> views = repository.findIndustryValuationsByDay(latest).stream()
+        LocalDate day = latest.tradingDay();
+        List<IndustryValuationView> views = repository.findIndustryValuationsByDay(day).stream()
                 .map(i -> new IndustryValuationView(i.industryCode(), i.industryName(), i.pe(), i.pb(), i.roe(), i.dividendYield()))
                 .toList();
         Comparator<IndustryValuationView> cmp = switch (sort == null ? "pe" : sort) {
@@ -92,6 +93,7 @@ public class ValuationApplicationService {
             return null;
         }
         List<BigDecimal> erpHistory = repository.findIndexValuations(HS300).stream()
+                .filter(i -> i.dividendYield() != null)
                 .map(IndexValuation::dividendYield)
                 .toList();
         List<BigDecimal> treasuryHistory = repository.findAllTreasuryYields().stream()
@@ -113,8 +115,8 @@ public class ValuationApplicationService {
                         return new ValuationOverviewView.IndexValuationView(code, "", null, null, null, null, null);
                     }
                     IndexValuation latest = history.get(history.size() - 1);
-                    List<BigDecimal> peHistory = history.stream().map(IndexValuation::pe).toList();
-                    List<BigDecimal> pbHistory = history.stream().map(IndexValuation::pb).toList();
+                    List<BigDecimal> peHistory = history.stream().filter(i -> i.pe() != null).map(IndexValuation::pe).toList();
+                    List<BigDecimal> pbHistory = history.stream().filter(i -> i.pb() != null).map(IndexValuation::pb).toList();
                     return new ValuationOverviewView.IndexValuationView(
                             latest.indexCode(), latest.indexName(), latest.pe(), latest.pb(), latest.dividendYield(),
                             Percentile.of(latest.pe(), peHistory), Percentile.of(latest.pb(), pbHistory));

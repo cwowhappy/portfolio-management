@@ -94,6 +94,36 @@ class ValuationApplicationServiceTest {
     }
 
     @Test
+    void overview历史含空值时过滤且不抛NPE() {
+        when(repo.findLatestSnapshot()).thenReturn(new ValuationSnapshot(
+                LocalDate.of(2026, 8, 27), new BigDecimal("19.14"), new BigDecimal("1.68"), 220, new BigDecimal("0.0410")));
+        when(repo.findAllSnapshots()).thenReturn(List.of(
+                new ValuationSnapshot(LocalDate.of(2026, 8, 25), new BigDecimal("18.52"), new BigDecimal("1.63"), 245, new BigDecimal("0.0456")),
+                new ValuationSnapshot(LocalDate.of(2026, 8, 26), new BigDecimal("18.90"), new BigDecimal("1.66"), 231, new BigDecimal("0.0431"))));
+        when(repo.findAllTreasuryYields()).thenReturn(List.of(
+                new TreasuryYield(LocalDate.of(2026, 8, 27), new BigDecimal("2.21"))));
+        // 沪深300：中间元素 dividendYield 为 null → 旧代码 ERP 分位会 NPE
+        when(repo.findIndexValuations("000300")).thenReturn(List.of(
+                new IndexValuation(LocalDate.of(2026, 8, 25), "000300", "沪深300", new BigDecimal("12.5"), new BigDecimal("1.40"), new BigDecimal("2.30")),
+                new IndexValuation(LocalDate.of(2026, 8, 26), "000300", "沪深300", new BigDecimal("12.8"), new BigDecimal("1.42"), null),
+                new IndexValuation(LocalDate.of(2026, 8, 27), "000300", "沪深300", new BigDecimal("13.0"), new BigDecimal("1.45"), new BigDecimal("2.35"))));
+        // 上证50：中间元素 pe/pb 为 null → 旧代码指数分位会 NPE
+        when(repo.findIndexValuations("000016")).thenReturn(List.of(
+                new IndexValuation(LocalDate.of(2026, 8, 25), "000016", "上证50", new BigDecimal("10.0"), new BigDecimal("1.20"), new BigDecimal("3.0")),
+                new IndexValuation(LocalDate.of(2026, 8, 26), "000016", "上证50", null, null, new BigDecimal("3.1")),
+                new IndexValuation(LocalDate.of(2026, 8, 27), "000016", "上证50", new BigDecimal("10.5"), new BigDecimal("1.25"), new BigDecimal("3.2"))));
+
+        var view = service.overview();
+
+        // 不抛异常，且非空值仍被用于分位计算
+        assertThat(view.erp()).isEqualByComparingTo("0.14");
+        assertThat(view.erpPercentile()).isEqualByComparingTo("50.00");
+        assertThat(view.indices()).hasSize(5);
+        assertThat(view.indices().get(0).pePercentile()).isEqualByComparingTo("50.00"); // 000016
+        assertThat(view.indices().get(1).pePercentile()).isEqualByComparingTo("66.67"); // 000300
+    }
+
+    @Test
     void industries空仓库返回空列表() {
         when(repo.findLatestSnapshot()).thenReturn(null);
 

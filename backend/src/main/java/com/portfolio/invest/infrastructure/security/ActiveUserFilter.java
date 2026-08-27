@@ -24,7 +24,8 @@ public class ActiveUserFilter extends OncePerRequestFilter {
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String path = request.getServletPath();
         return path.equals("/api/auth/login") || path.equals("/api/auth/register")
-                || path.startsWith("/api/market/") || path.equals("/api/agent/health");
+                || path.startsWith("/api/market/") || path.startsWith("/api/valuation/")
+                || path.equals("/api/agent/health");
     }
 
     @Override
