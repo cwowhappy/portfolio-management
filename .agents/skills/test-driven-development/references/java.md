@@ -160,7 +160,7 @@ class PackageConventionsTest {
 }
 ```
 
-> 新增能力域包时：新建根包下同名域包 → 在 PackageConventionsTest 登记白名单 → 同步更新 docs/backend-package-conventions.md。完整规则以该文件与规范文档为准。
+> 新增能力域包时：新建根包下同名域包 → 在 PackageConventionsTest 登记白名单 → 同步更新 docs/technology/conventions/01-后端DDD分包规范.md。完整规则以该文件与规范文档为准。
 
 ## JaCoCo 覆盖率门槛
 
@@ -176,4 +176,4 @@ class PackageConventionsTest {
 - 测试依赖执行顺序（共享可变状态）→ 每个测试自给自足（FIRST 的 Independent）
 - 为测 Controller 拉起整个 Spring 上下文 → 本项目用 mock + 构造注入即可，保持纯单元
 
-详细分包规范见项目 docs/backend-package-conventions.md。
+详细分包规范见项目 docs/technology/conventions/01-后端DDD分包规范.md。

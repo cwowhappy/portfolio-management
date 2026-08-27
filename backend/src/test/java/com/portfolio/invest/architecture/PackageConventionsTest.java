@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 /**
- * 后端分包规范守护（详见 docs/backend-package-conventions.md）。
+ * 后端分包规范守护（详见 docs/technology/conventions/01-后端DDD分包规范.md）。
  *
  * <p>规则分三层：
  * <ul>

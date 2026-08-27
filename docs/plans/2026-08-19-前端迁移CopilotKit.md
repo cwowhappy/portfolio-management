@@ -1062,7 +1062,7 @@ git commit -m "refactor(frontend): custom session sidebar on useChatRuntime"
 - Delete: frontend/lib/agui.ts
 - Delete: frontend/tests/agui.test.ts
 - Modify: README.md（技术栈行 assistant-ui → CopilotKit）
-- Create: docs/adr/0006-frontend-copilotkit.md
+- Create: docs/technology/decisions/0006-frontend-copilotkit.md
 
 **Step 1: 删除 dead code**
 
@@ -1114,7 +1114,7 @@ reasoning/toolCalls 消息字段形态需实测确认（Task 7 设验证步）�
 **Step 4: Commit**
 
 ```bash
-git add -A frontend/app/api/chat frontend/lib/agui.ts frontend/tests/agui.test.ts README.md docs/adr/0006-frontend-copilotkit.md
+git add -A frontend/app/api/chat frontend/lib/agui.ts frontend/tests/agui.test.ts README.md docs/technology/decisions/0006-frontend-copilotkit.md
 git commit -m "chore(frontend): remove assistant-ui dead code, add ADR-0006"
 ```
 

@@ -50,7 +50,7 @@
 ## 二、执行方法
 
 1. **自动化校验**：quick_validate.py + 行数/字数统计 + 文件清单。
-2. **事实核对**：对照 `backend/build.gradle`、`frontend/package.json`、`frontend/vitest.config.ts`、`docs/backend-package-conventions.md` 与真实测试文件（`PackageConventionsTest.java`、`MarketControllerTest.java`、`MarketDataServiceTest.java`、`MarketBoard.test.tsx`、`tests/setup.ts`）。
+2. **事实核对**：对照 `backend/build.gradle`、`frontend/package.json`、`frontend/vitest.config.ts`、`docs/technology/conventions/01-后端DDD分包规范.md` 与真实测试文件（`PackageConventionsTest.java`、`MarketControllerTest.java`、`MarketDataServiceTest.java`、`MarketBoard.test.tsx`、`tests/setup.ts`）。
 3. **修复**：对发现的不准确项直接修正 references，修正后重新校验。
 
 ## 三、评估结果

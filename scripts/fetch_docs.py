@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fetch AgentScope Java v2 docs into docs/research/ for offline reference."""
+"""Fetch AgentScope Java v2 docs into docs/technology/research/agentscope/ for offline reference."""
 import base64
 import json
 import os
@@ -7,7 +7,7 @@ import sys
 import urllib.request
 
 API = "https://api.github.com/repos/agentscope-ai/agentscope-java/contents/"
-OUT = os.path.join(os.path.dirname(__file__), "..", "docs", "research")
+OUT = os.path.join(os.path.dirname(__file__), "..", "docs", "technology", "research", "agentscope")
 
 FILES = [
     "docs/v2/en/docs/building-blocks/tool.md",

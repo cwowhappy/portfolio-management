@@ -4,8 +4,8 @@
 
 架构设计：[docs/plans/2026-08-18-投资分析AI-Agent一期设计.md](docs/plans/2026-08-18-投资分析AI-Agent一期设计.md) ·
 用户管理设计：[features/specs/2026-08-21-用户管理-design.md](features/specs/2026-08-21-用户管理-design.md) ·
-决策记录：[docs/adr/](docs/adr/) ·
-后端分包规范：[docs/backend-package-conventions.md](docs/backend-package-conventions.md)（ArchUnit 强制，DDD 分层）·
+决策记录：[docs/technology/decisions/](docs/technology/decisions/) ·
+后端分包规范：[docs/technology/conventions/01-后端DDD分包规范.md](docs/technology/conventions/01-后端DDD分包规范.md)（ArchUnit 强制，DDD 分层）·
 产品功能：[docs/function/](docs/function/) ·
 技术文档：[docs/technology/](docs/technology/)
 

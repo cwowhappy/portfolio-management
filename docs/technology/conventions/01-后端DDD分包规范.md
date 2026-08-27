@@ -3,7 +3,7 @@
 - 状态：已确认（2026-08-18，2026-08-21 更新为 DDD 分层）
 - 适用范围：`backend` 单模块 Spring Boot 应用，根包 `com.portfolio.invest`
 - 强制方式：ArchUnit 架构测试（`PackageConventionsTest`），违反即构建失败
-- 相关文档：[ADR-0001 Agent 框架选型](0001-agent-framework.md) · [ADR-0002 交互协议](0002-interaction-protocol.md) · [ADR-0003 行情数据源](0003-market-data-source.md) · [ADR-0009 后端分层 DDD](0009-backend-ddd-layering.md)
+- 相关文档：[ADR-0001 Agent 框架选型](../decisions/0001-agent-framework.md) · [ADR-0002 交互协议](../decisions/0002-interaction-protocol.md) · [ADR-0003 行情数据源](../decisions/0003-market-data-source.md) · [ADR-0009 后端分层 DDD](../decisions/0009-backend-ddd-layering.md)
 
 ## 一、为什么这样分包
 

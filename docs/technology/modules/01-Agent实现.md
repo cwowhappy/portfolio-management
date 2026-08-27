@@ -1,7 +1,7 @@
 # 02 · Agent 实现
 
 > 后端 Agent 装配与工具实现。对应代码：`backend/src/main/java/com/portfolio/invest/agent/`。
-> 产品能力视角（Agent 能回答什么、回答规范）见 [docs/function/04-Agent-能力.md](../function/04-Agent-能力.md)。
+> 产品能力视角（Agent 能回答什么、回答规范）见 [docs/function/modules/05-AI投研能力.md](../../function/modules/05-AI投研能力.md)。
 
 ## 1. Agent 装配（AgentConfig）
 

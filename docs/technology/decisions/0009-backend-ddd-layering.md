@@ -2,7 +2,7 @@
 
 - 状态：已接受（2026-08-21）
 - 决策者：项目负责人
-- 相关：[后端分包规范](../backend-package-conventions.md)
+- 相关：[后端分包规范](../conventions/01-后端DDD分包规范.md)
 
 ## 背景
 
