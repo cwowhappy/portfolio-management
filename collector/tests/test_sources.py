@@ -32,8 +32,14 @@ def test_fetch_all_a_valuation_normalizes_columns(monkeypatch):
     assert df.iloc[0]["market_cap"] == pytest.approx(2.1e12)
 
 
-def test_fetch_treasury_10y_returns_float(monkeypatch):
-    raw = pd.DataFrame({"中国国债收益率10年": [2.21]})
+def test_fetch_treasury_10y_returns_latest_by_date(monkeypatch):
+    # 最新日期放最后，验证函数按日期显式降序取最新值（不依赖 akshare 隐式顺序）
+    raw = pd.DataFrame(
+        {
+            "date": ["2024-08-01", "2024-08-02"],
+            "中国国债收益率10年": [2.21, 2.25],
+        }
+    )
 
     class FakeAk:
         @staticmethod
@@ -42,7 +48,7 @@ def test_fetch_treasury_10y_returns_float(monkeypatch):
 
     monkeypatch.setattr(treasury.ak, "bond_zh_us_rate", FakeAk.bond_zh_us_rate)
 
-    assert treasury.fetch_treasury_10y() == pytest.approx(2.21)
+    assert treasury.fetch_treasury_10y() == pytest.approx(2.25)
 
 
 def test_fetch_index_valuation_normalizes_columns(monkeypatch):
@@ -108,13 +114,17 @@ def test_fetch_shenwan_mapping_uses_sw2021_members():
             return members[l1_code]
 
     df = industry.fetch_shenwan_mapping(FakePro())
-    assert list(df.columns) == ["code", "industry_name"]
+    assert list(df.columns) == ["code", "industry_code", "industry_name"]
     assert len(df) == 4
     mapping = dict(zip(df["code"], df["industry_name"]))
     assert mapping["600598"] == "农林牧渔"
     assert mapping["000998"] == "农林牧渔"
     assert mapping["600309"] == "基础化工"
     assert mapping["002460"] == "基础化工"
+    # industry_code 应为真实申万一级代码（去除 .SI 后缀）
+    code_map = dict(zip(df["code"], df["industry_code"]))
+    assert code_map["600598"] == "801010"
+    assert code_map["600309"] == "801030"
 
 
 def test_fetch_shenwan_industries_returns_l1_list():

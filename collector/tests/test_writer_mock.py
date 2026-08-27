@@ -32,7 +32,7 @@ def test_upsert_industry_executes_each_row_with_name_fallback():
     cur = conn.cursor.return_value.__enter__.return_value
 
     rows = [
-        {"industry_code": "801780.SI", "industry_name": "银行", "pe": 5.2, "pb": 0.6},
+        {"industry_code": "801780", "industry_name": "银行", "pe": 5.2, "pb": 0.6},
         # 无 industry_code 时回退 industry_name
         {"industry_name": "食品饮料", "pe": 25.0, "pb": 6.0},
     ]
@@ -43,7 +43,7 @@ def test_upsert_industry_executes_each_row_with_name_fallback():
         [
             mock.call(
                 INDUSTRY_UPSERT,
-                (dt.date(2026, 8, 27), "801780.SI", "银行", 5.2, 0.6),
+                (dt.date(2026, 8, 27), "801780", "银行", 5.2, 0.6),
             ),
             mock.call(
                 INDUSTRY_UPSERT,
@@ -59,16 +59,16 @@ def test_upsert_mapping_executes_each_row():
     cur = conn.cursor.return_value.__enter__.return_value
 
     rows = [
-        ("600519", "贵州茅台", "食品饮料", "食品饮料"),
-        ("000858", "五粮液", "食品饮料", "食品饮料"),
+        ("600519", "贵州茅台", "801120", "食品饮料"),
+        ("000858", "五粮液", "801120", "食品饮料"),
     ]
     upsert_mapping(conn, rows)
 
     assert cur.execute.call_count == 2
     cur.execute.assert_has_calls(
         [
-            mock.call(MAPPING_UPSERT, ("600519", "贵州茅台", "食品饮料", "食品饮料")),
-            mock.call(MAPPING_UPSERT, ("000858", "五粮液", "食品饮料", "食品饮料")),
+            mock.call(MAPPING_UPSERT, ("600519", "贵州茅台", "801120", "食品饮料")),
+            mock.call(MAPPING_UPSERT, ("000858", "五粮液", "801120", "食品饮料")),
         ]
     )
     conn.commit.assert_called_once_with()

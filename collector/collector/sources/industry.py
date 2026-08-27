@@ -20,14 +20,16 @@ def fetch_shenwan_mapping(pro) -> pd.DataFrame:
     非申万）。
 
     Returns:
-        DataFrame(code, industry_name)
+        DataFrame(code, industry_code, industry_name)
+        industry_code 为申万一级行业真实代码（去除 ".SI" 后缀，如 801010）。
     """
     industries = pro.index_classify(level="L1", src="SW2021")
     frames = []
     for code in industries["index_code"]:
         members = pro.index_member_all(l1_code=code)
-        frames.append(members[["ts_code", "l1_name"]])
+        frames.append(members[["ts_code", "l1_code", "l1_name"]])
     result = pd.concat(frames, ignore_index=True)
     result = result.rename(columns={"ts_code": "code", "l1_name": "industry_name"})
     result["code"] = result["code"].str.split(".").str[0]
-    return result[["code", "industry_name"]]
+    result["industry_code"] = result["l1_code"].str.split(".").str[0]
+    return result[["code", "industry_code", "industry_name"]]
