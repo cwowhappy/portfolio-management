@@ -16,6 +16,7 @@ describe("ValuationBoard", () => {
   it("渲染标题与积累中标注", async () => {
     render(<ValuationBoard />);
     expect(await screen.findByText("市场估值仪表盘")).toBeTruthy();
-    expect(screen.getByText(/数据积累中/)).toBeTruthy();
+    // 顶部角标 + 温度计空态 + 走势图空态均提示积累中
+    expect((await screen.findAllByText(/数据积累中/)).length).toBeGreaterThan(0);
   });
 });

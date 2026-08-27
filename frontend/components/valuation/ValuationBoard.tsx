@@ -5,6 +5,9 @@ import { fetchValuationOverview, fetchValuationHistory, fetchValuationIndustries
 import type { ValuationOverview, ValuationHistory, IndustryValuation } from "@/lib/types";
 import StatCard from "./StatCard";
 import IndexValuationTable from "./IndexValuationTable";
+import Thermometer from "./Thermometer";
+import TrendChart from "./TrendChart";
+import IndustryTable from "./IndustryTable";
 
 export default function ValuationBoard() {
   const [overview, setOverview] = useState<ValuationOverview | null>(null);
@@ -56,8 +59,13 @@ export default function ValuationBoard() {
       <div className="mt-6">
         <IndexValuationTable indices={overview.indices} />
       </div>
-      <div data-testid="charts" />
-      <div data-testid="industries" />
+      <div className="grid md:grid-cols-2 gap-6" data-testid="charts">
+        <Thermometer value={overview.thermometer} />
+        <TrendChart snapshots={history?.snapshots ?? []} />
+      </div>
+      <div className="mt-6" data-testid="industries">
+        <IndustryTable industries={industries} />
+      </div>
     </div>
   );
 }
