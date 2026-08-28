@@ -19,7 +19,7 @@ def test_upgrade_creates_ops_tables():
     with psycopg.connect(DB) as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name LIKE 'collector_%' OR table_name='trading_calendar'"
+                "SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND (table_name LIKE 'collector_%' OR table_name='trading_calendar')"
             )
             tables = {r[0] for r in cur.fetchall()}
 

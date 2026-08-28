@@ -9,6 +9,8 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 url = os.environ.get("DATABASE_URL") or config.get_main_option("sqlalchemy.url")
+if url and url.startswith("postgresql://"):
+    url = url.replace("postgresql://", "postgresql+psycopg://", 1)
 
 
 def run_migrations_offline() -> None:
