@@ -58,7 +58,6 @@ def test_fetch_index_valuation_normalizes_columns(monkeypatch):
             "ts_code": ["000300.SH", "000300.SH"],
             "pe": [12.3, 12.4],
             "pb": [1.5, 1.5],
-            "dv_ratio": [2.1, 2.2],
         }
     )
 
@@ -73,7 +72,7 @@ def test_fetch_index_valuation_normalizes_columns(monkeypatch):
     df = index.fetch_index_valuation(FakePro(), "000300", "20240801", "20240830")
     assert list(df.columns) == ["trading_day", "pe", "pb", "dividend_yield"]
     assert df.iloc[0]["trading_day"] == "20240801"
-    assert df.iloc[0]["dividend_yield"] == pytest.approx(2.1)
+    assert df.iloc[0]["dividend_yield"] is None
 
 
 def test_fetch_shenwan_mapping_uses_sw2021_members():

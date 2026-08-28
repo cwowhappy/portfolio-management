@@ -28,12 +28,10 @@ def fetch_index_valuation(pro, index_code: str, start: str, end: str) -> pd.Data
     df = pro.index_dailybasic(
         ts_code=_ts_code(index_code), start_date=start, end_date=end
     )
-    df = df.rename(
-        columns={
-            "trade_date": "trading_day",
-            "dv_ratio": "dividend_yield",
-        }
-    )
-    for col in ("pe", "pb", "dividend_yield"):
+    df = df.rename(columns={"trade_date": "trading_day"})
+    for col in ("pe", "pb"):
         df[col] = pd.to_numeric(df[col], errors="coerce")
+    # index_dailybasic 不提供股息率（无 dv_ratio 字段）；置 None 以保持契约列可空。
+    # 指数股息率（沪深300 股息率 → ERP）需另接数据源（中证指数/akshare 乐咕乐股）。
+    df["dividend_yield"] = None
     return df[["trading_day", "pe", "pb", "dividend_yield"]]
