@@ -49,11 +49,19 @@ smoke:
 	bash scripts/smoke.sh
 
 ## 估值数据采集（Python collector）
-.PHONY: collect collect-test
+.PHONY: collect collect-test collect-run collect-backfill
 
-## 运行一次估值采集任务
+## 列任务
 collect:
-	cd collector && python -m collector.run_once
+	cd collector && python -m collector.cli list
+
+## 手动触发一次采集（TASK=<task_code>，如 TASK=all_a_valuation）
+collect-run:
+	cd collector && python -m collector.cli run $(TASK)
+
+## 按区间回填历史（TASK=<task_code> START=YYYY-MM-DD END=YYYY-MM-DD）
+collect-backfill:
+	cd collector && python -m collector.cli backfill $(TASK) --start $(START) --end $(END)
 
 ## 运行 collector 测试（覆盖率 >= 80%）
 collect-test:
