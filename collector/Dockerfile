@@ -7,5 +7,6 @@ RUN pip install --no-cache-dir -r requirements.txt \
 
 COPY collector/ collector/
 COPY migrations/ migrations/
+COPY tasks/ tasks/
 
 CMD ["sh", "-c", "alembic -c migrations/alembic.ini upgrade head && python -m collector.scheduler.jobs"]

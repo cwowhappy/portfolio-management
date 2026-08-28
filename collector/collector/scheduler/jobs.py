@@ -187,3 +187,7 @@ def main():
     runner = TaskRunner(config.database_url, calendar, executor)
     scheduler = build_scheduler(tasks, runner)
     scheduler.start()
+
+
+if __name__ == "__main__":
+    main()

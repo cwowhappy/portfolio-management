@@ -7,6 +7,7 @@ from collector.executor.executor import Executor, AllSourcesFailed, StoreError
 from collector.executor.selector import SourceSelector
 from collector.model.task import Collector
 from collector.sources.base import SourceError
+from collector.validators.rules import RuleValidator
 
 
 def _task(sources):
@@ -38,7 +39,7 @@ def repos():
         H.return_value = hr
         rr = MagicMock()
         R.return_value = rr
-        yield
+        yield rr
 
 
 def test_primary_success(repos):
@@ -98,3 +99,39 @@ def test_existing_trading_day_preserved(repos):
            "incremental", {"date": "2026-08-28"}, MagicMock())
     records = store.upsert.call_args.args[2]
     assert records[0]["trading_day"] == dt.date(2026, 8, 1)
+
+
+def test_validate_runs_before_calc(repos):
+    """validate 必须先于 calc：min_rows 基于原始明细行数，calc 折叠后必然失败。"""
+    conv = MagicMock()
+    conv.convert.return_value = [{"code": f"a{i}"} for i in range(5)]
+    calc = MagicMock()
+    calc.compute.side_effect = lambda recs: recs[:1]
+    task = Collector("t", "t", [_source("a")], conv, calc, target_table="valuation_snapshot",
+                     schedule={}, validator=RuleValidator([{"check": "min_rows", "value": 2, "level": "hard"}]),
+                     enabled=True)
+    store = MagicMock()
+    store.upsert.return_value = 1
+    ex = Executor(SourceSelector(), store)
+    res = ex.run(task, "incremental", {}, MagicMock())
+    assert res.status == "success"
+    calc.compute.assert_called_once()
+    assert len(store.upsert.call_args.args[2]) == 1
+
+
+def test_all_sources_failed_records_failed_run(repos):
+    ex = Executor(SourceSelector(), MagicMock())
+    with pytest.raises(AllSourcesFailed):
+        ex.run(_task([_source("a", fail=True)]), "incremental", {}, MagicMock())
+    repos.record.assert_called_once_with("t", "incremental", "failed",
+                                         error="AllSourcesFailed", params={})
+
+
+def test_store_error_records_failed_run(repos):
+    store = MagicMock()
+    store.upsert.side_effect = StoreError("db down")
+    ex = Executor(SourceSelector(), store)
+    with pytest.raises(StoreError):
+        ex.run(_task([_source("a")]), "incremental", {}, MagicMock())
+    repos.record.assert_called_once_with("t", "incremental", "failed",
+                                         error="db down", params={})

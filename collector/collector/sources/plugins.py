@@ -1,3 +1,5 @@
+import datetime as dt
+
 import akshare as ak
 import pandas as pd
 
@@ -8,6 +10,17 @@ INDEX_CODES = {"000016": "上证50", "000300": "沪深300", "000905": "中证500
 
 def _ts_code(code):
     return code + (".SH" if code.startswith("0") else ".SZ")
+
+
+def _date_param(params, key):
+    """取 start/end 日期参数；缺失时回退到 date 参数或今天，统一 YYYYMMDD。"""
+    val = params.get(key)
+    if val:
+        return val
+    raw = params.get("date")
+    if raw:
+        return dt.date.fromisoformat(str(raw)).strftime("%Y%m%d")
+    return dt.date.today().strftime("%Y%m%d")
 
 
 class ShenwanMappingSource(Source):
@@ -42,7 +55,7 @@ class IndexValuationSource(Source):
 
     def fetch(self, params):
         pro = self.pro_factory()
-        start, end = params.get("start"), params.get("end")
+        start, end = _date_param(params, "start"), _date_param(params, "end")
         frames = []
         for code, name in self.index_codes.items():
             df = pro.index_dailybasic(ts_code=_ts_code(code), start_date=start, end_date=end)

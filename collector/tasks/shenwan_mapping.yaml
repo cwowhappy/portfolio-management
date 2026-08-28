@@ -5,7 +5,7 @@ source_ids:
 converter: field_mapping_sw
 calc: null
 validator:
-  - { field: code, check: required, level: hard }
+  - { field: stock_code, check: required, level: hard }
 target_table: shenwan_industry_mapping
 schedule: { type: interval, days: 7 }
 enabled: true

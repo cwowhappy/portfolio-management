@@ -1,5 +1,7 @@
 import psycopg
 
+from collector.executor.executor import StoreError
+
 UPSERT_SQL = {
     "valuation_snapshot": """
         INSERT INTO valuation_snapshot (trading_day, pe_median, pb_median, net_breaker_count, net_breaker_ratio)
@@ -56,7 +58,10 @@ class Store:
         cols = TABLE_COLUMNS[table]
         sql = UPSERT_SQL[table]
         rows = [tuple(r.get(c) for c in cols) for r in records]
-        with conn.cursor() as cur:
-            cur.executemany(sql, rows)
-        conn.commit()
+        try:
+            with conn.cursor() as cur:
+                cur.executemany(sql, rows)
+            conn.commit()
+        except psycopg.Error as e:
+            raise StoreError(f"DB 写入失败: {e}") from e
         return len(rows)

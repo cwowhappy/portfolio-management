@@ -47,16 +47,22 @@ class Executor:
             try:
                 raw = src.fetch(params)
                 records = task.converter.convert(raw)
+                # 先校验再聚合：min_rows 等规则基于原始明细行数（如 ~5000 行快照），
+                # 若在 calc 之后校验，快照已被折叠成 1 行导致校验必然失败。
+                if task.validator is not None:
+                    records, issues = task.validator.validate(records)
+                else:
+                    issues = []
                 if task.calc is not None:
                     records = task.calc.compute(records)
                 day = _trading_day(params)
                 for r in records:
                     r.setdefault("trading_day", day)
-                if task.validator is not None:
-                    records, issues = task.validator.validate(records)
-                else:
-                    issues = []
-                rows = self.store.upsert(conn, task.target_table, records)
+                try:
+                    rows = self.store.upsert(conn, task.target_table, records)
+                except StoreError as e:
+                    run_repo.record(task.task_code, mode, STATUS_FAILED, error=str(e), params=params)
+                    raise
                 latency = int((time.monotonic() - started) * 1000)
                 health_repo.save(self.selector.record_success(h, latency))
                 status = STATUS_PARTIAL if issues else STATUS_SUCCESS
@@ -68,4 +74,5 @@ class Executor:
                 health_repo.save(self.selector.record_failure(h, str(e)))
                 continue
 
+        run_repo.record(task.task_code, mode, STATUS_FAILED, error="AllSourcesFailed", params=params)
         raise AllSourcesFailed(task.task_code)

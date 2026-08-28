@@ -1,3 +1,5 @@
+import datetime as dt
+
 import pandas as pd
 
 from collector.sources.plugins import IndustryUniverseSource, ShenwanMappingSource, IndexValuationSource
@@ -28,6 +30,27 @@ def test_index_valuation_merges_dividend(mocker):
                                index_codes={"000300": "沪深300"})
     df = src.fetch({"start": "20260828", "end": "20260828"})
     assert df.iloc[0]["dividend_yield"] == 2.35
+
+
+def test_index_valuation_defaults_range_to_today(mocker):
+    pro = mocker.Mock()
+    pro.index_dailybasic.return_value = pd.DataFrame(
+        {"trade_date": ["20260829"], "pe": [12.0], "pb": [1.4]}
+    )
+    src = IndexValuationSource("idx", pro_factory=lambda: pro, index_codes={"000300": "沪深300"})
+    src.fetch({})
+    expected = dt.date.today().strftime("%Y%m%d")
+    pro.index_dailybasic.assert_called_once_with(ts_code="000300.SH", start_date=expected, end_date=expected)
+
+
+def test_index_valuation_defaults_range_to_date_param(mocker):
+    pro = mocker.Mock()
+    pro.index_dailybasic.return_value = pd.DataFrame(
+        {"trade_date": ["20260828"], "pe": [12.0], "pb": [1.4]}
+    )
+    src = IndexValuationSource("idx", pro_factory=lambda: pro, index_codes={"000300": "沪深300"})
+    src.fetch({"date": "2026-08-28"})
+    pro.index_dailybasic.assert_called_once_with(ts_code="000300.SH", start_date="20260828", end_date="20260828")
 
 
 def test_industry_universe_joins_mapping(mocker):
