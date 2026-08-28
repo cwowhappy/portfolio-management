@@ -1,3 +1,4 @@
+import akshare as ak
 import pandas as pd
 
 from collector.sources.base import Source
@@ -80,3 +81,45 @@ class IndustryUniverseSource(Source):
                 rows = cur.fetchall()
         mapping = pd.DataFrame(rows, columns=["stock_code", "industry_code", "industry_name"])
         return universe.merge(mapping, left_on="代码", right_on="stock_code", how="inner")
+
+
+TERMS = [("1Y", "中国国债收益率1年"), ("3Y", "中国国债收益率3年"), ("5Y", "中国国债收益率5年"),
+         ("10Y", "中国国债收益率10年"), ("30Y", "中国国债收益率30年")]
+
+
+class TreasuryCurveSource(Source):
+    supports_range = True
+
+    def __init__(self, source_id):
+        self.source_id = source_id
+
+    def fetch(self, params):
+        import akshare as ak
+        df = ak.bond_zh_us_rate()
+        rows = []
+        for _, r in df.iterrows():
+            day = r["日期"]
+            for term, col in TERMS:
+                if col in df.columns and pd.notna(r[col]):
+                    rows.append({"trading_day": day, "term": term, "yield": float(r[col])})
+        return pd.DataFrame(rows)
+
+
+class IndexConstituentSource(Source):
+    supports_range = False
+
+    def __init__(self, source_id, pro_factory, index_codes=None):
+        self.source_id = source_id
+        self.pro_factory = pro_factory
+        self.index_codes = index_codes or INDEX_CODES
+
+    def fetch(self, params):
+        pro = self.pro_factory()
+        frames = []
+        for code in self.index_codes:
+            df = pro.index_weight(index_code=_ts_code(code))
+            df = df.rename(columns={"index_code": "index_code", "con_code": "stock_code"})
+            df["stock_code"] = df["stock_code"].str.split(".").str[0]
+            df["index_code"] = code
+            frames.append(df[["index_code", "stock_code", "weight"]])
+        return pd.concat(frames, ignore_index=True)

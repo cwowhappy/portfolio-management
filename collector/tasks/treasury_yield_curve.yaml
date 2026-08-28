@@ -1,0 +1,15 @@
+task_code: treasury_yield_curve
+task_name: 国债收益率曲线
+source_ids:
+  - { source_id: treasury_curve, type: plugin, class: treasury_curve }
+converter: field_mapping_curve
+calc: null
+validator:
+  - { field: trading_day, check: required, level: hard }
+  - { field: term, check: required, level: hard }
+target_table: treasury_yield_curve
+schedule: { type: cron, cron: "30 15 * * 1-5" }
+enabled: true
+trading_day_gated: true
+retry_max: 3
+retry_backoff: exponential

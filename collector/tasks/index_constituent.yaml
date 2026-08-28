@@ -1,0 +1,14 @@
+task_code: index_constituent
+task_name: 指数成分股
+source_ids:
+  - { source_id: index_constituent, type: plugin, class: index_constituent }
+converter: field_mapping_constituent
+calc: null
+validator:
+  - { field: index_code, check: required, level: hard }
+target_table: index_constituent
+schedule: { type: interval, days: 180 }
+enabled: true
+trading_day_gated: false
+retry_max: 3
+retry_backoff: exponential
