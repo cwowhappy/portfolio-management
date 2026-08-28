@@ -21,6 +21,7 @@ class RuleValidator(Validator):
                     if level == "hard":
                         raise SourceError(f"必填字段缺失: {rule['field']}")
                     issues.append(f"required: {rule['field']}")
+                    records = [r for r in records if r.get(rule["field"])]
             elif check == "range":
                 kept, dropped = [], 0
                 for r in records:

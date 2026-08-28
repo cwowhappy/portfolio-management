@@ -10,6 +10,13 @@ def test_required_hard_raises():
         v.validate([{"name": "x"}])
 
 
+def test_required_soft_drops_missing():
+    v = RuleValidator([{"field": "code", "check": "required", "level": "soft"}])
+    records, issues = v.validate([{"code": "a"}, {"name": "x"}])
+    assert records == [{"code": "a"}]
+    assert len(issues) == 1
+
+
 def test_range_soft_drops_outliers():
     v = RuleValidator([{"field": "pe", "check": "range", "min": 0, "max": 100, "level": "soft"}])
     records, issues = v.validate([{"pe": 20.0}, {"pe": 200.0}])
