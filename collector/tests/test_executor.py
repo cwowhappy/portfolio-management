@@ -14,7 +14,8 @@ def _task(sources):
     conv.convert.return_value = [{"code": "a"}]
     val = MagicMock()
     val.validate.return_value = ([{"code": "a"}], [])
-    return Collector("t", "t", sources, conv, None, val, "valuation_snapshot", {}, enabled=True)
+    return Collector("t", "t", sources, conv, None, target_table="valuation_snapshot",
+                     schedule={}, validator=val, enabled=True)
 
 
 def _source(sid, fail=False):
@@ -76,7 +77,8 @@ def _agg_task(records):
     conv.convert.return_value = records
     val = MagicMock()
     val.validate.side_effect = lambda recs: (recs, [])
-    return Collector("t", "t", [_source("a")], conv, None, val, "valuation_snapshot", {}, enabled=True)
+    return Collector("t", "t", [_source("a")], conv, None, target_table="valuation_snapshot",
+                     schedule={}, validator=val, enabled=True)
 
 
 def test_aggregate_record_gets_trading_day_injected(repos):

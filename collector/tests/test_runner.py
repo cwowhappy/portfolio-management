@@ -8,7 +8,8 @@ from collector.scheduler.runner import TaskRunner
 
 
 def _task(gated=True):
-    return Collector("t", "t", [], MagicMock(), None, MagicMock(), "x", {}, trading_day_gated=gated)
+    return Collector("t", "t", [], MagicMock(), None, target_table="x", schedule={},
+                     validator=MagicMock(), trading_day_gated=gated)
 
 
 def test_non_trading_day_skipped():

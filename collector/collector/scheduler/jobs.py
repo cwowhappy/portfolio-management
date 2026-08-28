@@ -30,7 +30,7 @@ def assemble_collector(row, registries):
     sources = [registries["source"].get(spec) for spec in row["source_ids"]]
     converter = registries["converter"].get(row["converter"])
     calc = registries["calc"].get(row["calc"]) if row.get("calc") else None
-    validator = registries["validator"].get(row["validator"])
+    validator = registries["validator"].get(row["validator"]) if row.get("validator") else None
     return Collector(
         task_code=row["task_code"], task_name=row["task_name"], sources=sources,
         converter=converter, calc=calc, validator=validator, target_table=row["target_table"],

@@ -52,7 +52,10 @@ class Executor:
                 day = _trading_day(params)
                 for r in records:
                     r.setdefault("trading_day", day)
-                records, issues = task.validator.validate(records)
+                if task.validator is not None:
+                    records, issues = task.validator.validate(records)
+                else:
+                    issues = []
                 rows = self.store.upsert(conn, task.target_table, records)
                 latency = int((time.monotonic() - started) * 1000)
                 health_repo.save(self.selector.record_success(h, latency))
