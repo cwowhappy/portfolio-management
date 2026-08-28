@@ -1,0 +1,14 @@
+task_code: index_valuation
+task_name: 指数估值(含股息率)
+source_ids:
+  - { source_id: index_valuation, type: plugin, class: index_valuation }
+converter: field_mapping_index
+calc: null
+validator:
+  - { field: trading_day, check: required, level: hard }
+target_table: index_valuation_history
+schedule: { type: cron, cron: "30 15 * * 1-5" }
+enabled: true
+trading_day_gated: true
+retry_max: 3
+retry_backoff: exponential

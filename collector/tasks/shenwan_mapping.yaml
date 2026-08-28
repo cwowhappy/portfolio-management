@@ -1,0 +1,14 @@
+task_code: shenwan_mapping
+task_name: 申万行业映射
+source_ids:
+  - { source_id: shenwan_mapping, type: plugin, class: shenwan_mapping }
+converter: field_mapping_sw
+calc: null
+validator:
+  - { field: code, check: required, level: hard }
+target_table: shenwan_industry_mapping
+schedule: { type: interval, days: 7 }
+enabled: true
+trading_day_gated: false
+retry_max: 3
+retry_backoff: exponential

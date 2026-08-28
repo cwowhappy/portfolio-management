@@ -1,0 +1,14 @@
+task_code: industry_valuation
+task_name: 行业加权估值
+source_ids:
+  - { source_id: industry_universe, type: plugin, class: industry_universe }
+converter: field_mapping_industry
+calc: industry_weighted
+validator:
+  - { check: min_rows, value: 1000, level: hard }
+target_table: industry_valuation
+schedule: { type: cron, cron: "45 15 * * 1-5" }
+enabled: true
+trading_day_gated: true
+retry_max: 3
+retry_backoff: exponential

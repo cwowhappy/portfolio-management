@@ -1,0 +1,14 @@
+task_code: all_a_valuation
+task_name: 全A估值快照
+source_ids:
+  - { source_id: akshare_spot_em, type: akshare, call: stock_zh_a_spot_em }
+converter: field_mapping_all_a
+calc: snapshot
+validator:
+  - { check: min_rows, value: 1000, level: hard }
+target_table: valuation_snapshot
+schedule: { type: cron, cron: "30 15 * * 1-5" }
+enabled: true
+trading_day_gated: true
+retry_max: 3
+retry_backoff: exponential
