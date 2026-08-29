@@ -116,4 +116,14 @@ class PositionTest {
                 .isInstanceOf(PortfolioException.class)
                 .hasMessageContaining("卖出数量超过持仓");
     }
+
+    @Test
+    void 盈亏恒等式在非整数均价下仍成立() {
+        Position p = newPosition()
+                .applyBuy(bd("10"), bd("3"), bd("0"))    // cost 30
+                .applyCashDividend(bd("1"))              // costBasis 29
+                .applySell(bd("10"), bd("1"), bd("0"));  // 均价 9.67
+        assertThat(p.realizedPnl()).isEqualByComparingTo("0.3333");
+        assertThat(p.costBasis().add(p.netCashFlow())).isEqualByComparingTo(p.realizedPnl());
+    }
 }

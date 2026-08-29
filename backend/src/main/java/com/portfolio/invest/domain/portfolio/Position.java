@@ -65,19 +65,18 @@ public final class Position {
                 cumulativeCashDividend, realizedPnl, netCashFlow.subtract(cost));
     }
 
-    /** 卖出：按当前摊薄成本匹配，计算已实现收益与现金流入。 */
+    /** 卖出：按精确移除成本匹配，计算已实现收益与现金流入。 */
     public Position applySell(BigDecimal price, BigDecimal qty, BigDecimal fee) {
         if (qty.compareTo(quantity) > 0) {
             throw new PortfolioException("SELL_EXCEEDS_QUANTITY", "卖出数量超过持仓");
         }
-        BigDecimal avg = avgCost();
         BigDecimal proceeds = price.multiply(qty).subtract(fee);
-        BigDecimal realized = proceeds.subtract(avg.multiply(qty));
         BigDecimal remaining = quantity.subtract(qty);
         // 按比例扣减成本，保持摊薄成本价不变
         BigDecimal newCostBasis = remaining.signum() == 0
                 ? z()
                 : costBasis.multiply(remaining).divide(quantity, SCALE, RM);
+        BigDecimal realized = proceeds.subtract(costBasis.subtract(newCostBasis));
         return copy(remaining, newCostBasis, totalBuyCost, cumulativeCashDividend,
                 realizedPnl.add(realized), netCashFlow.add(proceeds));
     }
