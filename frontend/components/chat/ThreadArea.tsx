@@ -87,12 +87,21 @@ function pruneFeedbackKeys() {
 function FeedbackBar({ messageId }: { messageId: string }) {
   const [voted, setVoted] = useState<"positive" | "negative" | null>(null);
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(FEEDBACK_KEY_PREFIX + messageId);
-      if (raw) setVoted((JSON.parse(raw) as { type: "positive" | "negative" }).type);
-    } catch {
-      // ignore
-    }
+    // localStorage 仅客户端可读，必须挂载后恢复；微任务 defer 避免 effect 体内同步 setState
+    // （同步读会破坏服务端/客户端首帧一致性，见规范 4.3）
+    let cancelled = false;
+    void Promise.resolve().then(() => {
+      if (cancelled) return;
+      try {
+        const raw = localStorage.getItem(FEEDBACK_KEY_PREFIX + messageId);
+        if (raw) setVoted((JSON.parse(raw) as { type: "positive" | "negative" }).type);
+      } catch {
+        // ignore
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [messageId]);
   const vote = (type: "positive" | "negative") => {
     try {
