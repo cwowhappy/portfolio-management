@@ -7,11 +7,14 @@ import com.portfolio.invest.domain.portfolio.Portfolio;
 import com.portfolio.invest.domain.portfolio.PortfolioErrorCode;
 import com.portfolio.invest.domain.portfolio.PortfolioException;
 import com.portfolio.invest.domain.portfolio.PortfolioRepository;
+import com.portfolio.invest.domain.portfolio.Position;
 import com.portfolio.invest.domain.valuation.ValuationRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
@@ -72,5 +75,37 @@ class PortfolioApplicationServiceTest {
         assertThatThrownBy(() -> service.deleteGroup(1L, 1L))
                 .isInstanceOfSatisfying(PortfolioException.class,
                         e -> assertThat(e.code()).isEqualTo(PortfolioErrorCode.NOT_FOUND));
+    }
+
+    @Test
+    void 买入不存在持仓时新建() {
+        when(repo.findGroupByIdAndPortfolioId(1L, 10L))
+                .thenReturn(Optional.of(HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now())));
+        when(repo.findPositionByPortfolioIdAndGroupIdAndStockCode(10L, 1L, "600519")).thenReturn(Optional.empty());
+        when(repo.savePosition(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(repo.saveTrade(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        var view = service.buy(1L, new BuyCommand(1L, "600519", "贵州茅台",
+                LocalDate.of(2026, 8, 27), new BigDecimal("1500"),
+                new BigDecimal("100"), new BigDecimal("5")));
+
+        assertThat(view.stockCode()).isEqualTo("600519");
+        assertThat(view.quantity()).isEqualByComparingTo("100");
+        assertThat(view.avgCost()).isEqualByComparingTo("1500.05");
+    }
+
+    @Test
+    void 卖出调用引擎并保存() {
+        Position pos = Position.create(10L, 1L, "600519", "贵州茅台", Instant.now())
+                .applyBuy(new BigDecimal("100"), new BigDecimal("100"), new BigDecimal("0"));
+        when(repo.findPositionByIdAndPortfolioId(5L, 10L)).thenReturn(Optional.of(pos));
+        when(repo.savePosition(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(repo.saveTrade(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        var view = service.sell(1L, new SellCommand(5L, LocalDate.of(2026, 8, 28),
+                new BigDecimal("120"), new BigDecimal("40"), new BigDecimal("0")));
+
+        assertThat(view.quantity()).isEqualByComparingTo("60");
+        assertThat(view.realizedPnl()).isEqualByComparingTo("800");
     }
 }
