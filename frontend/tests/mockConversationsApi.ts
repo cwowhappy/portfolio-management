@@ -52,7 +52,10 @@ export function installConversationsApi(initial: InstallOptions = {}): Conversat
     const method = init?.method ?? "GET";
     const bodyText = typeof init?.body === "string" ? init.body : "";
 
-    if (url === "/api/conversations" && method === "GET") return json(200, state.list);
+    if (url === "/api/conversations" && method === "GET") {
+      // 模拟后端 ORDER BY updated_at DESC
+      return json(200, [...state.list].sort((a, b) => b.updatedAt - a.updatedAt));
+    }
     if (url === "/api/conversations" && method === "POST") {
       const { id } = JSON.parse(bodyText || "{}") as { id?: string };
       if (!id) return json(400, { message: "缺少 id" });
@@ -66,7 +69,19 @@ export function installConversationsApi(initial: InstallOptions = {}): Conversat
       const id = decodeURIComponent(msgMatch[1]);
       if (method === "GET") return json(200, state.messages.get(id) ?? []);
       if (method === "PUT") {
-        state.messages.set(id, JSON.parse(bodyText || "[]") as MockMsg[]);
+        const msgs = JSON.parse(bodyText || "[]") as MockMsg[];
+        state.messages.set(id, msgs);
+        // 模拟后端 touch + renameIfDefault：updatedAt 置为当前；默认标题时取首条用户消息前 24 字
+        const firstUser = msgs.find((m) => m.role === "user")?.content.trim() ?? "";
+        state.list = state.list.map((c) =>
+          c.id === id
+            ? {
+                ...c,
+                updatedAt: Date.now(),
+                title: c.title === "新会话" && firstUser ? firstUser.slice(0, 24) : c.title,
+              }
+            : c,
+        );
         return noContent();
       }
     }

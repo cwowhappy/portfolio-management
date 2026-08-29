@@ -72,6 +72,12 @@ describe("行情 REST 客户端（lib/api）", () => {
     await expect(api.fetchHealth()).resolves.toEqual(validHealth);
   });
 
+  it("fetchHealth 打 /api/agent/status（完整结构；/api/agent/health 是纯 liveness）", async () => {
+    fetchMock.mockResolvedValue(okResponse(validHealth));
+    await api.fetchHealth();
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/agent/status");
+  });
+
   it("非 2xx 且响应体带 message 时抛出该消息", async () => {
     fetchMock.mockResolvedValue(okResponse({ message: "上游超时" }, 502));
     await expect(api.fetchHealth()).rejects.toThrow("上游超时");

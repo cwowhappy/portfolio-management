@@ -90,6 +90,11 @@ describe("管理员 REST 客户端（lib/adminApi）", () => {
     await expect(adminApi.list()).rejects.toThrow("请求失败");
   });
 
+  it("2xx 但响应不符合 schema 时抛数据格式异常", async () => {
+    fetchMock.mockResolvedValue(jsonResponse([{ id: "not-a-number" }]));
+    await expect(adminApi.list()).rejects.toThrow("数据格式异常");
+  });
+
   it("所有请求都带 Content-Type 头", async () => {
     fetchMock.mockResolvedValue(jsonResponse([alice]));
     await adminApi.list();

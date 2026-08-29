@@ -8,7 +8,7 @@ import {
   UseAgentUpdate,
 } from "@copilotkit/react-core/v2";
 import type { Message } from "@ag-ui/client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -59,11 +59,36 @@ function ToolCallRenderers() {
 
 // ———— 反馈 ————
 
+// localStorage 反馈键容量上限：超出时清最旧，避免无限增长
+const FEEDBACK_KEY_PREFIX = "invest.feedback.";
+const FEEDBACK_MAX_ENTRIES = 200;
+
+/** 反馈键数量达到上限时，按写入时间清掉最旧的，腾出位置给新反馈。 */
+function pruneFeedbackKeys() {
+  const entries: { key: string; at: number }[] = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (!key?.startsWith(FEEDBACK_KEY_PREFIX)) continue;
+    let at = 0;
+    try {
+      at = (JSON.parse(localStorage.getItem(key) ?? "{}") as { at?: number }).at ?? 0;
+    } catch {
+      // 损坏数据视为最旧，优先清掉
+    }
+    entries.push({ key, at });
+  }
+  entries.sort((a, b) => a.at - b.at);
+  while (entries.length >= FEEDBACK_MAX_ENTRIES) {
+    const oldest = entries.shift();
+    if (oldest) localStorage.removeItem(oldest.key);
+  }
+}
+
 function FeedbackBar({ messageId }: { messageId: string }) {
   const [voted, setVoted] = useState<"positive" | "negative" | null>(null);
   useEffect(() => {
     try {
-      const raw = localStorage.getItem("invest.feedback." + messageId);
+      const raw = localStorage.getItem(FEEDBACK_KEY_PREFIX + messageId);
       if (raw) setVoted((JSON.parse(raw) as { type: "positive" | "negative" }).type);
     } catch {
       // ignore
@@ -71,7 +96,11 @@ function FeedbackBar({ messageId }: { messageId: string }) {
   }, [messageId]);
   const vote = (type: "positive" | "negative") => {
     try {
-      localStorage.setItem("invest.feedback." + messageId, JSON.stringify({ type, at: Date.now() }));
+      pruneFeedbackKeys();
+      localStorage.setItem(
+        FEEDBACK_KEY_PREFIX + messageId,
+        JSON.stringify({ type, at: Date.now() }),
+      );
     } catch {
       // ignore
     }
@@ -130,7 +159,9 @@ function ReasoningMessage({ text }: { text: string }) {
   );
 }
 
-function AssistantMessage({ message }: { message: Message }) {
+// memo 隔离历史消息重渲染：流式期间 agent.messages 高频变化，
+// 已完成的历史消息 props 不变时不重渲染（Markdown 解析是主要开销）
+const AssistantMessage = memo(function AssistantMessage({ message }: { message: Message }) {
   const renderToolCall = useRenderToolCall();
   const toolCalls = message.role === "assistant" ? (message.toolCalls ?? []) : [];
   const content = typeof message.content === "string" ? message.content : "";
@@ -171,7 +202,7 @@ function AssistantMessage({ message }: { message: Message }) {
       </div>
     </div>
   );
-}
+});
 
 // ———— 空状态 ————
 
@@ -296,10 +327,14 @@ export default function ThreadArea({ llmReady }: { llmReady: boolean | null }) {
   const { agent, isReady } = useAgent({
     agentId: AGENT_ID,
     updates: AGENT_UPDATES,
+    // 流式期间合并高频 OnMessagesChanged 通知，降低整树重渲染频率
+    throttleMs: 150,
   });
   const { copilotkit } = useCopilotKit();
   const [sendError, setSendError] = useState<string | null>(null);
   const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 防抖窗口内待写入的快照：供「运行停止立即 flush」与「卸载/切线程 best-effort flush」使用
+  const pendingPersist = useRef<{ threadId: string; msgs: Message[] } | null>(null);
 
   // 同步运行状态到 Provider，供 Sidebar 在运行中禁用切换/新建
   useEffect(() => {
@@ -340,26 +375,67 @@ export default function ThreadArea({ llmReady }: { llmReady: boolean | null }) {
     };
   }, [agent, isReady, currentThreadId]);
 
-  // 消息变化 → 防抖持久化（流式期间高频触发，避免每个 token 都整段重写；400ms 后先拉取现有历史再整体 PUT）
-  useEffect(() => {
-    if (persistTimer.current) clearTimeout(persistTimer.current);
-    persistTimer.current = setTimeout(() => {
+  // 执行一次持久化。msgs 是调用点快照：若等待 loadMessages 期间发生切线程 + 历史回灌
+  // setMessages，agent.messages 会变成新线程的，若不快照会把新线程消息写进旧线程记录。
+  // keepalive 用于卸载场景：让 PUT 在页面销毁后仍能完成。
+  const flushPersist = useCallback(
+    (threadId: string, msgs: Message[], keepalive = false) => {
       (async () => {
         try {
-          // 先在 await 前快照消息：若等待 loadMessages 期间发生切线程 + 历史回灌 setMessages，
-          // agent.messages 会变成新线程的，若不快照会把新线程消息写进旧线程记录。
-          const msgs = agent.messages ?? [];
-          const saved = agentMessagesToHistory(msgs, await loadMessages(currentThreadId));
-          if (saved.length > 0) await persistMessages(currentThreadId, saved);
+          const saved = agentMessagesToHistory(msgs, await loadMessages(threadId));
+          if (saved.length > 0) await persistMessages(threadId, saved, { keepalive });
         } catch (e) {
-          console.error("[ThreadArea] 持久化会话失败", currentThreadId, e);
+          console.error("[ThreadArea] 持久化会话失败", threadId, e);
         }
       })();
+    },
+    [persistMessages],
+  );
+
+  // 消息变化 → 防抖持久化（流式期间高频触发，避免每个 token 都整段重写；400ms 后先拉取现有历史再整体 PUT）
+  useEffect(() => {
+    pendingPersist.current = { threadId: currentThreadId, msgs: agent.messages ?? [] };
+    if (persistTimer.current) clearTimeout(persistTimer.current);
+    persistTimer.current = setTimeout(() => {
+      persistTimer.current = null;
+      const pending = pendingPersist.current;
+      pendingPersist.current = null;
+      if (pending) flushPersist(pending.threadId, pending.msgs);
     }, 400);
     return () => {
-      if (persistTimer.current) clearTimeout(persistTimer.current);
+      if (persistTimer.current) {
+        clearTimeout(persistTimer.current);
+        persistTimer.current = null;
+      }
     };
-  }, [agent.messages, currentThreadId, persistMessages]);
+  }, [agent.messages, currentThreadId, flushPersist]);
+
+  // 运行结束（isRunning true→false）立即 flush：防抖窗口内的尾部内容不等 400ms，避免停止即丢尾
+  const prevRunning = useRef(agent.isRunning);
+  useEffect(() => {
+    const wasRunning = prevRunning.current;
+    prevRunning.current = agent.isRunning;
+    if (!wasRunning || agent.isRunning) return;
+    if (persistTimer.current) {
+      clearTimeout(persistTimer.current);
+      persistTimer.current = null;
+    }
+    const pending = pendingPersist.current;
+    pendingPersist.current = null;
+    if (pending) flushPersist(pending.threadId, pending.msgs);
+  }, [agent.isRunning, flushPersist]);
+
+  // 卸载/切换线程时，把仍在防抖窗口内的 pending 写入 best-effort flush（keepalive 保证请求送达）。
+  // 声明在防抖 effect 之后：cleanup 按声明顺序执行，先停掉旧定时器，再 flush 旧线程快照。
+  useEffect(() => {
+    return () => {
+      const pending = pendingPersist.current;
+      if (pending && pending.threadId === currentThreadId) {
+        pendingPersist.current = null;
+        flushPersist(pending.threadId, pending.msgs, true);
+      }
+    };
+  }, [currentThreadId, flushPersist]);
 
   const messages = agent.messages ?? [];
   const isEmpty = messages.length === 0;

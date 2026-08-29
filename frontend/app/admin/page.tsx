@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { RequireAdmin } from "@/components/auth/RequireAdmin";
 import { adminApi, type AdminUserView } from "@/lib/adminApi";
+import { checkPassword } from "@/lib/password";
 
 const roleLabel: Record<AdminUserView["role"], string> = {
   ADMIN: "管理员",
@@ -24,10 +25,97 @@ const statusClass: Record<AdminUserView["status"], string> = {
 const ghostBtn =
   "rounded-md border border-[color:var(--color-line)] bg-[color:var(--color-panel)] px-3 py-1.5 text-[12px] text-[color:var(--color-ink-dim)] transition-all enabled:hover:border-[color:var(--color-line)] enabled:hover:text-[color:var(--color-ink)] disabled:cursor-not-allowed disabled:opacity-40";
 
+/** 重置密码弹窗：强度校验（复用 checkPassword）+ 二次确认，替代 window.prompt。 */
+function ResetPasswordDialog({
+  user,
+  busy,
+  onCancel,
+  onSubmit,
+}: {
+  user: AdminUserView;
+  busy: boolean;
+  onCancel: () => void;
+  onSubmit: (newPassword: string) => Promise<void>;
+}) {
+  const [pwd, setPwd] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit() {
+    const check = checkPassword(pwd);
+    if (!check.ok) {
+      setError(check.error ?? "密码不符合要求");
+      return;
+    }
+    if (pwd !== confirm) {
+      setError("两次输入的密码不一致");
+      return;
+    }
+    await onSubmit(pwd);
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-black/40 px-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`为 ${user.username} 重置密码`}
+    >
+      <div className="w-full max-w-sm rounded-xl border border-[color:var(--color-line)] bg-[color:var(--color-bg)] p-5 shadow-xl">
+        <h3 className="text-[15px] font-medium text-[color:var(--color-ink)]">
+          为 {user.username} 设置新密码
+        </h3>
+        <p className="mt-1 text-[12px] text-[color:var(--color-ink-faint)]">
+          至少 8 位，需包含字母和数字
+        </p>
+        <input
+          type="password"
+          aria-label="新密码"
+          autoFocus
+          value={pwd}
+          onChange={(e) => setPwd(e.target.value)}
+          className="mt-4 w-full rounded-md border border-[color:var(--color-line)] bg-[color:var(--color-panel)] px-3 py-2 text-[13px] text-[color:var(--color-ink)] focus:outline-none focus:border-[color:var(--color-up)]"
+          placeholder="新密码"
+        />
+        <input
+          type="password"
+          aria-label="确认新密码"
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !busy) void submit();
+          }}
+          className="mt-2 w-full rounded-md border border-[color:var(--color-line)] bg-[color:var(--color-panel)] px-3 py-2 text-[13px] text-[color:var(--color-ink)] focus:outline-none focus:border-[color:var(--color-up)]"
+          placeholder="再次输入新密码"
+        />
+        {error && (
+          <p role="alert" className="mt-2 text-[12px] text-[color:var(--color-up)]">
+            {error}
+          </p>
+        )}
+        <div className="mt-4 flex justify-end gap-2">
+          <button type="button" onClick={onCancel} disabled={busy} className={ghostBtn}>
+            取消
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void submit()}
+            className="rounded-md bg-[color:var(--color-up)] px-3 py-1.5 text-[12px] font-medium text-white transition-all enabled:hover:brightness-110 disabled:opacity-40"
+          >
+            确认重置
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AdminPanel() {
   const [users, setUsers] = useState<AdminUserView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [resetTarget, setResetTarget] = useState<AdminUserView | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -55,10 +143,9 @@ function AdminPanel() {
     }
   }
 
-  async function handleResetPassword(u: AdminUserView) {
-    const newPassword = window.prompt(`为 ${u.username} 设置新密码（至少 8 位，含字母和数字）`);
-    if (!newPassword) return;
+  async function handleResetPassword(u: AdminUserView, newPassword: string) {
     await act(u.id, (id) => adminApi.resetPassword(id, newPassword));
+    setResetTarget(null);
   }
 
   if (!users) {
@@ -177,7 +264,7 @@ function AdminPanel() {
                         <button
                           type="button"
                           disabled={busyId === u.id}
-                          onClick={() => handleResetPassword(u)}
+                          onClick={() => setResetTarget(u)}
                           className={ghostBtn}
                         >
                           重置密码
@@ -193,6 +280,15 @@ function AdminPanel() {
           </table>
         </div>
       </section>
+
+      {resetTarget && (
+        <ResetPasswordDialog
+          user={resetTarget}
+          busy={busyId === resetTarget.id}
+          onCancel={() => setResetTarget(null)}
+          onSubmit={(pwd) => handleResetPassword(resetTarget, pwd)}
+        />
+      )}
     </div>
   );
 }
