@@ -19,6 +19,22 @@ def test_list_enabled_parses_jsonb():
     assert rows[0]["schedule"]["cron"] == "30 15 * * 1-5"
 
 
+def test_list_enabled_handles_parsed_jsonb():
+    """psycopg3 默认把 JSONB 返回为已解析的 list/dict（非 JSON 字符串），须兼容。"""
+    conn = MagicMock()
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.fetchall.return_value = [
+        ("all_a_valuation", "全A估值", [{"source_id": "a"}], "fc", None,
+         [{"check": "min_rows", "value": 1000, "level": "hard"}],
+         "valuation_snapshot", {"type": "cron", "cron": "30 15 * * 1-5"},
+         True, True, 3, "exponential"),
+    ]
+    rows = TaskRepository(conn).list_enabled()
+    assert rows[0]["source_ids"] == [{"source_id": "a"}]
+    assert rows[0]["validator"] == [{"check": "min_rows", "value": 1000, "level": "hard"}]
+    assert rows[0]["schedule"]["cron"] == "30 15 * * 1-5"
+
+
 def test_upsert_serializes_jsonb_and_commits():
     conn = MagicMock()
     cur = conn.cursor.return_value.__enter__.return_value

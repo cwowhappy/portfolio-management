@@ -59,6 +59,18 @@ def test_fallback_to_secondary(repos):
     assert res.source_used == "b"
 
 
+def test_non_source_error_fetch_treated_as_source_failure(repos):
+    """数据源库抛原生异常（如 aiohttp 断连）应被转成 SourceError 并触发降级。"""
+    store = MagicMock()
+    ex = Executor(SourceSelector(), store)
+    a = _source("a")
+    a.fetch.side_effect = RuntimeError("Server disconnected")
+    b = _source("b")
+    res = ex.run(_task([a, b]), "incremental", {}, MagicMock())
+    assert res.status == "success"
+    assert res.source_used == "b"
+
+
 def test_all_sources_failed_raises(repos):
     ex = Executor(SourceSelector(), MagicMock())
     with pytest.raises(AllSourcesFailed):

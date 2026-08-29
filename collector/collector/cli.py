@@ -5,7 +5,7 @@ import psycopg
 
 from collector.backfill import run_backfill
 from collector.config import load
-from collector.executor.executor import Executor
+from collector.executor.executor import Executor, AllSourcesFailed, StoreError
 from collector.executor.selector import SourceSelector
 from collector.repositories.runs import RunRepository
 from collector.repositories.tasks import TaskRepository
@@ -86,11 +86,15 @@ def main(argv=None):
 
         task = assemble_collector(row, registries)
         runner = TaskRunner(config.database_url, load_calendar(conn), Executor(SourceSelector(), Store()))
-        if args.command == "run":
-            params = {"date": args.date} if args.date else {}
-            result = runner.run(task, params=params, force=args.force)
-        else:  # backfill
-            result = run_backfill(runner, task, args.start, args.end)
+        try:
+            if args.command == "run":
+                params = {"date": args.date} if args.date else {}
+                result = runner.run(task, params=params, force=args.force)
+            else:  # backfill
+                result = run_backfill(runner, task, args.start, args.end)
+        except (AllSourcesFailed, StoreError) as e:
+            print(f"采集失败: {e}")
+            sys.exit(1)
         print(result)
 
 
