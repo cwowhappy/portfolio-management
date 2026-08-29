@@ -1,41 +1,43 @@
-import pandas as pd
+import statistics
+
+from collector.calc.base import Calc
 
 
-def _median_or_none(s: pd.Series):
-    """中位数，空序列/NaN 时返回 None，避免 psycopg 绑定 NaN。"""
-    return None if s.empty else float(s.median())
+class SnapshotCalc(Calc):
+    def compute(self, records):
+        pe_valid = [r["pe"] for r in records if r.get("pe") and 0 < r["pe"] <= 100]
+        pb = [r["pb"] for r in records if r.get("pb") is not None]
+        net_breaker = sum(1 for r in records if r.get("pb") is not None and r["pb"] < 1)
+        total = len(pb)
+        return [{
+            "pe_median": statistics.median(pe_valid) if pe_valid else None,
+            "pb_median": statistics.median(pb) if pb else None,
+            "net_breaker_count": net_breaker,
+            "net_breaker_ratio": round(net_breaker / total, 4) if total else 0.0,
+        }]
 
 
-def compute_snapshot(universe: pd.DataFrame) -> dict:
-    pe = universe["pe"]
-    valid = pe[(pe > 0) & (pe <= 100)]
-    pb = universe["pb"].dropna()
-    total = int(universe["pb"].notna().sum())
-    net_breaker_count = int((universe["pb"] < 1).sum())
-    return {
-        "pe_median": _median_or_none(valid),
-        "pb_median": _median_or_none(pb),
-        "net_breaker_count": net_breaker_count,
-        "net_breaker_ratio": round(net_breaker_count / total, 4) if total else 0.0,
-    }
-
-
-def compute_industry_valuation(universe: pd.DataFrame, mapping: pd.DataFrame) -> list[dict]:
-    df = universe.merge(mapping, on="code", how="inner")
-    df = df[df["pe"] > 0]  # 剔除亏损股（PE 不可比）
-    rows = []
-    for industry_code, g in df.groupby("industry_code"):
-        if not g["pb"].notna().any():  # PB 全缺失的行业跳过，避免写入 NaN
-            continue
-        cap = g["market_cap"].dropna()
-        if cap.sum() <= 0:
-            continue
-        pe_w = float((g["pe"] * cap).sum() / cap.sum())
-        pb_w = float((g["pb"] * cap).sum() / cap.sum())
-        rows.append({
-            "industry_code": industry_code,
-            "industry_name": g["industry_name"].iloc[0],
-            "pe": round(pe_w, 4),
-            "pb": round(pb_w, 4),
-        })
-    return rows
+class IndustryValuationCalc(Calc):
+    def compute(self, records):
+        grouped = {}
+        for r in records:
+            if r.get("pe") is None or r["pe"] <= 0 or r.get("market_cap") is None:
+                continue
+            key = r["industry_code"]
+            g = grouped.setdefault(key, {"industry_name": r.get("industry_name"), "pe": 0.0, "pb": 0.0, "cap": 0.0})
+            cap = r["market_cap"]
+            g["cap"] += cap
+            g["pe"] += r["pe"] * cap
+            if r.get("pb") is not None:
+                g["pb"] += r["pb"] * cap
+        rows = []
+        for code, g in grouped.items():
+            if g["cap"] <= 0:
+                continue
+            rows.append({
+                "industry_code": code,
+                "industry_name": g["industry_name"],
+                "pe": round(g["pe"] / g["cap"], 4),
+                "pb": round(g["pb"] / g["cap"], 4),
+            })
+        return rows

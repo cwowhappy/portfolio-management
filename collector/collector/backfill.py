@@ -1,12 +1,5 @@
-import datetime as dt
-
-from collector.sources.index import fetch_index_valuation, INDEX_CODES
-from collector.store.writer import upsert_index
+from collector.model.run import MODE_BACKFILL
 
 
-def backfill_index_history(pro, conn, start: str, end: str) -> None:
-    for code, name in INDEX_CODES.items():
-        df = fetch_index_valuation(pro, code, start, end)
-        for _, row in df.iterrows():
-            upsert_index(conn, row["trading_day"], code, name,
-                         row["pe"], row["pb"], row.get("dividend_yield"))
+def run_backfill(runner, task, start: str, end: str):
+    return runner.run(task, mode=MODE_BACKFILL, params={"start": start, "end": end}, force=True)

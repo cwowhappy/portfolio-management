@@ -1,42 +1,51 @@
-"""scheduler/jobs.py `_run` 的有界重试逻辑单测（Fix 2）。"""
-from types import SimpleNamespace
-from unittest import mock
+from unittest.mock import MagicMock
 
-import collector.scheduler.jobs as jobs
-
-
-def _config():
-    return SimpleNamespace(database_url="postgresql://x")
+from collector.scheduler.jobs import assemble_collector, seed_tasks
+from collector.sources.base import SourceError
 
 
-def test_run_retries_then_succeeds():
-    conn = mock.MagicMock()
-    failures = {"count": 0}
+def test_assemble_collector_wires_registries():
+    src_reg, conv_reg, calc_reg, val_reg = MagicMock(), MagicMock(), MagicMock(), MagicMock()
+    src_reg.get.side_effect = lambda spec: f"src:{spec['call']}"
+    conv_reg.get.return_value = "conv"
+    val_reg.get.return_value = "val"
+    row = {
+        "task_code": "t", "task_name": "T",
+        "source_ids": [{"source_id": "a", "type": "akshare", "call": "f"}],
+        "converter": "field_mapping", "calc": None,
+        "validator": [{"check": "min_rows", "value": 5, "level": "hard"}],
+        "target_table": "x", "schedule": {"type": "cron", "cron": "30 15 * * 1-5"},
+        "enabled": True, "trading_day_gated": True, "retry_max": 3, "retry_backoff": "exponential",
+    }
+    regs = {"source": src_reg, "converter": conv_reg, "calc": calc_reg, "validator": val_reg}
+    c = assemble_collector(row, regs)
+    assert c.sources == ["src:f"]
+    assert c.target_table == "x"
 
-    def flaky_collect(_conn, _config):
-        failures["count"] += 1
-        if failures["count"] < jobs.MAX_ATTEMPTS:
-            raise RuntimeError("transient failure")
 
-    with mock.patch.object(jobs.psycopg, "connect", return_value=conn), mock.patch.object(
-        jobs, "collect_once", side_effect=flaky_collect
-    ), mock.patch.object(jobs.time, "sleep") as sleep:
-        jobs._run(_config())
-
-    assert failures["count"] == jobs.MAX_ATTEMPTS
-    assert sleep.call_count == jobs.MAX_ATTEMPTS - 1
+def test_seed_tasks_upserts():
+    conn = MagicMock()
+    seed_tasks(conn, [{"task_code": "t", "task_name": "T", "source_ids": [], "converter": "c",
+                       "calc": None, "validator": None, "target_table": "x",
+                       "schedule": {}, "enabled": True, "trading_day_gated": True,
+                       "retry_max": 3, "retry_backoff": "exponential"}])
+    conn.cursor.return_value.__enter__.return_value.execute.assert_called()
+    conn.commit.assert_called()
 
 
-def test_run_raises_after_max_attempts():
-    conn = mock.MagicMock()
-
-    with mock.patch.object(jobs.psycopg, "connect", return_value=conn), mock.patch.object(
-        jobs, "collect_once", side_effect=RuntimeError("boom")
-    ), mock.patch.object(jobs.time, "sleep") as sleep:
-        try:
-            jobs._run(_config())
-            raise AssertionError("_run 应在达到最大重试次数后抛出")
-        except RuntimeError:
-            pass
-
-    assert sleep.call_count == jobs.MAX_ATTEMPTS - 1
+def test_assemble_collector_validator_none_ok():
+    src_reg, conv_reg, calc_reg, val_reg = MagicMock(), MagicMock(), MagicMock(), MagicMock()
+    src_reg.get.return_value = "src"
+    conv_reg.get.return_value = "conv"
+    # validator 应可选：若被调用则抛错，证明 assemble_collector 不会触碰 validator 注册表
+    val_reg.get.side_effect = SourceError("不应调用 validator 注册表")
+    row = {
+        "task_code": "t", "task_name": "T",
+        "source_ids": [], "converter": "field_mapping", "calc": None,
+        "validator": None, "target_table": "x", "schedule": {},
+        "enabled": True, "trading_day_gated": True, "retry_max": 3, "retry_backoff": "exponential",
+    }
+    regs = {"source": src_reg, "converter": conv_reg, "calc": calc_reg, "validator": val_reg}
+    c = assemble_collector(row, regs)
+    assert c.validator is None
+    val_reg.get.assert_not_called()
