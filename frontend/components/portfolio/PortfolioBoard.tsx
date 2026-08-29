@@ -5,6 +5,9 @@ import { fetchOverview, fetchPositions, fetchGroups, fetchAllocation, fetchIndus
 import type { GroupView, PortfolioOverview, PositionView, AssetAllocation, IndustryDistribution, Concentration } from "@/lib/types";
 import OverviewCards from "@/components/portfolio/OverviewCards";
 import PositionTable from "@/components/portfolio/PositionTable";
+import AllocationPie from "@/components/portfolio/AllocationPie";
+import IndustryBar from "@/components/portfolio/IndustryBar";
+import ConcentrationList from "@/components/portfolio/ConcentrationList";
 
 export default function PortfolioBoard() {
   const [overview, setOverview] = useState<PortfolioOverview | null>(null);
@@ -60,10 +63,10 @@ export default function PortfolioBoard() {
         <PositionTable positions={shown} />
       </div>
       <div className="grid md:grid-cols-2 gap-6" data-testid="charts">
-        <div data-testid="allocation" />
-        <div data-testid="industry" />
+        <div data-testid="allocation"><AllocationPie allocation={allocation} /></div>
+        <div data-testid="industry"><IndustryBar industry={industry} /></div>
       </div>
-      <div data-testid="concentration" />
+      <div data-testid="concentration"><ConcentrationList concentration={concentration} /></div>
     </div>
   );
 }
