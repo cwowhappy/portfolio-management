@@ -1,11 +1,17 @@
-import type { PositionView } from "@/lib/types";
+import type { GroupView, PositionView } from "@/lib/types";
 import PositionActions from "@/components/portfolio/PositionActions";
 
 function fmt(n: number | null): string {
   return n == null ? "—" : n.toFixed(2);
 }
 
-export default function PositionTable({ positions, onChanged }: { positions: PositionView[]; onChanged?: () => void }) {
+export default function PositionTable({ positions, groups, onChanged }: {
+  positions: PositionView[];
+  groups?: GroupView[];
+  onChanged?: () => void;
+}) {
+  const groupName = (groupId: number): string =>
+    groups?.find((g) => g.id === groupId)?.name ?? "—";
   return (
     <div className="rounded-2xl border border-[color:var(--color-line)] bg-[color:var(--color-panel)]/70 p-5 overflow-x-auto">
       <div className="font-[family-name:var(--font-display)] text-[15px] mb-3">持仓列表</div>
@@ -13,6 +19,7 @@ export default function PositionTable({ positions, onChanged }: { positions: Pos
         <thead className="text-[color:var(--color-ink-dim)]">
           <tr>
             <th className="text-left py-1">名称/代码</th>
+            <th className="text-right py-1">所属分组</th>
             <th className="text-right py-1">数量</th>
             <th className="text-right py-1">成本价</th>
             <th className="text-right py-1">现价</th>
@@ -26,6 +33,7 @@ export default function PositionTable({ positions, onChanged }: { positions: Pos
           {positions.map((p) => (
             <tr key={p.id} className="border-t border-[color:var(--color-line-soft)]">
               <td className="py-2">{p.stockName}<span className="ml-2 text-xs text-[color:var(--color-ink-faint)]">{p.stockCode}</span></td>
+              <td className="text-right">{groupName(p.groupId)}</td>
               <td className="text-right">{p.quantity}</td>
               <td className="text-right">{fmt(p.avgCost)}</td>
               <td className="text-right">{fmt(p.price)}</td>

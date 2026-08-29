@@ -187,6 +187,7 @@ export interface PortfolioOverview {
   totalPnl: number;
   todayPnl: number;
   cashTotal: number;
+  totalCashDividend: number;
   positionCount: number;
   groupCount: number;
 }

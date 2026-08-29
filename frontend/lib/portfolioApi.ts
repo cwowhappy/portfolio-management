@@ -1,10 +1,11 @@
 import { z } from "zod";
 import {
-  AssetAllocationSchema, ConcentrationSchema, GroupViewSchema, IndustryDistributionSchema,
-  PortfolioOverviewSchema, PositionViewSchema,
+  AssetAllocationSchema, CashTransactionViewSchema, ConcentrationSchema, GroupViewSchema,
+  IndustryDistributionSchema, PortfolioOverviewSchema, PositionViewSchema, TradeViewSchema,
 } from "./schemas";
 import type {
-  AssetAllocation, Concentration, GroupView, IndustryDistribution, PortfolioOverview, PositionView,
+  AssetAllocation, CashTransactionView, Concentration, GroupView, IndustryDistribution,
+  PortfolioOverview, PositionView, TradeView,
 } from "./types";
 
 async function request<T>(path: string, method: string, body?: unknown, schema?: z.ZodType<T>): Promise<T> {
@@ -30,6 +31,8 @@ export const fetchPositions = (groupId?: number) =>
 export const fetchGroups = () => request<GroupView[]>("/api/portfolio/groups", "GET", undefined, z.array(GroupViewSchema));
 export const createGroup = (cmd: { name: string; type: "ACCOUNT" | "TAG" }) =>
   request<GroupView>("/api/portfolio/groups", "POST", cmd, GroupViewSchema);
+export const renameGroup = (groupId: number, cmd: { name: string }) =>
+  request<GroupView>(`/api/portfolio/groups/${groupId}`, "PUT", cmd, GroupViewSchema);
 export const deleteGroup = (groupId: number) => request<void>(`/api/portfolio/groups/${groupId}`, "DELETE");
 export const buy = (cmd: { groupId: number; stockCode: string; stockName: string; tradeDate: string; price: number; quantity: number; fee: number }) =>
   request<PositionView>("/api/portfolio/positions/buy", "POST", cmd, PositionViewSchema);
@@ -40,6 +43,14 @@ export const addCashDividend = (cmd: { positionId: number; exDate: string; cashP
 export const addStockDividend = (cmd: { positionId: number; exDate: string; stockRatio: number }) =>
   request<PositionView>("/api/portfolio/positions/stock-dividend", "POST", cmd, PositionViewSchema);
 export const deletePosition = (positionId: number) => request<void>(`/api/portfolio/positions/${positionId}`, "DELETE");
+export const fetchTrades = (positionId: number) =>
+  request<TradeView[]>(`/api/portfolio/positions/${positionId}/trades`, "GET", undefined, z.array(TradeViewSchema));
+export const editTrade = (positionId: number, tradeId: number, cmd: { tradeDate: string; price: number; quantity: number; fee: number }) =>
+  request<PositionView>(`/api/portfolio/positions/${positionId}/trades/${tradeId}`, "PUT", cmd, PositionViewSchema);
+export const addCashTransaction = (cmd: { groupId: number; type: "DEPOSIT" | "WITHDRAW"; amount: number; txDate: string; note?: string }) =>
+  request<CashTransactionView>("/api/portfolio/cash-transactions", "POST", cmd, CashTransactionViewSchema);
+export const fetchCashTransactions = (groupId: number) =>
+  request<CashTransactionView[]>(`/api/portfolio/cash-transactions?groupId=${groupId}`, "GET", undefined, z.array(CashTransactionViewSchema));
 export const fetchAllocation = () => request<AssetAllocation>("/api/portfolio/allocation", "GET", undefined, AssetAllocationSchema);
 export const fetchIndustryDistribution = () => request<IndustryDistribution>("/api/portfolio/industry-distribution", "GET", undefined, IndustryDistributionSchema);
 export const fetchConcentration = () => request<Concentration>("/api/portfolio/concentration", "GET", undefined, ConcentrationSchema);

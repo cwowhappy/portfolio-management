@@ -10,9 +10,10 @@ export default function OverviewCards({ overview }: { overview: PortfolioOvervie
     { label: "总成本", value: overview.totalCost },
     { label: "总盈亏", value: overview.totalPnl },
     { label: "今日盈亏", value: overview.todayPnl },
+    { label: "累计分红", value: overview.totalCashDividend },
   ];
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
       {cards.map((c) => (
         <div key={c.label} className="rounded-2xl border border-[color:var(--color-line)] bg-[color:var(--color-panel)]/70 p-5 animate-rise">
           <div className="text-sm text-[color:var(--color-ink-dim)]">{c.label}</div>

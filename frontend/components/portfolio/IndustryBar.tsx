@@ -26,6 +26,7 @@ export default function IndustryBar({ industry }: { industry: IndustryDistributi
           </Bar>
         </BarChart>
       </ResponsiveContainer>
+      <div className="mt-2 text-xs text-[color:var(--color-ink-faint)]">个股按申万行业，ETF 排除</div>
     </div>
   );
 }

@@ -13,6 +13,9 @@ export async function GET(req: Request, ctx: { params: Promise<{ path?: string[]
 export async function POST(req: Request, ctx: { params: Promise<{ path?: string[] }> }) {
   return relay(await resolve(ctx), "POST", req, await req.text());
 }
+export async function PUT(req: Request, ctx: { params: Promise<{ path?: string[] }> }) {
+  return relay(await resolve(ctx), "PUT", req, await req.text());
+}
 export async function DELETE(req: Request, ctx: { params: Promise<{ path?: string[] }> }) {
   return relay(await resolve(ctx), "DELETE", req);
 }

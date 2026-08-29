@@ -72,7 +72,7 @@ export default function PortfolioBoard() {
         <OverviewCards overview={overview} />
       </div>
       <div data-testid="position-table">
-        <PositionTable positions={shown} onChanged={reload} />
+        <PositionTable positions={shown} groups={groups} onChanged={reload} />
       </div>
       <div className="grid md:grid-cols-2 gap-6" data-testid="charts">
         <div data-testid="allocation"><AllocationPie allocation={allocation} /></div>

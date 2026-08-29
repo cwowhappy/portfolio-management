@@ -27,6 +27,7 @@ export default function AllocationPie({ allocation }: { allocation: AssetAllocat
           <Legend />
         </PieChart>
       </ResponsiveContainer>
+      <div className="mt-2 text-xs text-[color:var(--color-ink-faint)]">ETF 归入权益</div>
     </div>
   );
 }

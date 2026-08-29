@@ -167,9 +167,20 @@ export const PositionViewSchema = z.object({
   totalBuyCost: z.number(), cumulativeCashDividend: z.number(),
 });
 
+export const TradeViewSchema = z.object({
+  id: z.number(), type: z.enum(["BUY", "SELL"]), tradeDate: z.string(),
+  price: z.number(), quantity: z.number(), fee: z.number(),
+});
+
+export const CashTransactionViewSchema = z.object({
+  id: z.number(), groupId: z.number(), type: z.enum(["DEPOSIT", "WITHDRAW"]),
+  amount: z.number(), txDate: z.string(), note: z.string().nullable(),
+});
+
 export const PortfolioOverviewSchema = z.object({
   totalAssets: z.number(), totalCost: z.number(), totalPnl: z.number(),
-  todayPnl: z.number(), cashTotal: z.number(), positionCount: z.number(), groupCount: z.number(),
+  todayPnl: z.number(), cashTotal: z.number(), totalCashDividend: z.number(),
+  positionCount: z.number(), groupCount: z.number(),
 });
 
 export const AllocationSliceSchema = z.object({ category: z.string(), marketValue: z.number(), ratio: z.number() });
