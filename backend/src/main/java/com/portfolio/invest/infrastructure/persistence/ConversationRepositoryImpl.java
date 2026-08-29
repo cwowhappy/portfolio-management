@@ -6,8 +6,10 @@ import com.portfolio.invest.domain.conversation.ConversationRepository;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.stereotype.Repository;
-import org.springframework.transaction.annotation.Transactional;
 
+// 事务边界在 application 层（A2），本类不挂 @Transactional：
+// 全部写路径的唯一调用方 ConversationApplicationService 已声明事务，
+// 底层 Spring Data JpaRepository 的 save/delete 方法自身亦带事务。
 @Repository
 public class ConversationRepositoryImpl implements ConversationRepository {
 
@@ -36,13 +38,11 @@ public class ConversationRepositoryImpl implements ConversationRepository {
     }
 
     @Override
-    @Transactional
     public Conversation save(Conversation conversation) {
         return conversationJpa.save(ConversationJpaEntity.fromDomain(conversation)).toDomain();
     }
 
     @Override
-    @Transactional
     public void delete(String id) {
         conversationJpa.deleteById(id);
     }
@@ -54,7 +54,6 @@ public class ConversationRepositoryImpl implements ConversationRepository {
     }
 
     @Override
-    @Transactional
     public void replaceMessages(String conversationId, List<ChatMessage> messages) {
         messageJpa.deleteByConversationId(conversationId);
         messageJpa.saveAll(messages.stream()

@@ -21,11 +21,11 @@ public final class MarketDataParser {
     public static Quote parseQuote(JsonNode root) {
         JsonNode data = root.path("data");
         if (data.isMissingNode() || data.isNull()) {
-            throw new MarketDataException("BAD_RESPONSE", "行情数据为空");
+            throw new MarketDataException(MarketDataErrorCode.BAD_RESPONSE, "行情数据为空");
         }
         double price = data.path("f43").asDouble();
         if (price <= 0) {
-            throw new MarketDataException("BAD_RESPONSE", "行情价格为空或无效");
+            throw new MarketDataException(MarketDataErrorCode.BAD_RESPONSE, "行情价格为空或无效");
         }
         long f86 = data.path("f86").asLong();
         String time = f86 > 0
@@ -69,16 +69,16 @@ public final class MarketDataParser {
         int start = raw.indexOf('"');
         int end = raw.lastIndexOf('"');
         if (start < 0 || end <= start) {
-            throw new MarketDataException("BAD_RESPONSE", "新浪行情响应格式异常");
+            throw new MarketDataException(MarketDataErrorCode.BAD_RESPONSE, "新浪行情响应格式异常");
         }
         String[] f = raw.substring(start + 1, end).split(",");
         if (f.length < 10) {
-            throw new MarketDataException("BAD_RESPONSE", "新浪行情字段不足");
+            throw new MarketDataException(MarketDataErrorCode.BAD_RESPONSE, "新浪行情字段不足");
         }
         double price = numOrZero(f[3]);
         double prevClose = numOrZero(f[2]);
         if (price <= 0) {
-            throw new MarketDataException("BAD_RESPONSE", "新浪行情价格无效");
+            throw new MarketDataException(MarketDataErrorCode.BAD_RESPONSE, "新浪行情价格无效");
         }
         String time = f.length > 31 ? f[30] + " " + f[31] : "";
         return new Quote(
@@ -102,7 +102,7 @@ public final class MarketDataParser {
     public static List<KlineBar> parseKline(JsonNode root) {
         JsonNode klines = root.path("data").path("klines");
         if (klines.isMissingNode() || klines.isNull()) {
-            throw new MarketDataException("BAD_RESPONSE", "K线数据为空");
+            throw new MarketDataException(MarketDataErrorCode.BAD_RESPONSE, "K线数据为空");
         }
         List<KlineBar> bars = new ArrayList<>();
         for (JsonNode line : klines) {
@@ -121,7 +121,7 @@ public final class MarketDataParser {
                     numOrZero(f[7])));
         }
         if (bars.isEmpty()) {
-            throw new MarketDataException("BAD_RESPONSE", "K线数据为空");
+            throw new MarketDataException(MarketDataErrorCode.BAD_RESPONSE, "K线数据为空");
         }
         return bars;
     }
@@ -137,7 +137,7 @@ public final class MarketDataParser {
             arr = data.path(period);
         }
         if (!arr.isArray()) {
-            throw new MarketDataException("BAD_RESPONSE", "腾讯K线数据为空");
+            throw new MarketDataException(MarketDataErrorCode.BAD_RESPONSE, "腾讯K线数据为空");
         }
         List<KlineBar> bars = new ArrayList<>();
         for (JsonNode row : arr) {
@@ -155,7 +155,7 @@ public final class MarketDataParser {
                     row.size() > 7 ? numOrZero(row.get(7)) : 0));
         }
         if (bars.isEmpty()) {
-            throw new MarketDataException("BAD_RESPONSE", "腾讯K线数据为空");
+            throw new MarketDataException(MarketDataErrorCode.BAD_RESPONSE, "腾讯K线数据为空");
         }
         bars.sort(Comparator.comparing(KlineBar::date));
         return bars;
@@ -199,7 +199,7 @@ public final class MarketDataParser {
     public static List<FinancialIndicator> parseFinancialIndicators(JsonNode root) {
         JsonNode data = root.path("result").path("data");
         if (data.isMissingNode() || data.isNull() || !data.isArray()) {
-            throw new MarketDataException("BAD_RESPONSE", "财务数据为空");
+            throw new MarketDataException(MarketDataErrorCode.BAD_RESPONSE, "财务数据为空");
         }
         List<FinancialIndicator> list = new ArrayList<>();
         for (JsonNode item : data) {
@@ -256,7 +256,7 @@ public final class MarketDataParser {
     public static MarketOverview buildOverview(JsonNode root) {
         List<IndexQuote> indices = parseOverview(root);
         if (indices.isEmpty()) {
-            throw new MarketDataException("BAD_RESPONSE", "指数数据为空");
+            throw new MarketDataException(MarketDataErrorCode.BAD_RESPONSE, "指数数据为空");
         }
         return new MarketOverview(
                 LocalDateTime.now(MARKET_ZONE).format(TIME_FMT), indices);
@@ -280,7 +280,7 @@ public final class MarketDataParser {
                     extractIndexCode(line, start), f[0], numOrZero(f[1]), numOrZero(f[2]), numOrZero(f[3])));
         }
         if (list.isEmpty()) {
-            throw new MarketDataException("BAD_RESPONSE", "新浪指数数据为空");
+            throw new MarketDataException(MarketDataErrorCode.BAD_RESPONSE, "新浪指数数据为空");
         }
         return new MarketOverview(LocalDateTime.now(MARKET_ZONE).format(TIME_FMT), list);
     }

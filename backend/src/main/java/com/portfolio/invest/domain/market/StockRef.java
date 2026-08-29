@@ -12,7 +12,7 @@ public record StockRef(String code, String market, String secid, String sinaPref
             s = s.substring(2);
         }
         if (!s.matches("\\d{6}")) {
-            throw new MarketDataException("INVALID_CODE", "无效的股票代码: " + input);
+            throw new MarketDataException(MarketDataErrorCode.INVALID_CODE, "无效的股票代码: " + input);
         }
         String market;
         String secuSuffix;

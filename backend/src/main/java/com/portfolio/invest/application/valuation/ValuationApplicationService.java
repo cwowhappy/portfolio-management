@@ -1,5 +1,6 @@
 package com.portfolio.invest.application.valuation;
 
+import com.portfolio.invest.application.cache.ApplicationCache;
 import com.portfolio.invest.domain.valuation.IndexValuation;
 import com.portfolio.invest.domain.valuation.Percentile;
 import com.portfolio.invest.domain.valuation.TreasuryYield;
@@ -12,10 +13,7 @@ import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 
 @Service
@@ -26,21 +24,11 @@ public class ValuationApplicationService {
     private static final Duration CACHE_TTL = Duration.ofMinutes(5);
 
     private final ValuationRepository repository;
-    private final LongSupplier nowMillis;
+    private final ApplicationCache cache;
 
-    // TtlCache 位于 infrastructure.market，application 层按分包规范不可依赖，此处以同风格的最小 TTL 实现
-    private final Map<String, CacheEntry> cache = new HashMap<>();
-
-    /** 主构造器（@Autowired：存在测试专用重载构造器时需显式指定注入入口）。 */
-    @org.springframework.beans.factory.annotation.Autowired
-    public ValuationApplicationService(ValuationRepository repository) {
-        this(repository, System::currentTimeMillis);
-    }
-
-    /** 测试注入：自定义时钟（避免真实墙钟等待）。 */
-    ValuationApplicationService(ValuationRepository repository, LongSupplier nowMillis) {
+    public ValuationApplicationService(ValuationRepository repository, ApplicationCache cache) {
         this.repository = repository;
-        this.nowMillis = nowMillis;
+        this.cache = cache;
     }
 
     public ValuationOverviewView overview() {
@@ -103,22 +91,17 @@ public class ValuationApplicationService {
                 repository.findIndexValuations(HS300));
     }
 
-    @SuppressWarnings("unchecked")
-    private synchronized <T> T cached(String kind, Supplier<T> loader) {
-        long now = nowMillis.getAsLong();
-        String key = kind + ":" + LocalDate.now();
-        CacheEntry hit = cache.get(key);
-        if (hit != null && now <= hit.expiresAt()) {
-            return (T) hit.value();
+    private <T> T cached(String kind, Supplier<T> loader) {
+        // 应用级共享缓存（ApplicationCache 端口），key 带域前缀防冲突
+        String key = "valuation:" + kind + ":" + LocalDate.now();
+        T hit = cache.get(key);
+        if (hit != null) {
+            return hit;
         }
         T value = loader.get();
-        // 顺手清理过期键，防跨日累积
-        cache.entrySet().removeIf(e -> e.getValue().expiresAt() < now);
-        cache.put(key, new CacheEntry(value, now + CACHE_TTL.toMillis()));
+        cache.put(key, value, CACHE_TTL);
         return value;
     }
-
-    private record CacheEntry(Object value, long expiresAt) {}
 
     /** ERP = 沪深 300 股息率 − 10 年国债收益率；数据缺失返回 null。 */
     private BigDecimal erp(List<IndexValuation> hs300, List<TreasuryYield> treasuries) {

@@ -4,14 +4,21 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.portfolio.invest.domain.market.MarketDataErrorCode;
 import com.portfolio.invest.domain.market.MarketDataException;
+import com.portfolio.invest.domain.conversation.ConversationErrorCode;
+import com.portfolio.invest.domain.user.UserErrorCode;
 import com.portfolio.invest.domain.user.UserException;
 import io.agentscope.core.agui.AguiException;
+import java.util.List;
 import org.apache.catalina.connector.ClientAbortException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.BindingResult;
+import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 
 /** 全局异常 → HTTP 状态映射。 */
@@ -26,44 +33,44 @@ class GlobalExceptionHandlerTest {
 
     @Test
     void 参数类错误映射400() {
-        assertStatus(new MarketDataException("INVALID_CODE", "无效代码"), HttpStatus.BAD_REQUEST);
-        assertStatus(new MarketDataException("INVALID_PERIOD", "无效周期"), HttpStatus.BAD_REQUEST);
-        assertStatus(new MarketDataException("INVALID_QUERY", "无效关键词"), HttpStatus.BAD_REQUEST);
+        assertStatus(new MarketDataException(MarketDataErrorCode.INVALID_CODE, "无效代码"), HttpStatus.BAD_REQUEST);
+        assertStatus(new MarketDataException(MarketDataErrorCode.INVALID_PERIOD, "无效周期"), HttpStatus.BAD_REQUEST);
+        assertStatus(new MarketDataException(MarketDataErrorCode.INVALID_QUERY, "无效关键词"), HttpStatus.BAD_REQUEST);
     }
 
     @Test
     void 限流映射429() {
-        assertStatus(new MarketDataException("RATE_LIMITED", "太频繁"), HttpStatus.TOO_MANY_REQUESTS);
+        assertStatus(new MarketDataException(MarketDataErrorCode.RATE_LIMITED, "太频繁"), HttpStatus.TOO_MANY_REQUESTS);
     }
 
     @Test
     void 其他市场异常映射502() {
         ResponseEntity<ApiError> res = assertStatus(
-                new MarketDataException("UPSTREAM_UNAVAILABLE", "上游挂了"), HttpStatus.BAD_GATEWAY);
-        assertThat(res.getBody()).isEqualTo(new ApiError("UPSTREAM_UNAVAILABLE", "上游挂了"));
+                new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "上游挂了"), HttpStatus.BAD_GATEWAY);
+        assertThat(res.getBody()).isEqualTo(new ApiError(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "上游挂了"));
     }
 
     @Test
     void 用户异常FORBIDDEN映射403() {
         ResponseEntity<ApiError> res = handler.user(
-                new UserException("FORBIDDEN", "不能对管理员账号执行此操作"));
+                new UserException(UserErrorCode.FORBIDDEN, "不能对管理员账号执行此操作"));
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
-        assertThat(res.getBody()).isEqualTo(new ApiError("FORBIDDEN", "不能对管理员账号执行此操作"));
+        assertThat(res.getBody()).isEqualTo(new ApiError(UserErrorCode.FORBIDDEN, "不能对管理员账号执行此操作"));
     }
 
     @Test
     void 用户异常USER_NOT_FOUND映射404() {
-        ResponseEntity<ApiError> res = handler.user(new UserException("USER_NOT_FOUND", "用户不存在"));
+        ResponseEntity<ApiError> res = handler.user(new UserException(UserErrorCode.USER_NOT_FOUND, "用户不存在"));
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
-        assertThat(res.getBody()).isEqualTo(new ApiError("USER_NOT_FOUND", "用户不存在"));
+        assertThat(res.getBody()).isEqualTo(new ApiError(UserErrorCode.USER_NOT_FOUND, "用户不存在"));
     }
 
     @Test
     void 会话异常INVALID_MESSAGE映射400() {
         ResponseEntity<ApiError> res = handler.conversation(
-                new com.portfolio.invest.domain.conversation.ConversationException("INVALID_MESSAGE", "消息内容超长（上限100KB）"));
+                new com.portfolio.invest.domain.conversation.ConversationException(ConversationErrorCode.INVALID_MESSAGE, "消息内容超长（上限100KB）"));
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(res.getBody()).isEqualTo(new ApiError("INVALID_MESSAGE", "消息内容超长（上限100KB）"));
+        assertThat(res.getBody()).isEqualTo(new ApiError(ConversationErrorCode.INVALID_MESSAGE, "消息内容超长（上限100KB）"));
     }
 
     @Test
@@ -103,6 +110,31 @@ class GlobalExceptionHandlerTest {
         ResponseEntity<ApiError> res = handler.generic(new RuntimeException("boom"));
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
         assertThat(res.getBody()).isEqualTo(new ApiError("INTERNAL_ERROR", "服务器内部错误"));
+    }
+
+    @Test
+    void BeanValidation失败映射400并取首条字段错误消息() {
+        MethodArgumentNotValidException ex = mock(MethodArgumentNotValidException.class);
+        BindingResult bindingResult = mock(BindingResult.class);
+        when(ex.getBindingResult()).thenReturn(bindingResult);
+        when(bindingResult.getFieldErrors())
+                .thenReturn(List.of(new FieldError("loginRequest", "username", "用户名不能为空")));
+
+        ResponseEntity<ApiError> res = handler.validation(ex);
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(res.getBody()).isEqualTo(new ApiError("INVALID_REQUEST", "用户名不能为空"));
+    }
+
+    @Test
+    void BeanValidation无字段错误时用兜底消息() {
+        MethodArgumentNotValidException ex = mock(MethodArgumentNotValidException.class);
+        BindingResult bindingResult = mock(BindingResult.class);
+        when(ex.getBindingResult()).thenReturn(bindingResult);
+        when(bindingResult.getFieldErrors()).thenReturn(List.of());
+
+        ResponseEntity<ApiError> res = handler.validation(ex);
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(res.getBody()).isEqualTo(new ApiError("INVALID_REQUEST", "请求参数不合法"));
     }
 
     private ResponseEntity<ApiError> assertStatus(MarketDataException e, HttpStatus expected) {

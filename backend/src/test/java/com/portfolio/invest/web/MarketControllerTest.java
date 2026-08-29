@@ -16,6 +16,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import com.portfolio.invest.domain.market.MarketDataErrorCode;
 
 /** 行情 REST 控制器：HTTP 绑定（path/query）、状态码与领域异常 → 状态码映射。 */
 class MarketControllerTest {
@@ -52,10 +53,10 @@ class MarketControllerTest {
     @Test
     void kline非法period映射400() throws Exception {
         when(market.kline(eq("600519"), eq("foo"), anyInt()))
-                .thenThrow(new MarketDataException("INVALID_PERIOD", "period 仅支持 day/week/month"));
+                .thenThrow(new MarketDataException(MarketDataErrorCode.INVALID_PERIOD, "period 仅支持 day/week/month"));
         mvc.perform(get("/api/market/kline/600519").param("period", "foo"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("INVALID_PERIOD"));
+                .andExpect(jsonPath("$.code").value(MarketDataErrorCode.INVALID_PERIOD));
     }
 
     @Test

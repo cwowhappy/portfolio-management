@@ -24,6 +24,7 @@ import java.time.LocalDate;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import com.portfolio.invest.domain.market.MarketDataErrorCode;
 
 /** 7 个 Agent 工具的 JSON 输出与错误兜底。 */
 class InvestToolsTest {
@@ -124,7 +125,7 @@ class InvestToolsTest {
 
     @Test
     void 业务异常返回结构化错误不抛出() {
-        when(market.search("茅台")).thenThrow(new MarketDataException("INVALID_QUERY", "搜索关键词不能为空"));
+        when(market.search("茅台")).thenThrow(new MarketDataException(MarketDataErrorCode.INVALID_QUERY, "搜索关键词不能为空"));
         String json = tools.searchStock("茅台");
         assertThat(json).contains("\"error\":\"搜索关键词不能为空\"").contains("\"hint\":\"数据源暂不可用，请稍后重试或换个问法\"");
     }

@@ -16,6 +16,7 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import com.portfolio.invest.domain.user.UserErrorCode;
 
 class AuthApplicationServiceTest {
 
@@ -69,6 +70,6 @@ class AuthApplicationServiceTest {
         when(repo.save(any())).thenThrow(new org.springframework.dao.DataIntegrityViolationException("duplicate key"));
         assertThatThrownBy(() -> service.register(new RegisterCommand("alice", "abc12345")))
                 .isInstanceOf(UserException.class)
-                .satisfies(e -> assertThat(((UserException) e).getCode()).isEqualTo("USERNAME_TAKEN"));
+                .satisfies(e -> assertThat(((UserException) e).getCode()).isEqualTo(UserErrorCode.USERNAME_TAKEN));
     }
 }

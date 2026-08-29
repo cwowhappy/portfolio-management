@@ -9,6 +9,7 @@ import com.portfolio.invest.infrastructure.security.AuthenticatedUser;
 import com.portfolio.invest.web.dto.LoginRequest;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.validation.Valid;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
@@ -43,12 +44,12 @@ public class AuthController {
     }
 
     @PostMapping("/register")
-    public ResponseEntity<UserView> register(@RequestBody RegisterCommand cmd) {
+    public ResponseEntity<UserView> register(@Valid @RequestBody RegisterCommand cmd) {
         return ResponseEntity.status(HttpStatus.CREATED).body(auth.register(cmd));
     }
 
     @PostMapping("/login")
-    public ResponseEntity<?> login(@RequestBody LoginRequest req,
+    public ResponseEntity<?> login(@Valid @RequestBody LoginRequest req,
                                    HttpServletRequest request, HttpServletResponse response) {
         try {
             Authentication authn = authenticationManager.authenticate(

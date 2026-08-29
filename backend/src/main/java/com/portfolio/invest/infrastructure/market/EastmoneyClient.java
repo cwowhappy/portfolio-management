@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.portfolio.invest.config.InvestProperties;
+import com.portfolio.invest.domain.market.MarketDataErrorCode;
 import com.portfolio.invest.domain.market.MarketDataException;
 import java.io.IOException;
 import java.net.URI;
@@ -102,11 +103,11 @@ public class EastmoneyClient {
             int start = body.indexOf('(');
             int end = body.lastIndexOf(')');
             if (start < 0 || end <= start) {
-                throw new MarketDataException("BAD_RESPONSE", "新闻接口响应格式异常");
+                throw new MarketDataException(MarketDataErrorCode.BAD_RESPONSE, "新闻接口响应格式异常");
             }
             return mapper.readTree(body.substring(start + 1, end));
         } catch (IOException e) {
-            throw new MarketDataException("BAD_RESPONSE", "新闻接口解析失败", e);
+            throw new MarketDataException(MarketDataErrorCode.BAD_RESPONSE, "新闻接口解析失败", e);
         }
     }
 
@@ -122,7 +123,7 @@ public class EastmoneyClient {
         try {
             return mapper.readTree(body);
         } catch (IOException e) {
-            throw new MarketDataException("BAD_RESPONSE", "行情接口响应解析失败", e);
+            throw new MarketDataException(MarketDataErrorCode.BAD_RESPONSE, "行情接口响应解析失败", e);
         }
     }
 

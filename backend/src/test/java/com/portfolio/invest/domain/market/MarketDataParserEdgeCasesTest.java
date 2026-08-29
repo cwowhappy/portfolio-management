@@ -268,7 +268,7 @@ class MarketDataParserEdgeCasesTest {
                 .isInstanceOf(MarketDataException.class)
                 .hasMessageContaining("无效的股票代码")
                 .extracting(e -> ((MarketDataException) e).getCode())
-                .isEqualTo("INVALID_CODE");
+                .isEqualTo(MarketDataErrorCode.INVALID_CODE);
         assertThatThrownBy(() -> StockRef.from(null))
                 .isInstanceOf(MarketDataException.class)
                 .hasMessageContaining("无效的股票代码");

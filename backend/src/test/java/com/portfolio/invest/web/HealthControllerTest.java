@@ -8,8 +8,10 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.portfolio.invest.config.InvestProperties;
+import com.portfolio.invest.domain.market.MarketDataErrorCode;
 import com.portfolio.invest.domain.market.MarketDataException;
 import com.portfolio.invest.application.market.MarketDataService;
+import com.portfolio.invest.infrastructure.cache.TtlApplicationCache;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.BeforeEach;
@@ -31,7 +33,7 @@ class HealthControllerTest {
         props = new InvestProperties();
         env = mock(Environment.class);
         now = new AtomicLong(0);
-        controller = new HealthController(market, props, env, now::get);
+        controller = new HealthController(market, props, env, new TtlApplicationCache(100, now::get));
     }
 
     // ———— /health：纯 liveness ————
@@ -84,7 +86,7 @@ class HealthControllerTest {
     void status在行情探活失败时标记不可用并附消息() {
         when(env.getProperty("DEEPSEEK_API_KEY")).thenReturn("sk-xxx");
         when(market.probeQuoteLatencyMs())
-                .thenThrow(new MarketDataException("UPSTREAM_UNAVAILABLE", "行情源挂了"));
+                .thenThrow(new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "行情源挂了"));
         Map<String, Object> body = controller.status();
         assertThat(body.get("status")).isEqualTo("degraded");
         Map<?, ?> m = (Map<?, ?>) body.get("market");
@@ -115,7 +117,7 @@ class HealthControllerTest {
     void status探活失败结果同样被缓存() {
         when(env.getProperty("DEEPSEEK_API_KEY")).thenReturn("sk-xxx");
         when(market.probeQuoteLatencyMs())
-                .thenThrow(new MarketDataException("UPSTREAM_UNAVAILABLE", "行情源挂了"));
+                .thenThrow(new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "行情源挂了"));
         controller.status();
         controller.status();
         verify(market, times(1)).probeQuoteLatencyMs();

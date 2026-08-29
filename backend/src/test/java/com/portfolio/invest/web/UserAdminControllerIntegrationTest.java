@@ -75,6 +75,21 @@ class UserAdminControllerIntegrationTest extends IntegrationTestBase {
         org.assertj.core.api.Assertions.assertThat(tokenRepository.getTokenForSeries("series-1")).isNull();
     }
 
+    @Test
+    void 重置密码空白返回400() throws Exception {
+        register("adminit_reset2", "abc12345");
+        seedAdmin("adminit_admin3", "admin12345");
+        MockHttpSession adminSession = login("adminit_admin3", "admin12345");
+        Long userId = userRepository.findByUsername("adminit_reset2").orElseThrow().id();
+
+        mockMvc.perform(post("/api/admin/users/{id}/reset-password", userId).session(adminSession)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"newPassword\":\"\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.message").value("新密码不能为空"));
+    }
+
     private void register(String username, String password) throws Exception {
         mockMvc.perform(post("/api/auth/register").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"username\":\"" + username + "\",\"password\":\"" + password + "\"}"))

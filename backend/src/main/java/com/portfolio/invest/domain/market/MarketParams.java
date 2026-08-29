@@ -13,7 +13,7 @@ public final class MarketParams {
 
     public static String normalizeQuery(String query) {
         if (query == null || query.isBlank()) {
-            throw new MarketDataException("INVALID_QUERY", "搜索关键词不能为空");
+            throw new MarketDataException(MarketDataErrorCode.INVALID_QUERY, "搜索关键词不能为空");
         }
         return query.trim();
     }
@@ -23,7 +23,7 @@ public final class MarketParams {
             case "day" -> 101;
             case "week" -> 102;
             case "month" -> 103;
-            default -> throw new MarketDataException("INVALID_PERIOD", "period 仅支持 day/week/month");
+            default -> throw new MarketDataException(MarketDataErrorCode.INVALID_PERIOD, "period 仅支持 day/week/month");
         };
     }
 

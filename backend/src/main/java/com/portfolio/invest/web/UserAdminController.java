@@ -2,8 +2,9 @@ package com.portfolio.invest.web;
 
 import com.portfolio.invest.application.useradmin.UserAdminApplicationService;
 import com.portfolio.invest.application.useradmin.UserAdminView;
+import com.portfolio.invest.web.dto.ResetPasswordRequest;
+import jakarta.validation.Valid;
 import java.util.List;
-import java.util.Map;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -50,7 +51,7 @@ public class UserAdminController {
 
     @PostMapping("/{id}/reset-password")
     public UserAdminView resetPassword(@PathVariable Long id,
-                                       @RequestBody Map<String, String> body) {
-        return service.resetPassword(id, body.get("newPassword"));
+                                       @Valid @RequestBody ResetPasswordRequest body) {
+        return service.resetPassword(id, body.newPassword());
     }
 }
