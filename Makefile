@@ -18,7 +18,8 @@ dev-backend:
 	cd backend && ./gradlew bootRun --console=plain
 
 dev-frontend:
-	cd frontend && pnpm install && pnpm dev
+	# 显式固定前端端口：.env 的 PORT 是后端 server.port，经 export 泄漏给 next dev 会抢占后端端口
+	cd frontend && pnpm install && PORT=3000 pnpm dev
 
 ## 测试
 test: test-backend test-frontend collect-test
