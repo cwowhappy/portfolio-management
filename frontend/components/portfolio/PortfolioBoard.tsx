@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { fetchOverview, fetchPositions, fetchGroups, fetchAllocation, fetchIndustryDistribution, fetchConcentration } from "@/lib/portfolioApi";
 import type { GroupView, PortfolioOverview, PositionView, AssetAllocation, IndustryDistribution, Concentration } from "@/lib/types";
+import OverviewCards from "@/components/portfolio/OverviewCards";
+import PositionTable from "@/components/portfolio/PositionTable";
 
 export default function PortfolioBoard() {
   const [overview, setOverview] = useState<PortfolioOverview | null>(null);
@@ -51,8 +53,12 @@ export default function PortfolioBoard() {
           </button>
         ))}
       </div>
-      <div data-testid="overview-cards" />
-      <div data-testid="position-table" />
+      <div data-testid="overview-cards">
+        <OverviewCards overview={overview} />
+      </div>
+      <div data-testid="position-table">
+        <PositionTable positions={shown} />
+      </div>
       <div className="grid md:grid-cols-2 gap-6" data-testid="charts">
         <div data-testid="allocation" />
         <div data-testid="industry" />
