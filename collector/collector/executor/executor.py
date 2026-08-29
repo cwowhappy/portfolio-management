@@ -45,7 +45,14 @@ class Executor:
             started = time.monotonic()
             h = health.setdefault(src.source_id, SourceHealth(src.source_id))
             try:
-                raw = src.fetch(params)
+                try:
+                    raw = src.fetch(params)
+                except SourceError:
+                    raise
+                except Exception as e:
+                    # 数据源库（akshare/tushare 等）抛的是各自的原生异常（如 aiohttp 断连），
+                    # 统一转成 SourceError，才能被下面的 except 捕获进入换源/降级。
+                    raise SourceError(f"源 {src.source_id} 取数失败: {e}") from e
                 records = task.converter.convert(raw)
                 # 先校验再聚合：min_rows 等规则基于原始明细行数（如 ~5000 行快照），
                 # 若在 calc 之后校验，快照已被折叠成 1 行导致校验必然失败。

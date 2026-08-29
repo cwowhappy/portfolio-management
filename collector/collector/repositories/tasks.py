@@ -15,11 +15,20 @@ ON CONFLICT (task_code) DO UPDATE SET
 """
 
 
+def _parse_json(v):
+    """psycopg3 默认把 JSONB 返回为已解析的 list/dict；mock 则返回 JSON 字符串。两者都兼容。"""
+    if v is None:
+        return None
+    if isinstance(v, str):
+        return json.loads(v)
+    return v
+
+
 def _parse_row(row):
     d = dict(zip(TASK_COLS, row))
-    d["source_ids"] = json.loads(d["source_ids"])
-    d["validator"] = json.loads(d["validator"]) if d["validator"] else None
-    d["schedule"] = json.loads(d["schedule"])
+    d["source_ids"] = _parse_json(d["source_ids"])
+    d["validator"] = _parse_json(d["validator"])
+    d["schedule"] = _parse_json(d["schedule"])
     return d
 
 

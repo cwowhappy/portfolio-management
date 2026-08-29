@@ -26,12 +26,13 @@ class TaskRunner:
 
         with psycopg.connect(self.database_url) as conn:
             key = _lock_key(task.task_code)
-            if not conn.try_advisory_lock(key):
+            acquired = conn.execute("SELECT pg_try_advisory_lock(%s)", (key,)).fetchone()[0]
+            if not acquired:
                 return RunResult(task.task_code, mode, STATUS_SKIPPED, message="上一实例运行中")
             try:
                 return self._run_with_retry(conn, task, mode, params)
             finally:
-                conn.unlock_advisory_lock(key)
+                conn.execute("SELECT pg_advisory_unlock(%s)", (key,))
 
     def _run_with_retry(self, conn, task, mode, params):
         for attempt in range(self.retry_max):

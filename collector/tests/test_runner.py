@@ -29,7 +29,9 @@ def test_force_bypasses_calendar():
     runner = TaskRunner("postgresql://u:p@localhost:5432/db", cal, ex)
     with patch("collector.scheduler.runner.psycopg") as psycopg:
         conn = MagicMock()
-        conn.try_advisory_lock.return_value = True
+        lock_cur = MagicMock()
+        lock_cur.fetchone.return_value = (True,)
+        conn.execute.return_value = lock_cur
         psycopg.connect.return_value.__enter__.return_value = conn
         res = runner.run(_task(), force=True)
         assert res.status == STATUS_SUCCESS
@@ -42,7 +44,9 @@ def test_concurrent_lock_skipped():
     runner = TaskRunner("postgresql://u:p@localhost:5432/db", cal, ex)
     with patch("collector.scheduler.runner.psycopg") as psycopg:
         conn = MagicMock()
-        conn.try_advisory_lock.return_value = False
+        lock_cur = MagicMock()
+        lock_cur.fetchone.return_value = (False,)
+        conn.execute.return_value = lock_cur
         psycopg.connect.return_value.__enter__.return_value = conn
         res = runner.run(_task())
         assert res.status == STATUS_SKIPPED
