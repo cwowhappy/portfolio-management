@@ -1,0 +1,63 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { fetchOverview, fetchPositions, fetchGroups, fetchAllocation, fetchIndustryDistribution, fetchConcentration } from "@/lib/portfolioApi";
+import type { GroupView, PortfolioOverview, PositionView, AssetAllocation, IndustryDistribution, Concentration } from "@/lib/types";
+
+export default function PortfolioBoard() {
+  const [overview, setOverview] = useState<PortfolioOverview | null>(null);
+  const [groups, setGroups] = useState<GroupView[]>([]);
+  const [positions, setPositions] = useState<PositionView[]>([]);
+  const [allocation, setAllocation] = useState<AssetAllocation | null>(null);
+  const [industry, setIndustry] = useState<IndustryDistribution | null>(null);
+  const [concentration, setConcentration] = useState<Concentration | null>(null);
+  const [activeGroup, setActiveGroup] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [o, g, p, a, ind, c] = await Promise.all([
+          fetchOverview(), fetchGroups(), fetchPositions(),
+          fetchAllocation(), fetchIndustryDistribution(), fetchConcentration(),
+        ]);
+        if (cancelled) return;
+        setOverview(o); setGroups(g); setPositions(p);
+        setAllocation(a); setIndustry(ind); setConcentration(c);
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : "加载失败");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const shown = activeGroup == null ? positions : positions.filter((p) => p.groupId === activeGroup);
+
+  if (error) return <div className="p-8 text-[color:var(--color-ink-dim)]">加载失败：{error}</div>;
+  if (!overview) return <div className="p-8 skeleton h-40 rounded-2xl" />;
+
+  return (
+    <div className="mx-auto max-w-6xl px-6 py-8 space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="font-[family-name:var(--font-display)] text-2xl">持仓组合</h1>
+      </div>
+      {/* 分组切换 */}
+      <div className="flex gap-2" data-testid="group-tabs">
+        <button className="rounded-md px-3 py-1.5 text-sm" onClick={() => setActiveGroup(null)}>全部</button>
+        {groups.map((g) => (
+          <button key={g.id} className="rounded-md px-3 py-1.5 text-sm" onClick={() => setActiveGroup(g.id)}>
+            {g.name}
+          </button>
+        ))}
+      </div>
+      <div data-testid="overview-cards" />
+      <div data-testid="position-table" />
+      <div className="grid md:grid-cols-2 gap-6" data-testid="charts">
+        <div data-testid="allocation" />
+        <div data-testid="industry" />
+      </div>
+      <div data-testid="concentration" />
+    </div>
+  );
+}
