@@ -4,6 +4,7 @@ import com.portfolio.invest.application.market.MarketDataService;
 import com.portfolio.invest.domain.portfolio.GroupType;
 import com.portfolio.invest.domain.portfolio.HoldingGroup;
 import com.portfolio.invest.domain.portfolio.Portfolio;
+import com.portfolio.invest.domain.portfolio.PortfolioErrorCode;
 import com.portfolio.invest.domain.portfolio.PortfolioException;
 import com.portfolio.invest.domain.portfolio.PortfolioRepository;
 import com.portfolio.invest.domain.valuation.ValuationRepository;
@@ -62,5 +63,14 @@ class PortfolioApplicationServiceTest {
         when(repo.saveGroup(any())).thenAnswer(inv -> inv.getArgument(0));
         var view = service.createGroup(1L, new CreateGroupCommand("华泰", GroupType.ACCOUNT));
         assertThat(view.name()).isEqualTo("华泰");
+    }
+
+    @Test
+    void 访问非本人分组抛NOT_FOUND() {
+        when(repo.findGroupByIdAndPortfolioId(1L, 10L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.deleteGroup(1L, 1L))
+                .isInstanceOfSatisfying(PortfolioException.class,
+                        e -> assertThat(e.code()).isEqualTo(PortfolioErrorCode.NOT_FOUND));
     }
 }
