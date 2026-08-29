@@ -11,10 +11,12 @@ export default function PositionActions({ position, onChanged }: { position: Pos
   const [price, setPrice] = useState("");
   const [quantity, setQuantity] = useState("");
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function onSell() {
     if (!price || !quantity) return;
     setBusy(true);
+    setError(null);
     try {
       await sell({
         positionId: position.id,
@@ -24,6 +26,8 @@ export default function PositionActions({ position, onChanged }: { position: Pos
         fee: 0,
       });
       onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "卖出失败");
     } finally {
       setBusy(false);
     }
@@ -32,24 +36,30 @@ export default function PositionActions({ position, onChanged }: { position: Pos
   async function onDelete() {
     if (!confirm(`确定删除 ${position.stockName} 持仓及其交易/分红记录？`)) return;
     setBusy(true);
+    setError(null);
     try {
       await deletePosition(position.id);
       onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "删除失败");
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <div className="flex items-center gap-2 text-sm">
-      <input className={`${inputClass} w-20`} placeholder="价" value={price} onChange={(e) => setPrice(e.target.value)} />
-      <input className={`${inputClass} w-20`} placeholder="量" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
-      <button className="rounded-md bg-[color:var(--color-amber)] px-3 py-1.5 text-white" onClick={onSell} disabled={busy}>
-        卖出
-      </button>
-      <button className="rounded-md bg-[color:var(--color-down)] px-3 py-1.5 text-white" onClick={onDelete} disabled={busy}>
-        删除
-      </button>
+    <div>
+      <div className="flex items-center gap-2 text-sm">
+        <input className={`${inputClass} w-20`} placeholder="价" value={price} onChange={(e) => setPrice(e.target.value)} />
+        <input className={`${inputClass} w-20`} placeholder="量" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+        <button className="rounded-md bg-[color:var(--color-amber)] px-3 py-1.5 text-white" onClick={onSell} disabled={busy}>
+          卖出
+        </button>
+        <button className="rounded-md bg-[color:var(--color-down)] px-3 py-1.5 text-white" onClick={onDelete} disabled={busy}>
+          删除
+        </button>
+      </div>
+      {error && <div className="mt-1 text-xs text-[color:var(--color-down)]">{error}</div>}
     </div>
   );
 }

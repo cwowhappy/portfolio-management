@@ -11,14 +11,18 @@ export default function GroupManager({ groups, onChanged }: { groups: GroupView[
   const [name, setName] = useState("");
   const [type, setType] = useState<"ACCOUNT" | "TAG">("ACCOUNT");
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function onSubmit() {
     if (!name.trim()) return;
     setBusy(true);
+    setError(null);
     try {
       await createGroup({ name: name.trim(), type });
       setName("");
       onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "创建失败");
     } finally {
       setBusy(false);
     }
@@ -46,6 +50,7 @@ export default function GroupManager({ groups, onChanged }: { groups: GroupView[
           新建
         </button>
       </div>
+      {error && <div className="mt-2 text-xs text-[color:var(--color-down)]">{error}</div>}
       <ul className="mt-3 space-y-1 text-sm">
         {groups.map((g) => (
           <li key={g.id} className="flex justify-between">
