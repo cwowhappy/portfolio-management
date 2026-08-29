@@ -6,10 +6,10 @@ INSERT INTO valuation_snapshot (trading_day, pe_median, pb_median, net_breaker_c
   ('2026-08-26', 18.90, 1.66, 231, 0.0431),
   ('2026-08-27', 19.14, 1.68, 220, 0.0410);
 
-INSERT INTO treasury_yield (trading_day, yield_10y) VALUES
-  ('2026-08-25', 2.1800),
-  ('2026-08-26', 2.1900),
-  ('2026-08-27', 2.2100);
+INSERT INTO treasury_yield_curve (trading_day, term, yield) VALUES
+  ('2026-08-25', '10Y', 2.1800),
+  ('2026-08-26', '10Y', 2.1900),
+  ('2026-08-27', '10Y', 2.2100);
 
 INSERT INTO index_valuation_history (trading_day, index_code, index_name, pe, pb, dividend_yield) VALUES
   ('2026-08-27', '000300', '沪深300', 12.80, 1.42, 2.35),

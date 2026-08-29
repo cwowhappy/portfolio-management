@@ -14,6 +14,9 @@ import java.util.List;
 @Repository
 public class ValuationRepositoryImpl implements ValuationRepository {
 
+    /** ERP 读侧仅用 10 年期国债收益率。 */
+    private static final String TERM_10Y = "10Y";
+
     private final ValuationSnapshotJpaRepository snapshotRepo;
     private final IndustryValuationJpaRepository industryRepo;
     private final TreasuryYieldJpaRepository treasuryRepo;
@@ -50,7 +53,7 @@ public class ValuationRepositoryImpl implements ValuationRepository {
 
     @Override
     public List<TreasuryYield> findAllTreasuryYields() {
-        return treasuryRepo.findAllByOrderByTradingDayAsc().stream().map(TreasuryYieldJpaEntity::toDomain).toList();
+        return treasuryRepo.findAllByTermOrderByTradingDayAsc(TERM_10Y).stream().map(TreasuryYieldJpaEntity::toDomain).toList();
     }
 
     @Override

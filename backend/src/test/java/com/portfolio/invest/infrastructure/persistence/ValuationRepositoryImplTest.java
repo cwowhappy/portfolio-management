@@ -19,8 +19,8 @@ class ValuationRepositoryImplTest extends IntegrationTestBase {
     private void seed() {
         jdbcTemplate.update("INSERT INTO valuation_snapshot(trading_day, pe_median, pb_median, net_breaker_count, net_breaker_ratio) VALUES (?, ?, ?, ?, ?)",
                 java.sql.Date.valueOf("2026-08-27"), new java.math.BigDecimal("19.14"), new java.math.BigDecimal("1.68"), 220, new java.math.BigDecimal("0.0410"));
-        jdbcTemplate.update("INSERT INTO treasury_yield(trading_day, yield_10y) VALUES (?, ?)",
-                java.sql.Date.valueOf("2026-08-27"), new java.math.BigDecimal("2.21"));
+        jdbcTemplate.update("INSERT INTO treasury_yield_curve(trading_day, term, yield) VALUES (?, ?, ?)",
+                java.sql.Date.valueOf("2026-08-27"), "10Y", new java.math.BigDecimal("2.21"));
         jdbcTemplate.update("INSERT INTO industry_valuation(trading_day, industry_code, industry_name, pe, pb) VALUES (?, ?, ?, ?, ?)",
                 java.sql.Date.valueOf("2026-08-27"), "801780", "银行", new java.math.BigDecimal("5.9"), new java.math.BigDecimal("0.65"));
         jdbcTemplate.update("INSERT INTO index_valuation_history(trading_day, index_code, index_name, pe, pb, dividend_yield) VALUES (?, ?, ?, ?, ?, ?)",
@@ -44,6 +44,18 @@ class ValuationRepositoryImplTest extends IntegrationTestBase {
         assertThat(industries).hasSize(1);
         assertThat(industries.get(0).industryName()).isEqualTo("银行");
         assertThat(valuationRepository.findAllTreasuryYields()).hasSize(1);
+    }
+
+    @Test
+    @Transactional
+    void 国债只返回10年期() {
+        jdbcTemplate.update("INSERT INTO treasury_yield_curve(trading_day, term, yield) VALUES (?, ?, ?)",
+                java.sql.Date.valueOf("2026-08-27"), "10Y", new java.math.BigDecimal("2.21"));
+        jdbcTemplate.update("INSERT INTO treasury_yield_curve(trading_day, term, yield) VALUES (?, ?, ?)",
+                java.sql.Date.valueOf("2026-08-27"), "3Y", new java.math.BigDecimal("1.80"));
+        var yields = valuationRepository.findAllTreasuryYields();
+        assertThat(yields).hasSize(1);
+        assertThat(yields.get(0).yield10y()).isEqualByComparingTo("2.21");
     }
 
     @Test
