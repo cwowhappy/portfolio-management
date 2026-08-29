@@ -1,10 +1,12 @@
 package com.portfolio.invest.web;
 
 import com.portfolio.invest.application.portfolio.CreateGroupCommand;
+import com.portfolio.invest.application.portfolio.EditTradeCommand;
 import com.portfolio.invest.application.portfolio.GroupView;
 import com.portfolio.invest.application.portfolio.PortfolioApplicationService;
 import com.portfolio.invest.application.portfolio.PositionView;
 import com.portfolio.invest.application.portfolio.BuyCommand;
+import com.portfolio.invest.application.portfolio.RenameGroupCommand;
 import com.portfolio.invest.domain.portfolio.GroupType;
 import com.portfolio.invest.infrastructure.security.AuthenticatedUser;
 import com.portfolio.invest.domain.user.User;
@@ -27,6 +29,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -92,5 +95,32 @@ class PortfolioControllerTest {
                         .content("{\"groupId\":1,\"stockCode\":\"600519\",\"stockName\":\"贵州茅台\",\"tradeDate\":\"2026-08-27\",\"price\":1500,\"quantity\":100,\"fee\":5}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.stockCode").value("600519"));
+    }
+
+    @Test
+    void 改名分组返回200() throws Exception {
+        when(service.renameGroup(eq(1L), eq(7L), any(RenameGroupCommand.class)))
+                .thenReturn(new GroupView(7L, "东财", GroupType.ACCOUNT, 0, BigDecimal.ZERO));
+
+        mvc.perform(put("/api/portfolio/groups/7").principal(auth())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"东财\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("东财"));
+    }
+
+    @Test
+    void 编辑买入交易返回200() throws Exception {
+        when(service.editTrade(eq(1L), eq(5L), eq(11L), any(EditTradeCommand.class)))
+                .thenReturn(new PositionView(5L, 1L, "600519", "贵州茅台",
+                        new BigDecimal("60"), new BigDecimal("110"), new BigDecimal("120"),
+                        new BigDecimal("7200"), new BigDecimal("600"), new BigDecimal("10"),
+                        new BigDecimal("400"), new BigDecimal("11000"), new BigDecimal("0")));
+
+        mvc.perform(put("/api/portfolio/positions/5/trades/11").principal(auth())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"tradeDate\":\"2026-08-27\",\"price\":110,\"quantity\":100,\"fee\":0}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.avgCost").value(110));
     }
 }

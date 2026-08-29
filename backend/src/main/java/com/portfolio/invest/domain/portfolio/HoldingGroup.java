@@ -26,6 +26,10 @@ public final class HoldingGroup {
         return new HoldingGroup(id, portfolioId, name, type, createdAt);
     }
 
+    public HoldingGroup rename(String newName) {
+        return new HoldingGroup(id, portfolioId, newName, type, createdAt);
+    }
+
     public Long id() { return id; }
     public Long portfolioId() { return portfolioId; }
     public String name() { return name; }

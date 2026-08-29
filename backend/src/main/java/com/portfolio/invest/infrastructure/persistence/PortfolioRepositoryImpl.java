@@ -112,6 +112,11 @@ public class PortfolioRepositoryImpl implements PortfolioRepository {
     }
 
     @Override
+    public Optional<Trade> findTradeById(Long id) {
+        return tradeJpa.findById(id).map(TradeJpaEntity::toDomain);
+    }
+
+    @Override
     public Trade saveTrade(Trade trade) {
         return tradeJpa.save(TradeJpaEntity.fromDomain(trade)).toDomain();
     }

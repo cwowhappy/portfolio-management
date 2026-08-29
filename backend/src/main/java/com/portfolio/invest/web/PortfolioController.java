@@ -8,11 +8,13 @@ import com.portfolio.invest.application.portfolio.CashTransactionView;
 import com.portfolio.invest.application.portfolio.ConcentrationView;
 import com.portfolio.invest.application.portfolio.CreateGroupCommand;
 import com.portfolio.invest.application.portfolio.DividendView;
+import com.portfolio.invest.application.portfolio.EditTradeCommand;
 import com.portfolio.invest.application.portfolio.GroupView;
 import com.portfolio.invest.application.portfolio.IndustryDistributionView;
 import com.portfolio.invest.application.portfolio.PortfolioApplicationService;
 import com.portfolio.invest.application.portfolio.PortfolioOverviewView;
 import com.portfolio.invest.application.portfolio.PositionView;
+import com.portfolio.invest.application.portfolio.RenameGroupCommand;
 import com.portfolio.invest.application.portfolio.SellCommand;
 import com.portfolio.invest.application.portfolio.StockDividendCommand;
 import com.portfolio.invest.application.portfolio.TradeView;
@@ -26,6 +28,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -67,6 +70,12 @@ public class PortfolioController {
         return ResponseEntity.noContent().build();
     }
 
+    @PutMapping("/groups/{groupId}")
+    public GroupView renameGroup(Authentication auth, @PathVariable Long groupId,
+                                 @Valid @RequestBody RenameGroupCommand cmd) {
+        return service.renameGroup(currentUserId(auth), groupId, cmd);
+    }
+
     @PostMapping("/positions/buy")
     public ResponseEntity<PositionView> buy(Authentication auth, @Valid @RequestBody BuyCommand cmd) {
         return ResponseEntity.ok(service.buy(currentUserId(auth), cmd));
@@ -96,6 +105,12 @@ public class PortfolioController {
     @GetMapping("/positions/{positionId}/trades")
     public List<TradeView> trades(Authentication auth, @PathVariable Long positionId) {
         return service.trades(currentUserId(auth), positionId);
+    }
+
+    @PutMapping("/positions/{positionId}/trades/{tradeId}")
+    public PositionView editTrade(Authentication auth, @PathVariable Long positionId,
+                                  @PathVariable Long tradeId, @Valid @RequestBody EditTradeCommand cmd) {
+        return service.editTrade(currentUserId(auth), positionId, tradeId, cmd);
     }
 
     @GetMapping("/positions/{positionId}/dividends")

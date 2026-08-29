@@ -8,6 +8,7 @@ public record PortfolioOverviewView(
         BigDecimal totalPnl,
         BigDecimal todayPnl,
         BigDecimal cashTotal,
+        BigDecimal totalCashDividend,
         int positionCount,
         int groupCount
 ) {}

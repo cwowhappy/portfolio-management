@@ -132,6 +132,45 @@ class PortfolioApplicationServiceTest {
     }
 
     @Test
+    void 编辑买入交易后重放全部交易重算成本与已实现收益() {
+        when(repo.findPositionByIdAndPortfolioId(5L, 10L)).thenReturn(Optional.of(positionWithId(5)));
+        when(repo.findTradeById(11L)).thenReturn(Optional.of(
+                new Trade(11L, 5L, TradeType.BUY, LocalDate.of(2026, 8, 27),
+                        new BigDecimal("100"), new BigDecimal("100"), new BigDecimal("0"), Instant.now())));
+        when(repo.saveTrade(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(repo.findTradesByPositionId(5L)).thenReturn(List.of(
+                new Trade(11L, 5L, TradeType.BUY, LocalDate.of(2026, 8, 27),
+                        new BigDecimal("110"), new BigDecimal("100"), new BigDecimal("0"), Instant.now()),
+                new Trade(12L, 5L, TradeType.SELL, LocalDate.of(2026, 8, 28),
+                        new BigDecimal("120"), new BigDecimal("40"), new BigDecimal("0"), Instant.now())));
+        when(repo.findDividendsByPositionId(5L)).thenReturn(List.of());
+        when(repo.savePosition(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        var view = service.editTrade(1L, 5L, 11L, new EditTradeCommand(
+                LocalDate.of(2026, 8, 27), new BigDecimal("110"),
+                new BigDecimal("100"), new BigDecimal("0")));
+
+        // 重放：买入 100@110（成本 11000），卖出 40@120 → 摊薄成本 110、已实现 400
+        assertThat(view.avgCost()).isEqualByComparingTo("110");
+        assertThat(view.realizedPnl()).isEqualByComparingTo("400");
+        assertThat(view.quantity()).isEqualByComparingTo("60");
+    }
+
+    @Test
+    void 编辑卖出交易被拒绝() {
+        when(repo.findPositionByIdAndPortfolioId(5L, 10L)).thenReturn(Optional.of(positionWithId(5)));
+        when(repo.findTradeById(12L)).thenReturn(Optional.of(
+                new Trade(12L, 5L, TradeType.SELL, LocalDate.of(2026, 8, 28),
+                        new BigDecimal("120"), new BigDecimal("40"), new BigDecimal("0"), Instant.now())));
+
+        assertThatThrownBy(() -> service.editTrade(1L, 5L, 12L, new EditTradeCommand(
+                LocalDate.of(2026, 8, 28), new BigDecimal("120"),
+                new BigDecimal("40"), new BigDecimal("0"))))
+                .isInstanceOfSatisfying(PortfolioException.class,
+                        e -> assertThat(e.code()).isEqualTo(PortfolioErrorCode.NOT_FOUND));
+    }
+
+    @Test
     void 总览计算总资产与总盈亏() {
         Position pos = Position.create(10L, 1L, "600519", "贵州茅台", Instant.now())
                 .applyBuy(new BigDecimal("100"), new BigDecimal("100"), new BigDecimal("0"));
@@ -187,6 +226,34 @@ class PortfolioApplicationServiceTest {
         service.deleteGroup(1L, 1L);
 
         verify(repo).deleteGroup(1L);
+    }
+
+    @Test
+    void 改名分组成功() {
+        when(repo.findGroupByIdAndPortfolioId(1L, 10L))
+                .thenReturn(Optional.of(HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now())));
+        when(repo.saveGroup(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(repo.findPositionsByGroupId(1L)).thenReturn(List.of());
+        when(repo.findCashTransactionsByGroupId(1L)).thenReturn(List.of());
+
+        var view = service.renameGroup(1L, 1L, new RenameGroupCommand("东财"));
+
+        assertThat(view.name()).isEqualTo("东财");
+        assertThat(view.id()).isEqualTo(1L);
+
+        ArgumentCaptor<HoldingGroup> captor = ArgumentCaptor.forClass(HoldingGroup.class);
+        verify(repo).saveGroup(captor.capture());
+        assertThat(captor.getValue().name()).isEqualTo("东财");
+        assertThat(captor.getValue().type()).isEqualTo(GroupType.ACCOUNT);
+    }
+
+    @Test
+    void 改名非本人分组抛NOT_FOUND() {
+        when(repo.findGroupByIdAndPortfolioId(99L, 10L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.renameGroup(1L, 99L, new RenameGroupCommand("东财")))
+                .isInstanceOfSatisfying(PortfolioException.class,
+                        e -> assertThat(e.code()).isEqualTo(PortfolioErrorCode.NOT_FOUND));
     }
 
     @Test
@@ -376,6 +443,22 @@ class PortfolioApplicationServiceTest {
         assertThat(view.totalCost()).isEqualByComparingTo("10000");
         assertThat(view.totalPnl()).isEqualByComparingTo("500");
         assertThat(view.todayPnl()).isEqualByComparingTo("0");
+    }
+
+    @Test
+    void 总览累计现金分红() {
+        Position pos = Position.reconstitute(1L, 10L, 1L, "600519", "贵州茅台",
+                new BigDecimal("100"), new BigDecimal("9850"), new BigDecimal("10000"),
+                new BigDecimal("150"), BigDecimal.ZERO, new BigDecimal("-10000"),
+                Instant.now(), Instant.now());
+        when(repo.findPositionsByPortfolioId(10L)).thenReturn(List.of(pos));
+        when(repo.findGroupsByPortfolioId(10L)).thenReturn(List.of());
+        when(market.quote("600519")).thenReturn(new Quote(
+                "600519", "贵州茅台", 120, 0, 0, 0, 0, 0, 100, 0, 0, null, null, ""));
+
+        var view = service.overview(1L);
+
+        assertThat(view.totalCashDividend()).isEqualByComparingTo("150");
     }
 
     @Test

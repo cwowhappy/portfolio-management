@@ -86,6 +86,16 @@ public class PortfolioApplicationService {
     }
 
     @Transactional
+    public GroupView renameGroup(Long userId, Long groupId, RenameGroupCommand cmd) {
+        Portfolio p = getOrCreatePortfolio(userId);
+        HoldingGroup group = requireGroup(p.id(), groupId);
+        HoldingGroup saved = repository.saveGroup(group.rename(cmd.name().trim()));
+        var positions = repository.findPositionsByGroupId(groupId);
+        return GroupView.from(saved, positions.size(),
+                cashBalance(groupId, positions, repository.findCashTransactionsByGroupId(groupId)));
+    }
+
+    @Transactional
     public CashTransactionView addCashTransaction(Long userId, CashTransactionCommand cmd) {
         Portfolio p = getOrCreatePortfolio(userId);
         requireGroup(p.id(), cmd.groupId());
@@ -145,6 +155,63 @@ public class PortfolioApplicationService {
                 null, updated.id(), TradeType.SELL,
                 cmd.tradeDate(), cmd.price(), cmd.quantity(), cmd.fee(), Instant.now()));
         return positionView(updated);
+    }
+
+    @Transactional
+    public PositionView editTrade(Long userId, Long positionId, Long tradeId, EditTradeCommand cmd) {
+        Portfolio p = getOrCreatePortfolio(userId);
+        var position = requirePosition(p.id(), positionId);
+        Trade trade = repository.findTradeById(tradeId)
+                .orElseThrow(() -> new PortfolioException(PortfolioErrorCode.NOT_FOUND, "交易不存在"));
+        // 仅可编辑属于该持仓的买入交易；卖出/他人交易一律不泄露存在性。
+        if (!trade.positionId().equals(positionId) || trade.type() != TradeType.BUY) {
+            throw new PortfolioException(PortfolioErrorCode.NOT_FOUND, "交易不存在");
+        }
+        repository.saveTrade(new Trade(
+                trade.id(), positionId, TradeType.BUY,
+                cmd.tradeDate(), cmd.price(), cmd.quantity(), cmd.fee(), trade.createdAt()));
+
+        var replayed = replay(position,
+                repository.findTradesByPositionId(positionId),
+                repository.findDividendsByPositionId(positionId));
+        var saved = repository.savePosition(replayed);
+        return positionView(saved);
+    }
+
+    /** 按日期顺序重放全部交易与分红，重建持仓成本/盈亏；保留原 id 与 createdAt。 */
+    private Position replay(Position original, List<Trade> trades, List<Dividend> dividends) {
+        Position acc = Position.create(original.portfolioId(), original.groupId(),
+                original.stockCode(), original.stockName(), original.createdAt());
+
+        List<Trade> sortedTrades = trades.stream()
+                .sorted(Comparator.comparing(Trade::tradeDate))
+                .toList();
+        List<Dividend> sortedDividends = dividends.stream()
+                .sorted(Comparator.comparing(Dividend::exDate))
+                .toList();
+
+        int ti = 0, di = 0;
+        while (ti < sortedTrades.size() || di < sortedDividends.size()) {
+            Trade t = ti < sortedTrades.size() ? sortedTrades.get(ti) : null;
+            Dividend d = di < sortedDividends.size() ? sortedDividends.get(di) : null;
+            // 同日先交易后分红（买入/卖出先行，分红再按当时股数/成本作用）。
+            if (d == null || (t != null && !t.tradeDate().isAfter(d.exDate()))) {
+                acc = t.type() == TradeType.BUY
+                        ? acc.applyBuy(t.price(), t.quantity(), t.fee())
+                        : acc.applySell(t.price(), t.quantity(), t.fee());
+                ti++;
+            } else {
+                acc = d.type() == DividendType.CASH
+                        ? acc.applyCashDividend(d.cashPerShare().multiply(acc.quantity()))
+                        : acc.applyStockDividend(d.stockRatio());
+                di++;
+            }
+        }
+
+        return Position.reconstitute(original.id(), original.portfolioId(), original.groupId(),
+                original.stockCode(), original.stockName(),
+                acc.quantity(), acc.costBasis(), acc.totalBuyCost(), acc.cumulativeCashDividend(),
+                acc.realizedPnl(), acc.netCashFlow(), original.createdAt(), Instant.now());
     }
 
     @Transactional
@@ -208,11 +275,12 @@ public class PortfolioApplicationService {
         var groups = repository.findGroupsByPortfolioId(p.id());
         BigDecimal totalAssets = BigDecimal.ZERO, totalCost = BigDecimal.ZERO,
                 totalPnl = BigDecimal.ZERO, todayPnl = BigDecimal.ZERO,
-                cashTotal = BigDecimal.ZERO;
+                cashTotal = BigDecimal.ZERO, totalCashDividend = BigDecimal.ZERO;
 
         for (var pos : positions) {
             var q = quoteQuietly(pos.stockCode());
             totalCost = totalCost.add(pos.totalBuyCost());
+            totalCashDividend = totalCashDividend.add(pos.cumulativeCashDividend());
             if (q != null) {
                 var price = BigDecimal.valueOf(q.price());
                 totalAssets = totalAssets.add(price.multiply(pos.quantity()));
@@ -231,7 +299,7 @@ public class PortfolioApplicationService {
             }
         }
         return new PortfolioOverviewView(totalAssets, totalCost, totalPnl, todayPnl, cashTotal,
-                positions.size(), groups.size());
+                totalCashDividend, positions.size(), groups.size());
     }
 
     public AssetAllocationView allocation(Long userId) {

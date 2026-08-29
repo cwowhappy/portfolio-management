@@ -28,6 +28,7 @@ public interface PortfolioRepository {
 
     // Trade
     List<Trade> findTradesByPositionId(Long positionId);
+    Optional<Trade> findTradeById(Long id);
     Trade saveTrade(Trade trade);
 
     // Dividend
