@@ -8,9 +8,11 @@ import com.portfolio.invest.domain.portfolio.PortfolioErrorCode;
 import com.portfolio.invest.domain.portfolio.PortfolioException;
 import com.portfolio.invest.domain.portfolio.PortfolioRepository;
 import com.portfolio.invest.domain.portfolio.Position;
+import com.portfolio.invest.domain.portfolio.Trade;
 import com.portfolio.invest.domain.valuation.ValuationRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -22,6 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class PortfolioApplicationServiceTest {
@@ -79,19 +82,30 @@ class PortfolioApplicationServiceTest {
 
     @Test
     void 买入不存在持仓时新建() {
+        when(repo.findPositionByPortfolioIdAndGroupIdAndStockCode(10L, 1L, "600519")).thenReturn(Optional.empty());
         when(repo.findGroupByIdAndPortfolioId(1L, 10L))
                 .thenReturn(Optional.of(HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now())));
-        when(repo.findPositionByPortfolioIdAndGroupIdAndStockCode(10L, 1L, "600519")).thenReturn(Optional.empty());
-        when(repo.savePosition(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(repo.savePosition(any())).thenAnswer(inv -> {
+            Position p = inv.getArgument(0);
+            return Position.reconstitute(
+                    99L, p.portfolioId(), p.groupId(), p.stockCode(), p.stockName(),
+                    p.quantity(), p.costBasis(), p.totalBuyCost(), p.cumulativeCashDividend(),
+                    p.realizedPnl(), p.netCashFlow(), p.createdAt(), p.updatedAt());
+        });
         when(repo.saveTrade(any())).thenAnswer(inv -> inv.getArgument(0));
 
         var view = service.buy(1L, new BuyCommand(1L, "600519", "贵州茅台",
                 LocalDate.of(2026, 8, 27), new BigDecimal("1500"),
                 new BigDecimal("100"), new BigDecimal("5")));
 
+        assertThat(view.id()).isEqualTo(99L);
         assertThat(view.stockCode()).isEqualTo("600519");
         assertThat(view.quantity()).isEqualByComparingTo("100");
         assertThat(view.avgCost()).isEqualByComparingTo("1500.05");
+
+        ArgumentCaptor<Trade> captor = ArgumentCaptor.forClass(Trade.class);
+        verify(repo).saveTrade(captor.capture());
+        assertThat(captor.getValue().positionId()).isEqualTo(99L);
     }
 
     @Test
