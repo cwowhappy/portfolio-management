@@ -23,10 +23,10 @@ def test_configurable_tushare_source_uses_pro_factory():
             def index_dailybasic(self, **kw):
                 calls.update(kw)
                 return pd.DataFrame({"trade_date": ["20260828"], "pe": [12.0]})
+
         return FakePro()
 
-    src = cfg.ConfigurableSource("ts_idx", "tushare", "index_dailybasic",
-                                 pro_factory=fake_pro_factory)
+    src = cfg.ConfigurableSource("ts_idx", "tushare", "index_dailybasic", pro_factory=fake_pro_factory)
     df = src.fetch({"ts_code": "000300.SH", "start_date": "20260828", "end_date": "20260828"})
     assert calls["ts_code"] == "000300.SH"
     assert "pe" in df.columns
@@ -34,5 +34,6 @@ def test_configurable_tushare_source_uses_pro_factory():
 
 def test_unknown_kind_raises():
     from collector.sources.base import SourceError
+
     with pytest.raises(SourceError):
         cfg.ConfigurableSource("x", "nope", "fn")

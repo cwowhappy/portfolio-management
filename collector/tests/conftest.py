@@ -3,6 +3,7 @@
 优先用 DATABASE_URL（CI 注入 postgres service）；本地无 DATABASE_URL 时
 用 testcontainers 起一次性 postgres:16 容器；docker 不可用时整组 skip。
 """
+
 import os
 
 import psycopg

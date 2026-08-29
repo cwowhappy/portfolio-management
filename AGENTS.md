@@ -79,12 +79,12 @@ infrastructure ──→ {domain, application, config}
 - **Jackson 2 而非 Jackson 3**：`spring-boot-starter-web` 已排除 `starter-jackson` 改引 `spring-boot-jackson2`，因为 AgentScope AG-UI 模型基于 Jackson 2 注解。
 - **Testcontainers 禁用 Ryuk**（`TESTCONTAINERS_RYUK_DISABLED=true`）：兼容 Colima 等本地 Docker socket 无法挂载的场景，由 JUnit 扩展启停容器。
 - **同源 Cookie 会话，无 CORS**：后端 `same-site: lax`，前端同源反代透传 cookie，这是关闭 CSRF 的安全前提（ADR-0007）。
-- 前端无独立 lint 脚本（`eslint.config.mjs` 存在但 package.json 未注册 lint 命令）。
+- 前端 lint 已启用：`pnpm lint`（eslint flat config，含 react-hooks/no-explicit-any/组件禁直接 fetch 等规则），纳入 `make test` 与 CI。
 
 ## 参考文档
 
 - `README.md`：功能全览 + API 端点表 + 环境变量表 + 目录结构
-- `docs/technology/conventions/01-后端DDD分包规范.md`：DDD 分包规范（ArchUnit 强制，改后端前必读）
+- `docs/technology/conventions/`（01 后端 DDD 分包 / 02 后端 / 03 前端 / 04 采集服务，改代码前必读对应规范）
 - `docs/technology/decisions/`（0001–0009）：Agent 框架、AG-UI 协议、行情源、会话模型、用户认证、后端分层等架构决策
 - `features/specs/`（设计规格）、`features/plans/`（实施计划）
 - `docs/technology/`（技术文档）、`docs/function/`（产品功能）

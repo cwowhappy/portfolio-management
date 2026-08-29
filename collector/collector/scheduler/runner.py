@@ -5,7 +5,7 @@ import time
 import psycopg
 
 from collector.executor.executor import AllSourcesFailed, StoreError
-from collector.model.run import RunResult, STATUS_SKIPPED
+from collector.model.run import STATUS_SKIPPED, RunResult
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ def backoff_delays(strategy: str, count: int) -> list[int]:
     if strategy == STRATEGY_FIXED:
         return [BACKOFF_BASE_SECONDS] * count
     if strategy == STRATEGY_EXPONENTIAL:
-        return [BACKOFF_BASE_SECONDS * (2 ** i) for i in range(count)]
+        return [BACKOFF_BASE_SECONDS * (2**i) for i in range(count)]
     raise ValueError(f"未知退避策略: {strategy}")
 
 
@@ -73,8 +73,7 @@ class TaskRunner:
                     if attempt >= retry_max:
                         break
                     delay = delays[attempt]
-                    logger.warning("任务 %s 第 %d 次运行失败：%s；%ds 后重试",
-                                   task.task_code, attempt + 1, e, delay)
+                    logger.warning("任务 %s 第 %d 次运行失败：%s；%ds 后重试", task.task_code, attempt + 1, e, delay)
                     time.sleep(delay)
                 finally:
                     conn.execute(UNLOCK_SQL, (task.task_code,))

@@ -37,10 +37,11 @@ class RunRepository:
         with self.conn.cursor() as cur:
             cur.execute(LIST_RUNS_SQL, (task_code, limit))
             rows = cur.fetchall()
-        return [dict(zip(RUN_LIST_COLS, row)) for row in rows]
+        return [dict(zip(RUN_LIST_COLS, row, strict=True)) for row in rows]
 
-    def record(self, task_code, mode, status, source_used=None, params=None,
-               rows_written=None, error=None, message=None):
+    def record(
+        self, task_code, mode, status, source_used=None, params=None, rows_written=None, error=None, message=None
+    ):
         with self.conn.cursor() as cur:
             cur.execute("SELECT id FROM collector_task WHERE task_code=%s", (task_code,))
             row = cur.fetchone()
@@ -48,9 +49,19 @@ class RunRepository:
                 logger.warning("运行记录跳过：未知任务 %s", task_code)
                 return None
             task_id = row[0]
-            cur.execute(RECORD_SQL, (task_id, mode, status, source_used,
-                                     json.dumps(params) if params else None,
-                                     rows_written, error, message))
+            cur.execute(
+                RECORD_SQL,
+                (
+                    task_id,
+                    mode,
+                    status,
+                    source_used,
+                    json.dumps(params) if params else None,
+                    rows_written,
+                    error,
+                    message,
+                ),
+            )
             run_id = cur.fetchone()[0]
         self.conn.commit()
         return run_id

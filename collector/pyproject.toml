@@ -1,0 +1,79 @@
+# collector 包元数据 + 工具链配置（ruff / import-linter）。
+# 依赖声明的唯一来源：修改本文件后执行
+#   uv pip compile pyproject.toml --extra dev --generate-hashes --python-version 3.12 -o requirements.txt
+# 重新生成锁定文件（规范 G2）。Docker/CI 仍 pip install -r requirements.txt。
+[project]
+name = "collector"
+version = "0.1.0"
+description = "估值数据采集服务（akshare/tushare -> PostgreSQL）"
+requires-python = ">=3.12"
+# 直接依赖，与原 requirements.txt 手工固定的版本对齐（== 钉住，升级走改声明 + 重新 compile）
+dependencies = [
+    "pandas==2.2.3",
+    "akshare==1.16.72",
+    "tushare==1.4.21",
+    "APScheduler==3.11.0",
+    "psycopg[binary]==3.2.3",
+    "python-dotenv==1.0.1",
+    "alembic==1.13.3",
+    "PyYAML==6.0.2",
+    "SQLAlchemy==2.0.36",
+]
+
+[project.optional-dependencies]
+# 测试/工具链依赖，随 requirements.txt 一起锁定（CI 与本地 .venv 需要）
+dev = [
+    "pytest==8.3.4",
+    "pytest-cov==6.0.0",
+    "pytest-mock==3.15.1",
+    "testcontainers[postgres]==4.15.0",
+    "ruff==0.14.5",
+    "import-linter==2.6",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120  # 项目存量最长行 130，仅个位数行需重排
+src = ["."]
+
+[tool.ruff.lint]
+# 规范 G1：E,F,W,I,UP,B,SIM,T201（禁 print）
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "T201"]
+
+[tool.ruff.lint.per-file-ignores]
+# T201 豁免：cli.py 的 print 是 CLI 用户输出（规范 O1 明确允许）
+"collector/cli.py" = ["T201"]
+# E402 豁免：测试文件按用例分节组织，分节注释后集中 import 属既有风格
+"tests/**" = ["E402"]
+
+[tool.importlinter]
+root_packages = ["collector"]
+
+# 规范 L1：sources → converters → validators → calc → store 单向依赖，
+# executor/scheduler/cli/backfill 只做编排（位于顶层），repositories 只做 SQL，model 不依赖任何层。
+[[tool.importlinter.contracts]]
+name = "分层单向依赖（L1）"
+type = "layers"
+layers = [
+    # 顶层入口
+    "collector.cli",
+    # 编排（scheduler 与 backfill 互不依赖）
+    "collector.scheduler | collector.backfill",
+    # 编排执行
+    "collector.executor",
+    # 写库与只读 SQL（互不依赖的兄弟层）
+    "collector.store | collector.repositories",
+    # 纯逻辑层
+    "collector.calc | collector.validators | collector.converters",
+    # 数据源
+    "collector.sources",
+    # 最底：纯数据模型与配置，不依赖任何层
+    "collector.model | collector.config",
+]
+ignore_imports = [
+    # 受限破例：store.writer 引用 executor.executor.StoreError（历史遗留的跨层异常定义，
+    # executor 不反向依赖 store，无循环）。移动异常定义属独立重构，先在此显式豁免。
+    "collector.store.writer -> collector.executor.executor",
+]
+# 注：L4 破例（IndustryUniverseSource 经注入的 conn_factory 直读映射表）使用裸 psycopg，
+# 不 import store/repositories，故不违反本合约，无需豁免。
