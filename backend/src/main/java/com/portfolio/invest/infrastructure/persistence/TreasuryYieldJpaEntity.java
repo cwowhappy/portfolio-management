@@ -12,7 +12,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 
 @Entity
-@Table(name = "treasury_yield")
+@Table(name = "treasury_yield_curve")
 public class TreasuryYieldJpaEntity {
 
     @Id
@@ -22,12 +22,15 @@ public class TreasuryYieldJpaEntity {
     @Column(name = "trading_day", nullable = false)
     private LocalDate tradingDay;
 
-    @Column(name = "yield_10y", nullable = false)
-    private BigDecimal yield10y;
+    @Column(name = "term", nullable = false)
+    private String term;
+
+    @Column(name = "yield", nullable = false)
+    private BigDecimal yield;
 
     protected TreasuryYieldJpaEntity() {}
 
     public TreasuryYield toDomain() {
-        return new TreasuryYield(tradingDay, yield10y);
+        return new TreasuryYield(tradingDay, yield);
     }
 }
