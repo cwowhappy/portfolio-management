@@ -32,7 +32,9 @@ public class UserRepositoryImpl implements UserRepository {
 
     @Override
     public User save(User user) {
-        UserJpaEntity entity = jpa.save(UserJpaEntity.fromDomain(user));
+        // saveAndFlush：让唯一索引等约束违例在事务内尽早抛出，
+        // 供应用层捕获映射（如并发注册 → USERNAME_TAKEN），而不是延迟到提交时冒泡成 500
+        UserJpaEntity entity = jpa.saveAndFlush(UserJpaEntity.fromDomain(user));
         return entity.toDomain();
     }
 }

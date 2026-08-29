@@ -97,7 +97,8 @@ Playwright e2e 位于 `frontend/e2e/`，配置见 `frontend/playwright.config.ts
 | GET /api/market/financials/600519 | 财务指标 + PE/PB |
 | GET /api/market/news/600519?limit=10 | 个股新闻 |
 | GET /api/market/overview | 指数速览 |
-| GET /api/agent/health | 健康检查（LLM 配置 + 行情源） |
+| GET /api/agent/health | 存活探针（liveness，仅 LLM 配置状态，零外呼） |
+| GET /api/agent/status | 服务状态（LLM 配置 + 行情源连通性，探活结果 30s 缓存） |
 
 ## 目录结构
 

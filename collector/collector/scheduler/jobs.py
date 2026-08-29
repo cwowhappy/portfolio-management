@@ -1,6 +1,7 @@
 import datetime as dt
 import glob
 import json
+import logging
 import os
 
 import akshare as ak
@@ -12,6 +13,13 @@ from alembic.config import Config as AlembicConfig
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
+
+logger = logging.getLogger(__name__)
+
+# 交易日历每月刷新一次（每月 1 日 03:10），upsert 幂等。
+CALENDAR_REFRESH_CRON = "10 3 1 * *"
+# 日历最新日期落后当天超过该天数时打 warning 留痕。
+CALENDAR_STALE_DAYS = 15
 
 from collector.calc.registry import CalcRegistry
 from collector.calc.snapshot import IndustryValuationCalc, SnapshotCalc
@@ -74,13 +82,28 @@ def make_trigger(schedule):
     raise ValueError(f"未知调度类型: {schedule['type']}")
 
 
-def build_scheduler(tasks, runner):
+def build_scheduler(tasks, runner, never_succeeded=None, calendar_refresher=None):
     scheduler = BlockingScheduler()
+    now = dt.datetime.now()
     for task in tasks:
+        kwargs = {}
+        if never_succeeded and task.task_code in never_succeeded:
+            # 冷启动补跑：从未成功运行过的任务（如周频 shenwan_mapping）立即执行一次，
+            # 否则要等首个调度周期，期间依赖它的任务必失败。
+            kwargs["next_run_time"] = now
         scheduler.add_job(
             lambda t=task: runner.run(t),
             trigger=make_trigger(task.schedule),
             id=task.task_code, coalesce=True, max_instances=1,
+            misfire_grace_time=3600,
+            **kwargs,
+        )
+    if calendar_refresher is not None:
+        scheduler.add_job(
+            calendar_refresher,
+            trigger=CronTrigger.from_crontab(CALENDAR_REFRESH_CRON),
+            id="refresh_trading_calendar", coalesce=True, max_instances=1,
+            misfire_grace_time=86400,
         )
     return scheduler
 
@@ -104,7 +127,7 @@ def _field_columns():
         }),
         "field_mapping_sw": FieldMappingConverter({
             "stock_code": {"from": "code", "type": "str"},
-            "stock_name": {"from": "code", "type": "str"},
+            "stock_name": {"from": "stock_name", "type": "str"},
             "industry_code": {"from": "industry_code", "type": "str"},
             "industry_name": {"from": "industry_name", "type": "str"},
         }),
@@ -138,7 +161,7 @@ def build_registries(config):
         "shenwan_mapping": ShenwanMappingSource("shenwan_mapping", pro_factory=pro),
         "index_valuation": IndexValuationSource("index_valuation", pro_factory=pro),
         "industry_universe": IndustryUniverseSource("industry_universe", conn_factory=conn_factory),
-        "treasury_curve": TreasuryCurveSource("treasury_curve"),
+        "treasury_curve": TreasuryCurveSource("treasury_curve", conn_factory=conn_factory),
         "index_constituent": IndexConstituentSource("index_constituent", pro_factory=pro),
     })
     converter_reg = ConverterRegistry(plugins=_field_columns())
@@ -148,16 +171,35 @@ def build_registries(config):
 
 
 def refresh_calendar(conn):
-    with conn.cursor() as cur:
-        cur.execute("SELECT count(*) FROM trading_calendar")
-        if cur.fetchone()[0] > 0:
-            return
+    """从数据源拉取最新交易日历并 upsert（ON CONFLICT DO NOTHING，幂等）。"""
     df = ak.tool_trade_date_hist_sina()
     dates = [dt.date.fromisoformat(str(d)) for d in df["trade_date"]]
     with conn.cursor() as cur:
         cur.executemany("INSERT INTO trading_calendar (trade_date) VALUES (%s) ON CONFLICT DO NOTHING",
                         [(d,) for d in dates])
     conn.commit()
+    logger.info("交易日历已刷新：%d 个交易日", len(dates))
+
+
+def check_calendar_staleness(conn, today=None):
+    """日历最新日期落后当天超过 CALENDAR_STALE_DAYS 天时打 warning 留痕。"""
+    today = today or dt.date.today()
+    with conn.cursor() as cur:
+        cur.execute("SELECT max(trade_date) FROM trading_calendar")
+        latest = cur.fetchone()[0]
+    if latest is None or (today - latest).days > CALENDAR_STALE_DAYS:
+        logger.warning("交易日历最新日期 %s 落后当天超过 %d 天，交易日判断可能失真",
+                       latest, CALENDAR_STALE_DAYS)
+
+
+def refresh_calendar_job(database_url):
+    """APScheduler 定期刷新入口：自建连接，异常只记日志不拖垮调度器。"""
+    try:
+        with psycopg.connect(database_url) as conn:
+            refresh_calendar(conn)
+            check_calendar_staleness(conn)
+    except Exception:
+        logger.exception("交易日历定期刷新失败")
 
 
 def load_calendar(conn):
@@ -168,6 +210,7 @@ def load_calendar(conn):
 
 
 def main():
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     config = load()
     alembic_cfg = AlembicConfig("migrations/alembic.ini")
     alembic_cfg.set_main_option("sqlalchemy.url", config.database_url)
@@ -176,16 +219,24 @@ def main():
     registries = build_registries(config)
     with psycopg.connect(config.database_url) as conn:
         refresh_calendar(conn)
-        calendar = load_calendar(conn)
+        check_calendar_staleness(conn)
         seed_tasks(conn, load_task_defs("tasks"))
         rows = TaskRepository(conn).list_enabled()
         tasks = [assemble_collector(r, registries) for r in rows]
+        never_succeeded = RunRepository(conn).never_succeeded([t.task_code for t in tasks])
 
+    # 按需查库的日历：长期运行不依赖启动时的内存快照。
+    calendar = TradingCalendar(conn_factory=lambda: psycopg.connect(config.database_url))
     selector = SourceSelector()
     store = Store()
     executor = Executor(selector, store)
     runner = TaskRunner(config.database_url, calendar, executor)
-    scheduler = build_scheduler(tasks, runner)
+    scheduler = build_scheduler(
+        tasks, runner,
+        never_succeeded=never_succeeded,
+        calendar_refresher=lambda: refresh_calendar_job(config.database_url),
+    )
+    logger.info("调度器启动：%d 个任务，冷启动补跑 %d 个", len(tasks), len(never_succeeded))
     scheduler.start()
 
 

@@ -51,4 +51,5 @@ export const fetchNews = (code: string, limit = 10) =>
   get<NewsItem[]>("/api/market/news/" + code + "?limit=" + limit, z.array(NewsItemSchema));
 export const searchStocks = (q: string) =>
   get<StockHit[]>("/api/market/search?q=" + encodeURIComponent(q), z.array(StockHitSchema));
-export const fetchHealth = () => get<Health>("/api/agent/health", HealthSchema);
+// 完整健康结构（含行情探活）由 /api/agent/status 提供；/api/agent/health 是纯 liveness
+export const fetchHealth = () => get<Health>("/api/agent/status", HealthSchema);

@@ -18,10 +18,11 @@ dev-backend:
 	cd backend && ./gradlew bootRun --console=plain
 
 dev-frontend:
-	cd frontend && pnpm install && pnpm dev
+	# 显式固定前端端口：.env 的 PORT 是后端 server.port，经 export 泄漏给 next dev 会抢占后端端口
+	cd frontend && pnpm install && PORT=3000 pnpm dev
 
 ## 测试
-test: test-backend test-frontend
+test: test-backend test-frontend collect-test
 
 test-backend:
 	cd backend && ./gradlew test --console=plain
@@ -65,4 +66,4 @@ collect-backfill:
 
 ## 运行 collector 测试（覆盖率 >= 80%）
 collect-test:
-	cd collector && pytest -q --cov=collector --cov-fail-under=80
+	cd collector && .venv/bin/pytest -q --cov=collector --cov-fail-under=80

@@ -9,13 +9,16 @@ def test_shenwan_mapping_loops_31(mocker):
     pro = mocker.Mock()
     pro.index_classify.return_value = pd.DataFrame({"index_code": ["801010.SI", "801030.SI"]})
     pro.index_member_all.side_effect = [
-        pd.DataFrame({"ts_code": ["000001.SZ"], "l1_code": ["801010.SI"], "l1_name": ["农林牧渔"]}),
-        pd.DataFrame({"ts_code": ["600519.SH"], "l1_code": ["801030.SI"], "l1_name": ["食品饮料"]}),
+        pd.DataFrame({"ts_code": ["000001.SZ"], "name": ["平安银行"],
+                      "l1_code": ["801010.SI"], "l1_name": ["农林牧渔"]}),
+        pd.DataFrame({"ts_code": ["600519.SH"], "name": ["贵州茅台"],
+                      "l1_code": ["801030.SI"], "l1_name": ["食品饮料"]}),
     ]
     src = ShenwanMappingSource("sw", pro_factory=lambda: pro)
     df = src.fetch({})
-    assert list(df.columns) == ["code", "industry_code", "industry_name"]
+    assert list(df.columns) == ["code", "stock_name", "industry_code", "industry_name"]
     assert df.iloc[0]["code"] == "000001"
+    assert df.iloc[0]["stock_name"] == "平安银行"
     assert df.iloc[0]["industry_code"] == "801010"
 
 
@@ -82,3 +85,34 @@ def test_industry_universe_joins_mapping(mocker):
     assert "industry_name" in df.columns
     assert df.loc[df["代码"] == "000001", "industry_code"].iloc[0] == "801010"
     assert df.loc[df["代码"] == "600519", "industry_name"].iloc[0] == "食品饮料"
+
+
+# ---------------------------------------------------------------- C-P1-4 日期归一化
+
+import pytest
+
+from collector.sources.plugins import normalize_date
+
+
+def test_normalize_date_iso_and_compact():
+    assert normalize_date("2026-08-28") == "20260828"
+    assert normalize_date("20260828") == "20260828"  # 已规范直通
+    assert normalize_date(dt.date(2026, 8, 28)) == "20260828"
+
+
+def test_normalize_date_invalid_raises():
+    with pytest.raises(ValueError, match="非法日期参数"):
+        normalize_date("2026/08/28", "start")
+    with pytest.raises(ValueError, match="非法日期参数"):
+        normalize_date("20261340")  # 不存在的月份/日
+
+
+def test_index_valuation_normalizes_iso_range(mocker):
+    pro = mocker.Mock()
+    pro.index_dailybasic.return_value = pd.DataFrame(
+        {"trade_date": ["20260828"], "pe": [12.0], "pb": [1.4]}
+    )
+    src = IndexValuationSource("idx", pro_factory=lambda: pro, index_codes={"000300": "沪深300"})
+    src.fetch({"start": "2026-08-01", "end": "2026-08-28"})
+    pro.index_dailybasic.assert_called_once_with(ts_code="000300.SH",
+                                                 start_date="20260801", end_date="20260828")

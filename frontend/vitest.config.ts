@@ -15,9 +15,9 @@ export default defineConfig({
     include: ["tests/**/*.test.{ts,tsx}"],
     coverage: {
       provider: "v8",
-      // app/ 目录是 Next.js 框架接线层（页面壳 + 路由反代），由 smoke/e2e 覆盖，
-      // 单测覆盖率聚焦业务代码：组件 + lib 工具层。
-      include: ["components/**/*.{ts,tsx}", "lib/**/*.{ts,tsx}"],
+      // 覆盖率聚焦业务代码：组件 + lib 工具层 + API 反代路由（有路由级单测）。
+      // 页面壳（app/**/page.tsx、layout.tsx、error.tsx 等框架接线层）仍由 smoke/e2e 覆盖，不纳入。
+      include: ["components/**/*.{ts,tsx}", "lib/**/*.{ts,tsx}", "app/api/**/*.{ts,tsx}"],
       reporter: ["text", "html"],
       thresholds: {
         statements: 80,

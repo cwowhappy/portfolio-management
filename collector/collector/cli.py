@@ -92,6 +92,9 @@ def main(argv=None):
                 result = runner.run(task, params=params, force=args.force)
             else:  # backfill
                 result = run_backfill(runner, task, args.start, args.end)
+        except ValueError as e:
+            print(f"参数错误: {e}")
+            sys.exit(2)
         except (AllSourcesFailed, StoreError) as e:
             print(f"采集失败: {e}")
             sys.exit(1)

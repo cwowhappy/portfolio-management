@@ -11,8 +11,10 @@ fail() { printf "  FAIL %s
 
 echo "== 1. 健康检查 =="
 HEALTH=$(curl -s --max-time 15 $BASE/api/agent/health) || fail "后端不可达"
-echo "$HEALTH" | grep -q '"market":{"ok":true' && pass "行情源连通" || fail "行情源异常"
-echo "$HEALTH"
+echo "$HEALTH" | grep -q '"status"' && pass "后端存活（liveness）" || fail "后端存活"
+STATUS=$(curl -s --max-time 15 $BASE/api/agent/status) || fail "状态接口不可达"
+echo "$STATUS" | grep -q '"market":{"ok":true' && pass "行情源连通" || fail "行情源异常"
+echo "$STATUS"
 
 echo "== 2. 行情接口 =="
 curl -s --max-time 15 "$BASE/api/market/overview" | grep -q "上证指数" && pass "大盘速览" || fail "大盘速览"
@@ -25,13 +27,21 @@ echo "== 3. 前端反代 =="
 curl -s --max-time 10 "$FE/api/market/overview" | grep -q "上证指数" && pass "前端行情反代" || fail "前端行情反代"
 
 echo "== 4. AI 对话 =="
-if [ -n "${DEEPSEEK_API_KEY:-}" ]; then
-  RESP=$(curl -s --max-time 120 -X POST "$BASE/agui/run" \
+if [ -z "${DEEPSEEK_API_KEY:-}" ]; then
+  echo "  - 未设置 DEEPSEEK_API_KEY，跳过对话冒烟（在 .env 配置后重跑）"
+elif [ -z "${ADMIN_USERNAME:-}" ] || [ -z "${ADMIN_PASSWORD:-}" ]; then
+  echo "  - 未设置 ADMIN_USERNAME/ADMIN_PASSWORD，跳过对话冒烟（/agui/run 需登录，在 .env 配置后重跑）"
+else
+  COOKIE_JAR=$(mktemp)
+  curl -s --max-time 15 -c "$COOKIE_JAR" -X POST "$BASE/api/auth/login" \
+    -H "Content-Type: application/json" \
+    -d "{\"username\":\"$ADMIN_USERNAME\",\"password\":\"$ADMIN_PASSWORD\"}" \
+    | grep -q '"username"' || { rm -f "$COOKIE_JAR"; fail "管理员登录失败"; }
+  RESP=$(curl -s --max-time 120 -b "$COOKIE_JAR" -X POST "$BASE/agui/run" \
     -H "Content-Type: application/json" \
     -d "{\"threadId\":\"smoke\",\"runId\":\"smoke-1\",\"messages\":[{\"id\":\"m1\",\"role\":\"user\",\"content\":\"用一句话介绍你自己\"}],\"state\":{},\"tools\":[]}")
+  rm -f "$COOKIE_JAR"
   echo "$RESP" | grep -q "TEXT_MESSAGE" && pass "Agent 流式回答" || fail "Agent 回答异常: $RESP"
-else
-  echo "  - 未设置 DEEPSEEK_API_KEY，跳过对话冒烟（在 .env 配置后重跑）"
 fi
 
 echo "全部通过"

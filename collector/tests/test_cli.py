@@ -208,3 +208,28 @@ def test_seed_syncs_tasks(mocker, capsys):
     seed_tasks.assert_called_once_with(conn, defs)
     out = capsys.readouterr().out
     assert "2" in out
+
+
+# ---------------------------------------------------------------- 参数错误友好退出
+
+def test_run_invalid_date_exits_with_usage_error(mocker, capsys):
+    _, _, _, task = _cli_mocks(mocker)
+    runner_inst = MagicMock()
+    runner_inst.run.side_effect = ValueError("非法日期参数 date='2026/08/28'，期望 YYYY-MM-DD")
+    mocker.patch("collector.cli.TaskRunner", return_value=runner_inst)
+
+    with pytest.raises(SystemExit) as e:
+        main(["run", "t", "--date", "2026/08/28"])
+    assert e.value.code == 2
+    assert "参数错误" in capsys.readouterr().out
+
+
+def test_backfill_non_range_source_exits_with_message(mocker, capsys):
+    _, _, _, task = _cli_mocks(mocker)
+    mocker.patch("collector.cli.TaskRunner", return_value=MagicMock())
+    run_backfill = mocker.patch("collector.cli.run_backfill",
+                                side_effect=ValueError("源 x 不支持区间回填"))
+    with pytest.raises(SystemExit) as e:
+        main(["backfill", "t", "--start", "2026-01-01", "--end", "2026-01-31"])
+    assert e.value.code == 2
+    assert "参数错误" in capsys.readouterr().out

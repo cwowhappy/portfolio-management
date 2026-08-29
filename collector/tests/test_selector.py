@@ -35,12 +35,22 @@ def test_open_circuit_skipped():
 
 
 def test_half_open_allows_probe():
+    """半开源可探针，但健康候选优先于探针。"""
     sel = SourceSelector()
     now = datetime.now(timezone.utc)
     ha = SourceHealth("a", total_runs=3, success_runs=0, consecutive_failures=3,
                       last_failure_at=now - timedelta(seconds=700))
     out = sel.select([_src("a"), _src("b")], {"a": ha})
-    assert [s.source_id for s in out] == ["a", "b"]
+    assert [s.source_id for s in out] == ["b", "a"]
+
+
+def test_half_open_probe_used_when_no_healthy_candidate():
+    sel = SourceSelector()
+    now = datetime.now(timezone.utc)
+    ha = SourceHealth("a", total_runs=3, success_runs=0, consecutive_failures=3,
+                      last_failure_at=now - timedelta(seconds=700))
+    out = sel.select([_src("a")], {"a": ha})
+    assert [s.source_id for s in out] == ["a"]
 
 
 def test_record_failure_resets_on_success():

@@ -52,6 +52,29 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    void 用户异常USER_NOT_FOUND映射404() {
+        ResponseEntity<ApiError> res = handler.user(new UserException("USER_NOT_FOUND", "用户不存在"));
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(res.getBody()).isEqualTo(new ApiError("USER_NOT_FOUND", "用户不存在"));
+    }
+
+    @Test
+    void 会话异常INVALID_MESSAGE映射400() {
+        ResponseEntity<ApiError> res = handler.conversation(
+                new com.portfolio.invest.domain.conversation.ConversationException("INVALID_MESSAGE", "消息内容超长（上限100KB）"));
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(res.getBody()).isEqualTo(new ApiError("INVALID_MESSAGE", "消息内容超长（上限100KB）"));
+    }
+
+    @Test
+    void 数据约束违例兜底映射400() {
+        ResponseEntity<ApiError> res = handler.dataIntegrity(
+                new org.springframework.dao.DataIntegrityViolationException("duplicate key"));
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(res.getBody()).isEqualTo(new ApiError("INVALID_DATA", "数据不符合存储约束"));
+    }
+
+    @Test
     void agent未注册映射503与友好文案() {
         ResponseEntity<ApiError> res = handler.agentNotFound(new AguiException.AgentNotFoundException("invest"));
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);

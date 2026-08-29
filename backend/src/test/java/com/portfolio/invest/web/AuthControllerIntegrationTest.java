@@ -61,6 +61,30 @@ class AuthControllerIntegrationTest extends IntegrationTestBase {
                 .andExpect(jsonPath("$.code").value("BAD_CREDENTIALS"));
     }
 
+    @Test
+    void 登录成功后轮换sessionId防会话固定() throws Exception {
+        register("auth_dave", "abc12345");
+        approve("auth_dave");
+
+        // 登录前已持有匿名会话
+        MockHttpSession preLogin = new MockHttpSession();
+        String oldId = preLogin.getId();
+
+        var result = mockMvc.perform(post("/api/auth/login").session(preLogin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"auth_dave\",\"password\":\"abc12345\"}"))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        MockHttpSession afterLogin = (MockHttpSession) result.getRequest().getSession(false);
+        org.assertj.core.api.Assertions.assertThat(afterLogin.getId()).isNotEqualTo(oldId);
+
+        // 轮换后的会话带认证态
+        mockMvc.perform(get("/api/auth/me").session(afterLogin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.username").value("auth_dave"));
+    }
+
     private void register(String u, String p) throws Exception {
         mockMvc.perform(post("/api/auth/register").contentType(MediaType.APPLICATION_JSON)
                 .content("{\"username\":\"" + u + "\",\"password\":\"" + p + "\"}"))

@@ -89,7 +89,8 @@ public class OrchestratingMarketDataService implements MarketDataService {
         if (annual != null && latest.eps() != null) {
             String rd = latest.reportDate();
             if (rd != null && rd.endsWith("-12-31")) {
-                pe = round2(price / latest.eps());
+                // eps<=0 时 PE 无意义（与 TTM 口径一致返回 null），避免除零输出 Infinity
+                pe = latest.eps() > 0 ? round2(price / latest.eps()) : null;
             } else {
                 String sameLastYear = sameLastYearOf(rd);
                 if (sameLastYear != null) {

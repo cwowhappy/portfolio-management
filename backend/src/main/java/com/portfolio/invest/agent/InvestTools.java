@@ -66,9 +66,9 @@ public class InvestTools {
     public String getKline(
             @ToolParam(name = "code", description = "6位A股代码，如 600519") String code,
             @ToolParam(name = "period", description = "周期：day 日K / week 周K / month 月K，默认 day") String period,
-            @ToolParam(name = "limit", description = "返回根数，默认 60，最大 120") Integer limit) {
+            @ToolParam(name = "limit", description = "返回根数，默认 120，最大 500") Integer limit) {
         return run(() -> mapper.writeValueAsString(
-                market.kline(code, period == null ? "day" : period, limit == null ? 60 : limit)));
+                market.kline(code, period == null ? "day" : period, limit == null ? 120 : limit)));
     }
 
     @Tool(

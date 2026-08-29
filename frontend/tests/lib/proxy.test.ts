@@ -91,4 +91,36 @@ describe("反代中继（lib/proxy）", () => {
     const headers = init.headers as Record<string, string>;
     expect(headers["Content-Type"]).toContain("application/json");
   });
+
+  it("path 形式：上游请求带 15s 超时 signal", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(new Response("{}"));
+    vi.stubGlobal("fetch", fetchSpy);
+    const req = { headers: new Headers() } as unknown as Request;
+    await relay("/api/conversations", "GET", req);
+    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("path 形式：后端不可达（fetch 抛错）→ 502 JSON", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new Error("ECONNREFUSED")),
+    );
+    const req = { headers: new Headers() } as unknown as Request;
+    const res = await relay("/api/conversations", "GET", req);
+    expect(res.status).toBe(502);
+    expect(res.headers.get("content-type")).toContain("application/json");
+    await expect(res.json()).resolves.toEqual({ message: "无法连接后端服务" });
+  });
+
+  it("path 形式：上游超时（AbortError）→ 502 JSON", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new DOMException("The operation timed out", "TimeoutError")),
+    );
+    const req = { headers: new Headers() } as unknown as Request;
+    const res = await relay("/api/conversations", "GET", req);
+    expect(res.status).toBe(502);
+    await expect(res.json()).resolves.toEqual({ message: "无法连接后端服务" });
+  });
 });

@@ -1,6 +1,7 @@
 package com.portfolio.invest.application.useradmin;
 
 import com.portfolio.invest.domain.user.PasswordPolicy;
+import com.portfolio.invest.domain.user.RememberMeTokenStore;
 import com.portfolio.invest.domain.user.User;
 import com.portfolio.invest.domain.user.UserException;
 import com.portfolio.invest.domain.user.UserRepository;
@@ -15,10 +16,13 @@ public class UserAdminApplicationService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final RememberMeTokenStore rememberMeTokenStore;
 
-    public UserAdminApplicationService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
+    public UserAdminApplicationService(UserRepository userRepository, PasswordEncoder passwordEncoder,
+                                       RememberMeTokenStore rememberMeTokenStore) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.rememberMeTokenStore = rememberMeTokenStore;
     }
 
     public List<UserAdminView> list() {
@@ -48,7 +52,10 @@ public class UserAdminApplicationService {
     @Transactional
     public UserAdminView resetPassword(Long id, String newPassword) {
         PasswordPolicy.validate(newPassword);
-        return mutate(id, u -> u.withPassword(passwordEncoder.encode(newPassword)));
+        UserAdminView view = mutate(id, u -> u.withPassword(passwordEncoder.encode(newPassword)));
+        // 密码已换，该用户所有 remember-me 令牌必须失效，否则旧令牌仍可免密登录
+        rememberMeTokenStore.removeUserTokens(view.username());
+        return view;
     }
 
     private UserAdminView mutate(Long id, java.util.function.Function<User, User> fn) {

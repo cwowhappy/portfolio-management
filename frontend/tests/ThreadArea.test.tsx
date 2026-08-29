@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Message } from "@ag-ui/client";
 import ThreadArea from "@/components/chat/ThreadArea";
@@ -17,12 +17,16 @@ const mocks = vi.hoisted(() => ({
   },
   runAgent: vi.fn(),
   isReady: true,
+  useAgentProps: null as Record<string, unknown> | null,
   defaultToolRender: null as null | ((props: Record<string, unknown>) => React.ReactNode),
   renderToolCall: vi.fn(),
 }));
 
 vi.mock("@copilotkit/react-core/v2", () => ({
-  useAgent: () => ({ agent: mocks.agent, isReady: mocks.isReady }),
+  useAgent: (props?: Record<string, unknown>) => {
+    mocks.useAgentProps = props ?? null;
+    return { agent: mocks.agent, isReady: mocks.isReady };
+  },
   useCopilotKit: () => ({ copilotkit: { runAgent: mocks.runAgent } }),
   useDefaultRenderTool: ({ render }: { render: (p: Record<string, unknown>) => React.ReactNode }) => {
     mocks.defaultToolRender = render;
@@ -53,6 +57,7 @@ beforeEach(() => {
   mocks.agent.messages = [];
   mocks.agent.isRunning = false;
   mocks.isReady = true;
+  mocks.useAgentProps = null;
   mocks.runAgent.mockReset();
   mocks.agent.addMessage.mockReset();
   mocks.agent.setMessages.mockReset();
@@ -65,6 +70,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe("ThreadArea", () => {
@@ -243,6 +249,64 @@ describe("ThreadArea", () => {
     expect(putCalls).toHaveLength(0);
   });
 
+  it("useAgent 传 throttleMs: 150（流式期间合并高频更新，降低重渲染）", async () => {
+    renderThread();
+    await waitFor(() => expect(mocks.useAgentProps).toBeTruthy());
+    expect(mocks.useAgentProps).toMatchObject({ agentId: "invest", throttleMs: 150 });
+  });
+
+  it("isRunning 由 true→false 时立即 flush 尾部内容（不等 400ms 防抖）", async () => {
+    vi.useFakeTimers();
+    api = installConversationsApi({ list: [{ id: "t1", title: "会话", updatedAt: 2 }] });
+    mocks.agent.isRunning = true;
+    mocks.agent.messages = [agentMessage({ id: "u1", role: "user", content: "问题" })];
+    const view = renderThread();
+    await act(async () => {});
+    // 流式尾部内容到来，防抖窗口（400ms）尚未到期
+    mocks.agent.messages = [
+      agentMessage({ id: "u1", role: "user", content: "问题" }),
+      agentMessage({ id: "a1", role: "assistant", content: "尾部回答" }),
+    ];
+    view.rerender(
+      <RuntimeProvider>
+        <ThreadArea llmReady={null} />
+      </RuntimeProvider>,
+    );
+    await act(async () => {});
+    expect(api.state.messages.get("t1") ?? []).toHaveLength(0);
+    // 运行结束：立即落库，不再等防抖
+    mocks.agent.isRunning = false;
+    view.rerender(
+      <RuntimeProvider>
+        <ThreadArea llmReady={null} />
+      </RuntimeProvider>,
+    );
+    await act(async () => {});
+    expect(api.state.messages.get("t1")).toContainEqual(
+      expect.objectContaining({ id: "a1", role: "assistant", content: "尾部回答" }),
+    );
+  });
+
+  it("卸载时防抖窗口内的 pending 写入以 keepalive 完成 flush", async () => {
+    vi.useFakeTimers();
+    api = installConversationsApi({ list: [{ id: "t1", title: "会话", updatedAt: 2 }] });
+    mocks.agent.messages = [agentMessage({ id: "u1", role: "user", content: "未落库消息" })];
+    const view = renderThread();
+    await act(async () => {});
+    // 防抖未到期，尚未 PUT
+    expect(
+      api.fetchMock.mock.calls.filter(([, init]) => init?.method === "PUT"),
+    ).toHaveLength(0);
+    view.unmount();
+    await act(async () => {});
+    const putCalls = api.fetchMock.mock.calls.filter(([, init]) => init?.method === "PUT");
+    expect(putCalls.length).toBeGreaterThan(0);
+    expect((putCalls[0][1] as RequestInit).keepalive).toBe(true);
+    expect(api.state.messages.get("t1")).toContainEqual(
+      expect.objectContaining({ id: "u1", role: "user", content: "未落库消息" }),
+    );
+  });
+
   it("默认工具渲染器渲染 ToolCallCard", async () => {
     renderThread();
     await waitFor(() => expect(mocks.defaultToolRender).toBeTruthy());
@@ -365,6 +429,18 @@ describe("ThreadArea", () => {
       expect(screen.getByRole("button", { name: "回答有帮助" }).getAttribute("aria-pressed")).toBe(
         "false",
       );
+    });
+
+    it("反馈键达到容量上限时清掉最旧的再写入", async () => {
+      // 预置 200 条（上限），m0 最旧
+      for (let i = 0; i < 200; i++) {
+        localStorage.setItem(`invest.feedback.m${i}`, JSON.stringify({ type: "positive", at: i }));
+      }
+      await renderWithAssistant();
+      fireEvent.click(screen.getByRole("button", { name: "回答有帮助" }));
+      expect(localStorage.getItem("invest.feedback.m0")).toBeNull();
+      expect(localStorage.getItem("invest.feedback.m1")).not.toBeNull();
+      expect(localStorage.getItem("invest.feedback.a1")).toContain('"positive"');
     });
   });
 });

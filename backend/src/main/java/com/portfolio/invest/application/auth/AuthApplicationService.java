@@ -36,9 +36,14 @@ public class AuthApplicationService {
             throw new UserException("USERNAME_TAKEN", "用户名已存在");
         }
         String hash = passwordEncoder.encode(cmd.password());
-        User saved = existing
-                .map(u -> userRepository.save(u.reRegister(hash)))
-                .orElseGet(() -> userRepository.save(User.register(username, hash)));
-        return UserView.from(saved);
+        try {
+            User saved = existing
+                    .map(u -> userRepository.save(u.reRegister(hash)))
+                    .orElseGet(() -> userRepository.save(User.register(username, hash)));
+            return UserView.from(saved);
+        } catch (org.springframework.dao.DataIntegrityViolationException e) {
+            // 并发注册同一用户名：findByUsername 与 insert 之间存在 TOCTOU 窗口，由唯一索引兜底
+            throw new UserException("USERNAME_TAKEN", "用户名已存在");
+        }
     }
 }

@@ -44,9 +44,10 @@ export const createConversation = (id: string) =>
   request("/api/conversations", MetaSchema, { method: "POST", body: JSON.stringify({ id }) });
 export const loadMessages = (threadId: string) =>
   request(`/api/conversations/${threadId}/messages`, z.array(MsgSchema));
-export const saveMessages = (threadId: string, msgs: ChatMessage[]) =>
+export const saveMessages = (threadId: string, msgs: ChatMessage[], opts?: { keepalive?: boolean }) =>
   request(`/api/conversations/${threadId}/messages`, z.void(), {
     method: "PUT",
+    ...(opts?.keepalive ? { keepalive: true } : {}),
     body: JSON.stringify(
       msgs.map((m) => ({ id: m.id, role: m.role, content: m.content, createdAt: m.createdAt })),
     ),

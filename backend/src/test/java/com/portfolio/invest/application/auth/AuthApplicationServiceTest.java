@@ -61,4 +61,14 @@ class AuthApplicationServiceTest {
         assertThat(v.status()).isEqualTo(UserStatus.PENDING);
         verify(repo).save(argThat(u -> u.passwordHash().equals("$2a$hash")));
     }
+
+    @Test
+    void 并发注册触发唯一索引冲突映射为USERNAME_TAKEN() {
+        when(repo.findByUsername("alice")).thenReturn(Optional.empty());
+        when(encoder.encode("abc12345")).thenReturn("$2a$hash");
+        when(repo.save(any())).thenThrow(new org.springframework.dao.DataIntegrityViolationException("duplicate key"));
+        assertThatThrownBy(() -> service.register(new RegisterCommand("alice", "abc12345")))
+                .isInstanceOf(UserException.class)
+                .satisfies(e -> assertThat(((UserException) e).getCode()).isEqualTo("USERNAME_TAKEN"));
+    }
 }

@@ -100,6 +100,46 @@ describe("认证状态（lib/auth）", () => {
     expect(result.current.user).toBeNull();
   });
 
+  it("logout 请求失败（后端不可达）也清空本地 user", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ code: "UNAUTHENTICATED", message: "未登录" }, 401),
+    );
+    fetchMock.mockResolvedValueOnce(jsonResponse(approvedAdmin)); // /login
+    fetchMock.mockRejectedValueOnce(new Error("network down")); // /logout 失败
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(async () => {
+      await result.current.login("admin", "passw0rd", false);
+    });
+    expect(result.current.user).toEqual(approvedAdmin);
+    await act(async () => {
+      await expect(result.current.logout()).rejects.toThrow("network down");
+    });
+    expect(result.current.user).toBeNull();
+  });
+
+  it("/me 响应不符合 schema 时视为未登录（user=null）", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ id: "not-a-number" })); // 缺字段且类型错误
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.user).toBeNull();
+  });
+
+  it("login 响应不符合 schema 时抛数据格式异常", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ code: "UNAUTHENTICATED", message: "未登录" }, 401),
+    );
+    fetchMock.mockResolvedValueOnce(jsonResponse({ username: "admin" })); // 缺 id/role/status/enabled
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(async () => {
+      await expect(result.current.login("admin", "passw0rd", false)).rejects.toThrow(
+        "数据格式异常",
+      );
+    });
+    expect(result.current.user).toBeNull();
+  });
+
   it("register 成功后返回注册用户（不自动登录）", async () => {
     const pendingUser: AuthUser = {
       id: 2,

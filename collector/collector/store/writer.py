@@ -55,13 +55,19 @@ class Store:
     def upsert(self, conn, table: str, records: list[dict]) -> int:
         if not records:
             return 0
-        cols = TABLE_COLUMNS[table]
-        sql = UPSERT_SQL[table]
+        try:
+            cols = TABLE_COLUMNS[table]
+            sql = UPSERT_SQL[table]
+        except KeyError as e:
+            raise StoreError(f"未知目标表: {table}") from e
         rows = [tuple(r.get(c) for c in cols) for r in records]
         try:
             with conn.cursor() as cur:
                 cur.executemany(sql, rows)
             conn.commit()
         except psycopg.Error as e:
+            # 不回滚的话连接停留在 aborted transaction 状态，
+            # 后续 failed run 落库与整任务重试都会失败。
+            conn.rollback()
             raise StoreError(f"DB 写入失败: {e}") from e
         return len(rows)

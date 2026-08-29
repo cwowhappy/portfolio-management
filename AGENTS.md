@@ -18,8 +18,8 @@ A 股投研对话助手（证券投资与分析系统）。AI Agent Web 服务�
 |---|---|
 | `make dev` | 同时启动后端(:8080) + 前端(:3000)；本地需先 `docker compose up -d db` |
 | `make dev-backend` / `make dev-frontend` | 单独启动一端 |
-| `make test` | 后端 + 前端全量测试（ArchUnit 架构测试 + Testcontainers 集成测试 + vitest） |
-| `make test-backend` / `make test-frontend` | 单独跑一端 |
+| `make test` | 后端 + 前端 + collector 全量测试（ArchUnit 架构测试 + Testcontainers 集成测试 + vitest + pytest） |
+| `make test-backend` / `make test-frontend` / `make collect-test` | 单独跑一端 |
 | `make build` | 后端 `bootJar` + 前端 `next build` |
 | `make up` / `make down` | Docker Compose 部署 / 停止 |
 | `make smoke` | 端到端冒烟（真实行情 + AI 对话） |
@@ -74,8 +74,8 @@ infrastructure ──→ {domain, application, config}
 
 ## 关键约束
 
-- **覆盖门槛 ≥80%**（`make test` 失败即不过）：后端 JaCoCo 指令/分支，前端 V8 语句/分支。改代码需补测试。
-- **schema 由 Flyway 管**（`ddl-auto: none`），迁移在 `backend/src/main/resources/db/migration/`（V1、V2）。
+- **覆盖门槛 ≥80%**（`make test` 失败即不过）：后端 JaCoCo 指令/分支，前端 V8 语句/分支，collector pytest `--cov-fail-under=80`。改代码需补测试。
+- **schema 由 Flyway 管**（`ddl-auto: none`），迁移在 `backend/src/main/resources/db/migration/`（V1–V4）。
 - **Jackson 2 而非 Jackson 3**：`spring-boot-starter-web` 已排除 `starter-jackson` 改引 `spring-boot-jackson2`，因为 AgentScope AG-UI 模型基于 Jackson 2 注解。
 - **Testcontainers 禁用 Ryuk**（`TESTCONTAINERS_RYUK_DISABLED=true`）：兼容 Colima 等本地 Docker socket 无法挂载的场景，由 JUnit 扩展启停容器。
 - **同源 Cookie 会话，无 CORS**：后端 `same-site: lax`，前端同源反代透传 cookie，这是关闭 CSRF 的安全前提（ADR-0007）。
@@ -88,3 +88,4 @@ infrastructure ──→ {domain, application, config}
 - `docs/technology/decisions/`（0001–0009）：Agent 框架、AG-UI 协议、行情源、会话模型、用户认证、后端分层等架构决策
 - `features/specs/`（设计规格）、`features/plans/`（实施计划）
 - `docs/technology/`（技术文档）、`docs/function/`（产品功能）
+- `docs/code-review-lessons.md`：代码审查经验沉淀（问题模式清单，评审/开发前参考）

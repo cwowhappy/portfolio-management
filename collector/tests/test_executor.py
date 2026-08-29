@@ -147,3 +147,33 @@ def test_store_error_records_failed_run(repos):
         ex.run(_task([_source("a")]), "incremental", {}, MagicMock())
     repos.record.assert_called_once_with("t", "incremental", "failed",
                                          error="db down", params={})
+
+
+# ---------------------------------------------------------------- 熔断计数 / calc 异常收敛
+
+def test_count_failures_false_skips_health_record():
+    """重试尝试（count_failures=False）不再累计 consecutive_failures。"""
+    with patch("collector.executor.executor.HealthRepository") as H, \
+         patch("collector.executor.executor.RunRepository"):
+        hr = H.return_value
+        hr.get.return_value = {}
+        ex = Executor(SourceSelector(), MagicMock())
+        with pytest.raises(AllSourcesFailed):
+            ex.run(_task([_source("a", fail=True)]), "incremental", {}, MagicMock(),
+                   count_failures=False)
+        hr.save.assert_not_called()
+
+
+def test_calc_error_wrapped_and_failed_run_recorded(repos):
+    """calc 的 KeyError 等异常收敛为 SourceError，最终记 failed run 而非裸逃逸。"""
+    conv = MagicMock()
+    conv.convert.return_value = [{"code": "a"}]
+    calc = MagicMock()
+    calc.compute.side_effect = KeyError("industry_code")
+    task = Collector("t", "t", [_source("a")], conv, calc, target_table="valuation_snapshot",
+                     schedule={}, enabled=True)
+    ex = Executor(SourceSelector(), MagicMock())
+    with pytest.raises(AllSourcesFailed):
+        ex.run(task, "incremental", {}, MagicMock())
+    repos.record.assert_called_once_with("t", "incremental", "failed",
+                                         error="AllSourcesFailed", params={})

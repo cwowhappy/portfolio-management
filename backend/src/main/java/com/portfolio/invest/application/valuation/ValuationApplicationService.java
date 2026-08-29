@@ -9,24 +9,51 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.function.LongSupplier;
+import java.util.function.Supplier;
 
 @Service
 public class ValuationApplicationService {
 
     private static final String HS300 = "000300";
+    /** 估值按交易日更新，overview/history 结果按当日日期为 key 加短 TTL 缓存，避免匿名请求反复全表扫描。 */
+    private static final Duration CACHE_TTL = Duration.ofMinutes(5);
 
     private final ValuationRepository repository;
+    private final LongSupplier nowMillis;
 
+    // TtlCache 位于 infrastructure.market，application 层按分包规范不可依赖，此处以同风格的最小 TTL 实现
+    private final Map<String, CacheEntry> cache = new HashMap<>();
+
+    /** 主构造器（@Autowired：存在测试专用重载构造器时需显式指定注入入口）。 */
+    @org.springframework.beans.factory.annotation.Autowired
     public ValuationApplicationService(ValuationRepository repository) {
+        this(repository, System::currentTimeMillis);
+    }
+
+    /** 测试注入：自定义时钟（避免真实墙钟等待）。 */
+    ValuationApplicationService(ValuationRepository repository, LongSupplier nowMillis) {
         this.repository = repository;
+        this.nowMillis = nowMillis;
     }
 
     public ValuationOverviewView overview() {
+        return cached("overview", this::loadOverview);
+    }
+
+    private ValuationOverviewView loadOverview() {
         ValuationSnapshot latest = repository.findLatestSnapshot();
         List<ValuationSnapshot> snapshots = repository.findAllSnapshots();
+        // 沪深300 与国债序列单次加载，erp 与 erpPercentile 复用（不再重复查询）
+        List<IndexValuation> hs300 = repository.findIndexValuations(HS300);
+        List<TreasuryYield> treasuries = repository.findAllTreasuryYields();
+
         List<BigDecimal> peHistory = snapshots.stream().map(ValuationSnapshot::peMedian).toList();
         List<BigDecimal> pbHistory = snapshots.stream().map(ValuationSnapshot::pbMedian).toList();
         List<BigDecimal> breakerHistory = snapshots.stream().map(ValuationSnapshot::netBreakerRatio).toList();
@@ -35,8 +62,8 @@ public class ValuationApplicationService {
         BigDecimal pbPercentile = latest == null ? null : Percentile.of(latest.pbMedian(), pbHistory);
         BigDecimal breakerPercentile = latest == null ? null : Percentile.of(latest.netBreakerRatio(), breakerHistory);
 
-        BigDecimal erp = erp();
-        BigDecimal erpPercentile = erpPercentile();
+        BigDecimal erp = erp(hs300, treasuries);
+        BigDecimal erpPercentile = erpPercentile(erp, hs300);
 
         List<ValuationOverviewView.IndexValuationView> indices = indices();
 
@@ -66,40 +93,57 @@ public class ValuationApplicationService {
     }
 
     public ValuationHistoryView history() {
+        return cached("history", this::loadHistory);
+    }
+
+    private ValuationHistoryView loadHistory() {
         return new ValuationHistoryView(
                 repository.findAllSnapshots(),
                 repository.findAllTreasuryYields(),
                 repository.findIndexValuations(HS300));
     }
 
+    @SuppressWarnings("unchecked")
+    private synchronized <T> T cached(String kind, Supplier<T> loader) {
+        long now = nowMillis.getAsLong();
+        String key = kind + ":" + LocalDate.now();
+        CacheEntry hit = cache.get(key);
+        if (hit != null && now <= hit.expiresAt()) {
+            return (T) hit.value();
+        }
+        T value = loader.get();
+        // 顺手清理过期键，防跨日累积
+        cache.entrySet().removeIf(e -> e.getValue().expiresAt() < now);
+        cache.put(key, new CacheEntry(value, now + CACHE_TTL.toMillis()));
+        return value;
+    }
+
+    private record CacheEntry(Object value, long expiresAt) {}
+
     /** ERP = 沪深 300 股息率 − 10 年国债收益率；数据缺失返回 null。 */
-    private BigDecimal erp() {
-        IndexValuation hs300 = repository.findIndexValuations(HS300).stream()
+    private BigDecimal erp(List<IndexValuation> hs300, List<TreasuryYield> treasuries) {
+        IndexValuation latest = hs300.stream()
                 .filter(i -> i.dividendYield() != null)
                 .max(Comparator.comparing(IndexValuation::tradingDay))
                 .orElse(null);
-        var treasury = repository.findAllTreasuryYields().stream()
+        var treasury = treasuries.stream()
                 .max(Comparator.comparing(TreasuryYield::tradingDay))
                 .orElse(null);
-        if (hs300 == null || treasury == null) {
+        if (latest == null || treasury == null) {
             return null;
         }
-        return hs300.dividendYield().subtract(treasury.yield10y()).setScale(2, RoundingMode.HALF_UP);
+        return latest.dividendYield().subtract(treasury.yield10y()).setScale(2, RoundingMode.HALF_UP);
     }
 
-    private BigDecimal erpPercentile() {
-        BigDecimal erp = erp();
+    private BigDecimal erpPercentile(BigDecimal erp, List<IndexValuation> hs300) {
         if (erp == null) {
             return null;
         }
-        List<BigDecimal> erpHistory = repository.findIndexValuations(HS300).stream()
+        List<BigDecimal> erpHistory = hs300.stream()
                 .filter(i -> i.dividendYield() != null)
                 .map(IndexValuation::dividendYield)
                 .toList();
-        List<BigDecimal> treasuryHistory = repository.findAllTreasuryYields().stream()
-                .map(TreasuryYield::yield10y)
-                .toList();
-        // 简化：以沪深 300 股息率分位近似 ERP 分位（ERP 与股息率同向，历史长度以国债序列为限）
+        // 简化：以沪深 300 股息率分位近似 ERP 分位（ERP 与股息率同向）
         if (erpHistory.isEmpty()) {
             return null;
         }

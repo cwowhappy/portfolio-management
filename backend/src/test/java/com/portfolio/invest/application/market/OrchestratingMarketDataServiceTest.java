@@ -185,6 +185,20 @@ class OrchestratingMarketDataServiceTest {
     }
 
     @Test
+    void financials年报EPS非正时PE为空() throws IOException {
+        // eps=0 旧实现会输出 Infinity，与 TTM 口径对齐：eps<=0 → PE 为 null
+        when(source.quote("1.600519")).thenReturn(quoteWithoutValuation());
+        when(source.financials("600519.SH")).thenReturn(json("""
+                {"result":{"data":[
+                  {"REPORT_DATE":"2025-12-31 00:00:00","EPSJB":0.0,"BPS":10.0}
+                ]}}
+                """));
+        Financials f = service.financials("600519");
+        assertThat(f.pe()).isNull();
+        assertThat(f.pb()).isEqualTo(141.5);
+    }
+
+    @Test
     void financials无年报无同去年数据时估值为空() throws IOException {
         when(source.quote("1.600519")).thenReturn(quoteWithoutValuation());
         when(source.financials("600519.SH")).thenReturn(json("""

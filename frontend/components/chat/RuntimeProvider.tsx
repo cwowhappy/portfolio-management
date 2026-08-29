@@ -7,6 +7,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -22,6 +23,18 @@ import type { ChatMessage } from "@/lib/types";
 
 export const AGENT_ID = "invest";
 
+// 与后端 Conversation 聚合对齐：默认标题与首条用户消息派生标题的长度上限
+const DEFAULT_TITLE = "新会话";
+const TITLE_MAX = 24;
+
+/** 镜像后端 renameIfDefault：默认标题时取首条用户消息前 24 字（幂等）。 */
+function deriveTitle(current: string, msgs: ChatMessage[]): string {
+  if (current !== DEFAULT_TITLE) return current;
+  const firstUser = msgs.find((m) => m.role === "user")?.content.trim() ?? "";
+  if (!firstUser) return current;
+  return firstUser.length > TITLE_MAX ? firstUser.slice(0, TITLE_MAX) : firstUser;
+}
+
 // ———— 会话上下文（Sidebar / ThreadArea 读取） ————
 
 interface ChatRuntimeContextValue {
@@ -31,7 +44,11 @@ interface ChatRuntimeContextValue {
   newThread: () => Promise<void>;
   switchThread: (threadId: string) => void;
   deleteThread: (threadId: string) => Promise<void>;
-  persistMessages: (threadId: string, msgs: ChatMessage[]) => Promise<void>;
+  persistMessages: (
+    threadId: string,
+    msgs: ChatMessage[],
+    opts?: { keepalive?: boolean },
+  ) => Promise<void>;
   setRunning: (running: boolean) => void;
 }
 
@@ -89,6 +106,8 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   const [currentThreadId, setCurrentThreadId] = useState<string>("");
   const [running, setRunning] = useState(false);
   const [ready, setReady] = useState(false);
+  // 已成功保存过的会话：首次保存后 refresh 一次同步后端派生标题，后续保存只做本地乐观更新
+  const persistedThreads = useRef<Set<string>>(new Set());
 
   // 挂载：拉取会话列表；为空则创建首个会话。后端不可达时回退为本地空线程，避免整页白屏。
   useEffect(() => {
@@ -168,10 +187,23 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   );
 
   const persistMessages = useCallback(
-    async (threadId: string, msgs: ChatMessage[]) => {
+    async (threadId: string, msgs: ChatMessage[], opts?: { keepalive?: boolean }) => {
       try {
-        await saveMessages(threadId, msgs);
-        await refresh();
+        await saveMessages(threadId, msgs, opts);
+        // 乐观更新：本地改 updatedAt/title 并按 updatedAt 降序重排（与后端列表口径一致），
+        // 避免流式期间每次保存都 GET 全量列表。
+        setSessions((prev) =>
+          prev
+            .map((s) =>
+              s.id === threadId ? { ...s, title: deriveTitle(s.title, msgs), updatedAt: Date.now() } : s,
+            )
+            .sort((a, b) => b.updatedAt - a.updatedAt),
+        );
+        // 仅每个会话首次保存后 refresh 一次：同步后端派生的标题等真实状态
+        if (!persistedThreads.current.has(threadId)) {
+          persistedThreads.current.add(threadId);
+          await refresh();
+        }
       } catch (e) {
         // 失败只记日志，不打断聊天
         console.error("[RuntimeProvider] 保存会话失败", threadId, e);

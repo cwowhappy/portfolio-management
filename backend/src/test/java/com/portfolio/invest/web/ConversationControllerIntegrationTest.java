@@ -150,6 +150,34 @@ class ConversationControllerIntegrationTest extends IntegrationTestBase {
                 .andExpect(jsonPath("$.code").value("INVALID_ID"));
     }
 
+    @Test
+    void 保存消息超长content返回400而非500() throws Exception {
+        register("conv_dave", "abc12345");
+        approve("conv_dave");
+        MockHttpSession session = login("conv_dave", "abc12345");
+        String convId = UUID.randomUUID().toString();
+        mockMvc.perform(post("/api/conversations").session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"id\":\"" + convId + "\"}"))
+                .andExpect(status().isCreated());
+
+        // content 超过 100KB 上限 → 400 INVALID_MESSAGE（旧行为：约束违例冒泡成 500）
+        String oversized = "x".repeat(100 * 1024 + 1);
+        mockMvc.perform(put("/api/conversations/{id}/messages", convId).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("[{\"id\":\"m-1\",\"role\":\"user\",\"content\":\"" + oversized
+                                + "\",\"createdAt\":1700000000000}]"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_MESSAGE"));
+
+        // 非法 role → 400
+        mockMvc.perform(put("/api/conversations/{id}/messages", convId).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("[{\"id\":\"m-1\",\"role\":\"system\",\"content\":\"hi\",\"createdAt\":1700000000000}]"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_MESSAGE"));
+    }
+
     private void register(String username, String password) throws Exception {
         mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)

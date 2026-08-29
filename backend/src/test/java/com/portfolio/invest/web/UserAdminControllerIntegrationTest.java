@@ -24,6 +24,7 @@ class UserAdminControllerIntegrationTest extends IntegrationTestBase {
     @Autowired MockMvc mockMvc;
     @Autowired UserRepository userRepository;
     @Autowired PasswordEncoder passwordEncoder;
+    @Autowired org.springframework.security.web.authentication.rememberme.PersistentTokenRepository tokenRepository;
 
     @Test
     void 普通用户访问admin接口返回403() throws Exception {
@@ -51,6 +52,27 @@ class UserAdminControllerIntegrationTest extends IntegrationTestBase {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"username\":\"adminit_pending\",\"password\":\"abc12345\"}"))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void 管理员重置密码后该用户rememberMe令牌被吊销() throws Exception {
+        register("adminit_reset", "abc12345");
+        approveDirect("adminit_reset");
+        seedAdmin("adminit_admin2", "admin12345");
+        MockHttpSession adminSession = login("adminit_admin2", "admin12345");
+        Long userId = userRepository.findByUsername("adminit_reset").orElseThrow().id();
+
+        // 该用户有一个有效的 remember-me 令牌
+        tokenRepository.createNewToken(new org.springframework.security.web.authentication.rememberme.PersistentRememberMeToken(
+                "adminit_reset", "series-1", "token-1", java.util.Date.from(Instant.now())));
+        org.assertj.core.api.Assertions.assertThat(tokenRepository.getTokenForSeries("series-1")).isNotNull();
+
+        mockMvc.perform(post("/api/admin/users/{id}/reset-password", userId).session(adminSession)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"newPassword\":\"newpass123\"}"))
+                .andExpect(status().isOk());
+
+        org.assertj.core.api.Assertions.assertThat(tokenRepository.getTokenForSeries("series-1")).isNull();
     }
 
     private void register(String username, String password) throws Exception {

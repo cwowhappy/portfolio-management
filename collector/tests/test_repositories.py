@@ -108,3 +108,39 @@ def test_run_record_returns_none_when_task_missing():
     cur = conn.cursor.return_value.__enter__.return_value
     cur.fetchone.return_value = None
     assert RunRepository(conn).record("nope", "incremental", "success") is None
+
+
+# ---------------------------------------------------------------- P2: finished_at / 未知任务告警 / 冷启动查询
+
+def test_run_record_writes_finished_at():
+    from collector.repositories.runs import RunRepository
+
+    conn = MagicMock()
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.fetchone.side_effect = [(1,), (42,)]
+    RunRepository(conn).record("t", "incremental", "success")
+    insert_sql = cur.execute.call_args_list[1].args[0]
+    assert "finished_at" in insert_sql
+
+
+def test_run_record_warns_on_unknown_task(caplog):
+    import logging
+
+    from collector.repositories.runs import RunRepository
+
+    conn = MagicMock()
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.fetchone.return_value = None
+    with caplog.at_level(logging.WARNING):
+        assert RunRepository(conn).record("nope", "incremental", "success") is None
+    assert "未知任务 nope" in caplog.text
+
+
+def test_never_succeeded_returns_codes():
+    from collector.repositories.runs import RunRepository
+
+    conn = MagicMock()
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.fetchall.return_value = [("a",), ("b",)]
+    assert RunRepository(conn).never_succeeded(["a", "b", "c"]) == {"a", "b"}
+    assert RunRepository(conn).never_succeeded([]) == set()
