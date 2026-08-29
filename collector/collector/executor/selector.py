@@ -40,7 +40,8 @@ class SourceSelector:
                 candidates.append(item)
         candidates.sort(key=lambda x: (-x[0], x[1]))
         probes.sort(key=lambda x: x[1])
-        return [s for _, _, s in probes + candidates]
+        # 健康候选优先：半开状态的探针只在无健康候选时兜底。
+        return [s for _, _, s in candidates + probes]
 
     def record_success(self, h: SourceHealth, latency_ms: int) -> SourceHealth:
         h.total_runs += 1

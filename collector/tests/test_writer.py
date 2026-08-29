@@ -1,5 +1,4 @@
 import datetime as dt
-import os
 from unittest.mock import MagicMock
 
 import psycopg
@@ -7,8 +6,6 @@ import pytest
 
 from collector.executor.executor import StoreError
 from collector.store.writer import Store
-
-DB = os.environ.get("DATABASE_URL")
 
 
 def test_upsert_uses_executemany():
@@ -33,18 +30,17 @@ def test_upsert_psycopg_error_becomes_store_error():
             {"trading_day": dt.date(2026, 8, 28), "pe_median": 15.0, "pb_median": 1.5,
              "net_breaker_count": 10, "net_breaker_ratio": 0.1},
         ])
+    conn.rollback.assert_called_once()
     conn.commit.assert_not_called()
 
 
-@pytest.mark.skipif(not DB, reason="需要 DATABASE_URL")
-def test_upsert_idempotent():
+def test_upsert_idempotent(pg_conn):
     store = Store()
     day = dt.date(2026, 8, 28)
     rec = {"trading_day": day, "pe_median": 15.0, "pb_median": 1.5,
            "net_breaker_count": 10, "net_breaker_ratio": 0.1}
-    with psycopg.connect(DB) as conn:
-        store.upsert(conn, "valuation_snapshot", [rec])
-        store.upsert(conn, "valuation_snapshot", [rec])
-        with conn.cursor() as cur:
-            cur.execute("SELECT count(*) FROM valuation_snapshot WHERE trading_day=%s", (day,))
-            assert cur.fetchone()[0] == 1
+    store.upsert(pg_conn, "valuation_snapshot", [rec])
+    store.upsert(pg_conn, "valuation_snapshot", [rec])
+    with pg_conn.cursor() as cur:
+        cur.execute("SELECT count(*) FROM valuation_snapshot WHERE trading_day=%s", (day,))
+        assert cur.fetchone()[0] == 1

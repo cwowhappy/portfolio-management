@@ -5,8 +5,15 @@ from collector.sources.base import SourceError
 
 
 def _coerce(value, typ):
-    if value is None or (isinstance(value, float) and pd.isna(value)):
+    if value is None:
         return None
+    # pd.isna 通判 NaN/NA/NaT；但对 list 等容器返回数组，布尔判定有歧义，先排除。
+    if not isinstance(value, (list, tuple, dict, set)):
+        try:
+            if pd.isna(value):
+                return None
+        except (TypeError, ValueError):
+            pass
     if typ == "str":
         return str(value)
     if typ == "numeric":

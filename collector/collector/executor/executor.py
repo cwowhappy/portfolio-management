@@ -28,7 +28,7 @@ class Executor:
         self.selector = selector
         self.store = store
 
-    def run(self, task, mode=MODE_INCREMENTAL, params=None, conn=None):
+    def run(self, task, mode=MODE_INCREMENTAL, params=None, conn=None, count_failures=True):
         params = params or {}
         health_repo = HealthRepository(conn)
         run_repo = RunRepository(conn)
@@ -61,7 +61,12 @@ class Executor:
                 else:
                     issues = []
                 if task.calc is not None:
-                    records = task.calc.compute(records)
+                    try:
+                        records = task.calc.compute(records)
+                    except Exception as e:
+                        # calc 缺列等 KeyError 不能裸抛：逃逸后不会有 failed run 记录，
+                        # 包成 SourceError 才能走降级/记录路径。
+                        raise SourceError(f"calc 计算失败: {e}") from e
                 day = _trading_day(params)
                 for r in records:
                     r.setdefault("trading_day", day)
@@ -78,7 +83,8 @@ class Executor:
                 return RunResult(task.task_code, mode, status, source_used=src.source_id,
                                  rows_written=rows, message="; ".join(issues) or None)
             except SourceError as e:
-                health_repo.save(self.selector.record_failure(h, str(e)))
+                if count_failures:
+                    health_repo.save(self.selector.record_failure(h, str(e)))
                 continue
 
         run_repo.record(task.task_code, mode, STATUS_FAILED, error="AllSourcesFailed", params=params)

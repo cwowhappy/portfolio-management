@@ -21,7 +21,7 @@ dev-frontend:
 	cd frontend && pnpm install && pnpm dev
 
 ## 测试
-test: test-backend test-frontend
+test: test-backend test-frontend collect-test
 
 test-backend:
 	cd backend && ./gradlew test --console=plain
@@ -65,4 +65,4 @@ collect-backfill:
 
 ## 运行 collector 测试（覆盖率 >= 80%）
 collect-test:
-	cd collector && pytest -q --cov=collector --cov-fail-under=80
+	cd collector && .venv/bin/pytest -q --cov=collector --cov-fail-under=80
