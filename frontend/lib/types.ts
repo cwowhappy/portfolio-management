@@ -149,3 +149,77 @@ export interface ValuationHistory {
   treasuryYields: TreasuryYieldPoint[];
   indexValuations: IndexValuationSeries[];
 }
+
+// —— 持仓组合 ——
+
+export type GroupType = "ACCOUNT" | "TAG";
+export type TradeType = "BUY" | "SELL";
+export type DividendType = "CASH" | "STOCK";
+export type CashTransactionType = "DEPOSIT" | "WITHDRAW";
+
+export interface GroupView {
+  id: number;
+  name: string;
+  type: GroupType;
+  positionCount: number;
+  cashBalance: number;
+}
+
+export interface PositionView {
+  id: number;
+  groupId: number;
+  stockCode: string;
+  stockName: string;
+  quantity: number;
+  avgCost: number | null;
+  price: number | null;
+  marketValue: number | null;
+  floatingPnl: number | null;
+  pnlRatio: number | null;
+  realizedPnl: number;
+  totalBuyCost: number;
+  cumulativeCashDividend: number;
+}
+
+export interface PortfolioOverview {
+  totalAssets: number;
+  totalCost: number;
+  totalPnl: number;
+  todayPnl: number;
+  cashTotal: number;
+  positionCount: number;
+  groupCount: number;
+}
+
+export interface TradeView {
+  id: number;
+  type: TradeType;
+  tradeDate: string;
+  price: number;
+  quantity: number;
+  fee: number;
+}
+
+export interface DividendView {
+  id: number;
+  type: DividendType;
+  exDate: string;
+  cashPerShare: number | null;
+  stockRatio: number | null;
+}
+
+export interface CashTransactionView {
+  id: number;
+  groupId: number;
+  type: CashTransactionType;
+  amount: number;
+  txDate: string;
+  note: string | null;
+}
+
+export interface AllocationSlice { category: string; marketValue: number; ratio: number; }
+export interface AssetAllocation { slices: AllocationSlice[]; }
+export interface IndustrySlice { industryName: string; marketValue: number; ratio: number; }
+export interface IndustryDistribution { slices: IndustrySlice[]; }
+export interface ConcentrationHolding { stockCode: string; stockName: string; marketValue: number; ratio: number; }
+export interface Concentration { holdings: ConcentrationHolding[]; top5Ratio: number; }

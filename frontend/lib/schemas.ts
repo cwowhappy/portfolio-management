@@ -151,3 +151,30 @@ export const ValuationHistorySchema = z.object({
   treasuryYields: z.array(TreasuryYieldSchema),
   indexValuations: z.array(IndexValuationSeriesSchema),
 });
+
+// —— 持仓组合（/api/portfolio/**，与后端 PortfolioController 的 DTO 对齐）——
+
+export const GroupViewSchema = z.object({
+  id: z.number(), name: z.string(), type: z.enum(["ACCOUNT", "TAG"]),
+  positionCount: z.number(), cashBalance: z.number(),
+});
+
+export const PositionViewSchema = z.object({
+  id: z.number(), groupId: z.number(), stockCode: z.string(), stockName: z.string(),
+  quantity: z.number(), avgCost: z.number().nullable(), price: z.number().nullable(),
+  marketValue: z.number().nullable(), floatingPnl: z.number().nullable(),
+  pnlRatio: z.number().nullable(), realizedPnl: z.number(),
+  totalBuyCost: z.number(), cumulativeCashDividend: z.number(),
+});
+
+export const PortfolioOverviewSchema = z.object({
+  totalAssets: z.number(), totalCost: z.number(), totalPnl: z.number(),
+  todayPnl: z.number(), cashTotal: z.number(), positionCount: z.number(), groupCount: z.number(),
+});
+
+export const AllocationSliceSchema = z.object({ category: z.string(), marketValue: z.number(), ratio: z.number() });
+export const AssetAllocationSchema = z.object({ slices: z.array(AllocationSliceSchema) });
+export const IndustrySliceSchema = z.object({ industryName: z.string(), marketValue: z.number(), ratio: z.number() });
+export const IndustryDistributionSchema = z.object({ slices: z.array(IndustrySliceSchema) });
+export const ConcentrationHoldingSchema = z.object({ stockCode: z.string(), stockName: z.string(), marketValue: z.number(), ratio: z.number() });
+export const ConcentrationSchema = z.object({ holdings: z.array(ConcentrationHoldingSchema), top5Ratio: z.number() });
