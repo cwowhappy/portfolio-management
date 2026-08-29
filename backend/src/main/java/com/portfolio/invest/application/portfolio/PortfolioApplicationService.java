@@ -184,6 +184,9 @@ public class PortfolioApplicationService {
 
     public List<PositionView> positions(Long userId, Long groupId) {
         Portfolio p = getOrCreatePortfolio(userId);
+        if (groupId != null) {
+            requireGroup(p.id(), groupId);
+        }
         List<Position> list = groupId == null
                 ? repository.findPositionsByPortfolioId(p.id())
                 : repository.findPositionsByGroupId(groupId);

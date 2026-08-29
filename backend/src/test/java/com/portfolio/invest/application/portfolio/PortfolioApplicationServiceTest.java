@@ -140,4 +140,13 @@ class PortfolioApplicationServiceTest {
         assertThat(view.totalAssets()).isEqualByComparingTo("12000"); // 120*100 + 现金 0
         assertThat(view.totalPnl()).isEqualByComparingTo("2000");     // 浮动 (120-100)*100 + 已实现 0
     }
+
+    @Test
+    void 按非本人分组查持仓抛NOT_FOUND() {
+        when(repo.findGroupByIdAndPortfolioId(1L, 10L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.positions(1L, 1L))
+                .isInstanceOfSatisfying(PortfolioException.class,
+                        e -> assertThat(e.code()).isEqualTo(PortfolioErrorCode.NOT_FOUND));
+    }
 }
