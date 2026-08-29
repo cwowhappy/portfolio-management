@@ -23,6 +23,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,19 +34,27 @@ public class PortfolioApplicationService {
     private final PortfolioRepository repository;
     private final MarketDataService marketDataService;
     private final ValuationRepository valuationRepository;
+    private final PortfolioCreationService portfolioCreation;
 
     public PortfolioApplicationService(PortfolioRepository repository,
                                        MarketDataService marketDataService,
-                                       ValuationRepository valuationRepository) {
+                                       ValuationRepository valuationRepository,
+                                       PortfolioCreationService portfolioCreation) {
         this.repository = repository;
         this.marketDataService = marketDataService;
         this.valuationRepository = valuationRepository;
+        this.portfolioCreation = portfolioCreation;
     }
 
-    /** 单组合/用户：首次访问自动创建。 */
+    /** 单组合/用户：首次访问自动创建（并发安全，幂等）。 */
     private Portfolio getOrCreatePortfolio(Long userId) {
+        Optional<Portfolio> existing = repository.findPortfolioByUserId(userId);
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+        portfolioCreation.ensureCreated(userId);
         return repository.findPortfolioByUserId(userId)
-                .orElseGet(() -> repository.savePortfolio(Portfolio.create(userId, Instant.now())));
+                .orElseThrow(() -> new PortfolioException(PortfolioErrorCode.NOT_FOUND, "组合创建失败"));
     }
 
     public List<GroupView> groups(Long userId) {

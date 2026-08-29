@@ -44,7 +44,7 @@ class PortfolioApplicationServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new PortfolioApplicationService(repo, market, valuation);
+        service = new PortfolioApplicationService(repo, market, valuation, new PortfolioCreationService(repo));
         when(repo.findPortfolioByUserId(1L)).thenReturn(Optional.of(Portfolio.reconstitute(10L, 1L,
                 com.portfolio.invest.domain.portfolio.CostMethod.WEIGHTED_AVG, Instant.now(), Instant.now())));
     }
@@ -167,14 +167,15 @@ class PortfolioApplicationServiceTest {
 
     @Test
     void 缺省时自动创建组合() {
-        when(repo.findPortfolioByUserId(2L)).thenReturn(Optional.empty());
-        when(repo.savePortfolio(any())).thenReturn(Portfolio.reconstitute(20L, 2L, CostMethod.WEIGHTED_AVG,
-                Instant.now(), Instant.now()));
+        Portfolio created = Portfolio.reconstitute(20L, 2L, CostMethod.WEIGHTED_AVG,
+                Instant.now(), Instant.now());
+        when(repo.findPortfolioByUserId(2L)).thenReturn(Optional.empty(), Optional.of(created));
         when(repo.saveGroup(any())).thenAnswer(inv -> inv.getArgument(0));
 
         var view = service.createGroup(2L, new CreateGroupCommand("华泰", GroupType.ACCOUNT));
 
         assertThat(view.name()).isEqualTo("华泰");
+        verify(repo).insertPortfolioIfAbsent(2L);
     }
 
     @Test

@@ -47,6 +47,11 @@ public class PortfolioRepositoryImpl implements PortfolioRepository {
     }
 
     @Override
+    public void insertPortfolioIfAbsent(Long userId) {
+        portfolioJpa.insertPortfolioIfAbsent(userId);
+    }
+
+    @Override
     public List<HoldingGroup> findGroupsByPortfolioId(Long portfolioId) {
         return groupJpa.findByPortfolioIdOrderByIdAsc(portfolioId).stream()
                 .map(HoldingGroupJpaEntity::toDomain).toList();
