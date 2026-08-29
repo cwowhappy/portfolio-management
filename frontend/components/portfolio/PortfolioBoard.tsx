@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { fetchOverview, fetchPositions, fetchGroups, fetchAllocation, fetchIndustryDistribution, fetchConcentration } from "@/lib/portfolioApi";
 import type { GroupView, PortfolioOverview, PositionView, AssetAllocation, IndustryDistribution, Concentration } from "@/lib/types";
 import OverviewCards from "@/components/portfolio/OverviewCards";
@@ -8,6 +8,8 @@ import PositionTable from "@/components/portfolio/PositionTable";
 import AllocationPie from "@/components/portfolio/AllocationPie";
 import IndustryBar from "@/components/portfolio/IndustryBar";
 import ConcentrationList from "@/components/portfolio/ConcentrationList";
+import BuyForm from "@/components/portfolio/BuyForm";
+import GroupManager from "@/components/portfolio/GroupManager";
 
 export default function PortfolioBoard() {
   const [overview, setOverview] = useState<PortfolioOverview | null>(null);
@@ -19,23 +21,31 @@ export default function PortfolioBoard() {
   const [activeGroup, setActiveGroup] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const [o, g, p, a, ind, c] = await Promise.all([
-          fetchOverview(), fetchGroups(), fetchPositions(),
-          fetchAllocation(), fetchIndustryDistribution(), fetchConcentration(),
-        ]);
-        if (cancelled) return;
-        setOverview(o); setGroups(g); setPositions(p);
-        setAllocation(a); setIndustry(ind); setConcentration(c);
-      } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : "加载失败");
-      }
-    })();
-    return () => { cancelled = true; };
+  const reload = useCallback(() => {
+    Promise.all([
+      fetchOverview(),
+      fetchGroups(),
+      fetchPositions(),
+      fetchAllocation(),
+      fetchIndustryDistribution(),
+      fetchConcentration(),
+    ])
+      .then(([o, g, p, a, ind, c]) => {
+        setOverview(o);
+        setGroups(g);
+        setPositions(p);
+        setAllocation(a);
+        setIndustry(ind);
+        setConcentration(c);
+      })
+      .catch((e) => {
+        setError(e instanceof Error ? e.message : "加载失败");
+      });
   }, []);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
 
   const shown = activeGroup == null ? positions : positions.filter((p) => p.groupId === activeGroup);
 
@@ -47,6 +57,8 @@ export default function PortfolioBoard() {
       <div className="flex items-center justify-between">
         <h1 className="font-[family-name:var(--font-display)] text-2xl">持仓组合</h1>
       </div>
+      <BuyForm groups={groups} onChanged={reload} />
+      <GroupManager groups={groups} onChanged={reload} />
       {/* 分组切换 */}
       <div className="flex gap-2" data-testid="group-tabs">
         <button className="rounded-md px-3 py-1.5 text-sm" onClick={() => setActiveGroup(null)}>全部</button>
@@ -60,7 +72,7 @@ export default function PortfolioBoard() {
         <OverviewCards overview={overview} />
       </div>
       <div data-testid="position-table">
-        <PositionTable positions={shown} />
+        <PositionTable positions={shown} onChanged={reload} />
       </div>
       <div className="grid md:grid-cols-2 gap-6" data-testid="charts">
         <div data-testid="allocation"><AllocationPie allocation={allocation} /></div>

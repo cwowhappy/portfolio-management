@@ -1,10 +1,11 @@
 import type { PositionView } from "@/lib/types";
+import PositionActions from "@/components/portfolio/PositionActions";
 
 function fmt(n: number | null): string {
   return n == null ? "—" : n.toFixed(2);
 }
 
-export default function PositionTable({ positions }: { positions: PositionView[] }) {
+export default function PositionTable({ positions, onChanged }: { positions: PositionView[]; onChanged?: () => void }) {
   return (
     <div className="rounded-2xl border border-[color:var(--color-line)] bg-[color:var(--color-panel)]/70 p-5 overflow-x-auto">
       <div className="font-[family-name:var(--font-display)] text-[15px] mb-3">持仓列表</div>
@@ -18,6 +19,7 @@ export default function PositionTable({ positions }: { positions: PositionView[]
             <th className="text-right py-1">市值</th>
             <th className="text-right py-1">盈亏</th>
             <th className="text-right py-1">收益率</th>
+            <th className="text-right py-1">操作</th>
           </tr>
         </thead>
         <tbody className="tabular">
@@ -30,6 +32,7 @@ export default function PositionTable({ positions }: { positions: PositionView[]
               <td className="text-right">{fmt(p.marketValue)}</td>
               <td className="text-right">{fmt(p.floatingPnl)}</td>
               <td className="text-right">{p.pnlRatio == null ? "—" : `${p.pnlRatio.toFixed(2)}%`}</td>
+              <td className="text-right"><PositionActions position={p} onChanged={onChanged ?? (() => {})} /></td>
             </tr>
           ))}
         </tbody>
