@@ -1,4 +1,4 @@
-from collector.calc.snapshot import SnapshotCalc, IndustryValuationCalc
+from collector.calc.snapshot import IndustryValuationCalc, SnapshotCalc
 
 
 def test_snapshot_median_excludes_outliers():

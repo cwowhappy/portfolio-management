@@ -1,6 +1,7 @@
 package com.portfolio.invest.application.conversation;
 
 import com.portfolio.invest.domain.conversation.ChatMessage;
+import com.portfolio.invest.domain.conversation.ConversationErrorCode;
 import com.portfolio.invest.domain.conversation.ConversationException;
 import java.util.Set;
 
@@ -19,16 +20,16 @@ public record ChatMessageWire(String id, String role, String content, long creat
     /** wire → domain 边界校验：落库前拦截超长/非法字段，避免约束违例冒泡成 500。 */
     private void validate() {
         if (id == null || id.isBlank() || id.length() > MAX_ID_LENGTH) {
-            throw new ConversationException("INVALID_MESSAGE", "消息 id 不能为空且最长64字符");
+            throw new ConversationException(ConversationErrorCode.INVALID_MESSAGE, "消息 id 不能为空且最长64字符");
         }
         if (!ALLOWED_ROLES.contains(role)) {
-            throw new ConversationException("INVALID_MESSAGE", "消息 role 仅支持 user/assistant");
+            throw new ConversationException(ConversationErrorCode.INVALID_MESSAGE, "消息 role 仅支持 user/assistant");
         }
         if (content == null || content.isEmpty()) {
-            throw new ConversationException("INVALID_MESSAGE", "消息内容不能为空");
+            throw new ConversationException(ConversationErrorCode.INVALID_MESSAGE, "消息内容不能为空");
         }
         if (content.length() > MAX_CONTENT_CHARS) {
-            throw new ConversationException("INVALID_MESSAGE", "消息内容超长（上限100KB）");
+            throw new ConversationException(ConversationErrorCode.INVALID_MESSAGE, "消息内容超长（上限100KB）");
         }
     }
 

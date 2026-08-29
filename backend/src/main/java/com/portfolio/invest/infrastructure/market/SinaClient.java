@@ -1,6 +1,7 @@
 package com.portfolio.invest.infrastructure.market;
 
 import com.portfolio.invest.config.InvestProperties;
+import com.portfolio.invest.domain.market.MarketDataErrorCode;
 import com.portfolio.invest.domain.market.MarketDataException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -48,7 +49,7 @@ public class SinaClient {
         return executor.execute(() -> {
             byte[] bytes = client.get().uri(URI.create(url)).retrieve().body(byte[].class);
             if (bytes == null || bytes.length == 0) {
-                throw new MarketDataException("UPSTREAM_UNAVAILABLE", "新浪接口返回空");
+                throw new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "新浪接口返回空");
             }
             return new String(bytes, GBK);
         });

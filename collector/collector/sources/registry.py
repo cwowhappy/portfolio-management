@@ -20,7 +20,10 @@ class SourceRegistry:
             pro_factory = None
             if kind == "tushare":
                 token = self.tushare_token
-                pro_factory = lambda token=token: ts.pro_api(token)
+
+                def pro_factory(token=token):
+                    return ts.pro_api(token)
+
             return ConfigurableSource(
                 spec.get("source_id"),
                 kind,

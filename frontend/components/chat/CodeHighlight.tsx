@@ -46,6 +46,9 @@ export function CodeBlock({
       <pre className="overflow-x-auto rounded-b-md bg-[color:var(--color-bg-soft)]">
         <code
           className="hljs block p-3 text-[12px] leading-relaxed"
+          // 豁免理由（规范 6.2 针对的是放行用户原始 HTML 的 rehype-raw 场景）：
+          // 这里渲染的是 highlight.js 的高亮输出，输入代码已被 hljs 全部转义，无注入面。
+          // eslint-disable-next-line react/no-danger
           dangerouslySetInnerHTML={{ __html: highlight(code, language) }}
         />
       </pre>

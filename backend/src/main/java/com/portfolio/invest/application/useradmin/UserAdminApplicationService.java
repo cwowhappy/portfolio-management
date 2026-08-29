@@ -3,6 +3,7 @@ package com.portfolio.invest.application.useradmin;
 import com.portfolio.invest.domain.user.PasswordPolicy;
 import com.portfolio.invest.domain.user.RememberMeTokenStore;
 import com.portfolio.invest.domain.user.User;
+import com.portfolio.invest.domain.user.UserErrorCode;
 import com.portfolio.invest.domain.user.UserException;
 import com.portfolio.invest.domain.user.UserRepository;
 import com.portfolio.invest.domain.user.UserRole;
@@ -61,13 +62,13 @@ public class UserAdminApplicationService {
     private UserAdminView mutate(Long id, java.util.function.Function<User, User> fn) {
         User user = requireUser(id);
         if (user.role() == UserRole.ADMIN) {
-            throw new UserException("FORBIDDEN", "不能对管理员账号执行此操作");
+            throw new UserException(UserErrorCode.FORBIDDEN, "不能对管理员账号执行此操作");
         }
         return UserAdminView.from(userRepository.save(fn.apply(user)));
     }
 
     private User requireUser(Long id) {
         return userRepository.findById(id)
-                .orElseThrow(() -> new UserException("USER_NOT_FOUND", "用户不存在"));
+                .orElseThrow(() -> new UserException(UserErrorCode.USER_NOT_FOUND, "用户不存在"));
     }
 }

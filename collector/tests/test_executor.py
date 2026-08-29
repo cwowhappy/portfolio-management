@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from collector.executor.executor import Executor, AllSourcesFailed, StoreError
+from collector.executor.executor import AllSourcesFailed, Executor, StoreError
 from collector.executor.selector import SourceSelector
 from collector.model.task import Collector
 from collector.sources.base import SourceError
@@ -15,8 +15,9 @@ def _task(sources):
     conv.convert.return_value = [{"code": "a"}]
     val = MagicMock()
     val.validate.return_value = ([{"code": "a"}], [])
-    return Collector("t", "t", sources, conv, None, target_table="valuation_snapshot",
-                     schedule={}, validator=val, enabled=True)
+    return Collector(
+        "t", "t", sources, conv, None, target_table="valuation_snapshot", schedule={}, validator=val, enabled=True
+    )
 
 
 def _source(sid, fail=False):
@@ -32,8 +33,10 @@ def _source(sid, fail=False):
 
 @pytest.fixture
 def repos():
-    with patch("collector.executor.executor.HealthRepository") as H, \
-         patch("collector.executor.executor.RunRepository") as R:
+    with (
+        patch("collector.executor.executor.HealthRepository") as H,
+        patch("collector.executor.executor.RunRepository") as R,
+    ):
         hr = MagicMock()
         hr.get.return_value = {}
         H.return_value = hr
@@ -90,8 +93,17 @@ def _agg_task(records):
     conv.convert.return_value = records
     val = MagicMock()
     val.validate.side_effect = lambda recs: (recs, [])
-    return Collector("t", "t", [_source("a")], conv, None, target_table="valuation_snapshot",
-                     schedule={}, validator=val, enabled=True)
+    return Collector(
+        "t",
+        "t",
+        [_source("a")],
+        conv,
+        None,
+        target_table="valuation_snapshot",
+        schedule={},
+        validator=val,
+        enabled=True,
+    )
 
 
 def test_aggregate_record_gets_trading_day_injected(repos):
@@ -107,8 +119,12 @@ def test_existing_trading_day_preserved(repos):
     store = MagicMock()
     store.upsert.return_value = 1
     ex = Executor(SourceSelector(), store)
-    ex.run(_agg_task([{"code": "a", "trading_day": dt.date(2026, 8, 1)}]),
-           "incremental", {"date": "2026-08-28"}, MagicMock())
+    ex.run(
+        _agg_task([{"code": "a", "trading_day": dt.date(2026, 8, 1)}]),
+        "incremental",
+        {"date": "2026-08-28"},
+        MagicMock(),
+    )
     records = store.upsert.call_args.args[2]
     assert records[0]["trading_day"] == dt.date(2026, 8, 1)
 
@@ -119,9 +135,17 @@ def test_validate_runs_before_calc(repos):
     conv.convert.return_value = [{"code": f"a{i}"} for i in range(5)]
     calc = MagicMock()
     calc.compute.side_effect = lambda recs: recs[:1]
-    task = Collector("t", "t", [_source("a")], conv, calc, target_table="valuation_snapshot",
-                     schedule={}, validator=RuleValidator([{"check": "min_rows", "value": 2, "level": "hard"}]),
-                     enabled=True)
+    task = Collector(
+        "t",
+        "t",
+        [_source("a")],
+        conv,
+        calc,
+        target_table="valuation_snapshot",
+        schedule={},
+        validator=RuleValidator([{"check": "min_rows", "value": 2, "level": "hard"}]),
+        enabled=True,
+    )
     store = MagicMock()
     store.upsert.return_value = 1
     ex = Executor(SourceSelector(), store)
@@ -135,8 +159,7 @@ def test_all_sources_failed_records_failed_run(repos):
     ex = Executor(SourceSelector(), MagicMock())
     with pytest.raises(AllSourcesFailed):
         ex.run(_task([_source("a", fail=True)]), "incremental", {}, MagicMock())
-    repos.record.assert_called_once_with("t", "incremental", "failed",
-                                         error="AllSourcesFailed", params={})
+    repos.record.assert_called_once_with("t", "incremental", "failed", error="AllSourcesFailed", params={})
 
 
 def test_store_error_records_failed_run(repos):
@@ -145,22 +168,20 @@ def test_store_error_records_failed_run(repos):
     ex = Executor(SourceSelector(), store)
     with pytest.raises(StoreError):
         ex.run(_task([_source("a")]), "incremental", {}, MagicMock())
-    repos.record.assert_called_once_with("t", "incremental", "failed",
-                                         error="db down", params={})
+    repos.record.assert_called_once_with("t", "incremental", "failed", error="db down", params={})
 
 
 # ---------------------------------------------------------------- 熔断计数 / calc 异常收敛
 
+
 def test_count_failures_false_skips_health_record():
     """重试尝试（count_failures=False）不再累计 consecutive_failures。"""
-    with patch("collector.executor.executor.HealthRepository") as H, \
-         patch("collector.executor.executor.RunRepository"):
+    with patch("collector.executor.executor.HealthRepository") as H, patch("collector.executor.executor.RunRepository"):
         hr = H.return_value
         hr.get.return_value = {}
         ex = Executor(SourceSelector(), MagicMock())
         with pytest.raises(AllSourcesFailed):
-            ex.run(_task([_source("a", fail=True)]), "incremental", {}, MagicMock(),
-                   count_failures=False)
+            ex.run(_task([_source("a", fail=True)]), "incremental", {}, MagicMock(), count_failures=False)
         hr.save.assert_not_called()
 
 
@@ -170,10 +191,8 @@ def test_calc_error_wrapped_and_failed_run_recorded(repos):
     conv.convert.return_value = [{"code": "a"}]
     calc = MagicMock()
     calc.compute.side_effect = KeyError("industry_code")
-    task = Collector("t", "t", [_source("a")], conv, calc, target_table="valuation_snapshot",
-                     schedule={}, enabled=True)
+    task = Collector("t", "t", [_source("a")], conv, calc, target_table="valuation_snapshot", schedule={}, enabled=True)
     ex = Executor(SourceSelector(), MagicMock())
     with pytest.raises(AllSourcesFailed):
         ex.run(task, "incremental", {}, MagicMock())
-    repos.record.assert_called_once_with("t", "incremental", "failed",
-                                         error="AllSourcesFailed", params={})
+    repos.record.assert_called_once_with("t", "incremental", "failed", error="AllSourcesFailed", params={})

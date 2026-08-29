@@ -4,8 +4,9 @@ import com.portfolio.invest.application.conversation.ChatMessageWire;
 import com.portfolio.invest.application.conversation.ConversationApplicationService;
 import com.portfolio.invest.application.conversation.ConversationView;
 import com.portfolio.invest.infrastructure.security.AuthenticatedUser;
+import com.portfolio.invest.web.dto.CreateConversationRequest;
+import jakarta.validation.Valid;
 import java.util.List;
-import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -35,8 +36,9 @@ public class ConversationController {
     }
 
     @PostMapping
-    public ResponseEntity<ConversationView> create(Authentication auth, @RequestBody Map<String, String> body) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(service.create(currentUserId(auth), body.get("id")));
+    public ResponseEntity<ConversationView> create(Authentication auth,
+                                                   @Valid @RequestBody CreateConversationRequest req) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(service.create(currentUserId(auth), req.id()));
     }
 
     @GetMapping("/{id}/messages")

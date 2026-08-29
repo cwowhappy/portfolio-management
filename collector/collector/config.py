@@ -15,8 +15,7 @@ def load() -> Config:
     missing = [name for name in ("DATABASE_URL", "TUSHARE_TOKEN") if not os.environ.get(name)]
     if missing:
         raise SystemExit(
-            f"缺少环境变量: {', '.join(missing)}"
-            "（请在 collector/.env 或进程环境中配置，参考 .env.example）"
+            f"缺少环境变量: {', '.join(missing)}（请在 collector/.env 或进程环境中配置，参考 .env.example）"
         )
     return Config(
         database_url=os.environ["DATABASE_URL"],

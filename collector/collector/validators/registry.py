@@ -8,6 +8,7 @@ class ValidatorRegistry:
     def get(self, name_or_rules):
         if isinstance(name_or_rules, list):
             from collector.validators.rules import RuleValidator
+
             return RuleValidator(name_or_rules)
         if name_or_rules in self.plugins:
             return self.plugins[name_or_rules]

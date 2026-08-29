@@ -8,10 +8,20 @@ def test_list_enabled_parses_jsonb():
     conn = MagicMock()
     cur = conn.cursor.return_value.__enter__.return_value
     cur.fetchall.return_value = [
-        ("all_a_valuation", "全A估值", json.dumps([{"source_id": "a"}]), "fc", None,
-         json.dumps([{"check": "min_rows", "value": 1000, "level": "hard"}]),
-         "valuation_snapshot", json.dumps({"type": "cron", "cron": "30 15 * * 1-5"}),
-         True, True, 3, "exponential"),
+        (
+            "all_a_valuation",
+            "全A估值",
+            json.dumps([{"source_id": "a"}]),
+            "fc",
+            None,
+            json.dumps([{"check": "min_rows", "value": 1000, "level": "hard"}]),
+            "valuation_snapshot",
+            json.dumps({"type": "cron", "cron": "30 15 * * 1-5"}),
+            True,
+            True,
+            3,
+            "exponential",
+        ),
     ]
     rows = TaskRepository(conn).list_enabled()
     assert rows[0]["task_code"] == "all_a_valuation"
@@ -24,10 +34,20 @@ def test_list_enabled_handles_parsed_jsonb():
     conn = MagicMock()
     cur = conn.cursor.return_value.__enter__.return_value
     cur.fetchall.return_value = [
-        ("all_a_valuation", "全A估值", [{"source_id": "a"}], "fc", None,
-         [{"check": "min_rows", "value": 1000, "level": "hard"}],
-         "valuation_snapshot", {"type": "cron", "cron": "30 15 * * 1-5"},
-         True, True, 3, "exponential"),
+        (
+            "all_a_valuation",
+            "全A估值",
+            [{"source_id": "a"}],
+            "fc",
+            None,
+            [{"check": "min_rows", "value": 1000, "level": "hard"}],
+            "valuation_snapshot",
+            {"type": "cron", "cron": "30 15 * * 1-5"},
+            True,
+            True,
+            3,
+            "exponential",
+        ),
     ]
     rows = TaskRepository(conn).list_enabled()
     assert rows[0]["source_ids"] == [{"source_id": "a"}]
@@ -38,15 +58,22 @@ def test_list_enabled_handles_parsed_jsonb():
 def test_upsert_serializes_jsonb_and_commits():
     conn = MagicMock()
     cur = conn.cursor.return_value.__enter__.return_value
-    TaskRepository(conn).upsert({
-        "task_code": "all_a_valuation", "task_name": "全A估值",
-        "source_ids": [{"source_id": "a"}], "converter": "fc", "calc": None,
-        "validator": [{"check": "min_rows", "value": 1000, "level": "hard"}],
-        "target_table": "valuation_snapshot",
-        "schedule": {"type": "cron", "cron": "30 15 * * 1-5"},
-        "enabled": True, "trading_day_gated": True, "retry_max": 3,
-        "retry_backoff": "exponential",
-    })
+    TaskRepository(conn).upsert(
+        {
+            "task_code": "all_a_valuation",
+            "task_name": "全A估值",
+            "source_ids": [{"source_id": "a"}],
+            "converter": "fc",
+            "calc": None,
+            "validator": [{"check": "min_rows", "value": 1000, "level": "hard"}],
+            "target_table": "valuation_snapshot",
+            "schedule": {"type": "cron", "cron": "30 15 * * 1-5"},
+            "enabled": True,
+            "trading_day_gated": True,
+            "retry_max": 3,
+            "retry_backoff": "exponential",
+        }
+    )
     args = cur.execute.call_args.args[1]
     assert isinstance(args[2], str)  # source_ids 被 json.dumps
     assert isinstance(args[5], str)  # validator 被 json.dumps
@@ -94,8 +121,12 @@ def test_run_record_returns_run_id():
     cur = conn.cursor.return_value.__enter__.return_value
     cur.fetchone.side_effect = [(1,), (42,)]
     run_id = RunRepository(conn).record(
-        "all_a_valuation", "incremental", "success",
-        source_used="a", params={"day": "20260828"}, rows_written=100,
+        "all_a_valuation",
+        "incremental",
+        "success",
+        source_used="a",
+        params={"day": "20260828"},
+        rows_written=100,
     )
     assert run_id == 42
     conn.commit.assert_called_once()
@@ -111,6 +142,7 @@ def test_run_record_returns_none_when_task_missing():
 
 
 # ---------------------------------------------------------------- P2: finished_at / 未知任务告警 / 冷启动查询
+
 
 def test_run_record_writes_finished_at():
     from collector.repositories.runs import RunRepository

@@ -1,6 +1,7 @@
 package com.portfolio.invest.infrastructure.market;
 
 import com.portfolio.invest.config.InvestProperties;
+import com.portfolio.invest.domain.market.MarketDataErrorCode;
 import com.portfolio.invest.domain.market.MarketDataException;
 import java.util.function.Supplier;
 import org.springframework.web.client.HttpClientErrorException;
@@ -47,7 +48,7 @@ final class HttpExecutor {
         Exception last = null;
         for (int attempt = 0; attempt < maxAttempts; attempt++) {
             if (!limiter.tryAcquire(acquireTimeoutMillis)) {
-                throw new MarketDataException("RATE_LIMITED", "行情请求过于频繁，请稍后再试");
+                throw new MarketDataException(MarketDataErrorCode.RATE_LIMITED, "行情请求过于频繁，请稍后再试");
             }
             try {
                 return action.get();
@@ -67,7 +68,7 @@ final class HttpExecutor {
             }
         }
         throw new MarketDataException(
-                "UPSTREAM_UNAVAILABLE",
+                MarketDataErrorCode.UPSTREAM_UNAVAILABLE,
                 upstreamName + "接口不可用: " + (last == null ? "未知错误" : last.getMessage()),
                 last);
     }

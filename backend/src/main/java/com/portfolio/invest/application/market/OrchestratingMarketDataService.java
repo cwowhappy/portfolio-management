@@ -12,12 +12,14 @@ import com.portfolio.invest.domain.market.NewsItem;
 import com.portfolio.invest.domain.market.Quote;
 import com.portfolio.invest.domain.market.StockHit;
 import com.portfolio.invest.domain.market.StockRef;
+import java.time.Clock;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /** 行情编排：主源（东财）失败降级新浪/腾讯；无缓存（缓存见 CachedMarketDataService）。 */
@@ -27,9 +29,19 @@ public class OrchestratingMarketDataService implements MarketDataService {
     private static final Logger log = LoggerFactory.getLogger(OrchestratingMarketDataService.class);
 
     private final MarketDataSource source;
+    private final Clock clock;
 
+    /** 主构造器（@Autowired：存在测试专用重载构造器时需显式指定注入入口）。 */
+    @Autowired
     public OrchestratingMarketDataService(MarketDataSource source) {
+        // A3：application 层禁止直调 System 时钟，探活耗时经注入时钟测量
+        this(source, Clock.systemUTC());
+    }
+
+    /** 测试注入：自定义时钟（避免真实墙钟等待）。 */
+    OrchestratingMarketDataService(MarketDataSource source, Clock clock) {
         this.source = source;
+        this.clock = clock;
     }
 
     @Override
@@ -145,9 +157,9 @@ public class OrchestratingMarketDataService implements MarketDataService {
     @Override
     public long probeQuoteLatencyMs() {
         StockRef ref = StockRef.from("600519");
-        long start = System.currentTimeMillis();
+        long start = clock.millis();
         fetchQuoteFresh(ref);
-        return System.currentTimeMillis() - start;
+        return clock.millis() - start;
     }
 
     private <T> T withFallback(Supplier<T> primary, Supplier<T> fallback, Consumer<MarketDataException> onPrimaryFailure) {

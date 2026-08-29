@@ -5,7 +5,7 @@ import psycopg
 
 from collector.backfill import run_backfill
 from collector.config import load
-from collector.executor.executor import Executor, AllSourcesFailed, StoreError
+from collector.executor.executor import AllSourcesFailed, Executor, StoreError
 from collector.executor.selector import SourceSelector
 from collector.repositories.runs import RunRepository
 from collector.repositories.tasks import TaskRepository
@@ -80,8 +80,10 @@ def main(argv=None):
             if not runs:
                 print(f"无运行记录: {args.task_code}")
             for r in runs:
-                print(f"{r['started_at']}  {r['status']}  {r['source_used'] or '-'}  "
-                      f"rows={r['rows_written']}  {r['message'] or ''}")
+                print(
+                    f"{r['started_at']}  {r['status']}  {r['source_used'] or '-'}  "
+                    f"rows={r['rows_written']}  {r['message'] or ''}"
+                )
             return
 
         task = assemble_collector(row, registries)

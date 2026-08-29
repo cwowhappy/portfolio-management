@@ -82,7 +82,7 @@ public final class User {
 
     private void requireStatus(UserStatus expected, String message) {
         if (status != expected) {
-            throw new UserException("INVALID_STATE", message);
+            throw new UserException(UserErrorCode.INVALID_STATE, message);
         }
     }
 

@@ -1,15 +1,16 @@
 import datetime as dt
 from unittest.mock import MagicMock, patch
 
-from collector.model.task import Collector
 from collector.model.run import STATUS_SKIPPED, STATUS_SUCCESS
+from collector.model.task import Collector
 from collector.scheduler.calendar import TradingCalendar
 from collector.scheduler.runner import TaskRunner
 
 
 def _task(gated=True):
-    return Collector("t", "t", [], MagicMock(), None, target_table="x", schedule={},
-                     validator=MagicMock(), trading_day_gated=gated)
+    return Collector(
+        "t", "t", [], MagicMock(), None, target_table="x", schedule={}, validator=MagicMock(), trading_day_gated=gated
+    )
 
 
 def test_non_trading_day_skipped():
@@ -24,8 +25,15 @@ def test_non_trading_day_skipped():
 def test_force_bypasses_calendar():
     cal = TradingCalendar(set())
     ex = MagicMock()
-    ex.run.return_value = MagicMock(status=STATUS_SUCCESS, task_code="t", mode="incremental",
-                                   source_used=None, rows_written=0, message=None, error=None)
+    ex.run.return_value = MagicMock(
+        status=STATUS_SUCCESS,
+        task_code="t",
+        mode="incremental",
+        source_used=None,
+        rows_written=0,
+        message=None,
+        error=None,
+    )
     runner = TaskRunner("postgresql://u:p@localhost:5432/db", cal, ex)
     with patch("collector.scheduler.runner.psycopg") as psycopg:
         conn = MagicMock()
@@ -62,8 +70,18 @@ from collector.scheduler.runner import backoff_delays
 
 
 def _gated_off_task(retry_max=3, retry_backoff="exponential"):
-    return Collector("t", "t", [], MagicMock(), None, target_table="x", schedule={},
-                     trading_day_gated=False, retry_max=retry_max, retry_backoff=retry_backoff)
+    return Collector(
+        "t",
+        "t",
+        [],
+        MagicMock(),
+        None,
+        target_table="x",
+        schedule={},
+        trading_day_gated=False,
+        retry_max=retry_max,
+        retry_backoff=retry_backoff,
+    )
 
 
 def _patched_pg():
@@ -80,6 +98,7 @@ def _wire_pg(pg):
         ctx.__enter__.return_value = conn
         ctx.__exit__.return_value = False
         return ctx
+
     pg.connect.side_effect = new_conn
 
 
@@ -129,6 +148,7 @@ def test_retry_attempts_do_not_double_count_circuit_failures():
 
 
 # ---------------------------------------------------------------- --date 与交易日门控一致化
+
 
 def test_gating_uses_user_specified_date():
     # 日历里只有 2026-08-28；显式 --date 2026-08-28 即使今天非交易日也应执行

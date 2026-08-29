@@ -2,7 +2,7 @@ import datetime as dt
 import time
 
 from collector.model.health import SourceHealth
-from collector.model.run import RunResult, MODE_INCREMENTAL, STATUS_SUCCESS, STATUS_PARTIAL, STATUS_FAILED
+from collector.model.run import MODE_INCREMENTAL, STATUS_FAILED, STATUS_PARTIAL, STATUS_SUCCESS, RunResult
 from collector.repositories.health import HealthRepository
 from collector.repositories.runs import RunRepository
 from collector.sources.base import SourceError
@@ -78,10 +78,23 @@ class Executor:
                 latency = int((time.monotonic() - started) * 1000)
                 health_repo.save(self.selector.record_success(h, latency))
                 status = STATUS_PARTIAL if issues else STATUS_SUCCESS
-                run_repo.record(task.task_code, mode, status, source_used=src.source_id,
-                                params=params, rows_written=rows, message="; ".join(issues) or None)
-                return RunResult(task.task_code, mode, status, source_used=src.source_id,
-                                 rows_written=rows, message="; ".join(issues) or None)
+                run_repo.record(
+                    task.task_code,
+                    mode,
+                    status,
+                    source_used=src.source_id,
+                    params=params,
+                    rows_written=rows,
+                    message="; ".join(issues) or None,
+                )
+                return RunResult(
+                    task.task_code,
+                    mode,
+                    status,
+                    source_used=src.source_id,
+                    rows_written=rows,
+                    message="; ".join(issues) or None,
+                )
             except SourceError as e:
                 if count_failures:
                     health_repo.save(self.selector.record_failure(h, str(e)))

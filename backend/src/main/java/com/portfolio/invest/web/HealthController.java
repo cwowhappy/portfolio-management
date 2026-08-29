@@ -1,12 +1,12 @@
 package com.portfolio.invest.web;
 
+import com.portfolio.invest.application.cache.ApplicationCache;
 import com.portfolio.invest.config.InvestProperties;
 import com.portfolio.invest.domain.market.MarketDataException;
 import com.portfolio.invest.application.market.MarketDataService;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.function.LongSupplier;
 import org.springframework.core.env.Environment;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -24,27 +24,20 @@ public class HealthController {
 
     /** 行情探活结果缓存 TTL。 */
     private static final Duration PROBE_CACHE_TTL = Duration.ofSeconds(30);
+    /** 探活缓存键：应用级共享缓存（ApplicationCache 端口），带前缀防键冲突。 */
+    private static final String PROBE_CACHE_KEY = "health:market-probe";
 
     private final MarketDataService market;
     private final InvestProperties props;
     private final Environment env;
-    private final LongSupplier nowMillis;
+    private final ApplicationCache cache;
 
-    // TtlCache 位于 infrastructure.market，web 层按分包规范不可依赖，此处以同风格的最小 TTL 实现兜底
-    private volatile ProbeCacheEntry probeCache;
-
-    /** 主构造器（@Autowired：存在测试专用重载构造器时需显式指定注入入口）。 */
-    @org.springframework.beans.factory.annotation.Autowired
-    public HealthController(MarketDataService market, InvestProperties props, Environment env) {
-        this(market, props, env, System::currentTimeMillis);
-    }
-
-    /** 测试注入：自定义时钟（避免真实墙钟等待）。 */
-    HealthController(MarketDataService market, InvestProperties props, Environment env, LongSupplier nowMillis) {
+    public HealthController(MarketDataService market, InvestProperties props, Environment env,
+                            ApplicationCache cache) {
         this.market = market;
         this.props = props;
         this.env = env;
-        this.nowMillis = nowMillis;
+        this.cache = cache;
     }
 
     /** Liveness：只报进程存活与 LLM key 是否配置，不调用任何外部服务。 */
@@ -80,12 +73,12 @@ public class HealthController {
     }
 
     private Map<String, Object> probeMarketCached() {
-        ProbeCacheEntry hit = probeCache;
-        if (hit != null && nowMillis.getAsLong() <= hit.expiresAt()) {
-            return hit.value();
+        Map<String, Object> hit = cache.get(PROBE_CACHE_KEY);
+        if (hit != null) {
+            return hit;
         }
         Map<String, Object> probed = probeMarket();
-        probeCache = new ProbeCacheEntry(probed, nowMillis.getAsLong() + PROBE_CACHE_TTL.toMillis());
+        cache.put(PROBE_CACHE_KEY, probed, PROBE_CACHE_TTL);
         return probed;
     }
 
@@ -101,6 +94,4 @@ public class HealthController {
         }
         return marketStatus;
     }
-
-    private record ProbeCacheEntry(Map<String, Object> value, long expiresAt) {}
 }

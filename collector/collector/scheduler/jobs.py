@@ -1,6 +1,5 @@
 import datetime as dt
 import glob
-import json
 import logging
 import os
 
@@ -14,13 +13,6 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
-logger = logging.getLogger(__name__)
-
-# 交易日历每月刷新一次（每月 1 日 03:10），upsert 幂等。
-CALENDAR_REFRESH_CRON = "10 3 1 * *"
-# 日历最新日期落后当天超过该天数时打 warning 留痕。
-CALENDAR_STALE_DAYS = 15
-
 from collector.calc.registry import CalcRegistry
 from collector.calc.snapshot import IndustryValuationCalc, SnapshotCalc
 from collector.config import load
@@ -29,7 +21,6 @@ from collector.converters.registry import ConverterRegistry
 from collector.executor.executor import Executor
 from collector.executor.selector import SourceSelector
 from collector.model.task import Collector
-from collector.repositories.health import HealthRepository
 from collector.repositories.runs import RunRepository
 from collector.repositories.tasks import TaskRepository
 from collector.scheduler.calendar import TradingCalendar
@@ -44,6 +35,13 @@ from collector.sources.plugins import (
 from collector.sources.registry import SourceRegistry
 from collector.store.writer import Store
 from collector.validators.registry import ValidatorRegistry
+
+logger = logging.getLogger(__name__)
+
+# 交易日历每月刷新一次（每月 1 日 03:10），upsert 幂等。
+CALENDAR_REFRESH_CRON = "10 3 1 * *"
+# 日历最新日期落后当天超过该天数时打 warning 留痕。
+CALENDAR_STALE_DAYS = 15
 
 
 def load_task_defs(dir_path: str) -> list[dict]:
@@ -66,10 +64,17 @@ def assemble_collector(row, registries):
     calc = registries["calc"].get(row["calc"]) if row.get("calc") else None
     validator = registries["validator"].get(row["validator"]) if row.get("validator") else None
     return Collector(
-        task_code=row["task_code"], task_name=row["task_name"], sources=sources,
-        converter=converter, calc=calc, validator=validator, target_table=row["target_table"],
-        schedule=row["schedule"], enabled=row["enabled"],
-        trading_day_gated=row["trading_day_gated"], retry_max=row["retry_max"],
+        task_code=row["task_code"],
+        task_name=row["task_name"],
+        sources=sources,
+        converter=converter,
+        calc=calc,
+        validator=validator,
+        target_table=row["target_table"],
+        schedule=row["schedule"],
+        enabled=row["enabled"],
+        trading_day_gated=row["trading_day_gated"],
+        retry_max=row["retry_max"],
         retry_backoff=row["retry_backoff"],
     )
 
@@ -94,7 +99,9 @@ def build_scheduler(tasks, runner, never_succeeded=None, calendar_refresher=None
         scheduler.add_job(
             lambda t=task: runner.run(t),
             trigger=make_trigger(task.schedule),
-            id=task.task_code, coalesce=True, max_instances=1,
+            id=task.task_code,
+            coalesce=True,
+            max_instances=1,
             misfire_grace_time=3600,
             **kwargs,
         )
@@ -102,7 +109,9 @@ def build_scheduler(tasks, runner, never_succeeded=None, calendar_refresher=None
         scheduler.add_job(
             calendar_refresher,
             trigger=CronTrigger.from_crontab(CALENDAR_REFRESH_CRON),
-            id="refresh_trading_calendar", coalesce=True, max_instances=1,
+            id="refresh_trading_calendar",
+            coalesce=True,
+            max_instances=1,
             misfire_grace_time=86400,
         )
     return scheduler
@@ -110,60 +119,79 @@ def build_scheduler(tasks, runner, never_succeeded=None, calendar_refresher=None
 
 def _field_columns():
     return {
-        "field_mapping_all_a": FieldMappingConverter({
-            "code": {"from": "代码", "type": "str"},
-            "name": {"from": "名称", "type": "str"},
-            "pe": {"from": "市盈率-动态", "type": "numeric"},
-            "pb": {"from": "市净率", "type": "numeric"},
-            "market_cap": {"from": "总市值", "type": "numeric"},
-        }),
-        "field_mapping_index": FieldMappingConverter({
-            "trading_day": {"from": "trading_day", "type": "str"},
-            "index_code": {"from": "index_code", "type": "str"},
-            "index_name": {"from": "index_name", "type": "str"},
-            "pe": {"from": "pe", "type": "numeric"},
-            "pb": {"from": "pb", "type": "numeric"},
-            "dividend_yield": {"from": "dividend_yield", "type": "numeric"},
-        }),
-        "field_mapping_sw": FieldMappingConverter({
-            "stock_code": {"from": "code", "type": "str"},
-            "stock_name": {"from": "stock_name", "type": "str"},
-            "industry_code": {"from": "industry_code", "type": "str"},
-            "industry_name": {"from": "industry_name", "type": "str"},
-        }),
-        "field_mapping_curve": FieldMappingConverter({
-            "trading_day": {"from": "trading_day", "type": "str"},
-            "term": {"from": "term", "type": "str"},
-            "yield": {"from": "yield", "type": "numeric"},
-        }),
-        "field_mapping_constituent": FieldMappingConverter({
-            "index_code": {"from": "index_code", "type": "str"},
-            "stock_code": {"from": "stock_code", "type": "str"},
-            "stock_name": {"from": "stock_name", "type": "str", "default": None},
-            "weight": {"from": "weight", "type": "numeric"},
-        }),
-        "field_mapping_industry": FieldMappingConverter({
-            "code": {"from": "代码", "type": "str"},
-            "name": {"from": "名称", "type": "str"},
-            "pe": {"from": "市盈率-动态", "type": "numeric"},
-            "pb": {"from": "市净率", "type": "numeric"},
-            "market_cap": {"from": "总市值", "type": "numeric"},
-            "industry_code": {"from": "industry_code", "type": "str"},
-            "industry_name": {"from": "industry_name", "type": "str"},
-        }),
+        "field_mapping_all_a": FieldMappingConverter(
+            {
+                "code": {"from": "代码", "type": "str"},
+                "name": {"from": "名称", "type": "str"},
+                "pe": {"from": "市盈率-动态", "type": "numeric"},
+                "pb": {"from": "市净率", "type": "numeric"},
+                "market_cap": {"from": "总市值", "type": "numeric"},
+            }
+        ),
+        "field_mapping_index": FieldMappingConverter(
+            {
+                "trading_day": {"from": "trading_day", "type": "str"},
+                "index_code": {"from": "index_code", "type": "str"},
+                "index_name": {"from": "index_name", "type": "str"},
+                "pe": {"from": "pe", "type": "numeric"},
+                "pb": {"from": "pb", "type": "numeric"},
+                "dividend_yield": {"from": "dividend_yield", "type": "numeric"},
+            }
+        ),
+        "field_mapping_sw": FieldMappingConverter(
+            {
+                "stock_code": {"from": "code", "type": "str"},
+                "stock_name": {"from": "stock_name", "type": "str"},
+                "industry_code": {"from": "industry_code", "type": "str"},
+                "industry_name": {"from": "industry_name", "type": "str"},
+            }
+        ),
+        "field_mapping_curve": FieldMappingConverter(
+            {
+                "trading_day": {"from": "trading_day", "type": "str"},
+                "term": {"from": "term", "type": "str"},
+                "yield": {"from": "yield", "type": "numeric"},
+            }
+        ),
+        "field_mapping_constituent": FieldMappingConverter(
+            {
+                "index_code": {"from": "index_code", "type": "str"},
+                "stock_code": {"from": "stock_code", "type": "str"},
+                "stock_name": {"from": "stock_name", "type": "str", "default": None},
+                "weight": {"from": "weight", "type": "numeric"},
+            }
+        ),
+        "field_mapping_industry": FieldMappingConverter(
+            {
+                "code": {"from": "代码", "type": "str"},
+                "name": {"from": "名称", "type": "str"},
+                "pe": {"from": "市盈率-动态", "type": "numeric"},
+                "pb": {"from": "市净率", "type": "numeric"},
+                "market_cap": {"from": "总市值", "type": "numeric"},
+                "industry_code": {"from": "industry_code", "type": "str"},
+                "industry_name": {"from": "industry_name", "type": "str"},
+            }
+        ),
     }
 
 
 def build_registries(config):
-    pro = lambda: ts.pro_api(config.tushare_token)
-    conn_factory = lambda: psycopg.connect(config.database_url)
-    source_reg = SourceRegistry(tushare_token=config.tushare_token, plugins={
-        "shenwan_mapping": ShenwanMappingSource("shenwan_mapping", pro_factory=pro),
-        "index_valuation": IndexValuationSource("index_valuation", pro_factory=pro),
-        "industry_universe": IndustryUniverseSource("industry_universe", conn_factory=conn_factory),
-        "treasury_curve": TreasuryCurveSource("treasury_curve", conn_factory=conn_factory),
-        "index_constituent": IndexConstituentSource("index_constituent", pro_factory=pro),
-    })
+    def pro():
+        return ts.pro_api(config.tushare_token)
+
+    def conn_factory():
+        return psycopg.connect(config.database_url)
+
+    source_reg = SourceRegistry(
+        tushare_token=config.tushare_token,
+        plugins={
+            "shenwan_mapping": ShenwanMappingSource("shenwan_mapping", pro_factory=pro),
+            "index_valuation": IndexValuationSource("index_valuation", pro_factory=pro),
+            "industry_universe": IndustryUniverseSource("industry_universe", conn_factory=conn_factory),
+            "treasury_curve": TreasuryCurveSource("treasury_curve", conn_factory=conn_factory),
+            "index_constituent": IndexConstituentSource("index_constituent", pro_factory=pro),
+        },
+    )
     converter_reg = ConverterRegistry(plugins=_field_columns())
     calc_reg = CalcRegistry(plugins={"snapshot": SnapshotCalc(), "industry_weighted": IndustryValuationCalc()})
     validator_reg = ValidatorRegistry()
@@ -175,8 +203,9 @@ def refresh_calendar(conn):
     df = ak.tool_trade_date_hist_sina()
     dates = [dt.date.fromisoformat(str(d)) for d in df["trade_date"]]
     with conn.cursor() as cur:
-        cur.executemany("INSERT INTO trading_calendar (trade_date) VALUES (%s) ON CONFLICT DO NOTHING",
-                        [(d,) for d in dates])
+        cur.executemany(
+            "INSERT INTO trading_calendar (trade_date) VALUES (%s) ON CONFLICT DO NOTHING", [(d,) for d in dates]
+        )
     conn.commit()
     logger.info("交易日历已刷新：%d 个交易日", len(dates))
 
@@ -188,8 +217,7 @@ def check_calendar_staleness(conn, today=None):
         cur.execute("SELECT max(trade_date) FROM trading_calendar")
         latest = cur.fetchone()[0]
     if latest is None or (today - latest).days > CALENDAR_STALE_DAYS:
-        logger.warning("交易日历最新日期 %s 落后当天超过 %d 天，交易日判断可能失真",
-                       latest, CALENDAR_STALE_DAYS)
+        logger.warning("交易日历最新日期 %s 落后当天超过 %d 天，交易日判断可能失真", latest, CALENDAR_STALE_DAYS)
 
 
 def refresh_calendar_job(database_url):
@@ -232,7 +260,8 @@ def main():
     executor = Executor(selector, store)
     runner = TaskRunner(config.database_url, calendar, executor)
     scheduler = build_scheduler(
-        tasks, runner,
+        tasks,
+        runner,
         never_succeeded=never_succeeded,
         calendar_refresher=lambda: refresh_calendar_job(config.database_url),
     )

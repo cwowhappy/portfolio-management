@@ -3,6 +3,7 @@ package com.portfolio.invest.infrastructure.market;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.portfolio.invest.config.InvestProperties;
+import com.portfolio.invest.domain.market.MarketDataErrorCode;
 import com.portfolio.invest.domain.market.MarketDataException;
 import java.io.IOException;
 import java.net.URI;
@@ -45,7 +46,7 @@ public class TencentClient {
         try {
             return mapper.readTree(body);
         } catch (IOException e) {
-            throw new MarketDataException("BAD_RESPONSE", "腾讯K线响应解析失败", e);
+            throw new MarketDataException(MarketDataErrorCode.BAD_RESPONSE, "腾讯K线响应解析失败", e);
         }
     }
 }

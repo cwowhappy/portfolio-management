@@ -36,6 +36,9 @@ jobs:
       - name: Install
         working-directory: frontend
         run: pnpm install --frozen-lockfile
+      - name: Lint
+        working-directory: frontend
+        run: pnpm lint
       - name: Test
         working-directory: frontend
         run: pnpm test
@@ -71,6 +74,15 @@ jobs:
       - name: Install
         working-directory: collector
         run: pip install -r requirements.txt
+      - name: Ruff lint
+        working-directory: collector
+        run: ruff check .
+      - name: Ruff format check
+        working-directory: collector
+        run: ruff format --check .
+      - name: Import-linter 分层合约
+        working-directory: collector
+        run: lint-imports
       - name: Test
         working-directory: collector
         run: pytest -q --cov=collector --cov-fail-under=80

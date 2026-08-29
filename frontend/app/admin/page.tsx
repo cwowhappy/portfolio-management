@@ -127,7 +127,10 @@ function AdminPanel() {
   }, []);
 
   useEffect(() => {
-    refresh();
+    // async 包裹：让 setState 明确发生在异步回调中，避免 effect 体内同步 setState 触发级联渲染
+    void (async () => {
+      await refresh();
+    })();
   }, [refresh]);
 
   async function act(id: number, fn: (id: number) => Promise<unknown>) {

@@ -13,6 +13,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.portfolio.invest.domain.market.Financials;
 import com.portfolio.invest.domain.market.KlineBar;
+import com.portfolio.invest.domain.market.MarketDataErrorCode;
 import com.portfolio.invest.domain.market.MarketDataException;
 import com.portfolio.invest.domain.market.MarketDataSource;
 import com.portfolio.invest.domain.market.MarketOverview;
@@ -21,7 +22,12 @@ import com.portfolio.invest.domain.market.StockHit;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -95,7 +101,7 @@ class OrchestratingMarketDataServiceTest {
     @Test
     void quote主源失败降级新浪() throws IOException {
         when(source.quote("1.600519"))
-                .thenThrow(new MarketDataException("UPSTREAM_UNAVAILABLE", "东财挂了"));
+                .thenThrow(new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "东财挂了"));
         when(source.rawQuote("sh", "600519")).thenReturn(fixtureText("sina-quote.txt"));
         Quote q = service.quote("600519");
         assertThat(q.name()).isEqualTo("贵州茅台");
@@ -133,7 +139,7 @@ class OrchestratingMarketDataServiceTest {
     @Test
     void kline主源失败降级腾讯() throws IOException {
         when(source.kline("1.600519", 101, 120))
-                .thenThrow(new MarketDataException("UPSTREAM_UNAVAILABLE", "东财K线挂了"));
+                .thenThrow(new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "东财K线挂了"));
         when(source.fallbackKline("sh600519", "day", 120)).thenReturn(fixture("tencent-kline.json"));
         List<KlineBar> bars = service.kline("600519", "day", 120);
         assertThat(bars).hasSize(3);
@@ -283,9 +289,9 @@ class OrchestratingMarketDataServiceTest {
     @Test
     void news名称获取失败改用代码搜索() throws IOException {
         when(source.quote("1.600519"))
-                .thenThrow(new MarketDataException("UPSTREAM_UNAVAILABLE", "挂了"));
+                .thenThrow(new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "挂了"));
         when(source.rawQuote("sh", "600519"))
-                .thenThrow(new MarketDataException("UPSTREAM_UNAVAILABLE", "新浪也挂了"));
+                .thenThrow(new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "新浪也挂了"));
         when(source.news("600519", 10)).thenReturn(fixture("eastmoney-news.json"));
         assertThat(service.news("600519", 10)).isNotEmpty();
         verify(source).news("600519", 10);
@@ -303,7 +309,7 @@ class OrchestratingMarketDataServiceTest {
 
     @Test
     void overview主源失败降级新浪() throws IOException {
-        when(source.overview()).thenThrow(new MarketDataException("UPSTREAM_UNAVAILABLE", "挂了"));
+        when(source.overview()).thenThrow(new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "挂了"));
         when(source.rawIndices()).thenReturn(fixtureText("sina-indices.txt"));
         MarketOverview o = service.overview();
         assertThat(o.indices()).hasSize(3);
@@ -317,5 +323,22 @@ class OrchestratingMarketDataServiceTest {
         when(source.quote("1.600519")).thenReturn(fixture("eastmoney-quote.json"));
         assertThat(service.probeQuoteLatencyMs()).isGreaterThanOrEqualTo(0);
         verify(source).quote("1.600519");
+    }
+
+    @Test
+    void probeQuoteLatencyMs用注入时钟测量耗时() throws IOException {
+        // A3：application 层禁调 System 时钟，探活耗时必须来自注入时钟（可确定性测试）
+        AtomicLong now = new AtomicLong(1000);
+        Clock fakeClock = new Clock() {
+            @Override public Instant instant() { return Instant.ofEpochMilli(now.get()); }
+            @Override public ZoneId getZone() { return ZoneOffset.UTC; }
+            @Override public Clock withZone(ZoneId zone) { return this; }
+        };
+        OrchestratingMarketDataService clocked = new OrchestratingMarketDataService(source, fakeClock);
+        when(source.quote("1.600519")).thenAnswer(inv -> {
+            now.addAndGet(120); // 模拟上游耗时 120ms
+            return fixture("eastmoney-quote.json");
+        });
+        assertThat(clocked.probeQuoteLatencyMs()).isEqualTo(120);
     }
 }

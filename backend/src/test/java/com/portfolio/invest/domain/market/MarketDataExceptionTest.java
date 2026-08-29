@@ -9,8 +9,8 @@ class MarketDataExceptionTest {
 
     @Test
     void 携带错误码与消息() {
-        MarketDataException e = new MarketDataException("INVALID_CODE", "无效代码");
-        assertThat(e.getCode()).isEqualTo("INVALID_CODE");
+        MarketDataException e = new MarketDataException(MarketDataErrorCode.INVALID_CODE, "无效代码");
+        assertThat(e.getCode()).isEqualTo(MarketDataErrorCode.INVALID_CODE);
         assertThat(e.getMessage()).isEqualTo("无效代码");
         assertThat(e.getCause()).isNull();
     }
@@ -18,8 +18,8 @@ class MarketDataExceptionTest {
     @Test
     void 携带原因链() {
         Exception cause = new RuntimeException("root");
-        MarketDataException e = new MarketDataException("UPSTREAM_UNAVAILABLE", "挂了", cause);
-        assertThat(e.getCode()).isEqualTo("UPSTREAM_UNAVAILABLE");
+        MarketDataException e = new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "挂了", cause);
+        assertThat(e.getCode()).isEqualTo(MarketDataErrorCode.UPSTREAM_UNAVAILABLE);
         assertThat(e.getMessage()).isEqualTo("挂了");
         assertThat(e.getCause()).isSameAs(cause);
     }

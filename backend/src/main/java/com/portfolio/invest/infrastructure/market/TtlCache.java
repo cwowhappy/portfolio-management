@@ -21,8 +21,8 @@ public class TtlCache {
         this(maxEntries, System::currentTimeMillis);
     }
 
-    /** 测试注入：自定义时钟（避免真实墙钟等待）。 */
-    TtlCache(int maxEntries, LongSupplier nowMillis) {
+    /** 测试注入：自定义时钟（避免真实墙钟等待）。TtlApplicationCache（infrastructure.cache）亦复用。 */
+    public TtlCache(int maxEntries, LongSupplier nowMillis) {
         if (maxEntries <= 0) {
             throw new IllegalArgumentException("maxEntries 必须为正数: " + maxEntries);
         }

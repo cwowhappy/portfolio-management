@@ -85,6 +85,25 @@ class AuthControllerIntegrationTest extends IntegrationTestBase {
                 .andExpect(jsonPath("$.username").value("auth_dave"));
     }
 
+    @Test
+    void 注册登录结构性校验失败返回400() throws Exception {
+        // 空白用户名注册 → Bean Validation 拦截（H8）
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"  \",\"password\":\"abc12345\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.message").value("用户名不能为空"));
+
+        // 缺少密码登录 → Bean Validation 拦截，不再落到认证流程
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"auth_bob\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.message").value("密码不能为空"));
+    }
+
     private void register(String u, String p) throws Exception {
         mockMvc.perform(post("/api/auth/register").contentType(MediaType.APPLICATION_JSON)
                 .content("{\"username\":\"" + u + "\",\"password\":\"" + p + "\"}"))

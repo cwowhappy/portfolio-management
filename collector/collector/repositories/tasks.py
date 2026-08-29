@@ -1,7 +1,19 @@
 import json
 
-TASK_COLS = ["task_code", "task_name", "source_ids", "converter", "calc", "validator",
-             "target_table", "schedule", "enabled", "trading_day_gated", "retry_max", "retry_backoff"]
+TASK_COLS = [
+    "task_code",
+    "task_name",
+    "source_ids",
+    "converter",
+    "calc",
+    "validator",
+    "target_table",
+    "schedule",
+    "enabled",
+    "trading_day_gated",
+    "retry_max",
+    "retry_backoff",
+]
 
 UPSERT_TASK = """
 INSERT INTO collector_task (task_code, task_name, source_ids, converter, calc, validator,
@@ -25,7 +37,7 @@ def _parse_json(v):
 
 
 def _parse_row(row):
-    d = dict(zip(TASK_COLS, row))
+    d = dict(zip(TASK_COLS, row, strict=True))
     d["source_ids"] = _parse_json(d["source_ids"])
     d["validator"] = _parse_json(d["validator"])
     d["schedule"] = _parse_json(d["schedule"])
@@ -53,8 +65,11 @@ class TaskRepository:
 
     def upsert(self, task: dict):
         with self.conn.cursor() as cur:
-            cur.execute(UPSERT_TASK, tuple(
-                task.get(c) if not isinstance(task.get(c), (list, dict)) else json.dumps(task.get(c))
-                for c in TASK_COLS
-            ))
+            cur.execute(
+                UPSERT_TASK,
+                tuple(
+                    task.get(c) if not isinstance(task.get(c), (list, dict)) else json.dumps(task.get(c))
+                    for c in TASK_COLS
+                ),
+            )
         self.conn.commit()

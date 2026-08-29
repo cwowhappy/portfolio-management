@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from collector.model.health import SourceHealth
 
@@ -25,7 +25,7 @@ def _score(h: SourceHealth) -> float:
 
 class SourceSelector:
     def select(self, sources, health):
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         candidates = []
         probes = []
         for priority, src in enumerate(sources):
@@ -48,14 +48,14 @@ class SourceSelector:
         h.success_runs += 1
         h.consecutive_failures = 0
         h.last_latency_ms = latency_ms
-        h.last_success_at = datetime.now(timezone.utc)
+        h.last_success_at = datetime.now(UTC)
         h.score = _score(h)
         return h
 
     def record_failure(self, h: SourceHealth, error: str) -> SourceHealth:
         h.total_runs += 1
         h.consecutive_failures += 1
-        h.last_failure_at = datetime.now(timezone.utc)
+        h.last_failure_at = datetime.now(UTC)
         h.last_error = error
         h.score = _score(h)
         return h

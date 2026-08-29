@@ -28,7 +28,7 @@ test-backend:
 	cd backend && ./gradlew test --console=plain
 
 test-frontend:
-	cd frontend && pnpm test
+	cd frontend && pnpm lint && pnpm test
 
 test-e2e:
 	cd frontend && CI=true pnpm test:e2e
@@ -64,6 +64,7 @@ collect-run:
 collect-backfill:
 	cd collector && python -m collector.cli backfill $(TASK) --start $(START) --end $(END)
 
-## 运行 collector 测试（覆盖率 >= 80%）
+## 运行 collector 静态检查 + 测试（覆盖率 >= 80%）
 collect-test:
+	cd collector && .venv/bin/ruff check . && .venv/bin/ruff format --check . && .venv/bin/lint-imports
 	cd collector && .venv/bin/pytest -q --cov=collector --cov-fail-under=80

@@ -9,12 +9,14 @@ class SnapshotCalc(Calc):
         pb = [r["pb"] for r in records if r.get("pb") is not None]
         net_breaker = sum(1 for r in records if r.get("pb") is not None and r["pb"] < 1)
         total = len(pb)
-        return [{
-            "pe_median": statistics.median(pe_valid) if pe_valid else None,
-            "pb_median": statistics.median(pb) if pb else None,
-            "net_breaker_count": net_breaker,
-            "net_breaker_ratio": round(net_breaker / total, 4) if total else 0.0,
-        }]
+        return [
+            {
+                "pe_median": statistics.median(pe_valid) if pe_valid else None,
+                "pb_median": statistics.median(pb) if pb else None,
+                "net_breaker_count": net_breaker,
+                "net_breaker_ratio": round(net_breaker / total, 4) if total else 0.0,
+            }
+        ]
 
 
 class IndustryValuationCalc(Calc):
@@ -34,10 +36,12 @@ class IndustryValuationCalc(Calc):
         for code, g in grouped.items():
             if g["cap"] <= 0:
                 continue
-            rows.append({
-                "industry_code": code,
-                "industry_name": g["industry_name"],
-                "pe": round(g["pe"] / g["cap"], 4),
-                "pb": round(g["pb"] / g["cap"], 4),
-            })
+            rows.append(
+                {
+                    "industry_code": code,
+                    "industry_name": g["industry_name"],
+                    "pe": round(g["pe"] / g["cap"], 4),
+                    "pb": round(g["pb"] / g["cap"], 4),
+                }
+            )
         return rows

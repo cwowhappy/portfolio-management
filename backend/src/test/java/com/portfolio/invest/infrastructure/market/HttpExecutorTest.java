@@ -12,6 +12,7 @@ import com.portfolio.invest.domain.market.MarketDataException;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.client.HttpClientErrorException;
+import com.portfolio.invest.domain.market.MarketDataErrorCode;
 
 /** 统一「限流 + 重试」执行器：每次真实 HTTP 尝试前限流，重试语义与领域错误处理。 */
 class HttpExecutorTest {
@@ -35,7 +36,7 @@ class HttpExecutorTest {
         when(limiter.tryAcquire(anyLong())).thenReturn(true);
         HttpExecutor executor = new HttpExecutor(limiter, 3, 0, 2000, "上游");
         assertThatThrownBy(() -> executor.execute(() -> {
-            throw new MarketDataException("BAD_RESPONSE", "格式异常");
+            throw new MarketDataException(MarketDataErrorCode.BAD_RESPONSE, "格式异常");
         }))
                 .isInstanceOf(MarketDataException.class)
                 .hasMessageContaining("格式异常");
@@ -63,6 +64,6 @@ class HttpExecutorTest {
                 .isInstanceOf(MarketDataException.class)
                 .hasMessageContaining("行情请求过于频繁")
                 .extracting(e -> ((MarketDataException) e).getCode())
-                .isEqualTo("RATE_LIMITED");
+                .isEqualTo(MarketDataErrorCode.RATE_LIMITED);
     }
 }

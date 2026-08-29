@@ -16,6 +16,7 @@ import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import com.portfolio.invest.domain.conversation.ConversationErrorCode;
 
 class ConversationControllerIntegrationTest extends IntegrationTestBase {
 
@@ -74,7 +75,7 @@ class ConversationControllerIntegrationTest extends IntegrationTestBase {
         // A 访问 B 的会话消息 → 404
         mockMvc.perform(get("/api/conversations/{id}/messages", convB).session(sessionA))
                 .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.code").value("NOT_FOUND"));
+                .andExpect(jsonPath("$.code").value(ConversationErrorCode.NOT_FOUND));
 
         // A 向 B 的会话保存消息 → 404
         mockMvc.perform(put("/api/conversations/{id}/messages", convB).session(sessionA)
@@ -120,7 +121,7 @@ class ConversationControllerIntegrationTest extends IntegrationTestBase {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"id\":\"" + sharedId + "\"}"))
                 .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.code").value("NOT_FOUND"));
+                .andExpect(jsonPath("$.code").value(ConversationErrorCode.NOT_FOUND));
 
         // A 的会话仍存在、归属未变、消息未变
         mockMvc.perform(get("/api/conversations").session(sessionA))
@@ -138,16 +139,24 @@ class ConversationControllerIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void 创建会话校验空id返回400() throws Exception {
+    void 创建会话id结构性校验失败返回400() throws Exception {
         register("conv_carol", "abc12345");
         approve("conv_carol");
         MockHttpSession session = login("conv_carol", "abc12345");
 
+        // 空 id 与超长 id 由 Bean Validation 在 web 层拦截（H8），业务层 INVALID_ID 兜底保留
         mockMvc.perform(post("/api/conversations").session(session)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"id\":\"\"}"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("INVALID_ID"));
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.message").value("会话 id 不能为空"));
+        mockMvc.perform(post("/api/conversations").session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"id\":\"" + "x".repeat(65) + "\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.message").value("会话 id 最长64字符"));
     }
 
     @Test
@@ -168,14 +177,14 @@ class ConversationControllerIntegrationTest extends IntegrationTestBase {
                         .content("[{\"id\":\"m-1\",\"role\":\"user\",\"content\":\"" + oversized
                                 + "\",\"createdAt\":1700000000000}]"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("INVALID_MESSAGE"));
+                .andExpect(jsonPath("$.code").value(ConversationErrorCode.INVALID_MESSAGE));
 
         // 非法 role → 400
         mockMvc.perform(put("/api/conversations/{id}/messages", convId).session(session)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("[{\"id\":\"m-1\",\"role\":\"system\",\"content\":\"hi\",\"createdAt\":1700000000000}]"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("INVALID_MESSAGE"));
+                .andExpect(jsonPath("$.code").value(ConversationErrorCode.INVALID_MESSAGE));
     }
 
     private void register(String username, String password) throws Exception {

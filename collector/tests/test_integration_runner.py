@@ -5,6 +5,7 @@
 ② 整任务重试在新连接上执行
 ③ 后续合法写入不受中止事务影响
 """
+
 import datetime as dt
 from unittest.mock import MagicMock, patch
 
@@ -26,13 +27,23 @@ class _DummySource:
 
     def fetch(self, params):
         import pandas as pd
+
         return pd.DataFrame({"x": [1]})
 
 
 def _task(retry_max=0):
-    return Collector("itest", "集成测试", [_DummySource()], MagicMock(), None,
-                     target_table="valuation_snapshot", schedule={},
-                     trading_day_gated=False, retry_max=retry_max, retry_backoff="fixed")
+    return Collector(
+        "itest",
+        "集成测试",
+        [_DummySource()],
+        MagicMock(),
+        None,
+        target_table="valuation_snapshot",
+        schedule={},
+        trading_day_gated=False,
+        retry_max=retry_max,
+        retry_backoff="fixed",
+    )
 
 
 def _seed_task(conn):
@@ -46,18 +57,21 @@ def _seed_task(conn):
 def test_store_failure_rolls_back_and_retry_uses_fresh_connection(pg_url, pg_conn):
     _seed_task(pg_conn)
     # 违反 trading_day NOT NULL 约束的记录 → upsert 必失败
-    bad = [{"trading_day": None, "pe_median": 15.0, "pb_median": 1.5,
-            "net_breaker_count": 10, "net_breaker_ratio": 0.1}]
+    bad = [
+        {"trading_day": None, "pe_median": 15.0, "pb_median": 1.5, "net_breaker_count": 10, "net_breaker_ratio": 0.1}
+    ]
     task = _task(retry_max=1)
     task.converter.convert.return_value = bad
 
     executor = Executor(SourceSelector(), Store())
     runner = TaskRunner(pg_url, TradingCalendar(set()), executor)
     real_connect = psycopg.connect
-    with patch("collector.scheduler.runner.time.sleep") as sleep, \
-         patch("collector.scheduler.runner.psycopg.connect", wraps=real_connect) as connect_spy:
-        with pytest.raises(StoreError):
-            runner.run(task)
+    with (
+        patch("collector.scheduler.runner.time.sleep") as sleep,
+        patch("collector.scheduler.runner.psycopg.connect", wraps=real_connect) as connect_spy,
+        pytest.raises(StoreError),
+    ):
+        runner.run(task)
 
     # ② retry_max=1 → 首次 + 1 次重试，每次都在新连接上
     assert connect_spy.call_count == 2
@@ -70,8 +84,15 @@ def test_store_failure_rolls_back_and_retry_uses_fresh_connection(pg_url, pg_con
     assert [r[0] for r in rows] == [STATUS_FAILED, STATUS_FAILED]
 
     # ③ 后续合法写入不受此前中止事务影响
-    good = [{"trading_day": dt.date(2026, 8, 28), "pe_median": 15.0, "pb_median": 1.5,
-             "net_breaker_count": 10, "net_breaker_ratio": 0.1}]
+    good = [
+        {
+            "trading_day": dt.date(2026, 8, 28),
+            "pe_median": 15.0,
+            "pb_median": 1.5,
+            "net_breaker_count": 10,
+            "net_breaker_ratio": 0.1,
+        }
+    ]
     ok_task = _task()
     ok_task.converter.convert.return_value = good
     result = runner.run(ok_task)

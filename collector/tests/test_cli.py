@@ -6,12 +6,12 @@ from unittest.mock import MagicMock
 import pytest
 
 from collector.cli import build_parser, main
-from collector.model.run import RunResult, STATUS_SUCCESS
+from collector.model.run import STATUS_SUCCESS, RunResult
 from collector.repositories.runs import RunRepository
 from collector.repositories.tasks import TaskRepository
 
-
 # ---------------------------------------------------------------- parser 保持兼容
+
 
 def test_backfill_requires_range():
     parser = build_parser()
@@ -29,12 +29,21 @@ def test_run_parses_date_and_force():
 
 # ---------------------------------------------------------------- TaskRepository.get
 
+
 def _task_row():
     return (
-        "all_a_valuation", "全A估值", json.dumps([{"source_id": "a"}]), "fc", None,
+        "all_a_valuation",
+        "全A估值",
+        json.dumps([{"source_id": "a"}]),
+        "fc",
+        None,
         json.dumps([{"check": "min_rows", "value": 1000, "level": "hard"}]),
-        "valuation_snapshot", json.dumps({"type": "cron", "cron": "30 15 * * 1-5"}),
-        True, True, 3, "exponential",
+        "valuation_snapshot",
+        json.dumps({"type": "cron", "cron": "30 15 * * 1-5"}),
+        True,
+        True,
+        3,
+        "exponential",
     )
 
 
@@ -58,6 +67,7 @@ def test_task_get_returns_none_when_missing():
 
 
 # ---------------------------------------------------------------- RunRepository.list_runs
+
 
 def test_run_list_runs_returns_rows_desc():
     conn = MagicMock()
@@ -88,23 +98,37 @@ def test_run_list_runs_empty_when_task_missing():
 
 # ---------------------------------------------------------------- CLI 命令分发
 
+
 def _cli_mocks(mocker):
     """打桩 main() 依赖，返回 (psycopg, task_repo, conn, task)。"""
-    config = SimpleNamespace(database_url="postgresql://u:p@localhost:5432/db",
-                             tushare_token="token")
+    config = SimpleNamespace(database_url="postgresql://u:p@localhost:5432/db", tushare_token="token")
     mocker.patch("collector.cli.load", return_value=config)
-    mocker.patch("collector.cli.build_registries", return_value={
-        "source": MagicMock(), "converter": MagicMock(),
-        "calc": MagicMock(), "validator": MagicMock(),
-    })
+    mocker.patch(
+        "collector.cli.build_registries",
+        return_value={
+            "source": MagicMock(),
+            "converter": MagicMock(),
+            "calc": MagicMock(),
+            "validator": MagicMock(),
+        },
+    )
     psycopg = mocker.patch("collector.cli.psycopg")
     conn = MagicMock()
     psycopg.connect.return_value.__enter__.return_value = conn
 
     row = {
-        "task_code": "t", "task_name": "T", "source_ids": [], "converter": "fc",
-        "calc": None, "validator": None, "target_table": "x", "schedule": {},
-        "enabled": True, "trading_day_gated": True, "retry_max": 3, "retry_backoff": "exponential",
+        "task_code": "t",
+        "task_name": "T",
+        "source_ids": [],
+        "converter": "fc",
+        "calc": None,
+        "validator": None,
+        "target_table": "x",
+        "schedule": {},
+        "enabled": True,
+        "trading_day_gated": True,
+        "retry_max": 3,
+        "retry_backoff": "exponential",
     }
     task_repo = MagicMock()
     task_repo.get.return_value = row
@@ -153,9 +177,15 @@ def test_history_calls_run_repository(mocker):
     _, task_repo, _, _ = _cli_mocks(mocker)
     run_repo = MagicMock()
     run_repo.list_runs.return_value = [
-        {"started_at": dt.datetime(2026, 8, 28, 15, 30), "status": "success",
-         "mode": "incremental", "source_used": "a", "rows_written": 100,
-         "message": None, "error": None},
+        {
+            "started_at": dt.datetime(2026, 8, 28, 15, 30),
+            "status": "success",
+            "mode": "incremental",
+            "source_used": "a",
+            "rows_written": 100,
+            "message": None,
+            "error": None,
+        },
     ]
     mocker.patch("collector.cli.RunRepository", return_value=run_repo)
 
@@ -173,15 +203,13 @@ def test_missing_task_exits_nonzero(mocker):
 
 
 def test_seed_dry_run_prints_codes(mocker, capsys):
-    config = SimpleNamespace(database_url="postgresql://u:p@localhost:5432/db",
-                             tushare_token="token")
+    config = SimpleNamespace(database_url="postgresql://u:p@localhost:5432/db", tushare_token="token")
     mocker.patch("collector.cli.load", return_value=config)
     mocker.patch("collector.cli.build_registries", return_value={})
     psycopg = mocker.patch("collector.cli.psycopg")
     conn = MagicMock()
     psycopg.connect.return_value.__enter__.return_value = conn
-    mocker.patch("collector.cli.load_task_defs",
-                 return_value=[{"task_code": "a"}, {"task_code": "b"}])
+    mocker.patch("collector.cli.load_task_defs", return_value=[{"task_code": "a"}, {"task_code": "b"}])
     seed_tasks = mocker.patch("collector.cli.seed_tasks")
 
     main(["seed", "--dry-run"])
@@ -192,8 +220,7 @@ def test_seed_dry_run_prints_codes(mocker, capsys):
 
 
 def test_seed_syncs_tasks(mocker, capsys):
-    config = SimpleNamespace(database_url="postgresql://u:p@localhost:5432/db",
-                             tushare_token="token")
+    config = SimpleNamespace(database_url="postgresql://u:p@localhost:5432/db", tushare_token="token")
     mocker.patch("collector.cli.load", return_value=config)
     mocker.patch("collector.cli.build_registries", return_value={})
     psycopg = mocker.patch("collector.cli.psycopg")
@@ -212,6 +239,7 @@ def test_seed_syncs_tasks(mocker, capsys):
 
 # ---------------------------------------------------------------- 参数错误友好退出
 
+
 def test_run_invalid_date_exits_with_usage_error(mocker, capsys):
     _, _, _, task = _cli_mocks(mocker)
     runner_inst = MagicMock()
@@ -227,8 +255,7 @@ def test_run_invalid_date_exits_with_usage_error(mocker, capsys):
 def test_backfill_non_range_source_exits_with_message(mocker, capsys):
     _, _, _, task = _cli_mocks(mocker)
     mocker.patch("collector.cli.TaskRunner", return_value=MagicMock())
-    run_backfill = mocker.patch("collector.cli.run_backfill",
-                                side_effect=ValueError("源 x 不支持区间回填"))
+    mocker.patch("collector.cli.run_backfill", side_effect=ValueError("源 x 不支持区间回填"))
     with pytest.raises(SystemExit) as e:
         main(["backfill", "t", "--start", "2026-01-01", "--end", "2026-01-31"])
     assert e.value.code == 2

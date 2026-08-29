@@ -103,18 +103,21 @@ class IndustryUniverseSource(Source):
         self.conn_factory = conn_factory  # 返回 psycopg 连接的可调用对象
 
     def fetch(self, params):
-        import akshare as ak
-        universe = ak.stock_zh_a_spot_em()          # 原始中文列
-        with self.conn_factory() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT stock_code, industry_code, industry_name FROM shenwan_industry_mapping")
-                rows = cur.fetchall()
+        universe = ak.stock_zh_a_spot_em()  # 原始中文列
+        with self.conn_factory() as conn, conn.cursor() as cur:
+            cur.execute("SELECT stock_code, industry_code, industry_name FROM shenwan_industry_mapping")
+            rows = cur.fetchall()
         mapping = pd.DataFrame(rows, columns=["stock_code", "industry_code", "industry_name"])
         return universe.merge(mapping, left_on="代码", right_on="stock_code", how="inner")
 
 
-TERMS = [("1Y", "中国国债收益率1年"), ("3Y", "中国国债收益率3年"), ("5Y", "中国国债收益率5年"),
-         ("10Y", "中国国债收益率10年"), ("30Y", "中国国债收益率30年")]
+TERMS = [
+    ("1Y", "中国国债收益率1年"),
+    ("3Y", "中国国债收益率3年"),
+    ("5Y", "中国国债收益率5年"),
+    ("10Y", "中国国债收益率10年"),
+    ("30Y", "中国国债收益率30年"),
+]
 
 
 class TreasuryCurveSource(Source):
@@ -132,7 +135,6 @@ class TreasuryCurveSource(Source):
             return cur.fetchone()[0]
 
     def fetch(self, params):
-        import akshare as ak
         since = self._max_trading_day()
         df = ak.bond_zh_us_rate()
         rows = []

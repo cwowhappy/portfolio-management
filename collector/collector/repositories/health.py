@@ -20,7 +20,8 @@ class HealthRepository:
 
     def save(self, h: SourceHealth):
         with self.conn.cursor() as cur:
-            cur.execute("""
+            cur.execute(
+                """
                 INSERT INTO collector_source_health
                   (source_id, total_runs, success_runs, consecutive_failures, last_latency_ms,
                    last_success_at, last_failure_at, last_error, score)
@@ -31,6 +32,17 @@ class HealthRepository:
                   last_latency_ms=EXCLUDED.last_latency_ms, last_success_at=EXCLUDED.last_success_at,
                   last_failure_at=EXCLUDED.last_failure_at, last_error=EXCLUDED.last_error,
                   score=EXCLUDED.score, updated_at=now()
-            """, (h.source_id, h.total_runs, h.success_runs, h.consecutive_failures,
-                  h.last_latency_ms, h.last_success_at, h.last_failure_at, h.last_error, h.score))
+            """,
+                (
+                    h.source_id,
+                    h.total_runs,
+                    h.success_runs,
+                    h.consecutive_failures,
+                    h.last_latency_ms,
+                    h.last_success_at,
+                    h.last_failure_at,
+                    h.last_error,
+                    h.score,
+                ),
+            )
         self.conn.commit()

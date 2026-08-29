@@ -62,6 +62,4 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute(
-        "DROP TABLE trading_calendar, collector_source_health, collector_task_run, collector_task;"
-    )
+    op.execute("DROP TABLE trading_calendar, collector_source_health, collector_task_run, collector_task;")

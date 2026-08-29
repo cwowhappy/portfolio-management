@@ -2,17 +2,19 @@ import datetime as dt
 
 import pandas as pd
 
-from collector.sources.plugins import IndustryUniverseSource, ShenwanMappingSource, IndexValuationSource
+from collector.sources.plugins import IndexValuationSource, IndustryUniverseSource, ShenwanMappingSource
 
 
 def test_shenwan_mapping_loops_31(mocker):
     pro = mocker.Mock()
     pro.index_classify.return_value = pd.DataFrame({"index_code": ["801010.SI", "801030.SI"]})
     pro.index_member_all.side_effect = [
-        pd.DataFrame({"ts_code": ["000001.SZ"], "name": ["平安银行"],
-                      "l1_code": ["801010.SI"], "l1_name": ["农林牧渔"]}),
-        pd.DataFrame({"ts_code": ["600519.SH"], "name": ["贵州茅台"],
-                      "l1_code": ["801030.SI"], "l1_name": ["食品饮料"]}),
+        pd.DataFrame(
+            {"ts_code": ["000001.SZ"], "name": ["平安银行"], "l1_code": ["801010.SI"], "l1_name": ["农林牧渔"]}
+        ),
+        pd.DataFrame(
+            {"ts_code": ["600519.SH"], "name": ["贵州茅台"], "l1_code": ["801030.SI"], "l1_name": ["食品饮料"]}
+        ),
     ]
     src = ShenwanMappingSource("sw", pro_factory=lambda: pro)
     df = src.fetch({})
@@ -24,22 +26,21 @@ def test_shenwan_mapping_loops_31(mocker):
 
 def test_index_valuation_merges_dividend(mocker):
     pro = mocker.Mock()
-    pro.index_dailybasic.return_value = pd.DataFrame(
-        {"trade_date": ["20260828"], "pe": [12.0], "pb": [1.4]}
-    )
+    pro.index_dailybasic.return_value = pd.DataFrame({"trade_date": ["20260828"], "pe": [12.0], "pb": [1.4]})
+
     def dividend_fetch(index_code, start, end):
         return {"000300": 2.35}
-    src = IndexValuationSource("idx", pro_factory=lambda: pro, dividend_fetch=dividend_fetch,
-                               index_codes={"000300": "沪深300"})
+
+    src = IndexValuationSource(
+        "idx", pro_factory=lambda: pro, dividend_fetch=dividend_fetch, index_codes={"000300": "沪深300"}
+    )
     df = src.fetch({"start": "20260828", "end": "20260828"})
     assert df.iloc[0]["dividend_yield"] == 2.35
 
 
 def test_index_valuation_defaults_range_to_today(mocker):
     pro = mocker.Mock()
-    pro.index_dailybasic.return_value = pd.DataFrame(
-        {"trade_date": ["20260829"], "pe": [12.0], "pb": [1.4]}
-    )
+    pro.index_dailybasic.return_value = pd.DataFrame({"trade_date": ["20260829"], "pe": [12.0], "pb": [1.4]})
     src = IndexValuationSource("idx", pro_factory=lambda: pro, index_codes={"000300": "沪深300"})
     src.fetch({})
     expected = dt.date.today().strftime("%Y%m%d")
@@ -48,22 +49,22 @@ def test_index_valuation_defaults_range_to_today(mocker):
 
 def test_index_valuation_defaults_range_to_date_param(mocker):
     pro = mocker.Mock()
-    pro.index_dailybasic.return_value = pd.DataFrame(
-        {"trade_date": ["20260828"], "pe": [12.0], "pb": [1.4]}
-    )
+    pro.index_dailybasic.return_value = pd.DataFrame({"trade_date": ["20260828"], "pe": [12.0], "pb": [1.4]})
     src = IndexValuationSource("idx", pro_factory=lambda: pro, index_codes={"000300": "沪深300"})
     src.fetch({"date": "2026-08-28"})
     pro.index_dailybasic.assert_called_once_with(ts_code="000300.SH", start_date="20260828", end_date="20260828")
 
 
 def test_industry_universe_joins_mapping(mocker):
-    universe = pd.DataFrame({
-        "代码": ["000001", "600519"],
-        "名称": ["平安银行", "贵州茅台"],
-        "市盈率-动态": [10.0, 30.0],
-        "市净率": [1.2, 8.0],
-        "总市值": [2.0e11, 2.0e12],
-    })
+    universe = pd.DataFrame(
+        {
+            "代码": ["000001", "600519"],
+            "名称": ["平安银行", "贵州茅台"],
+            "市盈率-动态": [10.0, 30.0],
+            "市净率": [1.2, 8.0],
+            "总市值": [2.0e11, 2.0e12],
+        }
+    )
     mocker.patch("akshare.stock_zh_a_spot_em", return_value=universe)
 
     cursor = mocker.MagicMock()
@@ -109,10 +110,7 @@ def test_normalize_date_invalid_raises():
 
 def test_index_valuation_normalizes_iso_range(mocker):
     pro = mocker.Mock()
-    pro.index_dailybasic.return_value = pd.DataFrame(
-        {"trade_date": ["20260828"], "pe": [12.0], "pb": [1.4]}
-    )
+    pro.index_dailybasic.return_value = pd.DataFrame({"trade_date": ["20260828"], "pe": [12.0], "pb": [1.4]})
     src = IndexValuationSource("idx", pro_factory=lambda: pro, index_codes={"000300": "沪深300"})
     src.fetch({"start": "2026-08-01", "end": "2026-08-28"})
-    pro.index_dailybasic.assert_called_once_with(ts_code="000300.SH",
-                                                 start_date="20260801", end_date="20260828")
+    pro.index_dailybasic.assert_called_once_with(ts_code="000300.SH", start_date="20260801", end_date="20260828")

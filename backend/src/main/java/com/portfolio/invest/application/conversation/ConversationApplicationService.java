@@ -1,6 +1,7 @@
 package com.portfolio.invest.application.conversation;
 
 import com.portfolio.invest.domain.conversation.Conversation;
+import com.portfolio.invest.domain.conversation.ConversationErrorCode;
 import com.portfolio.invest.domain.conversation.ConversationException;
 import com.portfolio.invest.domain.conversation.ConversationRepository;
 import java.time.Instant;
@@ -35,7 +36,7 @@ public class ConversationApplicationService {
             // id 已被他人占用：直接 404（不泄露存在性），绝不落到 save——
             // ConversationJpaEntity 为 assigned @Id 且无 @Version，Spring Data save 会走
             // EntityManager.merge 把 user_id 改成当前用户，导致越权接管他人会话。
-            throw new ConversationException("NOT_FOUND", "会话不存在");
+            throw new ConversationException(ConversationErrorCode.NOT_FOUND, "会话不存在");
         }
         return ConversationView.from(repository.save(Conversation.create(id, userId, Instant.now())));
     }
@@ -49,7 +50,7 @@ public class ConversationApplicationService {
     public void saveMessages(Long userId, String conversationId, List<ChatMessageWire> wires) {
         Conversation conv = requireOwned(userId, conversationId);
         if (wires.size() > MAX_MESSAGES_PER_REQUEST) {
-            throw new ConversationException("INVALID_MESSAGE", "单次最多保存500条消息");
+            throw new ConversationException(ConversationErrorCode.INVALID_MESSAGE, "单次最多保存500条消息");
         }
         String firstUser = wires.stream()
                 .filter(w -> "user".equals(w.role()))
@@ -68,7 +69,7 @@ public class ConversationApplicationService {
 
     private Conversation requireOwned(Long userId, String conversationId) {
         return repository.findByIdAndUserId(conversationId, userId)
-                .orElseThrow(() -> new ConversationException("NOT_FOUND", "会话不存在"));
+                .orElseThrow(() -> new ConversationException(ConversationErrorCode.NOT_FOUND, "会话不存在"));
     }
 
     /**
@@ -77,10 +78,10 @@ public class ConversationApplicationService {
      */
     private static void validateId(String id) {
         if (id == null || id.isBlank()) {
-            throw new ConversationException("INVALID_ID", "会话 id 不能为空");
+            throw new ConversationException(ConversationErrorCode.INVALID_ID, "会话 id 不能为空");
         }
         if (id.length() > ID_MAX_LENGTH) {
-            throw new ConversationException("INVALID_ID", "会话 id 格式不正确");
+            throw new ConversationException(ConversationErrorCode.INVALID_ID, "会话 id 格式不正确");
         }
     }
 }

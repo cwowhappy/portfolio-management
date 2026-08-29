@@ -1,10 +1,16 @@
 package com.portfolio.invest.web;
 
+import com.portfolio.invest.domain.conversation.ConversationErrorCode;
+import com.portfolio.invest.domain.market.MarketDataErrorCode;
 import com.portfolio.invest.domain.market.MarketDataException;
+import com.portfolio.invest.domain.user.UserErrorCode;
+import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -17,8 +23,8 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MarketDataException.class)
     public ResponseEntity<ApiError> market(MarketDataException e) {
         HttpStatus status = switch (e.getCode()) {
-            case "INVALID_CODE", "INVALID_PERIOD", "INVALID_QUERY" -> HttpStatus.BAD_REQUEST;
-            case "RATE_LIMITED" -> HttpStatus.TOO_MANY_REQUESTS;
+            case MarketDataErrorCode.INVALID_CODE, MarketDataErrorCode.INVALID_PERIOD, MarketDataErrorCode.INVALID_QUERY -> HttpStatus.BAD_REQUEST;
+            case MarketDataErrorCode.RATE_LIMITED -> HttpStatus.TOO_MANY_REQUESTS;
             default -> {
                 log.warn("未识别的行情错误码 {}，按 502 处理: {}", e.getCode(), e.getMessage());
                 yield HttpStatus.BAD_GATEWAY;
@@ -30,9 +36,9 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(com.portfolio.invest.domain.user.UserException.class)
     public ResponseEntity<ApiError> user(com.portfolio.invest.domain.user.UserException e) {
         HttpStatus status = switch (e.getCode()) {
-            case "USERNAME_TAKEN", "INVALID_USERNAME", "WEAK_PASSWORD" -> HttpStatus.BAD_REQUEST;
-            case "USER_NOT_FOUND" -> HttpStatus.NOT_FOUND;
-            case "FORBIDDEN" -> HttpStatus.FORBIDDEN;
+            case UserErrorCode.USERNAME_TAKEN, UserErrorCode.INVALID_USERNAME, UserErrorCode.WEAK_PASSWORD -> HttpStatus.BAD_REQUEST;
+            case UserErrorCode.USER_NOT_FOUND -> HttpStatus.NOT_FOUND;
+            case UserErrorCode.FORBIDDEN -> HttpStatus.FORBIDDEN;
             default -> HttpStatus.BAD_REQUEST;
         };
         return ResponseEntity.status(status).body(new ApiError(e.getCode(), e.getMessage()));
@@ -41,11 +47,22 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(com.portfolio.invest.domain.conversation.ConversationException.class)
     public ResponseEntity<ApiError> conversation(com.portfolio.invest.domain.conversation.ConversationException e) {
         HttpStatus status = switch (e.getCode()) {
-            case "NOT_FOUND" -> HttpStatus.NOT_FOUND;
-            case "INVALID_ID", "INVALID_MESSAGE" -> HttpStatus.BAD_REQUEST;
+            case ConversationErrorCode.NOT_FOUND -> HttpStatus.NOT_FOUND;
+            case ConversationErrorCode.INVALID_ID, ConversationErrorCode.INVALID_MESSAGE -> HttpStatus.BAD_REQUEST;
             default -> HttpStatus.BAD_REQUEST;
         };
         return ResponseEntity.status(status).body(new ApiError(e.getCode(), e.getMessage()));
+    }
+
+    /** Bean Validation 结构性校验失败（@Valid wire DTO）→ 400，错误体保持 ApiError。 */
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<ApiError> validation(MethodArgumentNotValidException e) {
+        String message = e.getBindingResult().getFieldErrors().stream()
+                .map(FieldError::getDefaultMessage)
+                .filter(Objects::nonNull)
+                .findFirst()
+                .orElse("请求参数不合法");
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new ApiError("INVALID_REQUEST", message));
     }
 
     /** 数据库约束兜底：唯一键/长度等约束违例映射 400，避免冒泡成 500。 */

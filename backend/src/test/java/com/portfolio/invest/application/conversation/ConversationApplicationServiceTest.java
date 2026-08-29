@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import com.portfolio.invest.domain.conversation.ConversationErrorCode;
 
 class ConversationApplicationServiceTest {
 
@@ -122,7 +123,7 @@ class ConversationApplicationServiceTest {
         assertThatThrownBy(() -> service.saveMessages(1L, "t-1", List.of(
                 new ChatMessageWire("m-1", "system", "hi", 1700000000000L))))
                 .isInstanceOf(ConversationException.class)
-                .satisfies(e -> assertThat(((ConversationException) e).getCode()).isEqualTo("INVALID_MESSAGE"));
+                .satisfies(e -> assertThat(((ConversationException) e).getCode()).isEqualTo(ConversationErrorCode.INVALID_MESSAGE));
         verify(repo, never()).replaceMessages(anyString(), any());
     }
 
@@ -158,7 +159,7 @@ class ConversationApplicationServiceTest {
                 .toList();
         assertThatThrownBy(() -> service.saveMessages(1L, "t-1", wires))
                 .isInstanceOf(ConversationException.class)
-                .satisfies(e -> assertThat(((ConversationException) e).getCode()).isEqualTo("INVALID_MESSAGE"));
+                .satisfies(e -> assertThat(((ConversationException) e).getCode()).isEqualTo(ConversationErrorCode.INVALID_MESSAGE));
         verify(repo, never()).replaceMessages(anyString(), any());
     }
 
