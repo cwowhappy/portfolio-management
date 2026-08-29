@@ -22,8 +22,9 @@ frontend/playwright-report/
 *.iml
 .DS_Store
 
-# Claude Code（本地设置不入库）
-.claude/settings.local.json
+# Claude Code / agent 本地配置（不入库）
+.agents/
+.claude/
 
 # Env / secrets
 .env
