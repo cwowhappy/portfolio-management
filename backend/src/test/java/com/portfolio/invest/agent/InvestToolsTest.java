@@ -63,8 +63,8 @@ class InvestToolsTest {
     }
 
     @Test
-    void getKline参数缺省时回退day与60() {
-        when(market.kline("600519", "day", 60)).thenReturn(List.of());
+    void getKline参数缺省时回退day与120() {
+        when(market.kline("600519", "day", 120)).thenReturn(List.of());
         tools.getKline("600519", null, null);
         when(market.kline("600519", "week", 120)).thenReturn(List.of());
         String json = tools.getKline("600519", "week", 120);

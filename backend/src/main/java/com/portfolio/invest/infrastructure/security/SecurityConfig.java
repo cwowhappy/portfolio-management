@@ -1,5 +1,6 @@
 package com.portfolio.invest.infrastructure.security;
 
+import com.portfolio.invest.config.InvestProperties;
 import com.portfolio.invest.domain.user.UserRepository;
 import javax.sql.DataSource;
 import org.springframework.context.annotation.Bean;
@@ -25,7 +26,6 @@ import org.springframework.security.web.authentication.rememberme.PersistentToke
 public class SecurityConfig {
 
     public static final String REMEMBER_ME_COOKIE = "invest-remember-me";
-    private static final String REMEMBER_ME_KEY = "invest-agent-remember-me";
     private static final int REMEMBER_ME_SECONDS = 30 * 24 * 3600;
 
     @Bean
@@ -48,7 +48,7 @@ public class SecurityConfig {
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
             .authorizeHttpRequests(auth -> auth
                     .requestMatchers("/api/auth/register", "/api/auth/login").permitAll()
-                    .requestMatchers("/api/market/**", "/api/agent/health", "/actuator/**").permitAll()
+                    .requestMatchers("/api/market/**", "/api/agent/health", "/api/agent/status", "/actuator/**").permitAll()
                     .requestMatchers("/api/valuation/**").permitAll()
                     .requestMatchers("/api/admin/**").hasRole("ADMIN")
                     .anyRequest().authenticated())
@@ -65,9 +65,10 @@ public class SecurityConfig {
 
     @Bean
     public RememberMeServices rememberMeServices(UserDetailsService userDetailsService,
-                                                 PersistentTokenRepository tokenRepository) {
+                                                 PersistentTokenRepository tokenRepository,
+                                                 InvestProperties props) {
         PersistentTokenBasedRememberMeServices svc = new PersistentTokenBasedRememberMeServices(
-                REMEMBER_ME_KEY, userDetailsService, tokenRepository);
+                props.getSecurity().getRememberMeKey(), userDetailsService, tokenRepository);
         svc.setCookieName(REMEMBER_ME_COOKIE);
         svc.setTokenValiditySeconds(REMEMBER_ME_SECONDS);
         // Spring Security 7 已移除 setCookiePath，改用 Cookie 自定义器

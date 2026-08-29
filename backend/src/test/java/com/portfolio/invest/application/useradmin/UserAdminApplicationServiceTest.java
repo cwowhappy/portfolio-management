@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.portfolio.invest.domain.user.RememberMeTokenStore;
 import com.portfolio.invest.domain.user.User;
 import com.portfolio.invest.domain.user.UserException;
 import com.portfolio.invest.domain.user.UserRepository;
@@ -19,11 +20,12 @@ class UserAdminApplicationServiceTest {
 
     private final UserRepository repo = mock(UserRepository.class);
     private final PasswordEncoder encoder = mock(PasswordEncoder.class);
+    private final RememberMeTokenStore tokenStore = mock(RememberMeTokenStore.class);
     private UserAdminApplicationService service;
 
     @BeforeEach
     void setUp() {
-        service = new UserAdminApplicationService(repo, encoder);
+        service = new UserAdminApplicationService(repo, encoder, tokenStore);
         when(repo.save(org.mockito.ArgumentMatchers.any())).thenAnswer(inv -> inv.getArgument(0));
     }
 
@@ -57,6 +59,14 @@ class UserAdminApplicationServiceTest {
         when(repo.findById(1L)).thenReturn(Optional.of(pendingUser(1L).approve()));
         when(encoder.encode("xyz12345")).thenReturn("$2a$new");
         assertThat(service.resetPassword(1L, "xyz12345").enabled()).isTrue();
+    }
+
+    @Test
+    void 重置密码后吊销该用户rememberMe令牌() {
+        when(repo.findById(1L)).thenReturn(Optional.of(pendingUser(1L).approve()));
+        when(encoder.encode("xyz12345")).thenReturn("$2a$new");
+        service.resetPassword(1L, "xyz12345");
+        org.mockito.Mockito.verify(tokenStore).removeUserTokens("u1");
     }
 
     @Test

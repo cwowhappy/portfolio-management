@@ -117,6 +117,52 @@ class ConversationApplicationServiceTest {
     }
 
     @Test
+    void 保存消息校验非法role() {
+        when(repo.findByIdAndUserId("t-1", 1L)).thenReturn(Optional.of(owned("t-1")));
+        assertThatThrownBy(() -> service.saveMessages(1L, "t-1", List.of(
+                new ChatMessageWire("m-1", "system", "hi", 1700000000000L))))
+                .isInstanceOf(ConversationException.class)
+                .satisfies(e -> assertThat(((ConversationException) e).getCode()).isEqualTo("INVALID_MESSAGE"));
+        verify(repo, never()).replaceMessages(anyString(), any());
+    }
+
+    @Test
+    void 保存消息校验id为空或超长() {
+        when(repo.findByIdAndUserId("t-1", 1L)).thenReturn(Optional.of(owned("t-1")));
+        assertThatThrownBy(() -> service.saveMessages(1L, "t-1", List.of(
+                new ChatMessageWire(null, "user", "hi", 1700000000000L))))
+                .isInstanceOf(ConversationException.class).hasMessageContaining("id");
+        assertThatThrownBy(() -> service.saveMessages(1L, "t-1", List.of(
+                new ChatMessageWire("m".repeat(65), "user", "hi", 1700000000000L))))
+                .isInstanceOf(ConversationException.class).hasMessageContaining("id");
+        verify(repo, never()).replaceMessages(anyString(), any());
+    }
+
+    @Test
+    void 保存消息校验content为空或超长() {
+        when(repo.findByIdAndUserId("t-1", 1L)).thenReturn(Optional.of(owned("t-1")));
+        assertThatThrownBy(() -> service.saveMessages(1L, "t-1", List.of(
+                new ChatMessageWire("m-1", "user", "", 1700000000000L))))
+                .isInstanceOf(ConversationException.class).hasMessageContaining("不能为空");
+        assertThatThrownBy(() -> service.saveMessages(1L, "t-1", List.of(
+                new ChatMessageWire("m-1", "user", "x".repeat(100 * 1024 + 1), 1700000000000L))))
+                .isInstanceOf(ConversationException.class).hasMessageContaining("超长");
+        verify(repo, never()).replaceMessages(anyString(), any());
+    }
+
+    @Test
+    void 保存消息条数超过500被拒() {
+        when(repo.findByIdAndUserId("t-1", 1L)).thenReturn(Optional.of(owned("t-1")));
+        var wires = java.util.stream.IntStream.range(0, 501)
+                .mapToObj(i -> new ChatMessageWire("m-" + i, "user", "hi", 1700000000000L))
+                .toList();
+        assertThatThrownBy(() -> service.saveMessages(1L, "t-1", wires))
+                .isInstanceOf(ConversationException.class)
+                .satisfies(e -> assertThat(((ConversationException) e).getCode()).isEqualTo("INVALID_MESSAGE"));
+        verify(repo, never()).replaceMessages(anyString(), any());
+    }
+
+    @Test
     void 删除非本人会话抛NOT_FOUND() {
         when(repo.findByIdAndUserId("t-1", 2L)).thenReturn(Optional.empty());
         assertThatThrownBy(() -> service.delete(2L, "t-1"))

@@ -31,6 +31,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> user(com.portfolio.invest.domain.user.UserException e) {
         HttpStatus status = switch (e.getCode()) {
             case "USERNAME_TAKEN", "INVALID_USERNAME", "WEAK_PASSWORD" -> HttpStatus.BAD_REQUEST;
+            case "USER_NOT_FOUND" -> HttpStatus.NOT_FOUND;
             case "FORBIDDEN" -> HttpStatus.FORBIDDEN;
             default -> HttpStatus.BAD_REQUEST;
         };
@@ -41,10 +42,18 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> conversation(com.portfolio.invest.domain.conversation.ConversationException e) {
         HttpStatus status = switch (e.getCode()) {
             case "NOT_FOUND" -> HttpStatus.NOT_FOUND;
-            case "INVALID_ID" -> HttpStatus.BAD_REQUEST;
+            case "INVALID_ID", "INVALID_MESSAGE" -> HttpStatus.BAD_REQUEST;
             default -> HttpStatus.BAD_REQUEST;
         };
         return ResponseEntity.status(status).body(new ApiError(e.getCode(), e.getMessage()));
+    }
+
+    /** 数据库约束兜底：唯一键/长度等约束违例映射 400，避免冒泡成 500。 */
+    @ExceptionHandler(org.springframework.dao.DataIntegrityViolationException.class)
+    public ResponseEntity<ApiError> dataIntegrity(org.springframework.dao.DataIntegrityViolationException e) {
+        log.warn("数据约束违例: {}", e.getMessage());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(new ApiError("INVALID_DATA", "数据不符合存储约束"));
     }
 
     /** Agent 未注册（未配置 DEEPSEEK_API_KEY 时）→ 友好提示。 */

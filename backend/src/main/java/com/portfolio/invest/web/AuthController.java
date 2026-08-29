@@ -64,9 +64,12 @@ public class AuthController {
                 return error(HttpStatus.FORBIDDEN, "ACCOUNT_DISABLED", "账号已被停用");
             }
             SecurityContextHolder.getContext().setAuthentication(authn);
+            var session = request.getSession(true);
+            // 会话固定防护：登录成功立即轮换 session id，再写入认证上下文
+            request.changeSessionId();
             // Spring Security 7 的 SecurityContextHolderFilter 只加载 DeferredContext、不再自动 saveContext，
             // 手动登录必须显式把 SecurityContext 写入会话，否则下次请求（/me）加载不到认证态。
-            request.getSession(true).setAttribute(
+            session.setAttribute(
                     HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY,
                     SecurityContextHolder.getContext());
             if (req.rememberMe()) {

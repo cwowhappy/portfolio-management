@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class ConversationApplicationService {
 
     private static final int ID_MAX_LENGTH = 64; // 与 V2 conversation.id VARCHAR(64) 对齐
+    private static final int MAX_MESSAGES_PER_REQUEST = 500; // 单次保存条数上限，防存储滥用
 
     private final ConversationRepository repository;
 
@@ -47,12 +48,16 @@ public class ConversationApplicationService {
     @Transactional
     public void saveMessages(Long userId, String conversationId, List<ChatMessageWire> wires) {
         Conversation conv = requireOwned(userId, conversationId);
+        if (wires.size() > MAX_MESSAGES_PER_REQUEST) {
+            throw new ConversationException("INVALID_MESSAGE", "单次最多保存500条消息");
+        }
         String firstUser = wires.stream()
                 .filter(w -> "user".equals(w.role()))
                 .findFirst().map(ChatMessageWire::content).orElse(null);
+        // toDomain 内做逐条边界校验（role 白名单/id/content 长度），先校验再落库
+        var messages = wires.stream().map(ChatMessageWire::toDomain).toList();
         repository.save(conv.renameIfDefault(firstUser).touch(Instant.now()));
-        repository.replaceMessages(conversationId,
-                wires.stream().map(ChatMessageWire::toDomain).toList());
+        repository.replaceMessages(conversationId, messages);
     }
 
     @Transactional

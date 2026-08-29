@@ -13,6 +13,8 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class ValuationApplicationServiceTest {
@@ -176,5 +178,46 @@ class ValuationApplicationServiceTest {
         assertThat(view.snapshots()).isSameAs(snapshots);
         assertThat(view.treasuryYields()).isSameAs(yields);
         assertThat(view.indexValuations()).isSameAs(indices);
+    }
+
+    @Test
+    void 同交易日内多次overview命中缓存仅查询一次快照表() {
+        when(repo.findLatestSnapshot()).thenReturn(null);
+        when(repo.findAllSnapshots()).thenReturn(List.of());
+        when(repo.findAllTreasuryYields()).thenReturn(List.of());
+
+        service.overview();
+        service.overview();
+        service.overview();
+
+        verify(repo, times(1)).findAllSnapshots();
+        verify(repo, times(1)).findLatestSnapshot();
+    }
+
+    @Test
+    void 同交易日内多次history命中缓存仅查询一次() {
+        when(repo.findAllSnapshots()).thenReturn(List.of());
+        when(repo.findAllTreasuryYields()).thenReturn(List.of());
+        when(repo.findIndexValuations("000300")).thenReturn(List.of());
+
+        service.history();
+        service.history();
+
+        verify(repo, times(1)).findAllSnapshots();
+    }
+
+    @Test
+    void 缓存过期后重新查询() {
+        java.util.concurrent.atomic.AtomicLong now = new java.util.concurrent.atomic.AtomicLong(0);
+        ValuationApplicationService clocked = new ValuationApplicationService(repo, now::get);
+        when(repo.findLatestSnapshot()).thenReturn(null);
+        when(repo.findAllSnapshots()).thenReturn(List.of());
+        when(repo.findAllTreasuryYields()).thenReturn(List.of());
+
+        clocked.overview();
+        now.addAndGet(5 * 60 * 1000 + 1); // 超过 5 分钟 TTL
+        clocked.overview();
+
+        verify(repo, times(2)).findAllSnapshots();
     }
 }
