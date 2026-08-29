@@ -1,6 +1,7 @@
 package com.portfolio.invest.application.portfolio;
 
 import com.portfolio.invest.application.market.MarketDataService;
+import com.portfolio.invest.domain.market.Quote;
 import com.portfolio.invest.domain.portfolio.GroupType;
 import com.portfolio.invest.domain.portfolio.HoldingGroup;
 import com.portfolio.invest.domain.portfolio.Portfolio;
@@ -121,5 +122,22 @@ class PortfolioApplicationServiceTest {
 
         assertThat(view.quantity()).isEqualByComparingTo("60");
         assertThat(view.realizedPnl()).isEqualByComparingTo("800");
+    }
+
+    @Test
+    void 总览计算总资产与总盈亏() {
+        Position pos = Position.create(10L, 1L, "600519", "贵州茅台", Instant.now())
+                .applyBuy(new BigDecimal("100"), new BigDecimal("100"), new BigDecimal("0"));
+        when(repo.findPositionsByPortfolioId(10L)).thenReturn(List.of(pos));
+        when(repo.findGroupsByPortfolioId(10L)).thenReturn(List.of(
+                HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now())));
+        when(repo.findCashTransactionsByGroupId(1L)).thenReturn(List.of());
+        when(market.quote("600519")).thenReturn(new Quote(
+                "600519", "贵州茅台", 120, 0, 0, 0, 0, 0, 100, 0, 0, null, null, ""));
+
+        var view = service.overview(1L);
+
+        assertThat(view.totalAssets()).isEqualByComparingTo("12000"); // 120*100 + 现金 0
+        assertThat(view.totalPnl()).isEqualByComparingTo("2000");     // 浮动 (120-100)*100 + 已实现 0
     }
 }

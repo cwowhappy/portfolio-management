@@ -1,6 +1,7 @@
 package com.portfolio.invest.application.portfolio;
 
 import com.portfolio.invest.application.market.MarketDataService;
+import com.portfolio.invest.domain.market.Quote;
 import com.portfolio.invest.domain.portfolio.CashTransaction;
 import com.portfolio.invest.domain.portfolio.CashTransactionType;
 import com.portfolio.invest.domain.portfolio.Dividend;
@@ -16,8 +17,13 @@ import com.portfolio.invest.domain.portfolio.Trade;
 import com.portfolio.invest.domain.portfolio.TradeType;
 import com.portfolio.invest.domain.valuation.ValuationRepository;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -176,12 +182,138 @@ public class PortfolioApplicationService {
         return repository.findDividendsByPositionId(positionId).stream().map(DividendView::from).toList();
     }
 
+    public List<PositionView> positions(Long userId, Long groupId) {
+        Portfolio p = getOrCreatePortfolio(userId);
+        List<Position> list = groupId == null
+                ? repository.findPositionsByPortfolioId(p.id())
+                : repository.findPositionsByGroupId(groupId);
+        return list.stream().map(this::positionView).toList();
+    }
+
+    public PortfolioOverviewView overview(Long userId) {
+        Portfolio p = getOrCreatePortfolio(userId);
+        var positions = repository.findPositionsByPortfolioId(p.id());
+        var groups = repository.findGroupsByPortfolioId(p.id());
+        BigDecimal totalAssets = BigDecimal.ZERO, totalCost = BigDecimal.ZERO,
+                totalPnl = BigDecimal.ZERO, todayPnl = BigDecimal.ZERO,
+                cashTotal = BigDecimal.ZERO;
+
+        for (var pos : positions) {
+            var q = quoteQuietly(pos.stockCode());
+            totalCost = totalCost.add(pos.totalBuyCost());
+            if (q != null) {
+                var price = BigDecimal.valueOf(q.price());
+                totalAssets = totalAssets.add(price.multiply(pos.quantity()));
+                totalPnl = totalPnl.add(price.multiply(pos.quantity()).subtract(pos.costBasis()).add(pos.realizedPnl()));
+                todayPnl = todayPnl.add(price.subtract(BigDecimal.valueOf(q.prevClose())).multiply(pos.quantity()));
+            } else {
+                totalPnl = totalPnl.add(pos.realizedPnl());
+            }
+        }
+        for (var g : groups) {
+            if (g.type() == GroupType.ACCOUNT) {
+                BigDecimal c = cashBalance(g.id(), repository.findPositionsByGroupId(g.id()),
+                        repository.findCashTransactionsByGroupId(g.id()));
+                cashTotal = cashTotal.add(c);
+                totalAssets = totalAssets.add(c);
+            }
+        }
+        return new PortfolioOverviewView(totalAssets, totalCost, totalPnl, todayPnl, cashTotal,
+                positions.size(), groups.size());
+    }
+
+    public AssetAllocationView allocation(Long userId) {
+        Portfolio p = getOrCreatePortfolio(userId);
+        var positions = repository.findPositionsByPortfolioId(p.id());
+        BigDecimal equity = BigDecimal.ZERO;
+        for (var pos : positions) {
+            var q = quoteQuietly(pos.stockCode());
+            if (q != null) {
+                equity = equity.add(BigDecimal.valueOf(q.price()).multiply(pos.quantity()));
+            }
+        }
+        BigDecimal cash = BigDecimal.ZERO;
+        for (var g : repository.findGroupsByPortfolioId(p.id())) {
+            if (g.type() == GroupType.ACCOUNT) {
+                cash = cash.add(cashBalance(g.id(), repository.findPositionsByGroupId(g.id()),
+                        repository.findCashTransactionsByGroupId(g.id())));
+            }
+        }
+        BigDecimal total = equity.add(cash);
+        return new AssetAllocationView(List.of(
+                new AssetAllocationView.Slice("权益", equity, ratio(equity, total)),
+                new AssetAllocationView.Slice("现金", cash, ratio(cash, total))));
+    }
+
+    public IndustryDistributionView industryDistribution(Long userId) {
+        Portfolio p = getOrCreatePortfolio(userId);
+        var positions = repository.findPositionsByPortfolioId(p.id());
+        var mapping = valuationRepository.findAllIndustryMappings().stream()
+                .collect(Collectors.toMap(
+                        m -> m.stockCode(), m -> m.industryName(), (a, b) -> a));
+
+        Map<String, BigDecimal> byIndustry = new LinkedHashMap<>();
+        BigDecimal total = BigDecimal.ZERO;
+        for (var pos : positions) {
+            String industry = mapping.get(pos.stockCode());
+            if (industry == null) {
+                continue; // ETF 或无映射的标的排除
+            }
+            var q = quoteQuietly(pos.stockCode());
+            if (q == null) {
+                continue;
+            }
+            var mv = BigDecimal.valueOf(q.price()).multiply(pos.quantity());
+            byIndustry.merge(industry, mv, BigDecimal::add);
+            total = total.add(mv);
+        }
+        final BigDecimal totalMarketValue = total;
+        var slices = byIndustry.entrySet().stream()
+                .map(e -> new IndustryDistributionView.Slice(e.getKey(), e.getValue(), ratio(e.getValue(), totalMarketValue)))
+                .sorted(Comparator.comparing(IndustryDistributionView.Slice::marketValue).reversed())
+                .toList();
+        return new IndustryDistributionView(slices);
+    }
+
+    public ConcentrationView concentration(Long userId) {
+        Portfolio p = getOrCreatePortfolio(userId);
+        var positions = repository.findPositionsByPortfolioId(p.id()).stream()
+                .map(this::positionView)
+                .filter(v -> v.marketValue() != null)
+                .sorted(Comparator.comparing(PositionView::marketValue).reversed())
+                .toList();
+        BigDecimal total = positions.stream().map(PositionView::marketValue)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        var top5 = positions.stream().limit(5)
+                .map(v -> new ConcentrationView.Holding(v.stockCode(), v.stockName(),
+                        v.marketValue(), ratio(v.marketValue(), total)))
+                .toList();
+        var top5Ratio = top5.stream().map(ConcentrationView.Holding::ratio)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        return new ConcentrationView(top5, top5Ratio);
+    }
+
     private Position requirePosition(Long portfolioId, Long positionId) {
         return repository.findPositionByIdAndPortfolioId(positionId, portfolioId)
                 .orElseThrow(() -> new PortfolioException(PortfolioErrorCode.NOT_FOUND, "持仓不存在"));
     }
 
     private PositionView positionView(Position pos) {
-        return PositionView.from(pos, null);
+        return PositionView.from(pos, quoteQuietly(pos.stockCode()));
+    }
+
+    private Quote quoteQuietly(String code) {
+        try {
+            return marketDataService.quote(code);
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    private static BigDecimal ratio(BigDecimal part, BigDecimal total) {
+        if (total.signum() == 0) {
+            return BigDecimal.ZERO;
+        }
+        return part.divide(total, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100));
     }
 }
