@@ -10,6 +10,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 class PercentileTest {
 
     @Test
+    void 当前值或历史为null时返回null() {
+        assertThat(Percentile.of(null, List.of(BigDecimal.ONE))).isNull();
+        assertThat(Percentile.of(BigDecimal.ONE, null)).isNull();
+    }
+
+    @Test
     void 空历史返回null表示数据积累中() {
         assertThat(Percentile.of(BigDecimal.valueOf(18), List.of())).isNull();
     }

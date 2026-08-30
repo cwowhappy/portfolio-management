@@ -6,14 +6,18 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.portfolio.invest.domain.user.UserRepository;
-import com.portfolio.invest.infrastructure.persistence.IntegrationTestBase;
+import com.portfolio.invest.support.PostgresTestSupport;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MockMvc;
 
-class AuthControllerIntegrationTest extends IntegrationTestBase {
+@SpringBootTest
+@AutoConfigureMockMvc
+class AuthControllerIntegrationTest extends PostgresTestSupport {
 
     @Autowired MockMvc mockMvc;
     @Autowired UserRepository userRepository;

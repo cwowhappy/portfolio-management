@@ -1,5 +1,6 @@
 plugins {
     id 'java'
+    id 'java-test-fixtures'
     id 'jacoco'
     id 'org.springframework.boot' version '4.0.3'
     id 'io.spring.dependency-management' version '1.1.7'
@@ -9,6 +10,9 @@ jacoco {
     // 0.8.13 完整支持 Java 21 字节码（record / switch 表达式）
     toolVersion = '0.8.13'
 }
+
+// Boot BOM 不管理 Cucumber，版本单独声明（与 JUnit 5 / junit-platform 兼容的 7.x 稳定版）
+def cucumberVersion = '7.34.7'
 
 group = 'com.portfolio'
 version = '0.1.0'
@@ -31,7 +35,8 @@ repositories {
 }
 
 dependencies {
-    implementation('org.springframework.boot:spring-boot-starter-web') {
+    // Boot 4 官方新名（原 spring-boot-starter-web）
+    implementation('org.springframework.boot:spring-boot-starter-webmvc') {
         // 移除默认的 Jackson 3，改用 Jackson 2（AgentScope AG-UI 模型基于 Jackson 2 注解）
         exclude group: 'org.springframework.boot', module: 'spring-boot-starter-jackson'
     }
@@ -53,32 +58,89 @@ dependencies {
     // AG-UI 协议端点
     implementation 'io.agentscope:agentscope-agui-spring-boot-starter:2.0.1'
 
-    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    // 无需显式声明 spring-boot-starter-test：各测试 starter 已传递引入
     // Spring Boot 4 中 MockMvc 测试自动配置（AutoConfigureMockMvc）迁至 spring-boot-starter-webmvc-test
-    testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
-    testImplementation 'org.springframework.security:spring-security-test'
-    // Testcontainers 2.x 坐标已更名为 testcontainers-*（Spring Boot 4.0.3 经 BOM 管理）
-    testImplementation 'org.testcontainers:testcontainers-postgresql'
-    testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
+    testImplementation('org.springframework.boot:spring-boot-starter-webmvc-test') {
+        // 传递引入 Jackson 3（tools.jackson）会抢占 /agui/run 的 Jackson 2 注解模型反序列化；
+        // 项目消息转换统一 Jackson 2（spring-boot-jackson2），测试类路径与生产 runtimeClasspath 对齐
+        exclude group: 'org.springframework.boot', module: 'spring-boot-starter-jackson'
+    }
+    // Boot 4 下 @WebMvcTest 挂安全过滤器链的前提（内含 spring-security-test）
+    testImplementation 'org.springframework.boot:spring-boot-starter-security-test'
     // 架构守护：分包规范（依赖方向/无环/落位规则）由 ArchUnit 测试强制
     testImplementation 'com.tngtech.archunit:archunit-junit5:1.5.0'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+    // testFixtures：共享测试基座（PostgresTestSupport，JVM 单例 Testcontainers PG）
+    // PostgreSQLContainer 出现在基座公开方法签名上，用 testFixturesApi 暴露给消费方编译类路径
+    testFixturesApi 'org.testcontainers:testcontainers-postgresql'
+    testFixturesImplementation 'org.springframework:spring-test'
+}
+
+testing {
+    suites {
+        // 集成测试：Testcontainers 真实 PG（src/integrationTest/java）
+        integrationTest(JvmTestSuite) {
+            dependencies {
+                // @DataJpaTest 切片（持久化适配器）与 MockMvc 集成测试
+                implementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
+                // 同 test 源集：排除传递引入的 Jackson 3，测试类路径与生产对齐（统一 Jackson 2）
+                implementation('org.springframework.boot:spring-boot-starter-webmvc-test') {
+                    exclude group: 'org.springframework.boot', module: 'spring-boot-starter-jackson'
+                }
+                // @ServiceConnection：切片直接引用 testFixtures 的单例容器
+                implementation 'org.springframework.boot:spring-boot-testcontainers'
+            }
+        }
+        // BDD：Cucumber（src/bdd/java + src/bdd/resources，本阶段仅骨架）
+        bdd(JvmTestSuite) {
+            dependencies {
+                // Boot BOM 不管 Cucumber，用 cucumber-bom 导入管理版本
+                implementation platform("io.cucumber:cucumber-bom:$cucumberVersion")
+                implementation 'io.cucumber:cucumber-java'
+                implementation 'io.cucumber:cucumber-spring'
+                implementation 'io.cucumber:cucumber-junit-platform-engine'
+                implementation 'org.junit.platform:junit-platform-suite'
+            }
+        }
+    }
+}
+
+// suite 的 dependencies DSL 不支持 capability 闭包写法，testFixtures 自依赖放顶层声明
+dependencies {
+    def testFixturesCapability = {
+        capabilities { requireCapability('com.portfolio:invest-agent-backend-test-fixtures') }
+    }
+    integrationTestImplementation(project, testFixturesCapability)
+    bddImplementation(project, testFixturesCapability)
+}
+
+configurations {
+    // 复用 test 的 Mockito/AssertJ/ArchUnit 等依赖
+    integrationTestImplementation.extendsFrom testImplementation
+    integrationTestRuntimeOnly.extendsFrom testRuntimeOnly
+    bddImplementation.extendsFrom testImplementation
+    bddRuntimeOnly.extendsFrom testRuntimeOnly
+}
+
+tasks.withType(Test).configureEach {
+    useJUnitPlatform()
+    // Colima 等本地 Docker 运行时的 socket 无法挂载进 Ryuk 资源回收容器，
+    // 禁用 Ryuk（容器由静态基座 + shutdown hook 负责启停），保证 Testcontainers 全环境可用
+    environment 'TESTCONTAINERS_RYUK_DISABLED', 'true'
 }
 
 tasks.named('test') {
-    useJUnitPlatform()
-    // Colima 等本地 Docker 运行时的 socket 无法挂载进 Ryuk 资源回收容器，
-    // 禁用 Ryuk（@Container 容器由 JUnit 扩展负责启停），保证 Testcontainers 全环境可用
-    environment 'TESTCONTAINERS_RYUK_DISABLED', 'true'
-    // 每次跑测试即生成覆盖率报告；全量门槛（指令/分支 ≥ 80%）由 `check` 任务触发，
-    // 聚焦测试（--tests X）只生成报告、不触发门槛
+    // 每次跑测试即生成 test 单任务覆盖率报告；全量聚合报告与门槛（指令/分支 ≥ 80%）
+    // 由 `check` 任务触发，聚焦测试（--tests X）只生成报告、不触发门槛
     finalizedBy jacocoTestReport
 }
 
 tasks.named('check') {
-    dependsOn jacocoTestCoverageVerification
+    dependsOn jacocoTestCoverageVerification, jacocoAggregatedReport
 }
 
+// test 单任务报告：供聚焦测试（--tests X）快速查看，不触发其他 suite
 jacocoTestReport {
     dependsOn test
     reports {
@@ -88,8 +150,28 @@ jacocoTestReport {
     }
 }
 
+// 聚合执行数据：三个测试任务的 exec 文件（bdd 无测试时 exec 不存在，FileCollection 自动忽略缺失文件）
+def mergedJacocoExec = files(
+        layout.buildDirectory.file('jacoco/test.exec'),
+        layout.buildDirectory.file('jacoco/integrationTest.exec'),
+        layout.buildDirectory.file('jacoco/bdd.exec'))
+
+// 聚合报告：test + integrationTest + bdd 三个任务的 exec 合并统计（挂 check）
+tasks.register('jacocoAggregatedReport', JacocoReport) {
+    dependsOn tasks.named('test'), tasks.named('integrationTest'), tasks.named('bdd')
+    executionData mergedJacocoExec
+    sourceSets sourceSets.main
+    reports {
+        xml.required = true
+        html.required = true
+        csv.required = false
+    }
+}
+
+// 聚合门槛：三任务 exec 合并后仍只有一道 ≥80%（INSTRUCTION+BRANCH），只由 check 触发
 jacocoTestCoverageVerification {
-    dependsOn test
+    dependsOn tasks.named('test'), tasks.named('integrationTest'), tasks.named('bdd')
+    executionData mergedJacocoExec
     violationRules {
         rule {
             element = 'BUNDLE'

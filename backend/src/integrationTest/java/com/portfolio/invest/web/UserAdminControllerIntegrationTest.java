@@ -9,17 +9,21 @@ import com.portfolio.invest.domain.user.User;
 import com.portfolio.invest.domain.user.UserRepository;
 import com.portfolio.invest.domain.user.UserRole;
 import com.portfolio.invest.domain.user.UserStatus;
-import com.portfolio.invest.infrastructure.persistence.IntegrationTestBase;
+import com.portfolio.invest.support.PostgresTestSupport;
 import java.time.Instant;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
-class UserAdminControllerIntegrationTest extends IntegrationTestBase {
+@SpringBootTest
+@AutoConfigureMockMvc
+class UserAdminControllerIntegrationTest extends PostgresTestSupport {
 
     @Autowired MockMvc mockMvc;
     @Autowired UserRepository userRepository;

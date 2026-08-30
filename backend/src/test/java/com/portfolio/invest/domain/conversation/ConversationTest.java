@@ -24,6 +24,20 @@ class ConversationTest {
     }
 
     @Test
+    void 首条消息为null或空白时保持默认标题() {
+        Conversation c = Conversation.create("t-1", 1L, Instant.now());
+        assertThat(c.renameIfDefault(null).title()).isEqualTo("新会话");
+        assertThat(c.renameIfDefault("   ").title()).isEqualTo("新会话");
+    }
+
+    @Test
+    void 首条消息超长时标题截断为24字() {
+        Conversation c = Conversation.create("t-1", 1L, Instant.now());
+        String title = c.renameIfDefault("一二三四五六七八九十一二三四五六七八九十一二三四五").title();
+        assertThat(title).hasSize(24);
+    }
+
+    @Test
     void touch更新updatedAt() {
         Instant before = Instant.parse("2026-08-21T00:00:00Z");
         Conversation c = Conversation.create("t-1", 1L, before);

@@ -11,11 +11,18 @@ import com.portfolio.invest.domain.portfolio.PortfolioRepository;
 import com.portfolio.invest.domain.portfolio.Position;
 import com.portfolio.invest.domain.portfolio.Trade;
 import com.portfolio.invest.domain.portfolio.TradeType;
+import com.portfolio.invest.support.PostgresTestSupport;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
+import org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration;
+import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.transaction.annotation.Transactional;
+import org.testcontainers.containers.PostgreSQLContainer;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -24,9 +31,18 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-// 每个用例事务回滚：@BeforeEach 植入的固定 app_user 行（42/43/44）随事务回滚，不污染其他用例。
-@Transactional
-class PortfolioRepositoryImplTest extends IntegrationTestBase {
+// @DataJpaTest 切片 + 真实 PG：@ServiceConnection 复用 testFixtures 的 JVM 单例容器，整个测试进程只起一个 Postgres。
+// Boot 4 的 @DataJpaTest 不含 Flyway 自动配置（schema 由 Flyway 管），需 @ImportAutoConfiguration 显式引入；
+// RepositoryImpl 适配器不在切片扫描范围内，用 @Import 显式装配。
+// @DataJpaTest 默认每个用例事务回滚：@BeforeEach 植入的固定 app_user 行（42/43/44）随事务回滚，不污染其他用例。
+@DataJpaTest
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+@ImportAutoConfiguration(FlywayAutoConfiguration.class)
+@Import(PortfolioRepositoryImpl.class)
+class PortfolioRepositoryImplTest {
+
+    @ServiceConnection
+    static PostgreSQLContainer<?> postgres = PostgresTestSupport.postgres();
 
     @Autowired
     private PortfolioRepository repository;

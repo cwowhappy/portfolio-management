@@ -7,16 +7,32 @@ import com.portfolio.invest.domain.conversation.Conversation;
 import com.portfolio.invest.domain.conversation.ConversationRepository;
 import com.portfolio.invest.domain.user.User;
 import com.portfolio.invest.domain.user.UserRepository;
+import com.portfolio.invest.support.PostgresTestSupport;
 import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
+import org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration;
+import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.context.annotation.Import;
+import org.testcontainers.containers.PostgreSQLContainer;
 
-// 每个用例事务回滚，避免 @BeforeEach 固定用户名 "conv-owner" 在用例间重复插入
-@Transactional
-class ConversationRepositoryImplTest extends IntegrationTestBase {
+// @DataJpaTest 切片 + 真实 PG：@ServiceConnection 复用 testFixtures 的 JVM 单例容器，整个测试进程只起一个 Postgres。
+// Boot 4 的 @DataJpaTest 不含 Flyway 自动配置（schema 由 Flyway 管），需 @ImportAutoConfiguration 显式引入；
+// RepositoryImpl 适配器不在切片扫描范围内，用 @Import 显式装配。
+// @DataJpaTest 默认每个用例事务回滚，避免 @BeforeEach 固定用户名 "conv-owner" 在用例间重复插入
+@DataJpaTest
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+@ImportAutoConfiguration(FlywayAutoConfiguration.class)
+@Import({ConversationRepositoryImpl.class, UserRepositoryImpl.class})
+class ConversationRepositoryImplTest {
+
+    @ServiceConnection
+    static PostgreSQLContainer<?> postgres = PostgresTestSupport.postgres();
 
     @Autowired ConversationRepository conversations;
     @Autowired UserRepository users;

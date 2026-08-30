@@ -9,8 +9,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -72,6 +74,21 @@ public class GlobalExceptionHandler {
                 .findFirst()
                 .orElse("请求参数不合法");
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new ApiError("INVALID_REQUEST", message));
+    }
+
+    /** 缺必填 query 参数 → 400（兜底 Exception 处理器会抢在 Spring 默认解析前映射成 500，需显式映射）。 */
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ApiError> missingParameter(MissingServletRequestParameterException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(new ApiError("INVALID_REQUEST", "缺少必填参数：" + e.getParameterName()));
+    }
+
+    /** 请求体非法 JSON → 400（同上，避免落入 500 兜底）。 */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiError> notReadable(HttpMessageNotReadableException e) {
+        log.warn("请求体解析失败: {}", e.getMessage());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(new ApiError("INVALID_REQUEST", "请求体格式不合法"));
     }
 
     /** 数据库约束兜底：唯一键/长度等约束违例映射 400，避免冒泡成 500。 */

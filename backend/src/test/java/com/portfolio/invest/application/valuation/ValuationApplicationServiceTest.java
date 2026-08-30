@@ -127,6 +127,60 @@ class ValuationApplicationServiceTest {
     }
 
     @Test
+    void overview有股息率但无国债时ERP与温度计为null() {
+        when(repo.findLatestSnapshot()).thenReturn(new ValuationSnapshot(
+                LocalDate.of(2026, 8, 27), new BigDecimal("19.14"), new BigDecimal("1.68"), 220, new BigDecimal("0.0410")));
+        when(repo.findAllSnapshots()).thenReturn(List.of(
+                new ValuationSnapshot(LocalDate.of(2026, 8, 27), new BigDecimal("19.14"), new BigDecimal("1.68"), 220, new BigDecimal("0.0410"))));
+        when(repo.findAllTreasuryYields()).thenReturn(List.of()); // 国债序列缺失
+        when(repo.findIndexValuations("000300")).thenReturn(List.of(
+                new IndexValuation(LocalDate.of(2026, 8, 27), "000300", "沪深300", new BigDecimal("12.8"), new BigDecimal("1.42"), new BigDecimal("2.35"))));
+
+        var view = service.overview();
+
+        assertThat(view.erp()).isNull();
+        assertThat(view.erpPercentile()).isNull();
+        // PE 分位可算但 ERP 缺失 → 温度计整体为 null
+        assertThat(view.pePercentile()).isNotNull();
+        assertThat(view.thermometer()).isNull();
+    }
+
+    @Test
+    void overview破净占比缺失时温度计为null() {
+        // 快照有 PE/PB 但 netBreakerRatio 为 null（数据部分缺失）→ 温度计不产出
+        when(repo.findLatestSnapshot()).thenReturn(new ValuationSnapshot(
+                LocalDate.of(2026, 8, 27), new BigDecimal("19.14"), new BigDecimal("1.68"), 220, null));
+        when(repo.findAllSnapshots()).thenReturn(List.of(
+                new ValuationSnapshot(LocalDate.of(2026, 8, 27), new BigDecimal("19.14"), new BigDecimal("1.68"), 220, null)));
+        when(repo.findAllTreasuryYields()).thenReturn(List.of(
+                new TreasuryYield(LocalDate.of(2026, 8, 27), new BigDecimal("2.21"))));
+        when(repo.findIndexValuations("000300")).thenReturn(List.of(
+                new IndexValuation(LocalDate.of(2026, 8, 27), "000300", "沪深300", new BigDecimal("12.8"), new BigDecimal("1.42"), new BigDecimal("2.35"))));
+
+        var view = service.overview();
+
+        assertThat(view.pePercentile()).isNotNull();
+        assertThat(view.erpPercentile()).isNotNull();
+        assertThat(view.netBreakerPercentile()).isNull();
+        assertThat(view.thermometer()).isNull();
+    }
+
+    @Test
+    void industries缺省sort按pe排序() {
+        LocalDate day = LocalDate.of(2026, 8, 27);
+        when(repo.findLatestSnapshot()).thenReturn(new ValuationSnapshot(
+                day, new BigDecimal("19.14"), new BigDecimal("1.68"), 220, new BigDecimal("0.0410")));
+        when(repo.findIndustryValuationsByDay(day)).thenReturn(List.of(
+                new IndustryValuation(day, "801010", "农林牧渔", new BigDecimal("25.0"), new BigDecimal("2.5"), new BigDecimal("8.0"), new BigDecimal("1.2")),
+                new IndustryValuation(day, "801030", "基础化工", new BigDecimal("15.0"), new BigDecimal("1.5"), new BigDecimal("12.0"), new BigDecimal("2.0"))));
+
+        var byDefault = service.industries(null);
+
+        assertThat(byDefault).extracting(IndustryValuationView::industryCode)
+                .containsExactly("801030", "801010");
+    }
+
+    @Test
     void industries空仓库返回空列表() {
         when(repo.findLatestSnapshot()).thenReturn(null);
 

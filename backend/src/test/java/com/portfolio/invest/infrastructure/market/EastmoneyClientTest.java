@@ -96,6 +96,17 @@ class EastmoneyClientTest {
     }
 
     @Test
+    void news响应缺少收尾括号时报BAD_RESPONSE() {
+        // 有 '(' 无 ')'：end <= start → JSONP 解包失败
+        server.expect(requestTo(startsWith("https://search-api-web.eastmoney.com/search/jsonp")))
+                .andRespond(withSuccess("cb({\"a\":1}", MediaType.APPLICATION_JSON));
+        assertThatThrownBy(() -> client.news("贵州茅台", 10))
+                .isInstanceOf(MarketDataException.class)
+                .hasMessageContaining("新闻接口响应格式异常");
+        server.verify();
+    }
+
+    @Test
     void 响应非JSON时报BAD_RESPONSE() {
         server.expect(requestTo(startsWith("https://push2.eastmoney.com/api/qt/stock/get")))
                 .andRespond(withSuccess("<html>not json</html>", MediaType.TEXT_HTML));

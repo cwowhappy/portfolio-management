@@ -32,6 +32,46 @@ class RateLimiterTest {
     }
 
     @Test
+    void 等待后补充到令牌时成功获取() {
+        AtomicLong now = new AtomicLong(0);
+        RateLimiter limiter = limiter(5, now);
+        for (int i = 0; i < 5; i++) {
+            assertThat(limiter.tryAcquire(0)).isTrue();
+        }
+        now.addAndGet(10_000_000L); // 10ms → 仅补充 0.05 个令牌，凑满还需 ~190ms
+        // 预算 1500ms 足够：sleep（假时钟推进）后循环重试，refill 凑满 1 个令牌 → 成功
+        assertThat(limiter.tryAcquire(1500)).isTrue();
+    }
+
+    @Test
+    void 距下一令牌不足一纳秒时按一纳秒等待() {
+        AtomicLong now = new AtomicLong(0);
+        RateLimiter limiter = limiter(5, now);
+        for (int i = 0; i < 5; i++) {
+            assertThat(limiter.tryAcquire(0)).isTrue();
+        }
+        // 距凑满一个令牌仅差 1ns：waitNanos 计算结果截断为 0 → 钳制为 1ns；
+        // 但等待预算为 0 → 超过截止时间，获取失败
+        now.addAndGet(199_999_999L);
+        assertThat(limiter.tryAcquire(0)).isFalse();
+    }
+
+    @Test
+    void 等待期间线程被中断时返回false() {
+        AtomicLong now = new AtomicLong(0);
+        // sleep 时中断当前线程：限流器应检测到中断标记并放弃等待
+        RateLimiter limiter = new RateLimiter(5, now::get, ms -> Thread.currentThread().interrupt());
+        for (int i = 0; i < 5; i++) {
+            assertThat(limiter.tryAcquire(0)).isTrue();
+        }
+        try {
+            assertThat(limiter.tryAcquire(1000)).isFalse();
+        } finally {
+            Thread.interrupted(); // 清除中断标记，避免污染同线程后续测试
+        }
+    }
+
+    @Test
     void 令牌耗尽且等待时间不足时失败() {
         AtomicLong now = new AtomicLong(0);
         RateLimiter limiter = limiter(5, now);

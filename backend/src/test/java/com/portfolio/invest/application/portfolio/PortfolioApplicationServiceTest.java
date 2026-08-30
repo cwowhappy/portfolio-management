@@ -196,6 +196,86 @@ class PortfolioApplicationServiceTest {
                         e -> assertThat(e.code()).isEqualTo(PortfolioErrorCode.NOT_FOUND));
     }
 
+    @Test
+    void 编辑其他持仓名下的交易被拒绝() {
+        when(repo.findPositionByIdAndPortfolioId(5L, 10L)).thenReturn(Optional.of(positionWithId(5)));
+        // 交易属于持仓 6，不属于持仓 5：不泄露存在性，一律 NOT_FOUND
+        when(repo.findTradeById(11L)).thenReturn(Optional.of(
+                new Trade(11L, 6L, TradeType.BUY, LocalDate.of(2026, 8, 27),
+                        new BigDecimal("100"), new BigDecimal("100"), new BigDecimal("0"), Instant.now())));
+
+        assertThatThrownBy(() -> service.editTrade(1L, 5L, 11L, new EditTradeCommand(
+                LocalDate.of(2026, 8, 27), new BigDecimal("110"),
+                new BigDecimal("100"), new BigDecimal("0"))))
+                .isInstanceOfSatisfying(PortfolioException.class,
+                        e -> assertThat(e.code()).isEqualTo(PortfolioErrorCode.NOT_FOUND));
+    }
+
+    @Test
+    void 编辑交易后重放含现金分红按除息日顺序重算() {
+        when(repo.findPositionByIdAndPortfolioId(5L, 10L)).thenReturn(Optional.of(positionWithId(5)));
+        when(repo.findTradeById(11L)).thenReturn(Optional.of(
+                new Trade(11L, 5L, TradeType.BUY, LocalDate.of(2026, 8, 27),
+                        new BigDecimal("100"), new BigDecimal("100"), new BigDecimal("0"), Instant.now())));
+        when(repo.saveTrade(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(repo.findTradesByPositionId(5L)).thenReturn(List.of(
+                new Trade(11L, 5L, TradeType.BUY, LocalDate.of(2026, 8, 27),
+                        new BigDecimal("100"), new BigDecimal("100"), new BigDecimal("0"), Instant.now())));
+        when(repo.findDividendsByPositionId(5L)).thenReturn(List.of(
+                new Dividend(1L, 5L, DividendType.CASH, LocalDate.of(2026, 8, 28),
+                        new BigDecimal("1.5"), null, Instant.now())));
+        when(repo.savePosition(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        var view = service.editTrade(1L, 5L, 11L, new EditTradeCommand(
+                LocalDate.of(2026, 8, 27), new BigDecimal("100"),
+                new BigDecimal("100"), new BigDecimal("0")));
+
+        // 重放：先买入 100@100（成本 10000），交易日后再现金分红 1.5*100=150 → 成本 9850
+        assertThat(view.quantity()).isEqualByComparingTo("100");
+        assertThat(view.avgCost()).isEqualByComparingTo("98.50");
+        assertThat(view.cumulativeCashDividend()).isEqualByComparingTo("150");
+    }
+
+    @Test
+    void 编辑交易后重放含送股且除息日早于后续交易时先分红() {
+        when(repo.findPositionByIdAndPortfolioId(5L, 10L)).thenReturn(Optional.of(positionWithId(5)));
+        when(repo.findTradeById(11L)).thenReturn(Optional.of(
+                new Trade(11L, 5L, TradeType.BUY, LocalDate.of(2026, 8, 25),
+                        new BigDecimal("100"), new BigDecimal("100"), new BigDecimal("0"), Instant.now())));
+        when(repo.saveTrade(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(repo.findTradesByPositionId(5L)).thenReturn(List.of(
+                new Trade(11L, 5L, TradeType.BUY, LocalDate.of(2026, 8, 25),
+                        new BigDecimal("100"), new BigDecimal("100"), new BigDecimal("0"), Instant.now()),
+                new Trade(12L, 5L, TradeType.BUY, LocalDate.of(2026, 8, 27),
+                        new BigDecimal("100"), new BigDecimal("100"), new BigDecimal("0"), Instant.now())));
+        when(repo.findDividendsByPositionId(5L)).thenReturn(List.of(
+                new Dividend(1L, 5L, DividendType.STOCK, LocalDate.of(2026, 8, 26),
+                        null, new BigDecimal("0.5"), Instant.now())));
+        when(repo.savePosition(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        var view = service.editTrade(1L, 5L, 11L, new EditTradeCommand(
+                LocalDate.of(2026, 8, 25), new BigDecimal("100"),
+                new BigDecimal("100"), new BigDecimal("0")));
+
+        // 重放：买 100@100 → 8-26 除息日早于 8-27 第二笔交易，先送股 100*1.5=150 → 再买 100@100
+        // 数量 250，总成本 20000 → 均价 80
+        assertThat(view.quantity()).isEqualByComparingTo("250");
+        assertThat(view.avgCost()).isEqualByComparingTo("80");
+    }
+
+    @Test
+    void 配置中行情缺失时忽略该持仓权益() {
+        when(repo.findPositionsByPortfolioId(10L)).thenReturn(List.of(positionWithId(1)));
+        when(repo.findGroupsByPortfolioId(10L)).thenReturn(List.of());
+        when(market.quote("600519")).thenThrow(new RuntimeException("无行情"));
+
+        var view = service.allocation(1L);
+
+        assertThat(view.slices().get(0).category()).isEqualTo("权益");
+        assertThat(view.slices().get(0).marketValue()).isEqualByComparingTo("0");
+        assertThat(view.slices().get(1).marketValue()).isEqualByComparingTo("0");
+    }
+
     private Position positionWithId(long id) {
         var base = Position.create(10L, 1L, "600519", "贵州茅台", Instant.now())
                 .applyBuy(new BigDecimal("100"), new BigDecimal("100"), new BigDecimal("0"));

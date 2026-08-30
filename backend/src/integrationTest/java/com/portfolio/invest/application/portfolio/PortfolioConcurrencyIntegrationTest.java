@@ -2,7 +2,7 @@ package com.portfolio.invest.application.portfolio;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.portfolio.invest.infrastructure.persistence.IntegrationTestBase;
+import com.portfolio.invest.support.PostgresTestSupport;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
@@ -15,13 +15,15 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
  * 并发首次访问的幂等回归：前端 /portfolio 首次加载会并发触发多个读接口，
  * 各接口都走 getOrCreatePortfolio，修复前 find→save 非原子导致唯一约束冲突（400）。
  */
-class PortfolioConcurrencyIntegrationTest extends IntegrationTestBase {
+@SpringBootTest
+class PortfolioConcurrencyIntegrationTest extends PostgresTestSupport {
 
     @Autowired
     private PortfolioApplicationService service;

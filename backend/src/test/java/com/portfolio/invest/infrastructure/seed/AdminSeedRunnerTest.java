@@ -29,6 +29,28 @@ class AdminSeedRunnerTest {
     }
 
     @Test
+    void 仅配置用户名未配置密码时跳过() {
+        props.getAdmin().setUsername("admin");
+
+        runner.run(null);
+
+        verify(repo, never()).save(any());
+    }
+
+    @Test
+    void 用户名或密码为空白时跳过() {
+        props.getAdmin().setUsername("   ");
+        props.getAdmin().setPassword("admin123");
+        runner.run(null);
+
+        props.getAdmin().setUsername("admin");
+        props.getAdmin().setPassword("   ");
+        runner.run(null);
+
+        verify(repo, never()).save(any());
+    }
+
+    @Test
     void 配置后创建内置管理员() {
         props.getAdmin().setUsername("admin");
         props.getAdmin().setPassword("admin123");
