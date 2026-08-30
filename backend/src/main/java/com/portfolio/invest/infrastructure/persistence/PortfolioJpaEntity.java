@@ -35,16 +35,6 @@ public class PortfolioJpaEntity {
 
     protected PortfolioJpaEntity() {}
 
-    public static PortfolioJpaEntity fromDomain(Portfolio p) {
-        PortfolioJpaEntity e = new PortfolioJpaEntity();
-        e.id = p.id();
-        e.userId = p.userId();
-        e.costMethod = p.costMethod();
-        e.createdAt = p.createdAt();
-        e.updatedAt = p.updatedAt();
-        return e;
-    }
-
     public Portfolio toDomain() {
         return Portfolio.reconstitute(id, userId, costMethod, createdAt, updatedAt);
     }
