@@ -23,6 +23,7 @@ const position = {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.clearAllMocks();
 });
 
 describe("PositionActions", () => {
@@ -78,5 +79,44 @@ describe("PositionActions", () => {
     fireEvent.click(screen.getByRole("button", { name: "删除" }));
     await vi.waitFor(() => expect(onChanged).toHaveBeenCalled());
     expect(vi.mocked(deletePosition)).toHaveBeenCalledWith(5);
+  });
+
+  it("卖出失败时显示错误且不触发 onChanged", async () => {
+    vi.mocked(sell).mockRejectedValueOnce(new Error("卖出数量超过持仓"));
+    const onChanged = vi.fn();
+    render(<PositionActions position={position} onChanged={onChanged} />);
+    fireEvent.change(screen.getByLabelText("卖价"), { target: { value: "120" } });
+    fireEvent.change(screen.getByLabelText("卖量"), { target: { value: "40" } });
+    fireEvent.click(screen.getByRole("button", { name: "卖出" }));
+    expect(await screen.findByText("卖出数量超过持仓")).toBeTruthy();
+    expect(onChanged).not.toHaveBeenCalled();
+  });
+
+  it("非 Error 卖出异常回退为默认错误文案", async () => {
+    vi.mocked(sell).mockRejectedValueOnce("boom");
+    render(<PositionActions position={position} onChanged={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("卖价"), { target: { value: "120" } });
+    fireEvent.change(screen.getByLabelText("卖量"), { target: { value: "40" } });
+    fireEvent.click(screen.getByRole("button", { name: "卖出" }));
+    expect(await screen.findByText("卖出失败")).toBeTruthy();
+  });
+
+  it("confirm 取消时不触发删除", () => {
+    vi.stubGlobal("confirm", vi.fn(() => false));
+    const onChanged = vi.fn();
+    render(<PositionActions position={position} onChanged={onChanged} />);
+    fireEvent.click(screen.getByRole("button", { name: "删除" }));
+    expect(vi.mocked(deletePosition)).not.toHaveBeenCalled();
+    expect(onChanged).not.toHaveBeenCalled();
+  });
+
+  it("删除失败时显示错误", async () => {
+    vi.stubGlobal("confirm", vi.fn(() => true));
+    vi.mocked(deletePosition).mockRejectedValueOnce(new Error("存在关联交易"));
+    const onChanged = vi.fn();
+    render(<PositionActions position={position} onChanged={onChanged} />);
+    fireEvent.click(screen.getByRole("button", { name: "删除" }));
+    expect(await screen.findByText("存在关联交易")).toBeTruthy();
+    expect(onChanged).not.toHaveBeenCalled();
   });
 });

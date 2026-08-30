@@ -22,6 +22,9 @@ export default defineConfig({
       thresholds: {
         statements: 80,
         branches: 80,
+        // portfolio 域曾是覆盖率洼地（分支 67%），单独卡门槛防退化。
+        "components/portfolio/**": { branches: 80 },
+        "lib/portfolioApi.ts": { branches: 80 },
       },
     },
   },

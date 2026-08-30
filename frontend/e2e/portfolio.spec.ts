@@ -44,7 +44,9 @@ test.describe("/portfolio 持仓组合管理", () => {
     await page.getByRole("button", { name: "买入" }).click();
 
     const table = page.getByTestId("position-table");
-    await expect(table.getByText("贵州茅台")).toBeVisible();
+    // 全量跑时真实行情接口可能拖慢后端响应（买入后需重新加载总览），给足超时；
+    // 本用例禁用重试（重复注册会撞唯一用户名），超时不足会直接红。
+    await expect(table.getByText("贵州茅台")).toBeVisible({ timeout: 15_000 });
     await expect(table.getByText("暂无持仓")).toHaveCount(0);
   });
 });
