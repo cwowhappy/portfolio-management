@@ -83,6 +83,18 @@ class HealthControllerTest {
     }
 
     @Test
+    void status在key未配置时即使行情可用仍degraded() {
+        when(env.getProperty("DEEPSEEK_API_KEY")).thenReturn(null);
+        when(market.probeQuoteLatencyMs()).thenReturn(42L);
+
+        Map<String, Object> body = controller.status();
+
+        assertThat(body.get("status")).isEqualTo("degraded");
+        Map<?, ?> m = (Map<?, ?>) body.get("market");
+        assertThat(m.get("ok")).isEqualTo(true);
+    }
+
+    @Test
     void status在行情探活失败时标记不可用并附消息() {
         when(env.getProperty("DEEPSEEK_API_KEY")).thenReturn("sk-xxx");
         when(market.probeQuoteLatencyMs())

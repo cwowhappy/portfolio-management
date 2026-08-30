@@ -80,6 +80,23 @@ class MarketDataParserEdgeCasesTest {
     // ———— parseSinaQuote ————
 
     @Test
+    void parseSinaQuote只有一个引号视为格式异常() {
+        // 有起始引号但无收尾引号：end <= start
+        assertThatThrownBy(() -> MarketDataParser.parseSinaQuote(
+                "var hq=\"贵州茅台,1,2,3", "600519"))
+                .isInstanceOf(MarketDataException.class)
+                .hasMessageContaining("新浪行情响应格式异常");
+    }
+
+    @Test
+    void parseSinaQuote昨收为零时涨跌幅归零避免除零() {
+        Quote q = MarketDataParser.parseSinaQuote(
+                "var hq=\"贵州茅台,10,0,10.5,11,10.8,10.2,10.5,12345,100000\";", "600519");
+        assertThat(q.change()).isEqualTo(10.5);
+        assertThat(q.changePct()).isEqualTo(0);
+    }
+
+    @Test
     void parseSinaQuote格式异常抛BAD_RESPONSE() {
         assertThatThrownBy(() -> MarketDataParser.parseSinaQuote("no quotes", "600519"))
                 .isInstanceOf(MarketDataException.class)
@@ -111,6 +128,13 @@ class MarketDataParserEdgeCasesTest {
     // ———— parseKline ————
 
     @Test
+    void parseKline数据为null抛BAD_RESPONSE() {
+        assertThatThrownBy(() -> MarketDataParser.parseKline(json("{\"data\":{\"klines\":null}}")))
+                .isInstanceOf(MarketDataException.class)
+                .hasMessageContaining("K线数据为空");
+    }
+
+    @Test
     void parseKline数据缺失抛BAD_RESPONSE() {
         assertThatThrownBy(() -> MarketDataParser.parseKline(json("{}")))
                 .isInstanceOf(MarketDataException.class)
@@ -126,6 +150,24 @@ class MarketDataParserEdgeCasesTest {
     }
 
     // ———— parseTencentKline ————
+
+    @Test
+    void parseTencentKlineqfq键非数组时回退裸周期键() {
+        List<com.portfolio.invest.domain.market.KlineBar> bars = MarketDataParser.parseTencentKline(
+                json("{\"data\":{\"sh600519\":{\"qfqday\":{\"unexpected\":true},\"day\":"
+                        + "[[\"2026-08-18\",\"1\",\"2\",\"3\",\"1\",\"100\"]]}}}"),
+                "sh600519", "day");
+        assertThat(bars).hasSize(1);
+        assertThat(bars.get(0).volume()).isEqualTo(10_000);
+    }
+
+    @Test
+    void parseTencentKline非数组行跳过且全部无效时抛BAD_RESPONSE() {
+        assertThatThrownBy(() -> MarketDataParser.parseTencentKline(
+                json("{\"data\":{\"sh600519\":{\"qfqday\":[\"not-an-array\"]}}}"), "sh600519", "day"))
+                .isInstanceOf(MarketDataException.class)
+                .hasMessageContaining("腾讯K线数据为空");
+    }
 
     @Test
     void parseTencentKline缺qfq前缀时回退裸周期键() {
@@ -162,6 +204,18 @@ class MarketDataParserEdgeCasesTest {
     // ———— parseSearch / marketNameOf ————
 
     @Test
+    void parseSearch北交所与9开头代码的市场识别() {
+        List<StockHit> hits = MarketDataParser.parseSearch(json(
+                "{\"QuotationCodeTable\":{\"Data\":["
+                        + "{\"Code\":\"430047\",\"Name\":\"诺思兰德\",\"MktNum\":\"0\"},"
+                        + "{\"Code\":\"830047\",\"Name\":\"某北证\",\"MktNum\":\"0\"},"
+                        + "{\"Code\":\"900001\",\"Name\":\"某沪B\",\"MktNum\":\"1\"}"
+                        + "]}}"));
+        assertThat(hits).extracting(StockHit::marketName)
+                .containsExactly("北交所", "北交所", "沪市");
+    }
+
+    @Test
     void parseSearch数据非数组返回空() {
         assertThat(MarketDataParser.parseSearch(json("{\"QuotationCodeTable\":{}}"))).isEmpty();
     }
@@ -193,6 +247,25 @@ class MarketDataParserEdgeCasesTest {
     // ———— 财务/新闻/指数 ————
 
     @Test
+    void parseFinancialIndicators数据为null或非数组抛BAD_RESPONSE() {
+        assertThatThrownBy(() -> MarketDataParser.parseFinancialIndicators(json("{\"result\":{\"data\":null}}")))
+                .isInstanceOf(MarketDataException.class)
+                .hasMessageContaining("财务数据为空");
+        assertThatThrownBy(() -> MarketDataParser.parseFinancialIndicators(json("{\"result\":{\"data\":{}}}")))
+                .isInstanceOf(MarketDataException.class)
+                .hasMessageContaining("财务数据为空");
+    }
+
+    @Test
+    void parseNews长摘要截断为120字加省略号() {
+        String longContent = "长".repeat(200);
+        var list = MarketDataParser.parseNews(json(
+                "{\"result\":{\"cmsArticleWebOld\":[{\"title\":\"t\",\"content\":\"" + longContent
+                        + "\",\"mediaName\":\"m\",\"date\":\"d\",\"url\":\"u\"}]}}"));
+        assertThat(list.get(0).summary()).hasSize(121).endsWith("…");
+    }
+
+    @Test
     void parseFinancialIndicators数据缺失抛BAD_RESPONSE() {
         assertThatThrownBy(() -> MarketDataParser.parseFinancialIndicators(json("{}")))
                 .isInstanceOf(MarketDataException.class)
@@ -214,6 +287,28 @@ class MarketDataParserEdgeCasesTest {
         assertThatThrownBy(() -> MarketDataParser.buildOverview(json("{\"data\":{}}")))
                 .isInstanceOf(MarketDataException.class)
                 .hasMessageContaining("指数数据为空");
+    }
+
+    @Test
+    void buildSinaOverview单边引号与字段不足行被跳过() {
+        var o = MarketDataParser.buildSinaOverview(
+                "var hq_str_s_sh000001=\"上证指数,3990.30,7.65,0.19\";"
+                        + "var hq_str_s_sz399006=\"创业板指,3200.00\";" // 字段不足 4 列 → 跳过
+                        + "var hq_str_s_sz399001=\"深证成指,14622.50,-81.77,-0.56"); // 无收尾引号 → 跳过
+        assertThat(o.indices()).hasSize(1);
+        assertThat(o.indices().get(0).code()).isEqualTo("000001");
+    }
+
+    @Test
+    void buildSinaOverview变量名无等号或无下划线时代码退化提取() {
+        var o = MarketDataParser.buildSinaOverview(
+                "\"1,2,3,4\";"                    // 无 '=' → 代码为空串
+                        + "var x_12=\"A,1,2,3\";"        // 下划线后 id 仅 2 位 → 原样返回
+                        + "var hq=\"B,1,2,3\";");        // 无下划线 → 整个变量名退化提取
+        assertThat(o.indices()).hasSize(3);
+        assertThat(o.indices().get(0).code()).isEmpty();
+        assertThat(o.indices().get(1).code()).isEqualTo("12");
+        assertThat(o.indices().get(2).code()).isEqualTo("r hq");
     }
 
     @Test
@@ -254,6 +349,13 @@ class MarketDataParserEdgeCasesTest {
         assertThat(StockRef.from("830047").secuCode()).isEqualTo("830047.BJ");
         assertThat(StockRef.from("900001").secuCode()).isEqualTo("900001.SH");
         assertThat(StockRef.from("300750").secuCode()).isEqualTo("300750.SZ");
+    }
+
+    @Test
+    void stockRef深京后缀剥离() {
+        assertThat(StockRef.from("000001.SZ").code()).isEqualTo("000001");
+        assertThat(StockRef.from("430047.BJ").sinaPrefix()).isEqualTo("bj");
+        assertThat(StockRef.from("430047.BJ").secuCode()).isEqualTo("430047.BJ");
     }
 
     @Test

@@ -11,7 +11,8 @@ docs/technology/
 ├── README.md                ← 本文件：总导航
 ├── architecture/            ← 一、系统架构设计
 │   ├── 01-系统架构.md        │   总体架构图、分层职责、请求链路、会话模型
-│   └── 02-技术栈与工程结构.md │   技术栈版本定版、目录结构、部署拓扑
+│   ├── 02-技术栈与工程结构.md │   技术栈版本定版、目录结构、部署拓扑
+│   └── 03-后端测试架构.md     │   四层测试模型、source set、覆盖率门禁、ArchUnit 守护、BDD 设计
 ├── modules/                 ← 二、技术视角的模块划分与设计
 │   ├── 01-Agent实现.md       │   ReActAgent 装配、模型配置、提示词、6 个 @Tool
 │   ├── 02-行情数据服务.md     │   数据源降级、代码规范化、缓存/限流
@@ -31,6 +32,7 @@ docs/technology/
 |---|---|
 | [01-系统架构.md](architecture/01-系统架构.md) | 总体架构图（浏览器 → Next.js 反代 → Spring Boot DDD 分层 → 外部依赖）、对话/行情两条请求链路、会话模型 |
 | [02-技术栈与工程结构.md](architecture/02-技术栈与工程结构.md) | 技术栈版本定版表、前后端目录结构、Docker Compose 部署拓扑 |
+| [03-后端测试架构.md](architecture/03-后端测试架构.md) | 后端四层测试模型（单元/切片/集成/BDD）、source set 划分、PostgresTestSupport 单例容器、JaCoCo 聚合门禁、ArchUnit 守护、BDD 场景清单 |
 
 ## 二、技术视角的模块划分与设计（modules/）
 
@@ -78,6 +80,7 @@ docs/technology/
 - 想知道**数据怎么来、怎么保护** → [modules/02-行情数据服务.md](modules/02-行情数据服务.md)
 - 想知道**对外有哪些接口** → [modules/03-接口设计.md](modules/03-接口设计.md)
 - 想知道**怎么部署、测试、排错** → [modules/04-工程与运维.md](modules/04-工程与运维.md)
+- 想知道**后端测试怎么分层、新测试放哪** → [architecture/03-后端测试架构.md](architecture/03-后端测试架构.md)
 - 想知道**某个技术选型为什么** → [decisions/](decisions/)
 - 想知道**后续版本要储备什么技术** → [research/00-技术储备与规划.md](research/00-技术储备与规划.md)
 - 想看**产品功能** → [../function/](../function/)

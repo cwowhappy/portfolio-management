@@ -14,6 +14,12 @@ class PasswordPolicyTest {
     }
 
     @Test
+    void 空密码抛异常() {
+        assertThatThrownBy(() -> PasswordPolicy.validate(null))
+                .isInstanceOf(UserException.class).hasMessageContaining("至少8位");
+    }
+
+    @Test
     void 不足8位或缺少字母数字抛异常() {
         assertThatThrownBy(() -> PasswordPolicy.validate("short1"))
                 .isInstanceOf(UserException.class).hasMessageContaining("至少8位");

@@ -40,6 +40,20 @@ class AuthApplicationServiceTest {
     }
 
     @Test
+    void 用户名为null或空白被拒() {
+        assertThatThrownBy(() -> service.register(new RegisterCommand(null, "abc12345")))
+                .isInstanceOf(UserException.class).hasMessageContaining("用户名不能为空");
+        assertThatThrownBy(() -> service.register(new RegisterCommand("   ", "abc12345")))
+                .isInstanceOf(UserException.class).hasMessageContaining("用户名不能为空");
+    }
+
+    @Test
+    void 用户名超过64字符被拒() {
+        assertThatThrownBy(() -> service.register(new RegisterCommand("a".repeat(65), "abc12345")))
+                .isInstanceOf(UserException.class).hasMessageContaining("最长64个字符");
+    }
+
+    @Test
     void 弱密码被拒() {
         assertThatThrownBy(() -> service.register(new RegisterCommand("alice", "short1")))
                 .isInstanceOf(UserException.class).hasMessageContaining("至少8位");

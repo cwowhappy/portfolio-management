@@ -272,7 +272,117 @@ class OrchestratingMarketDataServiceTest {
         assertThat(f.pe()).isNull(); // 报告期畸形，无法回算 TTM
     }
 
+    @Test
+    void financials仅PB缺失时保留行情PE并回算PB() throws IOException {
+        ObjectNode root = (ObjectNode) fixture("eastmoney-quote.json");
+        ((ObjectNode) root.get("data")).remove("f167"); // 仅缺 PB，PE=21.35 保留
+        when(source.quote("1.600519")).thenReturn(root);
+        when(source.financials("600519.SH")).thenReturn(json("""
+                {"result":{"data":[
+                  {"REPORT_DATE":"2026-06-30 00:00:00","EPSJB":2.0,"BPS":10.0}
+                ]}}
+                """));
+
+        Financials f = service.financials("600519");
+
+        assertThat(f.pe()).isEqualTo(21.35);  // 行情 PE 保留不回算
+        assertThat(f.pb()).isEqualTo(141.5);  // 1415/10
+    }
+
+    @Test
+    void financials仅PE缺失时保留行情PB并回算PE() throws IOException {
+        ObjectNode root = (ObjectNode) fixture("eastmoney-quote.json");
+        ((ObjectNode) root.get("data")).remove("f162"); // 仅缺 PE，PB=7.82 保留
+        when(source.quote("1.600519")).thenReturn(root);
+        when(source.financials("600519.SH")).thenReturn(json("""
+                {"result":{"data":[
+                  {"REPORT_DATE":"2025-12-31 00:00:00","EPSJB":4.0,"BPS":10.0}
+                ]}}
+                """));
+
+        Financials f = service.financials("600519");
+
+        assertThat(f.pb()).isEqualTo(7.82);    // 行情 PB 保留
+        assertThat(f.pe()).isEqualTo(353.75);  // 1415/4
+    }
+
+    @Test
+    void financials最新BPS非正时PB为null() throws IOException {
+        when(source.quote("1.600519")).thenReturn(quoteWithoutValuation());
+        when(source.financials("600519.SH")).thenReturn(json("""
+                {"result":{"data":[
+                  {"REPORT_DATE":"2025-12-31 00:00:00","EPSJB":4.0,"BPS":0.0}
+                ]}}
+                """));
+
+        Financials f = service.financials("600519");
+
+        assertThat(f.pb()).isNull();           // bps<=0 无意义，避免输出负/零 PB
+        assertThat(f.pe()).isEqualTo(353.75);
+    }
+
+    @Test
+    void financials最新报告缺EPS时PE为null() throws IOException {
+        when(source.quote("1.600519")).thenReturn(quoteWithoutValuation());
+        when(source.financials("600519.SH")).thenReturn(json("""
+                {"result":{"data":[
+                  {"REPORT_DATE":"2026-06-30 00:00:00","BPS":10.0},
+                  {"REPORT_DATE":"2025-12-31 00:00:00","EPSJB":4.0,"BPS":null}
+                ]}}
+                """));
+
+        Financials f = service.financials("600519");
+
+        assertThat(f.pe()).isNull();           // 无最新 EPS 无法回算 TTM
+        assertThat(f.pb()).isEqualTo(141.5);
+    }
+
+    @Test
+    void financials年报缺EPS时不算PE() throws IOException {
+        when(source.quote("1.600519")).thenReturn(quoteWithoutValuation());
+        when(source.financials("600519.SH")).thenReturn(json("""
+                {"result":{"data":[
+                  {"REPORT_DATE":"2026-06-30 00:00:00","EPSJB":2.0,"BPS":10.0},
+                  {"REPORT_DATE":"2025-12-31 00:00:00","BPS":null},
+                  {"REPORT_DATE":"2025-06-30 00:00:00","EPSJB":1.0,"BPS":9.0}
+                ]}}
+                """));
+
+        Financials f = service.financials("600519");
+
+        assertThat(f.pe()).isNull();           // 年报 EPS 缺失，TTM 回算缺项
+        assertThat(f.pb()).isEqualTo(141.5);
+    }
+
+    @Test
+    void financials报告期年份非数字时不算PE() throws IOException {
+        // 上游脏数据：年份部分非数字，sameLastYearOf 无法推算去年同期 → 不算 PE
+        when(source.quote("1.600519")).thenReturn(quoteWithoutValuation());
+        when(source.financials("600519.SH")).thenReturn(json("""
+                {"result":{"data":[
+                  {"REPORT_DATE":"abcd-06-30 00:00:00","EPSJB":2.0,"BPS":10.0},
+                  {"REPORT_DATE":"2025-12-31 00:00:00","EPSJB":4.0,"BPS":null}
+                ]}}
+                """));
+
+        Financials f = service.financials("600519");
+
+        assertThat(f.pe()).isNull();
+        assertThat(f.pb()).isEqualTo(141.5);
+    }
+
     // ———— news ————
+
+    @Test
+    void news股票名为空白时改用代码搜索() throws IOException {
+        ObjectNode root = (ObjectNode) fixture("eastmoney-quote.json");
+        ((ObjectNode) root.get("data")).put("f58", "  "); // 名称为空白
+        when(source.quote("1.600519")).thenReturn(root);
+        when(source.news("600519", 10)).thenReturn(fixture("eastmoney-news.json"));
+
+        assertThat(service.news("600519", 10)).isNotEmpty();
+        verify(source).news("600519", 10);
+    }
 
     @Test
     void news使用股票名称搜索并限制条数() throws IOException {

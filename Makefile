@@ -8,7 +8,7 @@ export GRADLE_OPTS := -Dorg.gradle.native.dir=$(PWD)/.gradle-native
 -include .env
 export
 
-.PHONY: dev dev-backend dev-frontend test test-backend test-frontend test-e2e build up down smoke
+.PHONY: dev dev-backend dev-frontend test test-backend test-backend-unit test-backend-integration test-backend-bdd test-frontend test-e2e build up down smoke
 
 ## 本地开发：同时启动后端(8080)与前端(3000)
 dev:
@@ -26,6 +26,16 @@ test: test-backend test-frontend collect-test
 
 test-backend:
 	cd backend && ./gradlew check --console=plain
+
+# 后端分层测试：单元+切片 / 集成（Testcontainers 真实 PG）/ BDD（Cucumber）
+test-backend-unit:
+	cd backend && ./gradlew test --console=plain
+
+test-backend-integration:
+	cd backend && ./gradlew integrationTest --console=plain
+
+test-backend-bdd:
+	cd backend && ./gradlew bdd --console=plain
 
 test-frontend:
 	cd frontend && pnpm lint && pnpm test

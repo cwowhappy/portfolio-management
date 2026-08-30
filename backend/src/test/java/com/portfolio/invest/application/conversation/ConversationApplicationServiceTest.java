@@ -71,6 +71,17 @@ class ConversationApplicationServiceTest {
     }
 
     @Test
+    void 本人重复创建同id幂等返回() {
+        when(repo.findByIdAndUserId("t-1", 1L)).thenReturn(Optional.of(owned("t-1")));
+
+        var view = service.create(1L, "t-1");
+
+        assertThat(view.id()).isEqualTo("t-1");
+        verify(repo, never()).save(any());
+        verify(repo, never()).existsById(anyString());
+    }
+
+    @Test
     void 创建时id已被他人占用抛NOT_FOUND且不save() {
         when(repo.findByIdAndUserId("t-1", 2L)).thenReturn(Optional.empty());
         when(repo.existsById("t-1")).thenReturn(true);

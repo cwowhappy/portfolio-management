@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.hamcrest.Matchers.startsWith;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withNoContent;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
@@ -52,6 +53,17 @@ class SinaClientTest {
         String url = "https://hq.sinajs.cn/list=sh600519";
         server.expect(requestTo(startsWith(url)))
                 .andRespond(withSuccess(new byte[0], MediaType.TEXT_PLAIN));
+        assertThatThrownBy(() -> client.rawQuote("sh", "600519"))
+                .isInstanceOf(MarketDataException.class)
+                .hasMessageContaining("新浪接口返回空");
+        server.verify();
+    }
+
+    @Test
+    void 无内容响应视为空响应抛UPSTREAM_UNAVAILABLE() {
+        // 204 No Content → body(byte[].class) 为 null，与空字节数组同等处理
+        server.expect(requestTo(startsWith("https://hq.sinajs.cn/list=sh600519")))
+                .andRespond(withNoContent());
         assertThatThrownBy(() -> client.rawQuote("sh", "600519"))
                 .isInstanceOf(MarketDataException.class)
                 .hasMessageContaining("新浪接口返回空");

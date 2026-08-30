@@ -4,12 +4,16 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.portfolio.invest.infrastructure.persistence.IntegrationTestBase;
+import com.portfolio.invest.support.PostgresTestSupport;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.test.web.servlet.MockMvc;
 
-class SecurityConfigTest extends IntegrationTestBase {
+@SpringBootTest
+@AutoConfigureMockMvc
+class SecurityConfigTest extends PostgresTestSupport {
 
     @Autowired
     MockMvc mockMvc;

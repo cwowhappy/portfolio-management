@@ -20,6 +20,7 @@ A 股投研对话助手（证券投资与分析系统）。AI Agent Web 服务�
 | `make dev-backend` / `make dev-frontend` | 单独启动一端 |
 | `make test` | 后端 + 前端 + collector 全量测试（ArchUnit 架构测试 + Testcontainers 集成测试 + vitest + pytest） |
 | `make test-backend` / `make test-frontend` / `make collect-test` | 单独跑一端 |
+| `make test-backend-unit` / `make test-backend-integration` / `make test-backend-bdd` | 后端分层跑：单元+切片 / 集成（Testcontainers 真实 PG）/ BDD（Cucumber） |
 | `make build` | 后端 `bootJar` + 前端 `next build` |
 | `make up` / `make down` | Docker Compose 部署 / 停止 |
 | `make smoke` | 端到端冒烟（真实行情 + AI 对话） |
@@ -74,9 +75,10 @@ infrastructure ──→ {domain, application, config}
 
 ## 关键约束
 
-- **覆盖门槛 ≥80%**（`make test` 失败即不过）：后端 JaCoCo 指令/分支，前端 V8 语句/分支，collector pytest `--cov-fail-under=80`。改代码需补测试。
-- **schema 由 Flyway 管**（`ddl-auto: none`），迁移在 `backend/src/main/resources/db/migration/`（V1–V4）。
-- **Jackson 2 而非 Jackson 3**：`spring-boot-starter-web` 已排除 `starter-jackson` 改引 `spring-boot-jackson2`，因为 AgentScope AG-UI 模型基于 Jackson 2 注解。
+- **覆盖门槛 ≥80%**（`make test` 失败即不过）：后端 JaCoCo 聚合 `test`/`integrationTest`/`bdd` 三层 exec 后统一卡指令/分支双门槛（挂 `check`，聚焦跑单个 suite 不触发），前端 V8 语句/分支，collector pytest `--cov-fail-under=80`。改代码需补测试。
+- **后端测试四层**：`test`（单元+切片）/ `integrationTest`（Testcontainers 真实 PG）/ `bdd`（Cucumber 中文场景）/ `testFixtures`（共享 PG 容器基座 `PostgresTestSupport`），详见 `docs/technology/architecture/03-后端测试架构.md`。
+- **schema 由 Flyway 管**（`ddl-auto: none`），迁移在 `backend/src/main/resources/db/migration/`（V1–V5）。
+- **Jackson 2 而非 Jackson 3**：`spring-boot-starter-webmvc` 已排除 `starter-jackson` 改引 `spring-boot-jackson2`，因为 AgentScope AG-UI 模型基于 Jackson 2 注解。
 - **Testcontainers 禁用 Ryuk**（`TESTCONTAINERS_RYUK_DISABLED=true`）：兼容 Colima 等本地 Docker socket 无法挂载的场景，由 JUnit 扩展启停容器。
 - **同源 Cookie 会话，无 CORS**：后端 `same-site: lax`，前端同源反代透传 cookie，这是关闭 CSRF 的安全前提（ADR-0007）。
 - 前端 lint 已启用：`pnpm lint`（eslint flat config，含 react-hooks/no-explicit-any/组件禁直接 fetch 等规则），纳入 `make test` 与 CI。

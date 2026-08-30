@@ -32,6 +32,11 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  * {@code onlyDependOnClassesThat(A).orShould().onlyDependOnClassesThat(B)}
  * （后者要求全部依赖同时落在某一侧，类同时引用项目内外依赖时会误报）。
  * 新增能力域包（如二期的 portfolio/user）时，需在此登记其依赖白名单，并同步更新规范文档。
+ *
+ * <p>本类只守护主代码（DoNotIncludeTests）。测试侧分四层 source set：
+ * {@code test}（单元+切片，禁 Docker）、{@code integrationTest}（Testcontainers 真实 PG）、
+ * {@code bdd}（Cucumber）、{@code testFixtures}（共享基座 PostgresTestSupport）；
+ * 测试侧边界规则见 {@link TestSourceSetConventionsTest}。
  */
 @AnalyzeClasses(packages = "com.portfolio.invest", importOptions = ImportOption.DoNotIncludeTests.class)
 class PackageConventionsTest {
