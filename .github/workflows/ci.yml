@@ -86,3 +86,65 @@ jobs:
       - name: Test
         working-directory: collector
         run: pytest -q --cov=collector --cov-fail-under=80
+
+  e2e:
+    name: Playwright e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: invest
+          POSTGRES_PASSWORD: invest
+          POSTGRES_DB: invest
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U invest"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      # 后端数据源（application.yml 的默认值已与此一致，显式注入以免漂移）
+      SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/invest
+      POSTGRES_USER: invest
+      POSTGRES_PASSWORD: invest
+      # CI 专用种子管理员（库为临时实例，凭据无敏感性；密码须满足 ≥8 位含字母数字）
+      ADMIN_USERNAME: ci_admin
+      ADMIN_PASSWORD: CiPassw0rd123
+      # 已配置的 secret：chat.spec 的 AI 真实对话用例用它真实打 LLM
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      # playwright webServer 经 scripts/e2e-backend.sh 跑 ./gradlew bootRun，需要 Gradle 缓存
+      - uses: gradle/actions/setup-gradle@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.22.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Install
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+      - name: Install Playwright browsers
+        working-directory: frontend
+        run: pnpm exec playwright install --with-deps chromium
+      # webServer 自动拉起后端(8080)与前端(3000)；.next 缺失时 e2e-frontend.sh 会先 build
+      - name: Run e2e
+        working-directory: frontend
+        run: pnpm test:e2e
+      - name: Upload e2e artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results
+          path: frontend/test-results/
+          retention-days: 7
