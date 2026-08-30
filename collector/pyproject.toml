@@ -1,6 +1,6 @@
 # collector 包元数据 + 工具链配置（ruff / import-linter）。
 # 依赖声明的唯一来源：修改本文件后执行
-#   uv pip compile pyproject.toml --extra dev --generate-hashes --python-version 3.12 -o requirements.txt
+#   uv pip compile pyproject.toml --extra dev --generate-hashes --python-version 3.12 --universal -o requirements.txt
 # 重新生成锁定文件（规范 G2）。Docker/CI 仍 pip install -r requirements.txt。
 [project]
 name = "collector"
