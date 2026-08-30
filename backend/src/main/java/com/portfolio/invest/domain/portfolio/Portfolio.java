@@ -18,10 +18,6 @@ public final class Portfolio {
         this.updatedAt = updatedAt;
     }
 
-    public static Portfolio create(Long userId, Instant now) {
-        return new Portfolio(null, userId, CostMethod.WEIGHTED_AVG, now, now);
-    }
-
     public static Portfolio reconstitute(Long id, Long userId, CostMethod costMethod,
                                          Instant createdAt, Instant updatedAt) {
         return new Portfolio(id, userId, costMethod, createdAt, updatedAt);

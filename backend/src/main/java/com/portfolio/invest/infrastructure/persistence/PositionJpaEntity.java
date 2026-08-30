@@ -25,10 +25,10 @@ public class PositionJpaEntity {
     @Column(name = "group_id", nullable = false)
     private Long groupId;
 
-    @Column(name = "stock_code", nullable = false)
+    @Column(name = "stock_code", nullable = false, length = 16)
     private String stockCode;
 
-    @Column(name = "stock_name", nullable = false)
+    @Column(name = "stock_name", nullable = false, length = 64)
     private String stockName;
 
     @Column(name = "quantity", nullable = false)

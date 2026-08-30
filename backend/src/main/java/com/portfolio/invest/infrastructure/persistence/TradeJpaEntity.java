@@ -26,7 +26,7 @@ public class TradeJpaEntity {
     private Long positionId;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
+    @Column(nullable = false, length = 8)
     private TradeType type;
 
     @Column(name = "trade_date", nullable = false)

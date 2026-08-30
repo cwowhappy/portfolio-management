@@ -1,6 +1,6 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
 import {
-  addCashTransaction, editTrade, fetchCashTransactions, fetchGroups, fetchOverview, fetchTrades, renameGroup,
+  addCashTransaction, editTrade, fetchGroups, fetchOverview, fetchTrades, renameGroup,
 } from "@/lib/portfolioApi";
 
 const positionJson = {
@@ -60,16 +60,6 @@ describe("portfolioApi", () => {
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("/api/portfolio/cash-transactions");
     expect(init.method).toBe("POST");
-  });
-
-  it("fetchCashTransactions 解析流水列表", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: true, status: 200,
-      json: async () => [{ id: 9, groupId: 1, type: "WITHDRAW", amount: 5000, txDate: "2026-08-28", note: "转出" }],
-    }));
-    const txs = await fetchCashTransactions(1);
-    expect(txs[0].type).toBe("WITHDRAW");
-    expect(txs[0].amount).toBe(5000);
   });
 
   it("fetchTrades 解析交易列表", async () => {

@@ -8,7 +8,6 @@ public interface PortfolioRepository {
 
     // Portfolio
     Optional<Portfolio> findPortfolioByUserId(Long userId);
-    Portfolio savePortfolio(Portfolio portfolio);
     /** 幂等插入组合：已存在则跳过；用于并发首次访问的原子创建。 */
     void insertPortfolioIfAbsent(Long userId);
 

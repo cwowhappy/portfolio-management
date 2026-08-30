@@ -23,11 +23,11 @@ public class HoldingGroupJpaEntity {
     @Column(name = "portfolio_id", nullable = false)
     private Long portfolioId;
 
-    @Column(nullable = false)
+    @Column(nullable = false, length = 64)
     private String name;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
+    @Column(nullable = false, length = 16)
     private GroupType type;
 
     @Column(name = "created_at", nullable = false)

@@ -61,13 +61,16 @@ export default function GroupManager({ groups, onChanged }: { groups: GroupView[
     }
   }
 
+  const amountNum = Number(txAmount);
+  const amountValid = txAmount.trim() !== "" && Number.isFinite(amountNum);
+
   async function onSubmitCashTx() {
     const gid = effectiveTxGroupId;
-    if (gid == null || !txAmount) return;
+    if (gid == null || !amountValid) return;
     setTxBusy(true);
     setTxError(null);
     try {
-      await addCashTransaction({ groupId: gid, type: txType, amount: Number(txAmount), txDate });
+      await addCashTransaction({ groupId: gid, type: txType, amount: amountNum, txDate });
       setTxAmount("");
       onChanged();
     } catch (e) {
@@ -141,11 +144,14 @@ export default function GroupManager({ groups, onChanged }: { groups: GroupView[
           <button
             className="rounded-md bg-[color:var(--color-up)] px-3 py-1.5 text-white disabled:opacity-50"
             onClick={onSubmitCashTx}
-            disabled={txBusy || effectiveTxGroupId == null || !txAmount}
+            disabled={txBusy || effectiveTxGroupId == null || !amountValid}
           >
             录入
           </button>
         </div>
+        {txAmount.trim() !== "" && !amountValid && (
+          <div className="text-xs text-[color:var(--color-down)]">请输入有效的金额数字</div>
+        )}
         {txError && <div className="text-xs text-[color:var(--color-down)]">{txError}</div>}
       </div>
 

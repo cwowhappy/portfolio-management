@@ -86,16 +86,27 @@ export default function PositionActions({ position, onChanged }: { position: Pos
 
   async function onEditSubmit() {
     if (editTradeId == null || !editDate || !editPrice || !editQuantity) return;
-    await run(
-      () =>
-        editTrade(position.id, editTradeId, {
-          tradeDate: editDate,
-          price: Number(editPrice),
-          quantity: Number(editQuantity),
-          fee: Number(editFee || "0"),
-        }),
-      "编辑失败",
-    );
+    setBusy(true);
+    setError(null);
+    try {
+      await editTrade(position.id, editTradeId, {
+        tradeDate: editDate,
+        price: Number(editPrice),
+        quantity: Number(editQuantity),
+        fee: Number(editFee || "0"),
+      });
+      setEditing(false);
+      setEditTradeId(null);
+      setEditDate("");
+      setEditPrice("");
+      setEditQuantity("");
+      setEditFee("");
+      onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "编辑失败");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function onDelete() {

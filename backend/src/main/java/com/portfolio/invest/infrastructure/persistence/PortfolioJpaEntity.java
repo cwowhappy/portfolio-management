@@ -24,7 +24,7 @@ public class PortfolioJpaEntity {
     private Long userId;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "cost_method", nullable = false)
+    @Column(name = "cost_method", nullable = false, length = 16)
     private CostMethod costMethod;
 
     @Column(name = "created_at", nullable = false)

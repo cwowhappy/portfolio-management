@@ -26,7 +26,7 @@ public class CashTransactionJpaEntity {
     private Long groupId;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
+    @Column(nullable = false, length = 16)
     private CashTransactionType type;
 
     @Column(nullable = false)
@@ -35,7 +35,7 @@ public class CashTransactionJpaEntity {
     @Column(name = "tx_date", nullable = false)
     private LocalDate txDate;
 
-    @Column(name = "note")
+    @Column(name = "note", length = 255)
     private String note;
 
     @Column(name = "created_at", nullable = false)

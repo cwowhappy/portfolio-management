@@ -49,7 +49,8 @@ class PortfolioRepositoryImplTest extends IntegrationTestBase {
     }
 
     private Portfolio savePortfolio(Long userId) {
-        return repository.savePortfolio(Portfolio.create(userId, Instant.now()));
+        repository.insertPortfolioIfAbsent(userId);
+        return repository.findPortfolioByUserId(userId).orElseThrow();
     }
 
     @Test

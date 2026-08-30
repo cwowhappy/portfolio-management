@@ -49,8 +49,6 @@ export const editTrade = (positionId: number, tradeId: number, cmd: { tradeDate:
   request<PositionView>(`/api/portfolio/positions/${positionId}/trades/${tradeId}`, "PUT", cmd, PositionViewSchema);
 export const addCashTransaction = (cmd: { groupId: number; type: "DEPOSIT" | "WITHDRAW"; amount: number; txDate: string; note?: string }) =>
   request<CashTransactionView>("/api/portfolio/cash-transactions", "POST", cmd, CashTransactionViewSchema);
-export const fetchCashTransactions = (groupId: number) =>
-  request<CashTransactionView[]>(`/api/portfolio/cash-transactions?groupId=${groupId}`, "GET", undefined, z.array(CashTransactionViewSchema));
 export const fetchAllocation = () => request<AssetAllocation>("/api/portfolio/allocation", "GET", undefined, AssetAllocationSchema);
 export const fetchIndustryDistribution = () => request<IndustryDistribution>("/api/portfolio/industry-distribution", "GET", undefined, IndustryDistributionSchema);
 export const fetchConcentration = () => request<Concentration>("/api/portfolio/concentration", "GET", undefined, ConcentrationSchema);

@@ -26,7 +26,7 @@ public class DividendJpaEntity {
     private Long positionId;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
+    @Column(nullable = false, length = 8)
     private DividendType type;
 
     @Column(name = "ex_date", nullable = false)

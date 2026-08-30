@@ -42,11 +42,6 @@ public class PortfolioRepositoryImpl implements PortfolioRepository {
     }
 
     @Override
-    public Portfolio savePortfolio(Portfolio portfolio) {
-        return portfolioJpa.save(PortfolioJpaEntity.fromDomain(portfolio)).toDomain();
-    }
-
-    @Override
     public void insertPortfolioIfAbsent(Long userId) {
         portfolioJpa.insertPortfolioIfAbsent(userId);
     }
