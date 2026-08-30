@@ -70,8 +70,13 @@ tasks.named('test') {
     // Colima 等本地 Docker 运行时的 socket 无法挂载进 Ryuk 资源回收容器，
     // 禁用 Ryuk（@Container 容器由 JUnit 扩展负责启停），保证 Testcontainers 全环境可用
     environment 'TESTCONTAINERS_RYUK_DISABLED', 'true'
-    // 每次跑测试即生成覆盖率报告并执行门槛校验（指令/分支 ≥ 80%）
-    finalizedBy jacocoTestReport, jacocoTestCoverageVerification
+    // 每次跑测试即生成覆盖率报告；全量门槛（指令/分支 ≥ 80%）由 `check` 任务触发，
+    // 聚焦测试（--tests X）只生成报告、不触发门槛
+    finalizedBy jacocoTestReport
+}
+
+tasks.named('check') {
+    dependsOn jacocoTestCoverageVerification
 }
 
 jacocoTestReport {

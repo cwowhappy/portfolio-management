@@ -18,7 +18,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Test
         working-directory: backend
-        run: ./gradlew test --console=plain
+        run: ./gradlew check --console=plain
 
   frontend:
     name: Frontend tests

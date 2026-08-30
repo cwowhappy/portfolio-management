@@ -25,7 +25,7 @@ dev-frontend:
 test: test-backend test-frontend collect-test
 
 test-backend:
-	cd backend && ./gradlew test --console=plain
+	cd backend && ./gradlew check --console=plain
 
 test-frontend:
 	cd frontend && pnpm lint && pnpm test
