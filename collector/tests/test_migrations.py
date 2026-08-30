@@ -14,6 +14,12 @@ EXPECTED_TABLES = {"collector_task", "collector_task_run", "collector_source_hea
 def test_upgrade_creates_ops_tables():
     cfg = Config("migrations/alembic.ini")
     cfg.set_main_option("sqlalchemy.url", DB)
+    # 隔离：pg_conn fixture 已用 OPS_DDL 建表，这里先清空迁移相关表，再从零跑迁移
+    with psycopg.connect(DB) as conn, conn.cursor() as cur:
+        cur.execute(
+            "DROP TABLE IF EXISTS trading_calendar, collector_source_health,"
+            " collector_task_run, collector_task, alembic_version CASCADE"
+        )
     command.upgrade(cfg, "head")
 
     with psycopg.connect(DB) as conn, conn.cursor() as cur:

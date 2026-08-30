@@ -47,7 +47,7 @@ class MarketDataParserTest {
         assertThat(q.changePct()).isEqualTo(1.07);
         assertThat(q.pe()).isEqualTo(21.35);
         String expectedTime = LocalDateTime.ofInstant(
-                        Instant.ofEpochSecond(1754870400L), ZoneId.systemDefault())
+                        Instant.ofEpochSecond(1754870400L), ZoneId.of("Asia/Shanghai"))
                 .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
         assertThat(q.time()).isEqualTo(expectedTime);
     }
