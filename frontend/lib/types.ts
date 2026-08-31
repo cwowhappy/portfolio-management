@@ -224,3 +224,13 @@ export interface IndustrySlice { industryName: string; marketValue: number; rati
 export interface IndustryDistribution { slices: IndustrySlice[]; }
 export interface ConcentrationHolding { stockCode: string; stockName: string; marketValue: number; ratio: number; }
 export interface Concentration { holdings: ConcentrationHolding[]; top5Ratio: number; }
+
+// —— 资产配置 ——
+
+export type AssetClass = "STOCK" | "BOND" | "GOLD" | "CASH" | "REITS";
+export type PlanSource = "TEMPLATE" | "CUSTOM";
+export interface WeightView { assetClass: AssetClass; weight: number; }
+export interface TemplateView { id: string; name: string; weights: WeightView[]; }
+export interface PlanView { id: number; name: string; source: PlanSource; weights: WeightView[]; active: boolean; }
+export interface DeviationSlice { assetClass: AssetClass; targetWeight: number; actualWeight: number; deviation: number; }
+export interface DeviationView { slices: DeviationSlice[]; }
