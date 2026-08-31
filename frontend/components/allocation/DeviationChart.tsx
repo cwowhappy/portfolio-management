@@ -8,7 +8,7 @@ export default function DeviationChart({ deviation }: { deviation: DeviationView
   const slices = deviation?.slices ?? [];
   if (slices.length === 0) {
     return (
-      <div className="rounded-2xl border border-[color:var(--color-line)] bg-[color:var(--color-panel)]/70 p-5">
+      <div className="rounded-2xl border border-[color:var(--color-line)] bg-[color:var(--color-panel)]/70 p-5" data-testid="deviation-chart">
         <div className="font-[family-name:var(--font-display)] text-[15px] mb-3">目标 vs 实际配置</div>
         <div className="text-sm text-[color:var(--color-ink-faint)]">暂无生效方案，先套用模板或创建方案并设为生效</div>
       </div>
