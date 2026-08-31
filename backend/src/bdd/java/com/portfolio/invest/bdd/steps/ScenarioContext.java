@@ -24,6 +24,7 @@ public class ScenarioContext {
     private Long userId;
     private Long groupId;
     private Long positionId;
+    private Long planId;
     private MockHttpSession userSession;
     private MockHttpSession adminSession;
     private MvcResult lastResponse;
@@ -69,6 +70,14 @@ public class ScenarioContext {
 
     public void setPositionId(Long positionId) {
         this.positionId = positionId;
+    }
+
+    public Long getPlanId() {
+        return planId;
+    }
+
+    public void setPlanId(Long planId) {
+        this.planId = planId;
     }
 
     public MockHttpSession getUserSession() {
