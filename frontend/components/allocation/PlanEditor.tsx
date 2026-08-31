@@ -26,7 +26,6 @@ export default function PlanEditor({ templates, editing, onSaved }: { templates:
 
   const setWeight = (ac: AssetClass, v: number) => {
     setWeights((prev) => ({ ...prev, [ac]: v }));
-    setSource("CUSTOM");
   };
 
   const save = async () => {
@@ -34,7 +33,7 @@ export default function PlanEditor({ templates, editing, onSaved }: { templates:
     const list = ASSET_CLASSES.filter((ac) => (weights[ac] ?? 0) > 0)
       .map((ac) => ({ assetClass: ac, weight: weights[ac]! }));
     if (list.length === 0) { setError("请至少设置一类资产权重"); return; }
-    if (sum !== 100) { setError(`权重之和需为 100%（当前 ${sum}%）`); return; }
+    if (Math.abs(sum - 100) > 1e-6) { setError(`权重之和需为 100%（当前 ${sum}%）`); return; }
     try {
       if (editing) {
         await updatePlan(editing.id, { name: name.trim() || editing.name, weights: list });
