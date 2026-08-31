@@ -79,3 +79,17 @@
 
 - MS-04 资产配置基础的计划编写直接套用上述清单（覆盖率逐任务 + FR 矩阵 + 范围对齐）。
 - `make smoke`（真实行情 + AI 对话）仍未跑，合并 MS-03 前建议补一次端到端冒烟。
+
+---
+
+## 2026-08-31 轮（collector 测试体系加固收尾）
+
+### 本轮做了什么
+
+- 对上轮（2026-08-29）collector 审查暴露的测试缺口逐项闭环：用例 103 → 148，覆盖率 89% → 95.56%，T3 幂等 upsert 落实 1/6 → 6/6，全量 YAML 装配冒烟补齐（四个 registry 36–62% → 86–100%），详见 `features/plans/2026-08-31-collector测试体系加固.md`。
+- 基建改造：conftest 废弃手工 DDL，集成测试 schema 改用真实迁移构建（alembic upgrade head + 回放后端 Flyway V3/V4 SQL）；两处生产修复（`seed_tasks` 键校验 fail-fast、任务 job 异常兜底）。
+
+### 反复出现的问题模式（新增审查清单）
+
+- **手工 DDL 副本漂移**：测试用一份手工维护的 DDL 建 schema，与真实迁移（alembic/Flyway）必然双向漂移——测的是「假 schema」，唯一约束改了测试还绿。→ 集成测试 schema 必须由真实迁移构建；在 conftest/fixtures 里看到手工 DDL 副本即判债。
+- **装配链路被 mock 绕过**：测试全用 mock 注册表注入组件，registry `get()`、YAML 解析、装配全链路零覆盖（本轮实测四个 registry 覆盖率 36–62%），配置层 typo 与注册遗漏只有上线才暴露。→ 至少一条「真实 YAML + 真实注册表」的全量装配冒烟（`load → build_registries → assemble`），顺带把所有 registry 的 get/未注册分支打满。

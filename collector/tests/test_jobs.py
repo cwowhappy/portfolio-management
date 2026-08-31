@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock
 
-from collector.scheduler.jobs import assemble_collector, seed_tasks
+from collector.scheduler.jobs import assemble_collector, load_task_defs, seed_tasks
 from collector.sources.base import SourceError
 
 
@@ -152,3 +152,78 @@ def test_fresh_calendar_no_warning(caplog):
     with caplog.at_level(logging.WARNING):
         check_calendar_staleness(conn, today=dt.date(2026, 8, 29))
     assert "交易日历" not in caplog.text
+
+
+# ---------------------------------------------------------------- P2 seed 键校验（L5 前半句）
+
+from pathlib import Path
+
+import pytest
+
+TASKS_DIR = Path(__file__).resolve().parent.parent / "tasks"
+
+
+def _valid_task_def():
+    return {
+        "task_code": "t",
+        "task_name": "T",
+        "source_ids": [],
+        "converter": "c",
+        "calc": None,
+        "validator": None,
+        "target_table": "x",
+        "schedule": {},
+        "enabled": True,
+        "trading_day_gated": True,
+        "retry_max": 3,
+        "retry_backoff": "exponential",
+    }
+
+
+def test_seed_tasks_missing_required_key_fails():
+    bad = _valid_task_def()
+    del bad["target_table"]
+    with pytest.raises(ValueError, match="缺必填键.*target_table"):
+        seed_tasks(MagicMock(), [bad])
+
+
+def test_seed_tasks_unknown_key_fails():
+    bad = {**_valid_task_def(), "bogus_key": 1}
+    with pytest.raises(ValueError, match="含未知键.*bogus_key"):
+        seed_tasks(MagicMock(), [bad])
+
+
+def test_seed_tasks_real_yaml_defs_pass():
+    """真实 6 个任务 YAML 必须通过键校验（封闭契约与存量配置一一对应）。"""
+    conn = MagicMock()
+    seed_tasks(conn, load_task_defs(str(TASKS_DIR)))
+    assert conn.cursor.return_value.__enter__.return_value.execute.call_count == 6
+
+
+# ---------------------------------------------------------------- S1 调度属性 / S3 异常兜底
+
+
+def test_task_job_scheduler_attributes():
+    """S1：每个 job 显式 coalesce/max_instances/misfire_grace_time，不依赖 APScheduler 默认值。"""
+    sch = build_scheduler([_task_row_like()], MagicMock(), calendar_refresher=lambda: None)
+    job = sch.get_job("t")
+    assert job.coalesce is True
+    assert job.max_instances == 1
+    assert job.misfire_grace_time == 3600
+    cal_job = sch.get_job("refresh_trading_calendar")
+    assert cal_job.coalesce is True
+    assert cal_job.max_instances == 1
+    assert cal_job.misfire_grace_time == 86400
+
+
+def test_task_job_swallows_runner_exception_and_logs(caplog):
+    """S3：runner 抛异常时 job 不外抛，只记失败日志，保住后续调度。"""
+    runner = MagicMock()
+    runner.run.side_effect = RuntimeError("boom")
+    sch = build_scheduler([_task_row_like()], runner)
+    job = sch.get_job("t")
+    with caplog.at_level(logging.ERROR):
+        job.func()  # 不应抛出
+    runner.run.assert_called_once()
+    assert "调度运行失败" in caplog.text
+    assert "boom" in caplog.text

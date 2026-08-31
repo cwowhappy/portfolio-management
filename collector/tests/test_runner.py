@@ -147,6 +147,19 @@ def test_retry_attempts_do_not_double_count_circuit_failures():
     assert ex.run.call_args_list[1].kwargs["count_failures"] is False
 
 
+def test_task_without_retry_max_falls_back_to_runner_default():
+    """task.retry_max 为 None 时回落 runner 构造时的兜底值。"""
+    ex = MagicMock()
+    ex.run.side_effect = StoreError("db down")
+    runner = TaskRunner("postgresql://u:p@localhost:5432/db", TradingCalendar(set()), ex, retry_max=2)
+    with _patched_pg() as pg, patch("collector.scheduler.runner.time.sleep") as sleep:
+        _wire_pg(pg)
+        with pytest.raises(StoreError):
+            runner.run(_gated_off_task(retry_max=None))
+    assert ex.run.call_count == 3  # 首次 + runner 兜底的 2 次重试
+    assert [c.args[0] for c in sleep.call_args_list] == [30, 60]
+
+
 # ---------------------------------------------------------------- --date 与交易日门控一致化
 
 

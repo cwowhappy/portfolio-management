@@ -2,69 +2,42 @@
 
 优先用 DATABASE_URL（CI 注入 postgres service）；本地无 DATABASE_URL 时
 用 testcontainers 起一次性 postgres:16 容器；docker 不可用时整组 skip。
+
+schema 与生产同源，不再维护手工 DDL（消灭测试与真实迁移的漂移）：
+- collector 自己的 alembic 迁移（migrations/）：4 张运维表，upgrade 到 head
+- 后端 Flyway 迁移 SQL（backend/.../db/migration/ 的 V3/V4）：6 张业务目标表
 """
 
 import os
+from pathlib import Path
 
 import psycopg
 import pytest
+from alembic import command
+from alembic.config import Config
 
 # 与后端 Testcontainers 约定一致：禁用 Ryuk，兼容 Colima 等无法挂载 docker.sock 的环境
 os.environ.setdefault("TESTCONTAINERS_RYUK_DISABLED", "true")
 
-# 与 migrations/versions/0001_ops_tables.py 对齐的运维表 + 目标表最小结构
-OPS_DDL = """
-CREATE TABLE IF NOT EXISTS collector_task (
-    id BIGSERIAL PRIMARY KEY,
-    task_code VARCHAR(64) NOT NULL UNIQUE,
-    task_name VARCHAR(128) NOT NULL,
-    source_ids JSONB NOT NULL,
-    converter VARCHAR(64) NOT NULL,
-    calc VARCHAR(64),
-    validator JSONB,
-    target_table VARCHAR(64) NOT NULL,
-    schedule JSONB NOT NULL,
-    enabled BOOLEAN NOT NULL DEFAULT true,
-    trading_day_gated BOOLEAN NOT NULL DEFAULT true,
-    retry_max INT NOT NULL DEFAULT 3,
-    retry_backoff VARCHAR(16) NOT NULL DEFAULT 'exponential',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-CREATE TABLE IF NOT EXISTS collector_task_run (
-    id BIGSERIAL PRIMARY KEY,
-    task_id BIGINT NOT NULL REFERENCES collector_task(id),
-    mode VARCHAR(16) NOT NULL DEFAULT 'incremental',
-    status VARCHAR(16) NOT NULL,
-    source_used VARCHAR(64),
-    params JSONB,
-    rows_written INT,
-    started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    finished_at TIMESTAMPTZ,
-    error TEXT,
-    message TEXT
-);
-CREATE TABLE IF NOT EXISTS collector_source_health (
-    id BIGSERIAL PRIMARY KEY,
-    source_id VARCHAR(64) NOT NULL UNIQUE,
-    total_runs INT NOT NULL DEFAULT 0,
-    success_runs INT NOT NULL DEFAULT 0,
-    consecutive_failures INT NOT NULL DEFAULT 0,
-    last_latency_ms INT,
-    last_success_at TIMESTAMPTZ,
-    last_failure_at TIMESTAMPTZ,
-    last_error TEXT,
-    score NUMERIC(5,2),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-CREATE TABLE IF NOT EXISTS valuation_snapshot (
-    trading_day DATE NOT NULL PRIMARY KEY,
-    pe_median NUMERIC,
-    pb_median NUMERIC,
-    net_breaker_count INT,
-    net_breaker_ratio NUMERIC
-);
-"""
+COLLECTOR_DIR = Path(__file__).resolve().parent.parent
+# 业务目标表 DDL 由后端 Flyway 管理（跨服务契约），测试直接回放同一份 SQL
+FLYWAY_DIR = COLLECTOR_DIR.parent / "backend" / "src" / "main" / "resources" / "db" / "migration"
+# V3 建旧 treasury_yield 等表，V4 建曲线/成分股表并 DROP 旧 treasury_yield，顺序不可颠倒
+FLYWAY_SQL_FILES = ("V3__valuation.sql", "V4__valuation_curve.sql")
+
+# 10 张表：4 运维（alembic）+ 6 业务目标（Flyway V3/V4；旧 treasury_yield 已被 V4 删除）
+ALL_TABLES = (
+    "collector_task_run",
+    "collector_source_health",
+    "collector_task",
+    "trading_calendar",
+    "valuation_snapshot",
+    "industry_valuation",
+    "index_valuation_history",
+    "shenwan_industry_mapping",
+    "treasury_yield_curve",
+    "index_constituent",
+)
 
 
 @pytest.fixture(scope="session")
@@ -88,10 +61,32 @@ def pg_url():
         yield f"postgresql://{container.username}:{container.password}@{host}:{port}/{container.dbname}"
 
 
-@pytest.fixture()
-def pg_conn(pg_url):
+@pytest.fixture(scope="session")
+def pg_schema(pg_url):
+    """在 pg_url 指向的库上按真实迁移建全量 schema（session 级一次）。
+
+    约定测试库为空库（CI 的 postgres:16 service / 本地一次性容器）；alembic 幂等，
+    但 Flyway SQL 无 IF NOT EXISTS，非空库重复建表会报错——属预期暴露而非兜底。
+    """
+    # (a) collector 自己的运维表：alembic upgrade head（script_location 显式绝对路径，
+    # 不依赖 pytest 的 cwd）
+    cfg = Config(str(COLLECTOR_DIR / "migrations" / "alembic.ini"))
+    cfg.set_main_option("script_location", str(COLLECTOR_DIR / "migrations"))
+    cfg.set_main_option("sqlalchemy.url", pg_url)
+    command.upgrade(cfg, "head")
+    # (b) 业务目标表：按 Flyway 版本顺序回放后端 SQL 文本。两份文件均无 Flyway 占位符，
+    # psycopg3 的 execute 支持单次调用内多语句，整段执行即可。
     with psycopg.connect(pg_url) as conn:
-        conn.execute(OPS_DDL)
-        conn.execute("TRUNCATE collector_task_run, collector_source_health, collector_task, valuation_snapshot")
+        for name in FLYWAY_SQL_FILES:
+            conn.execute((FLYWAY_DIR / name).read_text(encoding="utf-8"))
+        conn.commit()
+    return pg_url
+
+
+@pytest.fixture()
+def pg_conn(pg_schema):
+    """函数级连接：schema 由 pg_schema 保证，这里只清数据，不再执行 DDL。"""
+    with psycopg.connect(pg_schema) as conn:
+        conn.execute(f"TRUNCATE {', '.join(ALL_TABLES)}")
         conn.commit()
         yield conn

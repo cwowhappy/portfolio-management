@@ -114,3 +114,43 @@ def test_index_valuation_normalizes_iso_range(mocker):
     src = IndexValuationSource("idx", pro_factory=lambda: pro, index_codes={"000300": "沪深300"})
     src.fetch({"start": "2026-08-01", "end": "2026-08-28"})
     pro.index_dailybasic.assert_called_once_with(ts_code="000300.SH", start_date="20260801", end_date="20260828")
+
+
+# ---------------------------------------------------------------- L4 上游表为空（冷启动缝隙）
+
+
+def _empty_mapping_conn_factory(mocker):
+    cursor = mocker.MagicMock()
+    cursor.fetchall.return_value = []
+    cursor.__enter__.return_value = cursor
+    conn = mocker.MagicMock()
+    conn.cursor.return_value = cursor
+    conn.__enter__.return_value = conn
+    return lambda: conn
+
+
+def test_industry_universe_empty_upstream_table_yields_zero_rows(mocker):
+    """shenwan_industry_mapping 为空（冷启动缝隙）时 inner join 产出 0 行，而非报错或全量直通。"""
+    universe = pd.DataFrame({"代码": ["000001"], "名称": ["平安银行"], "市盈率-动态": [10.0]})
+    mocker.patch("akshare.stock_zh_a_spot_em", return_value=universe)
+
+    src = IndustryUniverseSource("industry_universe", conn_factory=_empty_mapping_conn_factory(mocker))
+    df = src.fetch({})
+    assert len(df) == 0
+    assert "industry_code" in df.columns
+
+
+def test_industry_universe_empty_result_fails_min_rows_hard(mocker):
+    """上游空表产出的 0 行结果经 min_rows hard 校验必须判失败——冷启动缝隙（C-P1-4）的回归保障。"""
+    from collector.sources.base import SourceError
+    from collector.validators.rules import RuleValidator
+
+    universe = pd.DataFrame({"代码": ["000001"], "名称": ["平安银行"], "市盈率-动态": [10.0]})
+    mocker.patch("akshare.stock_zh_a_spot_em", return_value=universe)
+
+    src = IndustryUniverseSource("industry_universe", conn_factory=_empty_mapping_conn_factory(mocker))
+    records = src.fetch({}).to_dict("records")
+    assert records == []
+    validator = RuleValidator([{"check": "min_rows", "value": 1, "level": "hard"}])
+    with pytest.raises(SourceError, match="行数 0 < 1"):
+        validator.validate(records)
