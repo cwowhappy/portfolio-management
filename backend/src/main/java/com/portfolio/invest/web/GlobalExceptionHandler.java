@@ -65,6 +65,15 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(status).body(new ApiError(e.code(), e.getMessage()));
     }
 
+    @ExceptionHandler(com.portfolio.invest.domain.allocation.AllocationException.class)
+    public ResponseEntity<ApiError> allocation(com.portfolio.invest.domain.allocation.AllocationException e) {
+        HttpStatus status = switch (e.code()) {
+            case com.portfolio.invest.domain.allocation.AllocationErrorCode.NOT_FOUND -> HttpStatus.NOT_FOUND;
+            default -> HttpStatus.BAD_REQUEST;
+        };
+        return ResponseEntity.status(status).body(new ApiError(e.code(), e.getMessage()));
+    }
+
     /** Bean Validation 结构性校验失败（@Valid wire DTO）→ 400，错误体保持 ApiError。 */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiError> validation(MethodArgumentNotValidException e) {
