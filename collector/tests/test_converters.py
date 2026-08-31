@@ -53,3 +53,55 @@ def test_coerce_list_value_not_misjudged():
     conv = FieldMappingConverter({"v": {"from": "x", "type": "other"}})
     raw = pd.DataFrame({"x": [[["a", "b"]]]})
     assert conv.convert(raw) == [{"v": [["a", "b"]]}]
+
+
+# ---------------------------------------------------------------- _coerce 脏数据路径
+
+
+def test_coerce_none_passthrough():
+    """value 为 None 时直通返回 None，不再走 isna 与类型转换。"""
+    from collector.converters.field_mapping import _coerce
+
+    assert _coerce(None, "str") is None
+    assert _coerce(None, "numeric") is None
+    assert _coerce(None, "int") is None
+
+
+def test_coerce_isna_ambiguity_falls_back():
+    """pd.isna 对 ndarray 返回数组（布尔判定抛 ValueError），应兜底放行原值。"""
+    import numpy as np
+
+    from collector.converters.field_mapping import _coerce
+
+    arr = np.array([1, 2])
+    assert _coerce(arr, "other") is arr
+
+
+def test_coerce_numeric_dirty_string_returns_none():
+    """东财 '-' 占位符或畸形数值字符串转 float 失败时应为 None，不抛异常。"""
+    conv = FieldMappingConverter({"pe": {"from": "市盈率-动态", "type": "numeric"}})
+    raw = pd.DataFrame({"市盈率-动态": ["-", "abc", "25.5"]})
+    records = conv.convert(raw)
+    assert records == [{"pe": None}, {"pe": None}, {"pe": 25.5}]
+
+
+def test_coerce_int_casts_and_dirty_value_returns_none():
+    """int 类型：合法字符串/浮点可转；'-' 等脏值转换失败返回 None。"""
+    conv = FieldMappingConverter({"n": {"from": "x", "type": "int"}})
+    raw = pd.DataFrame({"x": ["5", 7.9, "-"]})
+    records = conv.convert(raw)
+    assert records[0]["n"] == 5
+    assert records[1]["n"] == 7
+    assert records[2]["n"] is None
+
+
+def test_optional_column_missing_without_default_becomes_none():
+    """可选列缺失且无 default 时填 None（不抛错、不用默认值）。"""
+    conv = FieldMappingConverter(
+        {
+            "code": {"from": "代码", "type": "str"},
+            "pe": {"from": "市盈率-动态", "type": "numeric"},
+        }
+    )
+    raw = pd.DataFrame({"代码": ["600519"]})
+    assert conv.convert(raw) == [{"code": "600519", "pe": None}]

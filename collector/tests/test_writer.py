@@ -29,6 +29,14 @@ def test_upsert_uses_executemany():
     conn.commit.assert_called_once()
 
 
+def test_upsert_empty_records_returns_zero_without_touching_db():
+    """空 records 直通返回 0，不建游标、不提交。"""
+    conn = MagicMock()
+    assert Store().upsert(conn, "valuation_snapshot", []) == 0
+    conn.cursor.assert_not_called()
+    conn.commit.assert_not_called()
+
+
 def test_upsert_psycopg_error_becomes_store_error():
     store = Store()
     conn = MagicMock()

@@ -22,7 +22,7 @@ from collector.executor.executor import Executor
 from collector.executor.selector import SourceSelector
 from collector.model.task import Collector
 from collector.repositories.runs import RunRepository
-from collector.repositories.tasks import TaskRepository
+from collector.repositories.tasks import TASK_COLS, TaskRepository
 from collector.scheduler.calendar import TradingCalendar
 from collector.scheduler.runner import TaskRunner
 from collector.sources.plugins import (
@@ -52,9 +52,25 @@ def load_task_defs(dir_path: str) -> list[dict]:
     return out
 
 
+# L5：YAML 任务字段集是封闭契约，键集合与 TaskRepository 消费列一一对应。
+TASK_DEF_KEYS = frozenset(TASK_COLS)
+
+
+def _validate_task_keys(t):
+    """缺必填键或含未知键都 fail-fast：缺键会静默写入 NULL，未知键是死配置。"""
+    code = t.get("task_code", "<未知>")
+    missing = TASK_DEF_KEYS - t.keys()
+    if missing:
+        raise ValueError(f"任务 {code} 缺必填键: {sorted(missing)}")
+    unknown = t.keys() - TASK_DEF_KEYS
+    if unknown:
+        raise ValueError(f"任务 {code} 含未知键: {sorted(unknown)}")
+
+
 def seed_tasks(conn, task_defs):
     repo = TaskRepository(conn)
     for t in task_defs:
+        _validate_task_keys(t)
         repo.upsert(t)
 
 
@@ -87,6 +103,14 @@ def make_trigger(schedule):
     raise ValueError(f"未知调度类型: {schedule['type']}")
 
 
+def _run_task_job(runner, task):
+    """S3：job 自己兜底所有异常——异常逃出 job 会被 APScheduler 静默丢弃该任务的后续调度。"""
+    try:
+        runner.run(task)
+    except Exception:
+        logger.exception("任务 %s 调度运行失败", task.task_code)
+
+
 def build_scheduler(tasks, runner, never_succeeded=None, calendar_refresher=None):
     scheduler = BlockingScheduler()
     now = dt.datetime.now()
@@ -97,7 +121,7 @@ def build_scheduler(tasks, runner, never_succeeded=None, calendar_refresher=None
             # 否则要等首个调度周期，期间依赖它的任务必失败。
             kwargs["next_run_time"] = now
         scheduler.add_job(
-            lambda t=task: runner.run(t),
+            lambda t=task: _run_task_job(runner, t),
             trigger=make_trigger(task.schedule),
             id=task.task_code,
             coalesce=True,

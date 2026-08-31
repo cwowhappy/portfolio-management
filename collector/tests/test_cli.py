@@ -260,3 +260,57 @@ def test_backfill_non_range_source_exits_with_message(mocker, capsys):
         main(["backfill", "t", "--start", "2026-01-01", "--end", "2026-01-31"])
     assert e.value.code == 2
     assert "参数错误" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------- list / history 空记录 / 采集失败退出码
+
+from collector.executor.executor import AllSourcesFailed, StoreError
+
+
+def test_list_prints_enabled_tasks(mocker, capsys):
+    _, task_repo, _, _ = _cli_mocks(mocker)
+    task_repo.list_enabled.return_value = [
+        {"task_code": "all_a_valuation", "enabled": True, "schedule": {"type": "cron", "cron": "30 15 * * 1-5"}},
+    ]
+
+    main(["list"])
+
+    out = capsys.readouterr().out
+    assert "all_a_valuation" in out
+    assert "enabled=True" in out
+    assert "30 15 * * 1-5" in out
+
+
+def test_history_empty_prints_hint(mocker, capsys):
+    _, task_repo, _, _ = _cli_mocks(mocker)
+    run_repo = MagicMock()
+    run_repo.list_runs.return_value = []
+    mocker.patch("collector.cli.RunRepository", return_value=run_repo)
+
+    main(["history", "t"])
+
+    assert "无运行记录: t" in capsys.readouterr().out
+
+
+def test_run_all_sources_failed_exits_1(mocker, capsys):
+    _, _, _, task = _cli_mocks(mocker)
+    runner_inst = MagicMock()
+    runner_inst.run.side_effect = AllSourcesFailed("t")
+    mocker.patch("collector.cli.TaskRunner", return_value=runner_inst)
+
+    with pytest.raises(SystemExit) as e:
+        main(["run", "t"])
+    assert e.value.code == 1
+    assert "采集失败" in capsys.readouterr().out
+
+
+def test_run_store_error_exits_1(mocker, capsys):
+    _, _, _, task = _cli_mocks(mocker)
+    runner_inst = MagicMock()
+    runner_inst.run.side_effect = StoreError("db down")
+    mocker.patch("collector.cli.TaskRunner", return_value=runner_inst)
+
+    with pytest.raises(SystemExit) as e:
+        main(["run", "t"])
+    assert e.value.code == 1
+    assert "采集失败" in capsys.readouterr().out

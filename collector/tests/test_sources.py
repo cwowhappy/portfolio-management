@@ -37,3 +37,42 @@ def test_unknown_kind_raises():
 
     with pytest.raises(SourceError):
         cfg.ConfigurableSource("x", "nope", "fn")
+
+
+# ---------------------------------------------------------------- fetch 分发失败分支
+
+
+def test_tushare_without_pro_factory_raises():
+    from collector.sources.base import SourceError
+
+    src = cfg.ConfigurableSource("ts_idx", "tushare", "index_dailybasic")
+    with pytest.raises(SourceError, match="pro_factory"):
+        src.fetch({})
+
+
+def test_http_kind_raises_placeholder_error():
+    """http 源是占位类型，fetch 必须报「需自定义实现」而非静默执行。"""
+    from collector.sources.base import SourceError
+
+    src = cfg.ConfigurableSource("h", "http", "anything")
+    with pytest.raises(SourceError, match="http 源需自定义实现"):
+        src.fetch({})
+
+
+def test_missing_call_raises_not_found():
+    """akshare 上不存在指定函数时应报「找不到调用」。"""
+    from collector.sources.base import SourceError
+
+    src = cfg.ConfigurableSource("ak_spot", "akshare", "no_such_function")
+    with pytest.raises(SourceError, match="找不到调用 no_such_function"):
+        src.fetch({})
+
+
+def test_fetch_unknown_kind_raises_defensive():
+    """构造后 kind 被篡改时 fetch 的防御分支仍应报未知源类型。"""
+    from collector.sources.base import SourceError
+
+    src = cfg.ConfigurableSource("ak_spot", "akshare", "stock_zh_a_spot_em")
+    src.kind = "weird"
+    with pytest.raises(SourceError, match="未知源类型"):
+        src.fetch({})

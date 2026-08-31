@@ -28,3 +28,11 @@ def test_min_rows_hard():
     v = RuleValidator([{"check": "min_rows", "value": 5, "level": "hard"}])
     with pytest.raises(SourceError):
         v.validate([{"pe": 1.0}])
+
+
+def test_min_rows_soft_appends_issue_without_raising():
+    """soft 级别不抛错、不丢记录，只追加 issue（由 executor 记 partial）。"""
+    v = RuleValidator([{"check": "min_rows", "value": 5, "level": "soft"}])
+    records, issues = v.validate([{"pe": 1.0}])
+    assert records == [{"pe": 1.0}]
+    assert issues == ["min_rows: 1 < 5"]

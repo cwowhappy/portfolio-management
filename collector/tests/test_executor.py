@@ -196,3 +196,17 @@ def test_calc_error_wrapped_and_failed_run_recorded(repos):
     with pytest.raises(AllSourcesFailed):
         ex.run(task, "incremental", {}, MagicMock())
     repos.record.assert_called_once_with("t", "incremental", "failed", error="AllSourcesFailed", params={})
+
+
+# ---------------------------------------------------------------- 全源熔断终端分支
+
+
+def test_no_candidates_records_failed_run_without_raising(repos):
+    """selector 返回空候选（所有源熔断/不可用）时记 failed run 并返回，不抛 AllSourcesFailed。"""
+    selector = MagicMock()
+    selector.select.return_value = []
+    ex = Executor(selector, MagicMock())
+    res = ex.run(_task([_source("a")]), "incremental", {}, MagicMock())
+    assert res.status == "failed"
+    assert res.message == "所有源熔断或不可用"
+    repos.record.assert_called_once_with("t", "incremental", "failed", message="所有源熔断或不可用", params={})

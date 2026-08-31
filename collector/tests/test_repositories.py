@@ -55,6 +55,30 @@ def test_list_enabled_handles_parsed_jsonb():
     assert rows[0]["schedule"]["cron"] == "30 15 * * 1-5"
 
 
+def test_get_parses_null_jsonb_columns_as_none():
+    """JSONB 列为 NULL（如无 validator 的任务）时应解析为 None，不报错。"""
+    conn = MagicMock()
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.fetchone.return_value = (
+        "t",
+        "T",
+        [{"source_id": "a"}],
+        "fc",
+        None,
+        None,  # validator 为 NULL
+        "x",
+        {"type": "cron", "cron": "0 9 * * *"},
+        True,
+        True,
+        None,
+        None,
+    )
+    row = TaskRepository(conn).get("t")
+    assert row["task_code"] == "t"
+    assert row["validator"] is None
+    assert row["source_ids"] == [{"source_id": "a"}]
+
+
 def test_upsert_serializes_jsonb_and_commits():
     conn = MagicMock()
     cur = conn.cursor.return_value.__enter__.return_value
