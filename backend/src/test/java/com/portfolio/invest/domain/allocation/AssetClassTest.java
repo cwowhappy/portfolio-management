@@ -1,0 +1,16 @@
+package com.portfolio.invest.domain.allocation;
+
+import org.junit.jupiter.api.Test;
+import static org.assertj.core.api.Assertions.assertThat;
+
+class AssetClassTest {
+    @Test
+    void 五个资产类别带中文标签() {
+        assertThat(AssetClass.values()).hasSize(5);
+        assertThat(AssetClass.STOCK.label()).isEqualTo("股票");
+        assertThat(AssetClass.BOND.label()).isEqualTo("债券");
+        assertThat(AssetClass.GOLD.label()).isEqualTo("黄金");
+        assertThat(AssetClass.CASH.label()).isEqualTo("现金");
+        assertThat(AssetClass.REITS.label()).isEqualTo("REITs");
+    }
+}

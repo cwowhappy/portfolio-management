@@ -189,3 +189,18 @@ export const IndustrySliceSchema = z.object({ industryName: z.string(), marketVa
 export const IndustryDistributionSchema = z.object({ slices: z.array(IndustrySliceSchema) });
 export const ConcentrationHoldingSchema = z.object({ stockCode: z.string(), stockName: z.string(), marketValue: z.number(), ratio: z.number() });
 export const ConcentrationSchema = z.object({ holdings: z.array(ConcentrationHoldingSchema), top5Ratio: z.number() });
+
+// —— 资产配置（/api/allocation/**，与后端 AllocationController 的 DTO 对齐）——
+
+export const AssetClassSchema = z.enum(["STOCK", "BOND", "GOLD", "CASH", "REITS"]);
+export const PlanSourceSchema = z.enum(["TEMPLATE", "CUSTOM"]);
+export const WeightViewSchema = z.object({ assetClass: AssetClassSchema, weight: z.number() });
+export const TemplateViewSchema = z.object({ id: z.string(), name: z.string(), weights: z.array(WeightViewSchema) });
+export const PlanViewSchema = z.object({
+  id: z.number(), name: z.string(), source: PlanSourceSchema,
+  weights: z.array(WeightViewSchema), active: z.boolean(),
+});
+export const DeviationSliceSchema = z.object({
+  assetClass: AssetClassSchema, targetWeight: z.number(), actualWeight: z.number(), deviation: z.number(),
+});
+export const DeviationViewSchema = z.object({ slices: z.array(DeviationSliceSchema) });
