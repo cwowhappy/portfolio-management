@@ -10,7 +10,7 @@ import org.springframework.data.repository.query.Param;
 public interface AllocationPlanJpaRepository extends JpaRepository<AllocationPlanJpaEntity, Long> {
     List<AllocationPlanJpaEntity> findByUserIdOrderByIdDesc(Long userId);
     Optional<AllocationPlanJpaEntity> findByIdAndUserId(Long id, Long userId);
-    Optional<AllocationPlanJpaEntity> findByUserIdAndActive(Long userId, boolean active);
+    Optional<AllocationPlanJpaEntity> findFirstByUserIdAndActiveOrderByIdAsc(Long userId, boolean active);
 
     @Modifying
     @Query("UPDATE AllocationPlanJpaEntity p SET p.active = false WHERE p.userId = :userId AND p.active = true")

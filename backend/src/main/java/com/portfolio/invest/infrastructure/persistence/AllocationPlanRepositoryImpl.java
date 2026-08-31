@@ -35,7 +35,7 @@ public class AllocationPlanRepositoryImpl implements AllocationPlanRepository {
 
     @Override
     public Optional<AllocationPlan> findActiveByUserId(Long userId) {
-        return planJpa.findByUserIdAndActive(userId, true).map(this::toDomain);
+        return planJpa.findFirstByUserIdAndActiveOrderByIdAsc(userId, true).map(this::toDomain);
     }
 
     @Override

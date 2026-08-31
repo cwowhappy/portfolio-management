@@ -20,3 +20,6 @@ CREATE TABLE allocation_plan_weight (
     UNIQUE (plan_id, asset_class)
 );
 CREATE INDEX idx_allocation_plan_weight_plan ON allocation_plan_weight(plan_id);
+
+-- 每用户至多一个生效方案：并发激活时由 DB 兜底（违反则 DataIntegrityViolation → 400）
+CREATE UNIQUE INDEX ux_allocation_plan_user_active ON allocation_plan(user_id) WHERE active;
