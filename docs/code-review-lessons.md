@@ -93,3 +93,81 @@
 
 - **手工 DDL 副本漂移**：测试用一份手工维护的 DDL 建 schema，与真实迁移（alembic/Flyway）必然双向漂移——测的是「假 schema」，唯一约束改了测试还绿。→ 集成测试 schema 必须由真实迁移构建；在 conftest/fixtures 里看到手工 DDL 副本即判债。
 - **装配链路被 mock 绕过**：测试全用 mock 注册表注入组件，registry `get()`、YAML 解析、装配全链路零覆盖（本轮实测四个 registry 覆盖率 36–62%），配置层 typo 与注册遗漏只有上线才暴露。→ 至少一条「真实 YAML + 真实注册表」的全量装配冒烟（`load → build_registries → assemble`），顺带把所有 registry 的 get/未注册分支打满。
+
+---
+
+## 2026-08-31 轮（MS-04 资产配置基础交付复盘）
+
+### 本轮做了什么
+
+- 用 superpowers 工作流完整交付 MS-04 资产配置基础（M07-F01 模板库 + F02 自定义方案 + 偏离度对比，F03 风险测评后置）：后端 `domain/allocation` + `application/allocation` + `web/AllocationController`（7 端点）+ Flyway V6，前端 `/allocation` 页面。
+- 22 提交、16 任务逐任务 review clean、终审（opus）2 Important + 1 Minor 一轮修复闭环、`make test` 三端全绿，PR #10。
+
+### 一、需求规格说明（要点）
+
+> 完整版见 `features/asset-allocation/01-requirement/需求规格说明.md`，此处只列关键决策。
+
+- **范围**：MS-04 = F01 模板库 + F02 自定义方案；F03 风险测评本里程碑后置（相对产品落地计划原文 F01/F02/F03 有收窄，已在「需求澄清汇总」显式记录）。
+- **资产类别**：固定 5 大类枚举（股票/债券/黄金/现金/REITs），不分地域——与 M08 持仓「权益/现金」两片对齐，模板（永久组合/全天候）天然需要债券/黄金。
+- **方案模型**：多方案/用户 + 唯一「生效」标记；偏离度以生效方案为准。
+- **偏离度**：仅展示于 `/allocation`，不改动 `/portfolio`；持仓侧映射 A股+ETF→股票、现金→现金、其余类别记 0。
+- **明确不做**：风险测评、再平衡、回测、地域拆分、债券/黄金/REITs 持仓录入、AI 配置建议工具。
+
+### 二、技术规格说明（要点）
+
+> 完整版见 `features/asset-allocation/02-plan/`，此处只列架构决策。
+
+- **领域**：`AssetClass` 枚举、`AllocationPlan` 不可变聚合根（`validateWeights` 非负且和=100 精确）、`AllocationTemplate` 4 模板、`AllocationException/ErrorCode`。纯 POJO，零 Spring/JPA（ArchUnit 强制）。
+- **持久化**：Flyway V6 两表归一化（`allocation_plan` + `allocation_plan_weight`），JPA 扁平实体 + `AllocationPlanRepositoryImpl`（`save` = 存 plan → 删旧权重 → 插新权重）。
+- **用例**：`AllocationApplicationService` 注入 `AllocationPlanRepository` + 复用 `PortfolioApplicationService.allocation()`（`application.allocation → application.portfolio` 在 ArchUnit 白名单内，无需改 `PackageConventionsTest`）。
+- **偏离度集成**：`mapHoldings` 把 portfolio 的「权益/现金」两片映射 STOCK/CASH，`deviation` 逐类算「实际−目标」。
+- **前端**：同源反代（`relay`）+ zod 契约 + `/allocation` 页面（DeviationChart/PlanEditor/PlanList），`RequireAuth` 包裹。
+
+### 三、实现过程（TDD 符合性评估）
+
+**结论：TDD 只在纯领域层严格落地，应用/基础设施/Web 层是「实现先行、测试后置」。**
+
+- **严格 RED-GREEN**（先写失败测试 → 跑红 → 实现 → 跑绿）：`AssetClass`/`AllocationTemplate`/`AllocationPlan` 三个纯领域任务（P1 Task 1-3）。
+- **编译即收、测试拆到后续独立任务**：仓库接口+迁移（P1 Task 4）、JPA 实体+仓库实现（P1 Task 5）、DTO/命令（P2 Task 1）、服务（P2 Task 2）、控制器（P2 Task 3）——它们的测试被计划刻意拆成 P2 Task 4（服务单测）/Task 5（切片）/Task 6（BDD）。
+- 由此：服务/控制器在写的时候没有即时测试护栏，其分支逻辑（偏离度映射、异常映射）要等到后续测试任务或终审才暴露。这是**计划的结构选择**（把测试当独立交付物），不是执行者偏离——但严格意义上，应用/Web 层是 test-after 而非 test-first。
+- **对下轮建议**：若严格 TDD 是目标，服务/控制器任务应把「写失败测试」作为该任务第一步（而非拆到独立任务），至少对偏离度映射/异常映射这类含分支逻辑的方法。
+
+### 四、测试用例整理与覆盖情况
+
+| 层 | 测试文件 | 用例数 | 覆盖点 |
+|---|---|---|---|
+| 领域单测 | AssetClassTest / AllocationTemplateTest / AllocationPlanTest | 1 / 2 / 5 | 枚举标签、模板权重和=100、权重校验（空/负/非100）、不可变变更 |
+| 服务单测 | AllocationApplicationServiceTest | 9 | 模板/创建/重复权重/激活/非本人404/偏离度映射与差值 |
+| 切片 | AllocationControllerTest | 5 | 7 端点 HTTP 语义 + 404 异常映射 |
+| 集成 | AllocationPlanRepositoryImplTest | 4 | 保存回读/权重替换/激活查询/级联删除（真实 PG） |
+| BDD | allocation_plan.feature | 2 场景 | 套模板激活 + 偏离度空态/五类 |
+| 前端 API | allocationApi.test.ts | 5 | 端点/方法/body/契约解析/schema-drift |
+| 前端路由 | allocationRoute.test.ts | 5 | 反代上游路径/Cookie/body 透传 |
+| 前端组件 | DeviationChart.test.tsx | 2 | 空态/偏离摘要 |
+| 前端 e2e | allocation.spec.ts | 1 | 套模板全链路 |
+
+- **覆盖率**：`make test` 全绿——后端 JaCoCo 覆盖门（≥80% 通过）；前端 44 测试文件 V8 语句 95.32% / 分支 89.25%；collector 未受影响 95.56%。
+
+### 暴露的返工点（本轮）
+
+| 返工点 | 现象 | 根因 | 兜底者 |
+|---|---|---|---|
+| 集成测试用户 id 冲突 | 全量 `make test` 下 AllocationPlanRepositoryImplTest 4 用例 DuplicateKeyException | 测试种子 `app_user(id=1)` 与 AdminSeedRunner 在共享容器占用的 id=1 撞车；单类隔离跑不暴露 | 全量 make test |
+| Flyway 版本断言未更新 | FlywayMigrationIntegrationTest 断言 `containsExactly("1".."5")` 失败 | 新增 V6 但没同步更新迁移数量断言 | 全量 make test |
+| 生效唯一性无 DB 约束 | 并发 activatePlan 可产生两个 active 行 → /deviation 500 | 计划把「本层不做唯一性约束」defer 到服务层，读侧单结果 Optional 在脏数据下抛异常 | 终审（opus） |
+| 前端权重和浮点精度 | 小数权重（33.33+33.33+33.34）被 `sum !== 100` 误拒 | 计划代码用精确相等，spec 风险表明明写了「含容差」 | 终审 |
+| 空态缺 testid | e2e 定位不到空态 | 计划组件空态分支漏加 `data-testid` | 实现者现场修复 |
+
+### 方法论经验（值得固化）
+
+1. **隔离跑单类集成测试 ≠ 全量套件**。`./gradlew integrationTest --tests X` 快，但共享 JVM 单例容器的跨类种子冲突只有全量跑才暴露。**写完最后一块集成测试后，必须跑一次全量 `make test`（或至少全量 integrationTest）再宣称完成**——本轮两个集成测试缺陷都是隔离跑全绿、全量跑才红。
+2. **管道吞 exit code**。`make test 2>&1 | tail` 让管道退出码 = tail 的 0，把失败伪装成成功。**跑长命令取尾时用 `set -o pipefail` 或根本不加管道，让真实退出码透出**。
+3. **加 Flyway 迁移必查「迁移数量/版本断言」**。FlywayMigrationIntegrationTest 硬编码版本列表；任何新 V* 迁移都要同步 grep/更新这类断言。**新增迁移 = 改两处（迁移文件 + 版本契约测试）**。
+4. **「服务层唯一性」不能替代「读侧依赖的不变量」**。`findActiveByUserId` 返回单结果 Optional，意味着「至多一个 active」是读侧正确性的前提——这类不变量应下沉到 DB（部分唯一索引），而不是只在服务编排里保证。**读路径依赖的约束，要在持久化边界强制**。
+5. **spec 里写了「含容差」，计划代码就要用容差**。计划把 spec 风险表的「校验和=100%（含容差）」翻译成了精确相等，终审才抓回。**写计划代码时对照 spec 的风险/精度条款逐条落地，别只复制 happy path**。
+
+### 待观察 / 下轮关注
+
+- PR #10 的 CI 与 review 反馈。
+- `make smoke`（真实行情 + AI 对话）仍未跑，合并前建议补一次端到端冒烟。
+- 下轮 MS-05 计划编写直接套用：FR→实现 可追溯矩阵 + 覆盖率逐任务下沉 + 迁移版本断言同步 + 隔离/全量两段验证。
