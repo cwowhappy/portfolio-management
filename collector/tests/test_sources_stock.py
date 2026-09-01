@@ -55,3 +55,46 @@ def test_stock_valuation_daily_filters_st_and_bse(monkeypatch):
     row = df[df["stock_code"] == "600519"].iloc[0]
     assert row["total_mv"] == pytest.approx(2100000000.0)
     assert row["stock_name"] == "贵州茅台"
+
+
+def test_stock_financial_normalizes_and_backfills(monkeypatch):
+    # 用 monkeypatch 替换 _last_n_periods，隔离真实的 12 期逻辑
+    periods = ["20260630", "20260331"]
+    monkeypatch.setattr(plugins, "_last_n_periods", lambda n: periods)
+
+    def fake_fina(period):
+        return pd.DataFrame(
+            {
+                "ts_code": ["600519.SH", "830000.BJ"],
+                "end_date": [period, period],
+                "roe": [24.5, 10.0],
+                "roa": [18.2, 5.0],
+                "grossprofit_margin": [91.2, 20.0],
+                "debt_to_assets": [21.3, 40.0],
+                "current_ratio": [3.8, 1.5],
+                "or_yoy": [16.8, 3.0],
+                "netprofit_yoy": [15.2, 2.0],
+            }
+        )
+
+    class FakePro:
+        def fina_indicator(self, period=None):
+            return fake_fina(period)
+
+    src = plugins.StockFinancialSource("sf", pro_factory=lambda: FakePro())
+    df = src.fetch({})
+
+    assert set(df.columns) == {
+        "report_date",
+        "stock_code",
+        "roe",
+        "roa",
+        "gross_margin",
+        "debt_to_assets",
+        "current_ratio",
+        "revenue_yoy",
+        "netprofit_yoy",
+    }
+    assert set(df["stock_code"]) == {"600519"}  # 剔除北交所 830000
+    assert list(df["report_date"].unique()) == periods
+    assert df.iloc[0]["gross_margin"] == pytest.approx(91.2)

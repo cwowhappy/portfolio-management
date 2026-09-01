@@ -201,3 +201,90 @@ class StockValuationDailySource(Source):
         return df[
             ["stock_code", "stock_name", "pe_ttm", "pb", "dividend_yield", "total_mv", "circ_mv", "turnover_rate"]
         ]
+
+
+def _last_n_periods(n):
+    """最近 n 个季报期末日（YYYYMMDD 升序）：按今天倒推季度边界。"""
+    today = dt.date.today()
+    periods = []
+    for offset in range(n - 1, -1, -1):
+        quarter_index = (today.month - 1) // 3 - offset
+        y = today.year
+        m = quarter_index * 3 + 1
+        if m <= 0:
+            m += 12
+            y -= 1
+        period_end = dt.date(y, m + 2, 1) - dt.timedelta(days=1)
+        periods.append(period_end.strftime("%Y%m%d"))
+    return periods
+
+
+class StockFinancialSource(Source):
+    """全 A 个股财务指标季数据：tushare fina_indicator 按报告期批量，回填近 3 年（12 季）。"""
+
+    supports_range = False
+
+    def __init__(self, source_id, pro_factory, periods=12):
+        self.source_id = source_id
+        self.pro_factory = pro_factory
+        self.periods = periods
+
+    def fetch(self, params):
+        pro = self.pro_factory()
+        frames = []
+        for period in _last_n_periods(self.periods):
+            df = pro.fina_indicator(period=period)
+            if df is None or df.empty:
+                continue
+            df = df[df["ts_code"].str.endswith((".SH", ".SZ"))]
+            frames.append(
+                df[
+                    [
+                        "ts_code",
+                        "end_date",
+                        "roe",
+                        "roa",
+                        "grossprofit_margin",
+                        "debt_to_assets",
+                        "current_ratio",
+                        "or_yoy",
+                        "netprofit_yoy",
+                    ]
+                ]
+            )
+        if not frames:
+            return pd.DataFrame(
+                columns=[
+                    "report_date",
+                    "stock_code",
+                    "roe",
+                    "roa",
+                    "gross_margin",
+                    "debt_to_assets",
+                    "current_ratio",
+                    "revenue_yoy",
+                    "netprofit_yoy",
+                ]
+            )
+        result = pd.concat(frames, ignore_index=True)
+        result["stock_code"] = result["ts_code"].str.split(".").str[0]
+        result = result.rename(
+            columns={
+                "end_date": "report_date",
+                "grossprofit_margin": "gross_margin",
+                "or_yoy": "revenue_yoy",
+            }
+        )
+        return result[
+            [
+                "report_date",
+                "stock_code",
+                "roe",
+                "roa",
+                "gross_margin",
+                "debt_to_assets",
+                "current_ratio",
+                "revenue_yoy",
+                "netprofit_yoy",
+            ]
+        ]
