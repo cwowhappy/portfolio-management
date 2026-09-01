@@ -204,17 +204,20 @@ class StockValuationDailySource(Source):
 
 
 def _last_n_periods(n):
-    """最近 n 个季报期末日（YYYYMMDD 升序）：按今天倒推季度边界。"""
+    """最近 n 个季报期末日（YYYYMMDD 升序）：从最近已结束季度起逐季倒推。"""
     today = dt.date.today()
     periods = []
+    # 当前季度（0 起）减 1 = 最近已结束季度，作为回填起点
+    start_quarter = (today.month - 1) // 3 - 1
     for offset in range(n - 1, -1, -1):
-        quarter_index = (today.month - 1) // 3 - offset
+        quarter_index = start_quarter - offset
         y = today.year
         m = quarter_index * 3 + 1
-        if m <= 0:
+        while m <= 0:  # 跨多个年度时循环归一化月份与年份
             m += 12
             y -= 1
-        period_end = dt.date(y, m + 2, 1) - dt.timedelta(days=1)
+        end_month = m + 2  # 该季度最后一个月（m∈{1,4,7,10} → end_month∈{3,6,9,12}）
+        period_end = dt.date(y, 12, 31) if end_month == 12 else dt.date(y, end_month + 1, 1) - dt.timedelta(days=1)
         periods.append(period_end.strftime("%Y%m%d"))
     return periods
 

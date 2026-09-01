@@ -98,3 +98,35 @@ def test_stock_financial_normalizes_and_backfills(monkeypatch):
     assert set(df["stock_code"]) == {"600519"}  # 剔除北交所 830000
     assert list(df["report_date"].unique()) == periods
     assert df.iloc[0]["gross_margin"] == pytest.approx(91.2)
+
+
+def test_last_n_periods_quarter_ends(monkeypatch):
+    # 冻结今天（2026-09-01）：dt.date 不可变，替换 plugins.dt 为 today() 固定的 date 子类
+    import datetime as _real_dt
+    import types
+
+    class _FrozenDate(_real_dt.date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 9, 1)
+
+    monkeypatch.setattr(plugins, "dt", types.SimpleNamespace(date=_FrozenDate, timedelta=_real_dt.timedelta))
+
+    assert plugins._last_n_periods(1) == ["20260630"]  # 最近已结束季度
+    periods = plugins._last_n_periods(12)
+    assert periods == [
+        "20230930",
+        "20231231",
+        "20240331",
+        "20240630",
+        "20240930",
+        "20241231",
+        "20250331",
+        "20250630",
+        "20250930",
+        "20251231",
+        "20260331",
+        "20260630",
+    ]
+    assert len(periods) == 12
+    assert periods == sorted(periods)
