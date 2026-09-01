@@ -234,3 +234,44 @@ export interface TemplateView { id: string; name: string; weights: WeightView[];
 export interface PlanView { id: number; name: string; source: PlanSource; weights: WeightView[]; active: boolean; }
 export interface DeviationSlice { assetClass: AssetClass; targetWeight: number; actualWeight: number; deviation: number; }
 export interface DeviationView { slices: DeviationSlice[]; }
+
+// —— 价值筛选（/api/screening/**，与后端 ScreeningController 的 DTO 对齐）——
+
+export interface ScreeningStock {
+  stockCode: string;
+  stockName: string;
+  industryCode: string | null;
+  industryName: string | null;
+  peTtm: number | null;
+  pb: number | null;
+  dividendYield: number | null;
+  roe: number | null;
+  roa: number | null;
+  grossMargin: number | null;
+  debtToAssets: number | null;
+  currentRatio: number | null;
+  revenueYoy: number | null;
+  netprofitYoy: number | null;
+  totalMv: number | null;
+  turnoverRate: number | null;
+}
+
+export interface ScreeningParams {
+  peTtmMax?: number;
+  pbMax?: number;
+  dividendYieldMin?: number;
+  roeMin?: number;
+  roaMin?: number;
+  grossMarginMin?: number;
+  debtToAssetsMax?: number;
+  currentRatioMin?: number;
+  revenueYoyMin?: number;
+  netprofitYoyMin?: number;
+  /** 单位：亿元（前端用户口径，api 层换算为元） */
+  totalMvMin?: number;
+  turnoverRateMin?: number;
+  industryCode?: string;
+  sortBy?: string;
+  sortDirection?: "ASC" | "DESC";
+  limit?: number;
+}

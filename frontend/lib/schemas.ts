@@ -204,3 +204,24 @@ export const DeviationSliceSchema = z.object({
   assetClass: AssetClassSchema, targetWeight: z.number(), actualWeight: z.number(), deviation: z.number(),
 });
 export const DeviationViewSchema = z.object({ slices: z.array(DeviationSliceSchema) });
+
+// —— 价值筛选（/api/screening/**，与后端 ScreeningController 的 DTO 对齐）——
+
+export const ScreeningStockSchema = z.object({
+  stockCode: z.string(),
+  stockName: z.string(),
+  industryCode: z.string().nullable(),
+  industryName: z.string().nullable(),
+  peTtm: z.number().nullable(),
+  pb: z.number().nullable(),
+  dividendYield: z.number().nullable(),
+  roe: z.number().nullable(),
+  roa: z.number().nullable(),
+  grossMargin: z.number().nullable(),
+  debtToAssets: z.number().nullable(),
+  currentRatio: z.number().nullable(),
+  revenueYoy: z.number().nullable(),
+  netprofitYoy: z.number().nullable(),
+  totalMv: z.number().nullable(),
+  turnoverRate: z.number().nullable(),
+});
