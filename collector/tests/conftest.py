@@ -22,10 +22,11 @@ os.environ.setdefault("TESTCONTAINERS_RYUK_DISABLED", "true")
 COLLECTOR_DIR = Path(__file__).resolve().parent.parent
 # 业务目标表 DDL 由后端 Flyway 管理（跨服务契约），测试直接回放同一份 SQL
 FLYWAY_DIR = COLLECTOR_DIR.parent / "backend" / "src" / "main" / "resources" / "db" / "migration"
-# V3 建旧 treasury_yield 等表，V4 建曲线/成分股表并 DROP 旧 treasury_yield，顺序不可颠倒
-FLYWAY_SQL_FILES = ("V3__valuation.sql", "V4__valuation_curve.sql")
+# V3 建旧 treasury_yield 等表，V4 建曲线/成分股表并 DROP 旧 treasury_yield，顺序不可颠倒；
+# V7 建个股基本面两表（stock_valuation_daily / stock_financial），排在最后
+FLYWAY_SQL_FILES = ("V3__valuation.sql", "V4__valuation_curve.sql", "V7__stock_fundamental.sql")
 
-# 10 张表：4 运维（alembic）+ 6 业务目标（Flyway V3/V4；旧 treasury_yield 已被 V4 删除）
+# 12 张表：4 运维（alembic）+ 8 业务目标（Flyway V3/V4/V7；旧 treasury_yield 已被 V4 删除）
 ALL_TABLES = (
     "collector_task_run",
     "collector_source_health",
@@ -37,6 +38,8 @@ ALL_TABLES = (
     "shenwan_industry_mapping",
     "treasury_yield_curve",
     "index_constituent",
+    "stock_valuation_daily",
+    "stock_financial",
 )
 
 

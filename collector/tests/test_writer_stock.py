@@ -1,16 +1,11 @@
 import datetime as dt
-import os
-
-import psycopg
-import pytest
 
 from collector.store.writer import Store
 
-DB = os.environ.get("DATABASE_URL")
 
-
-@pytest.mark.skipif(not DB, reason="需要 DATABASE_URL")
-def test_upsert_stock_valuation_daily_idempotent():
+def test_upsert_stock_valuation_daily_idempotent(pg_conn):
+    """冲突键 (trading_day, stock_code)，同主键重复 upsert 后仍为一行。"""
+    store = Store()
     day = dt.date(2026, 8, 27)
     row = {
         "trading_day": day,
@@ -23,19 +18,17 @@ def test_upsert_stock_valuation_daily_idempotent():
         "circ_mv": 2100000000000.0,
         "turnover_rate": 0.35,
     }
+    store.upsert(pg_conn, "stock_valuation_daily", [row])
+    store.upsert(pg_conn, "stock_valuation_daily", [row])  # 幂等
+    count = pg_conn.execute(
+        "SELECT count(*) FROM stock_valuation_daily WHERE trading_day=%s AND stock_code=%s", (day, "600519")
+    ).fetchone()[0]
+    assert count == 1
+
+
+def test_upsert_stock_financial_idempotent(pg_conn):
+    """冲突键 (report_date, stock_code)，同主键重复 upsert 后仍为一行。"""
     store = Store()
-    with psycopg.connect(DB) as conn:
-        store.upsert(conn, "stock_valuation_daily", [row])
-        store.upsert(conn, "stock_valuation_daily", [row])  # 幂等
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT count(*) FROM stock_valuation_daily WHERE trading_day=%s AND stock_code=%s", (day, "600519")
-            )
-            assert cur.fetchone()[0] == 1
-
-
-@pytest.mark.skipif(not DB, reason="需要 DATABASE_URL")
-def test_upsert_stock_financial_idempotent():
     row = {
         "report_date": dt.date(2026, 6, 30),
         "stock_code": "600519",
@@ -47,13 +40,10 @@ def test_upsert_stock_financial_idempotent():
         "revenue_yoy": 16.8,
         "netprofit_yoy": 15.2,
     }
-    store = Store()
-    with psycopg.connect(DB) as conn:
-        store.upsert(conn, "stock_financial", [row])
-        store.upsert(conn, "stock_financial", [row])
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT count(*) FROM stock_financial WHERE report_date=%s AND stock_code=%s",
-                (dt.date(2026, 6, 30), "600519"),
-            )
-            assert cur.fetchone()[0] == 1
+    store.upsert(pg_conn, "stock_financial", [row])
+    store.upsert(pg_conn, "stock_financial", [row])
+    count = pg_conn.execute(
+        "SELECT count(*) FROM stock_financial WHERE report_date=%s AND stock_code=%s",
+        (dt.date(2026, 6, 30), "600519"),
+    ).fetchone()[0]
+    assert count == 1
