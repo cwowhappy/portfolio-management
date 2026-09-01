@@ -11,6 +11,7 @@ const COLUMNS: { key: keyof ScreeningStock; label: string; sortKey: string }[] =
   { key: "roa", label: "ROA", sortKey: "roa" },
   { key: "grossMargin", label: "毛利率", sortKey: "gross_margin" },
   { key: "debtToAssets", label: "资产负债率", sortKey: "debt_to_assets" },
+  { key: "currentRatio", label: "流动比率", sortKey: "current_ratio" },
   { key: "revenueYoy", label: "营收增速", sortKey: "revenue_yoy" },
   { key: "netprofitYoy", label: "净利增速", sortKey: "netprofit_yoy" },
   { key: "totalMv", label: "总市值(亿)", sortKey: "total_mv" },
@@ -49,6 +50,7 @@ export default function ScreeningResultsTable({ results, sortBy, sortDirection, 
               <td className="text-right">{r.roa ?? "—"}</td>
               <td className="text-right">{r.grossMargin ?? "—"}</td>
               <td className="text-right">{r.debtToAssets ?? "—"}</td>
+              <td className="text-right">{r.currentRatio ?? "—"}</td>
               <td className="text-right">{r.revenueYoy ?? "—"}</td>
               <td className="text-right">{r.netprofitYoy ?? "—"}</td>
               <td className="text-right">{fmtMv(r.totalMv)}</td>

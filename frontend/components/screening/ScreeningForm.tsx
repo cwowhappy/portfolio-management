@@ -71,7 +71,7 @@ export default function ScreeningForm({ params, industries, onChange, onSubmit, 
             ))}
           </select>
         </label>
-        <button type="submit" disabled={loading} className="rounded-lg bg-[color:var(--color-accent)] px-4 py-1.5 text-sm text-white disabled:opacity-50">
+        <button type="submit" disabled={loading} className="rounded-lg bg-[color:var(--color-up)] px-4 py-1.5 text-sm text-white disabled:opacity-50">
           {loading ? "筛选中…" : "筛选"}
         </button>
       </div>
