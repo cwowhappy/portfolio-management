@@ -38,7 +38,16 @@ def test_industry_weighted_skips_dirty_records():
         {"industry_code": "801780", "industry_name": "银行", "pe": 50.0, "pb": 9.0},  # 无 market_cap 键
     ]
     rows = IndustryValuationCalc().compute(records)
-    assert rows == [{"industry_code": "801780", "industry_name": "银行", "pe": 10.0, "pb": 1.0}]
+    assert rows == [
+        {
+            "industry_code": "801780",
+            "industry_name": "银行",
+            "pe": 10.0,
+            "pb": 1.0,
+            "roe": None,
+            "dividend_yield": None,
+        }
+    ]
 
 
 def test_industry_weighted_drops_non_positive_cap_group():

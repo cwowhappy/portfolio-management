@@ -196,6 +196,8 @@ def _field_columns():
                 "market_cap": {"from": "总市值", "type": "numeric"},
                 "industry_code": {"from": "industry_code", "type": "str"},
                 "industry_name": {"from": "industry_name", "type": "str"},
+                "roe": {"from": "roe", "type": "numeric"},
+                "dividend_yield": {"from": "dividend_yield", "type": "numeric"},
             }
         ),
         "field_mapping_stock_valuation": FieldMappingConverter(

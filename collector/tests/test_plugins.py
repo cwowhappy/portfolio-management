@@ -68,9 +68,19 @@ def test_industry_universe_joins_mapping(mocker):
     mocker.patch("akshare.stock_zh_a_spot_em", return_value=universe)
 
     cursor = mocker.MagicMock()
-    cursor.fetchall.return_value = [
-        ("000001", "801010", "农林牧渔"),
-        ("600519", "801030", "食品饮料"),
+    cursor.fetchall.side_effect = [
+        [
+            ("000001", "801010", "农林牧渔"),
+            ("600519", "801030", "食品饮料"),
+        ],
+        [
+            ("000001", 11.8),
+            ("600519", 24.5),
+        ],
+        [
+            ("000001", 5.4),
+            ("600519", 2.1),
+        ],
     ]
     cursor.__enter__.return_value = cursor
     conn = mocker.MagicMock()
@@ -86,6 +96,8 @@ def test_industry_universe_joins_mapping(mocker):
     assert "industry_name" in df.columns
     assert df.loc[df["代码"] == "000001", "industry_code"].iloc[0] == "801010"
     assert df.loc[df["代码"] == "600519", "industry_name"].iloc[0] == "食品饮料"
+    assert df.loc[df["代码"] == "000001", "roe"].iloc[0] == 11.8
+    assert df.loc[df["代码"] == "000001", "dividend_yield"].iloc[0] == 5.4
 
 
 # ---------------------------------------------------------------- C-P1-4 日期归一化

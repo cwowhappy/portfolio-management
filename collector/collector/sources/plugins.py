@@ -108,7 +108,22 @@ class IndustryUniverseSource(Source):
             cur.execute("SELECT stock_code, industry_code, industry_name FROM shenwan_industry_mapping")
             rows = cur.fetchall()
         mapping = pd.DataFrame(rows, columns=["stock_code", "industry_code", "industry_name"])
-        return universe.merge(mapping, left_on="代码", right_on="stock_code", how="inner")
+        merged = universe.merge(mapping, left_on="代码", right_on="stock_code", how="inner")
+        # 追加：读 stock_financial 最新 roe 与 stock_valuation_daily 最新 dividend_yield 并入
+        with self.conn_factory() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT DISTINCT ON (stock_code) stock_code, roe "
+                "FROM stock_financial ORDER BY stock_code, report_date DESC"
+            )
+            fin = pd.DataFrame(cur.fetchall(), columns=["stock_code", "roe"])
+            cur.execute(
+                "SELECT stock_code, dividend_yield FROM stock_valuation_daily "
+                "WHERE trading_day = (SELECT max(trading_day) FROM stock_valuation_daily)"
+            )
+            val = pd.DataFrame(cur.fetchall(), columns=["stock_code", "dividend_yield"])
+        merged = merged.merge(fin, left_on="stock_code", right_on="stock_code", how="left")
+        merged = merged.merge(val, left_on="stock_code", right_on="stock_code", how="left")
+        return merged
 
 
 TERMS = [

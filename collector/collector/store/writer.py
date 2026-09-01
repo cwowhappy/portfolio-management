@@ -22,10 +22,10 @@ UPSERT_SQL = {
           pe=EXCLUDED.pe, pb=EXCLUDED.pb, dividend_yield=EXCLUDED.dividend_yield
     """,
     "industry_valuation": """
-        INSERT INTO industry_valuation (trading_day, industry_code, industry_name, pe, pb)
-        VALUES (%s, %s, %s, %s, %s)
+        INSERT INTO industry_valuation (trading_day, industry_code, industry_name, pe, pb, roe, dividend_yield)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (trading_day, industry_code) DO UPDATE SET
-          pe=EXCLUDED.pe, pb=EXCLUDED.pb
+          pe=EXCLUDED.pe, pb=EXCLUDED.pb, roe=EXCLUDED.roe, dividend_yield=EXCLUDED.dividend_yield
     """,
     "shenwan_industry_mapping": """
         INSERT INTO shenwan_industry_mapping (stock_code, stock_name, industry_code, industry_name)
@@ -65,7 +65,7 @@ TABLE_COLUMNS = {
     "valuation_snapshot": ["trading_day", "pe_median", "pb_median", "net_breaker_count", "net_breaker_ratio"],
     "treasury_yield_curve": ["trading_day", "term", "yield"],
     "index_valuation_history": ["trading_day", "index_code", "index_name", "pe", "pb", "dividend_yield"],
-    "industry_valuation": ["trading_day", "industry_code", "industry_name", "pe", "pb"],
+    "industry_valuation": ["trading_day", "industry_code", "industry_name", "pe", "pb", "roe", "dividend_yield"],
     "shenwan_industry_mapping": ["stock_code", "stock_name", "industry_code", "industry_name"],
     "index_constituent": ["index_code", "stock_code", "stock_name", "weight"],
     "stock_valuation_daily": [
