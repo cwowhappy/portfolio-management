@@ -1,5 +1,6 @@
 import datetime as dt
 import re
+from concurrent.futures import ThreadPoolExecutor
 
 import akshare as ak
 import pandas as pd
@@ -108,7 +109,22 @@ class IndustryUniverseSource(Source):
             cur.execute("SELECT stock_code, industry_code, industry_name FROM shenwan_industry_mapping")
             rows = cur.fetchall()
         mapping = pd.DataFrame(rows, columns=["stock_code", "industry_code", "industry_name"])
-        return universe.merge(mapping, left_on="代码", right_on="stock_code", how="inner")
+        merged = universe.merge(mapping, left_on="代码", right_on="stock_code", how="inner")
+        # 追加：读 stock_financial 最新 roe 与 stock_valuation_daily 最新 dividend_yield 并入
+        with self.conn_factory() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT DISTINCT ON (stock_code) stock_code, roe "
+                "FROM stock_financial ORDER BY stock_code, report_date DESC"
+            )
+            fin = pd.DataFrame(cur.fetchall(), columns=["stock_code", "roe"])
+            cur.execute(
+                "SELECT stock_code, dividend_yield FROM stock_valuation_daily "
+                "WHERE trading_day = (SELECT max(trading_day) FROM stock_valuation_daily)"
+            )
+            val = pd.DataFrame(cur.fetchall(), columns=["stock_code", "dividend_yield"])
+        merged = merged.merge(fin, left_on="stock_code", right_on="stock_code", how="left")
+        merged = merged.merge(val, left_on="stock_code", right_on="stock_code", how="left")
+        return merged
 
 
 TERMS = [
@@ -170,3 +186,128 @@ class IndexConstituentSource(Source):
             df["index_code"] = code
             frames.append(df[["index_code", "stock_code", "weight"]])
         return pd.concat(frames, ignore_index=True)
+
+
+class StockValuationDailySource(Source):
+    """全 A 个股估值日快照：tushare daily_basic 按交易日批量 + stock_basic 过滤 ST/退市/北交所。"""
+
+    supports_range = False
+
+    def __init__(self, source_id, pro_factory):
+        self.source_id = source_id
+        self.pro_factory = pro_factory
+
+    def _valid_universe(self, pro):
+        basic = pro.stock_basic(list_status="L", fields="ts_code,name")
+        basic = basic[basic["ts_code"].str.endswith((".SH", ".SZ"))]  # 剔除北交所/老三板
+        return basic[~basic["name"].str.contains("ST|退", na=False)]
+
+    def fetch(self, params):
+        pro = self.pro_factory()
+        day = _date_param(params, "date")
+        universe = self._valid_universe(pro)
+        daily = pro.daily_basic(trade_date=day)
+        df = daily.merge(universe, on="ts_code", how="inner")
+        df = df.copy()
+        df["stock_code"] = df["ts_code"].str.split(".").str[0]
+        df["stock_name"] = df["name"]
+        df["dividend_yield"] = df["dv_ttm"]
+        df["total_mv"] = df["total_mv"] * 10000  # 万元 → 元
+        df["circ_mv"] = df["circ_mv"] * 10000
+        return df[
+            ["stock_code", "stock_name", "pe_ttm", "pb", "dividend_yield", "total_mv", "circ_mv", "turnover_rate"]
+        ]
+
+
+def _last_n_periods(n):
+    """最近 n 个季报期末日（YYYYMMDD 升序）：从最近已结束季度起逐季倒推。"""
+    today = dt.date.today()
+    periods = []
+    # 当前季度（0 起）减 1 = 最近已结束季度，作为回填起点
+    start_quarter = (today.month - 1) // 3 - 1
+    for offset in range(n - 1, -1, -1):
+        quarter_index = start_quarter - offset
+        y = today.year
+        m = quarter_index * 3 + 1
+        while m <= 0:  # 跨多个年度时循环归一化月份与年份
+            m += 12
+            y -= 1
+        end_month = m + 2  # 该季度最后一个月（m∈{1,4,7,10} → end_month∈{3,6,9,12}）
+        period_end = dt.date(y, 12, 31) if end_month == 12 else dt.date(y, end_month + 1, 1) - dt.timedelta(days=1)
+        periods.append(period_end.strftime("%Y%m%d"))
+    return periods
+
+
+class StockFinancialSource(Source):
+    """全 A 个股财务指标季数据：tushare fina_indicator 按报告期批量，回填近 3 年（12 季）。"""
+
+    supports_range = False
+
+    def __init__(self, source_id, pro_factory, periods=12):
+        self.source_id = source_id
+        self.pro_factory = pro_factory
+        self.periods = periods
+
+    def fetch(self, params):
+        pro = self.pro_factory()
+        periods = _last_n_periods(self.periods)
+
+        def _fetch_period(period):
+            df = pro.fina_indicator(period=period)
+            if df is None or df.empty:
+                return None
+            df = df[df["ts_code"].str.endswith((".SH", ".SZ"))]
+            return df[
+                [
+                    "ts_code",
+                    "end_date",
+                    "roe",
+                    "roa",
+                    "grossprofit_margin",
+                    "debt_to_assets",
+                    "current_ratio",
+                    "or_yoy",
+                    "netprofit_yoy",
+                ]
+            ]
+
+        # 12 期报告并行拉取：executor.map 保持输入顺序，结果拼接顺序与串行版一致
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            frames = [frame for frame in executor.map(_fetch_period, periods) if frame is not None]
+
+        if not frames:
+            return pd.DataFrame(
+                columns=[
+                    "report_date",
+                    "stock_code",
+                    "roe",
+                    "roa",
+                    "gross_margin",
+                    "debt_to_assets",
+                    "current_ratio",
+                    "revenue_yoy",
+                    "netprofit_yoy",
+                ]
+            )
+        result = pd.concat(frames, ignore_index=True)
+        result["stock_code"] = result["ts_code"].str.split(".").str[0]
+        result = result.rename(
+            columns={
+                "end_date": "report_date",
+                "grossprofit_margin": "gross_margin",
+                "or_yoy": "revenue_yoy",
+            }
+        )
+        return result[
+            [
+                "report_date",
+                "stock_code",
+                "roe",
+                "roa",
+                "gross_margin",
+                "debt_to_assets",
+                "current_ratio",
+                "revenue_yoy",
+                "netprofit_yoy",
+            ]
+        ]

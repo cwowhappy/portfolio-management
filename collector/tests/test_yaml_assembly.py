@@ -1,7 +1,7 @@
 """全量任务 YAML 装配冒烟（L5/L2）与 registry / make_trigger 行为。
 
 用真实 tasks/ 目录 + 真实 build_registries 走完整装配链路：
-load_task_defs → build_registries → assemble_collector，6 个任务全部装配成功即通过。
+load_task_defs → build_registries → assemble_collector，全量任务全部装配成功即通过。
 Config 用占位值：插件源与 ConfigurableSource 均为惰性构造，装配不触外部 API。
 """
 
@@ -23,6 +23,8 @@ EXPECTED_TASKS = {
     "index_valuation",
     "industry_valuation",
     "shenwan_mapping",
+    "stock_financial",
+    "stock_valuation_daily",
     "treasury_yield_curve",
 }
 

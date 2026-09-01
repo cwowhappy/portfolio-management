@@ -22,10 +22,10 @@ UPSERT_SQL = {
           pe=EXCLUDED.pe, pb=EXCLUDED.pb, dividend_yield=EXCLUDED.dividend_yield
     """,
     "industry_valuation": """
-        INSERT INTO industry_valuation (trading_day, industry_code, industry_name, pe, pb)
-        VALUES (%s, %s, %s, %s, %s)
+        INSERT INTO industry_valuation (trading_day, industry_code, industry_name, pe, pb, roe, dividend_yield)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (trading_day, industry_code) DO UPDATE SET
-          pe=EXCLUDED.pe, pb=EXCLUDED.pb
+          pe=EXCLUDED.pe, pb=EXCLUDED.pb, roe=EXCLUDED.roe, dividend_yield=EXCLUDED.dividend_yield
     """,
     "shenwan_industry_mapping": """
         INSERT INTO shenwan_industry_mapping (stock_code, stock_name, industry_code, industry_name)
@@ -39,15 +39,57 @@ UPSERT_SQL = {
         ON CONFLICT (index_code, stock_code) DO UPDATE SET
           stock_name=EXCLUDED.stock_name, weight=EXCLUDED.weight
     """,
+    "stock_valuation_daily": """
+        INSERT INTO stock_valuation_daily (
+            trading_day, stock_code, stock_name, pe_ttm, pb, dividend_yield, total_mv, circ_mv, turnover_rate
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (trading_day, stock_code) DO UPDATE SET
+          stock_name=EXCLUDED.stock_name, pe_ttm=EXCLUDED.pe_ttm, pb=EXCLUDED.pb,
+          dividend_yield=EXCLUDED.dividend_yield, total_mv=EXCLUDED.total_mv,
+          circ_mv=EXCLUDED.circ_mv, turnover_rate=EXCLUDED.turnover_rate
+    """,
+    "stock_financial": """
+        INSERT INTO stock_financial (
+            report_date, stock_code, roe, roa, gross_margin, debt_to_assets, current_ratio, revenue_yoy, netprofit_yoy
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (report_date, stock_code) DO UPDATE SET
+          roe=EXCLUDED.roe, roa=EXCLUDED.roa, gross_margin=EXCLUDED.gross_margin,
+          debt_to_assets=EXCLUDED.debt_to_assets, current_ratio=EXCLUDED.current_ratio,
+          revenue_yoy=EXCLUDED.revenue_yoy, netprofit_yoy=EXCLUDED.netprofit_yoy
+    """,
 }
 
 TABLE_COLUMNS = {
     "valuation_snapshot": ["trading_day", "pe_median", "pb_median", "net_breaker_count", "net_breaker_ratio"],
     "treasury_yield_curve": ["trading_day", "term", "yield"],
     "index_valuation_history": ["trading_day", "index_code", "index_name", "pe", "pb", "dividend_yield"],
-    "industry_valuation": ["trading_day", "industry_code", "industry_name", "pe", "pb"],
+    "industry_valuation": ["trading_day", "industry_code", "industry_name", "pe", "pb", "roe", "dividend_yield"],
     "shenwan_industry_mapping": ["stock_code", "stock_name", "industry_code", "industry_name"],
     "index_constituent": ["index_code", "stock_code", "stock_name", "weight"],
+    "stock_valuation_daily": [
+        "trading_day",
+        "stock_code",
+        "stock_name",
+        "pe_ttm",
+        "pb",
+        "dividend_yield",
+        "total_mv",
+        "circ_mv",
+        "turnover_rate",
+    ],
+    "stock_financial": [
+        "report_date",
+        "stock_code",
+        "roe",
+        "roa",
+        "gross_margin",
+        "debt_to_assets",
+        "current_ratio",
+        "revenue_yoy",
+        "netprofit_yoy",
+    ],
 }
 
 

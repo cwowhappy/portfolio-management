@@ -3,7 +3,10 @@
 import { useState } from "react";
 import type { IndustryValuation } from "@/lib/types";
 
-export default function IndustryTable({ industries }: { industries: IndustryValuation[] }) {
+export default function IndustryTable({ industries, onSelect }: {
+  industries: IndustryValuation[];
+  onSelect?: (industryCode: string) => void;
+}) {
   // 排序键使用 IndustryValuation 真实字段名（dividendYield），表头文案仍显示「股息率」
   const [sort, setSort] = useState<"pe" | "pb" | "roe" | "dividendYield">("pe");
   const sorted = [...industries].sort((a, b) => (a[sort] ?? 0) - (b[sort] ?? 0));
@@ -22,7 +25,13 @@ export default function IndustryTable({ industries }: { industries: IndustryValu
         <tbody className="tabular">
           {sorted.map((i) => (
             <tr key={i.industryCode} className="border-t border-[color:var(--color-line-soft)]">
-              <td className="text-left py-2">{i.industryName}</td>
+              <td className="text-left py-2">
+                {onSelect ? (
+                  <button className="text-[color:var(--color-up)] hover:underline" onClick={() => onSelect(i.industryCode)}>
+                    {i.industryName}
+                  </button>
+                ) : i.industryName}
+              </td>
               <td className="text-right">{i.pe ?? "—"}</td>
               <td className="text-right">{i.pb ?? "—"}</td>
               <td className="text-right">{i.roe ?? "—"}</td>

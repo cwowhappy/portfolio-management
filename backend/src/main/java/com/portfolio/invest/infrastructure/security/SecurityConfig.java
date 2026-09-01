@@ -50,6 +50,7 @@ public class SecurityConfig {
                     .requestMatchers("/api/auth/register", "/api/auth/login").permitAll()
                     .requestMatchers("/api/market/**", "/api/agent/health", "/api/agent/status", "/actuator/**").permitAll()
                     .requestMatchers("/api/valuation/**").permitAll()
+                    .requestMatchers("/api/screening/**").permitAll()
                     .requestMatchers("/api/admin/**").hasRole("ADMIN")
                     .anyRequest().authenticated())
             .exceptionHandling(ex -> ex.authenticationEntryPoint(

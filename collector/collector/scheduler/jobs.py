@@ -30,6 +30,8 @@ from collector.sources.plugins import (
     IndexValuationSource,
     IndustryUniverseSource,
     ShenwanMappingSource,
+    StockFinancialSource,
+    StockValuationDailySource,
     TreasuryCurveSource,
 )
 from collector.sources.registry import SourceRegistry
@@ -194,6 +196,33 @@ def _field_columns():
                 "market_cap": {"from": "总市值", "type": "numeric"},
                 "industry_code": {"from": "industry_code", "type": "str"},
                 "industry_name": {"from": "industry_name", "type": "str"},
+                "roe": {"from": "roe", "type": "numeric"},
+                "dividend_yield": {"from": "dividend_yield", "type": "numeric"},
+            }
+        ),
+        "field_mapping_stock_valuation": FieldMappingConverter(
+            {
+                "stock_code": {"from": "stock_code", "type": "str"},
+                "stock_name": {"from": "stock_name", "type": "str"},
+                "pe_ttm": {"from": "pe_ttm", "type": "numeric"},
+                "pb": {"from": "pb", "type": "numeric"},
+                "dividend_yield": {"from": "dividend_yield", "type": "numeric"},
+                "total_mv": {"from": "total_mv", "type": "numeric"},
+                "circ_mv": {"from": "circ_mv", "type": "numeric"},
+                "turnover_rate": {"from": "turnover_rate", "type": "numeric"},
+            }
+        ),
+        "field_mapping_stock_financial": FieldMappingConverter(
+            {
+                "report_date": {"from": "report_date", "type": "str"},
+                "stock_code": {"from": "stock_code", "type": "str"},
+                "roe": {"from": "roe", "type": "numeric"},
+                "roa": {"from": "roa", "type": "numeric"},
+                "gross_margin": {"from": "gross_margin", "type": "numeric"},
+                "debt_to_assets": {"from": "debt_to_assets", "type": "numeric"},
+                "current_ratio": {"from": "current_ratio", "type": "numeric"},
+                "revenue_yoy": {"from": "revenue_yoy", "type": "numeric"},
+                "netprofit_yoy": {"from": "netprofit_yoy", "type": "numeric"},
             }
         ),
     }
@@ -214,6 +243,8 @@ def build_registries(config):
             "industry_universe": IndustryUniverseSource("industry_universe", conn_factory=conn_factory),
             "treasury_curve": TreasuryCurveSource("treasury_curve", conn_factory=conn_factory),
             "index_constituent": IndexConstituentSource("index_constituent", pro_factory=pro),
+            "stock_valuation_daily": StockValuationDailySource("stock_valuation_daily", pro_factory=pro),
+            "stock_financial": StockFinancialSource("stock_financial", pro_factory=pro),
         },
     )
     converter_reg = ConverterRegistry(plugins=_field_columns())
