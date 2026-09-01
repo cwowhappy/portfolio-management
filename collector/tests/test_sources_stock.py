@@ -105,13 +105,15 @@ def test_stock_financial_all_empty_returns_empty_frame(monkeypatch):
     periods = ["20260630", "20260331"]
     monkeypatch.setattr(plugins, "_last_n_periods", lambda n: periods)
 
-    calls = {"n": 0}
+    import itertools
+
+    calls = itertools.count()  # 线程安全的调用计数（fetch 已并行，普通 dict 自增会竞态）
 
     class FakePro:
         def fina_indicator(self, period=None):
-            calls["n"] += 1
-            # 第一期为 None，第二期为空 DataFrame，覆盖同一守卫的两种空值形态
-            if calls["n"] == 1:
+            n = next(calls)
+            # 一期为 None，另一期为空 DataFrame，覆盖同一守卫的两种空值形态
+            if n == 0:
                 return None
             return pd.DataFrame()
 
@@ -130,7 +132,50 @@ def test_stock_financial_all_empty_returns_empty_frame(monkeypatch):
         "revenue_yoy",
         "netprofit_yoy",
     ]
-    assert calls["n"] == len(periods)  # 每个报告期都实际请求过
+    assert next(calls) == len(periods)  # 每个报告期都实际请求过
+
+
+def test_stock_financial_mixed_empty_concats_valid_frames(monkeypatch):
+    # 部分期有数据、部分期为 None/空 → 仅拼接有效帧，列/重命名/北交所过滤保持一致
+    periods = ["20260630", "20260331", "20251231"]
+    monkeypatch.setattr(plugins, "_last_n_periods", lambda n: periods)
+
+    class FakePro:
+        def fina_indicator(self, period=None):
+            if period == "20260331":
+                return None
+            if period == "20251231":
+                return pd.DataFrame()
+            return pd.DataFrame(
+                {
+                    "ts_code": ["600519.SH", "000858.SZ", "830000.BJ"],
+                    "end_date": [period, period, period],
+                    "roe": [24.5, 30.1, 10.0],
+                    "roa": [18.2, 22.0, 5.0],
+                    "grossprofit_margin": [91.2, 80.0, 20.0],
+                    "debt_to_assets": [21.3, 18.0, 40.0],
+                    "current_ratio": [3.8, 2.1, 1.5],
+                    "or_yoy": [16.8, 20.0, 3.0],
+                    "netprofit_yoy": [15.2, 18.0, 2.0],
+                }
+            )
+
+    src = plugins.StockFinancialSource("sf", pro_factory=lambda: FakePro())
+    df = src.fetch({})
+
+    assert list(df.columns) == [
+        "report_date",
+        "stock_code",
+        "roe",
+        "roa",
+        "gross_margin",
+        "debt_to_assets",
+        "current_ratio",
+        "revenue_yoy",
+        "netprofit_yoy",
+    ]
+    assert set(df["report_date"].unique()) == {"20260630"}  # None/空期被跳过
+    assert set(df["stock_code"]) == {"600519", "000858"}  # 剔除北交所 830000
 
 
 def test_last_n_periods_quarter_ends(monkeypatch):

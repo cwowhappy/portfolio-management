@@ -1,5 +1,6 @@
 import datetime as dt
 import re
+from concurrent.futures import ThreadPoolExecutor
 
 import akshare as ak
 import pandas as pd
@@ -249,27 +250,31 @@ class StockFinancialSource(Source):
 
     def fetch(self, params):
         pro = self.pro_factory()
-        frames = []
-        for period in _last_n_periods(self.periods):
+        periods = _last_n_periods(self.periods)
+
+        def _fetch_period(period):
             df = pro.fina_indicator(period=period)
             if df is None or df.empty:
-                continue
+                return None
             df = df[df["ts_code"].str.endswith((".SH", ".SZ"))]
-            frames.append(
-                df[
-                    [
-                        "ts_code",
-                        "end_date",
-                        "roe",
-                        "roa",
-                        "grossprofit_margin",
-                        "debt_to_assets",
-                        "current_ratio",
-                        "or_yoy",
-                        "netprofit_yoy",
-                    ]
+            return df[
+                [
+                    "ts_code",
+                    "end_date",
+                    "roe",
+                    "roa",
+                    "grossprofit_margin",
+                    "debt_to_assets",
+                    "current_ratio",
+                    "or_yoy",
+                    "netprofit_yoy",
                 ]
-            )
+            ]
+
+        # 12 期报告并行拉取：executor.map 保持输入顺序，结果拼接顺序与串行版一致
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            frames = [frame for frame in executor.map(_fetch_period, periods) if frame is not None]
+
         if not frames:
             return pd.DataFrame(
                 columns=[
