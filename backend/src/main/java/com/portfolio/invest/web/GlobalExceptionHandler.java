@@ -74,6 +74,11 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(status).body(new ApiError(e.code(), e.getMessage()));
     }
 
+    @ExceptionHandler(com.portfolio.invest.domain.screening.ScreeningException.class)
+    public ResponseEntity<ApiError> screening(com.portfolio.invest.domain.screening.ScreeningException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new ApiError(e.code(), e.getMessage()));
+    }
+
     /** Bean Validation 结构性校验失败（@Valid wire DTO）→ 400，错误体保持 ApiError。 */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiError> validation(MethodArgumentNotValidException e) {
