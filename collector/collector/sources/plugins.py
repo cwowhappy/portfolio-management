@@ -170,3 +170,34 @@ class IndexConstituentSource(Source):
             df["index_code"] = code
             frames.append(df[["index_code", "stock_code", "weight"]])
         return pd.concat(frames, ignore_index=True)
+
+
+class StockValuationDailySource(Source):
+    """全 A 个股估值日快照：tushare daily_basic 按交易日批量 + stock_basic 过滤 ST/退市/北交所。"""
+
+    supports_range = False
+
+    def __init__(self, source_id, pro_factory):
+        self.source_id = source_id
+        self.pro_factory = pro_factory
+
+    def _valid_universe(self, pro):
+        basic = pro.stock_basic(list_status="L", fields="ts_code,name")
+        basic = basic[basic["ts_code"].str.endswith((".SH", ".SZ"))]  # 剔除北交所/老三板
+        return basic[~basic["name"].str.contains("ST|退", na=False)]
+
+    def fetch(self, params):
+        pro = self.pro_factory()
+        day = _date_param(params, "date")
+        universe = self._valid_universe(pro)
+        daily = pro.daily_basic(trade_date=day)
+        df = daily.merge(universe, on="ts_code", how="inner")
+        df = df.copy()
+        df["stock_code"] = df["ts_code"].str.split(".").str[0]
+        df["stock_name"] = df["name"]
+        df["dividend_yield"] = df["dv_ttm"]
+        df["total_mv"] = df["total_mv"] * 10000  # 万元 → 元
+        df["circ_mv"] = df["circ_mv"] * 10000
+        return df[
+            ["stock_code", "stock_name", "pe_ttm", "pb", "dividend_yield", "total_mv", "circ_mv", "turnover_rate"]
+        ]

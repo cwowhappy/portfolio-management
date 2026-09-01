@@ -30,6 +30,7 @@ from collector.sources.plugins import (
     IndexValuationSource,
     IndustryUniverseSource,
     ShenwanMappingSource,
+    StockValuationDailySource,
     TreasuryCurveSource,
 )
 from collector.sources.registry import SourceRegistry
@@ -214,6 +215,7 @@ def build_registries(config):
             "industry_universe": IndustryUniverseSource("industry_universe", conn_factory=conn_factory),
             "treasury_curve": TreasuryCurveSource("treasury_curve", conn_factory=conn_factory),
             "index_constituent": IndexConstituentSource("index_constituent", pro_factory=pro),
+            "stock_valuation_daily": StockValuationDailySource("stock_valuation_daily", pro_factory=pro),
         },
     )
     converter_reg = ConverterRegistry(plugins=_field_columns())
