@@ -1,6 +1,8 @@
 package com.portfolio.invest.bdd.steps;
 
 import com.portfolio.invest.application.portfolio.PortfolioOverviewView;
+import com.portfolio.invest.domain.screening.ScreeningException;
+import com.portfolio.invest.domain.screening.StockScreeningResult;
 import io.cucumber.spring.ScenarioScope;
 import java.util.ArrayList;
 import java.util.List;
@@ -31,6 +33,8 @@ public class ScenarioContext {
     private String aguiStreamBody;
     private String lastQueriedCode;
     private final List<PortfolioOverviewView> overviews = new ArrayList<>();
+    private List<StockScreeningResult> screeningResults;
+    private ScreeningException screeningError;
 
     public String getUsername() {
         return username;
@@ -122,5 +126,21 @@ public class ScenarioContext {
 
     public List<PortfolioOverviewView> getOverviews() {
         return overviews;
+    }
+
+    public List<StockScreeningResult> getScreeningResults() {
+        return screeningResults;
+    }
+
+    public void setScreeningResults(List<StockScreeningResult> screeningResults) {
+        this.screeningResults = screeningResults;
+    }
+
+    public ScreeningException getScreeningError() {
+        return screeningError;
+    }
+
+    public void setScreeningError(ScreeningException screeningError) {
+        this.screeningError = screeningError;
     }
 }
