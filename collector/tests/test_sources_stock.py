@@ -100,6 +100,39 @@ def test_stock_financial_normalizes_and_backfills(monkeypatch):
     assert df.iloc[0]["gross_margin"] == pytest.approx(91.2)
 
 
+def test_stock_financial_all_empty_returns_empty_frame(monkeypatch):
+    # 所有报告期都无数据（None 或空 DataFrame）→ 触发空帧守卫：逐期 continue + 返回空列 DataFrame
+    periods = ["20260630", "20260331"]
+    monkeypatch.setattr(plugins, "_last_n_periods", lambda n: periods)
+
+    calls = {"n": 0}
+
+    class FakePro:
+        def fina_indicator(self, period=None):
+            calls["n"] += 1
+            # 第一期为 None，第二期为空 DataFrame，覆盖同一守卫的两种空值形态
+            if calls["n"] == 1:
+                return None
+            return pd.DataFrame()
+
+    src = plugins.StockFinancialSource("sf", pro_factory=lambda: FakePro())
+    df = src.fetch({})
+
+    assert df.empty
+    assert list(df.columns) == [
+        "report_date",
+        "stock_code",
+        "roe",
+        "roa",
+        "gross_margin",
+        "debt_to_assets",
+        "current_ratio",
+        "revenue_yoy",
+        "netprofit_yoy",
+    ]
+    assert calls["n"] == len(periods)  # 每个报告期都实际请求过
+
+
 def test_last_n_periods_quarter_ends(monkeypatch):
     # 冻结今天（2026-09-01）：dt.date 不可变，替换 plugins.dt 为 today() 固定的 date 子类
     import datetime as _real_dt
