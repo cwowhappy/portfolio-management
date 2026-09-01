@@ -1,0 +1,14 @@
+task_code: stock_valuation_daily
+task_name: 个股估值日快照
+source_ids:
+  - { source_id: stock_valuation_daily, type: plugin, class: stock_valuation_daily }
+converter: field_mapping_stock_valuation
+calc: null
+validator:
+  - { check: min_rows, value: 1000, level: hard }
+target_table: stock_valuation_daily
+schedule: { type: cron, cron: "35 15 * * 1-5" }
+enabled: true
+trading_day_gated: true
+retry_max: 3
+retry_backoff: exponential

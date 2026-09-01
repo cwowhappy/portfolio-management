@@ -1,0 +1,14 @@
+task_code: stock_financial
+task_name: 个股财务季数据
+source_ids:
+  - { source_id: stock_financial, type: plugin, class: stock_financial }
+converter: field_mapping_stock_financial
+calc: null
+validator:
+  - { check: min_rows, value: 1000, level: hard }
+target_table: stock_financial
+schedule: { type: cron, cron: "40 15 * * 1-5" }
+enabled: true
+trading_day_gated: false
+retry_max: 3
+retry_backoff: exponential
