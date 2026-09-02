@@ -79,6 +79,16 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new ApiError(e.code(), e.getMessage()));
     }
 
+    @ExceptionHandler(com.portfolio.invest.domain.journal.JournalException.class)
+    public ResponseEntity<ApiError> journal(com.portfolio.invest.domain.journal.JournalException e) {
+        HttpStatus status = switch (e.code()) {
+            case com.portfolio.invest.domain.journal.JournalErrorCode.NOT_FOUND,
+                 com.portfolio.invest.domain.journal.JournalErrorCode.TRADE_NOT_FOUND -> HttpStatus.NOT_FOUND;
+            default -> HttpStatus.BAD_REQUEST;
+        };
+        return ResponseEntity.status(status).body(new ApiError(e.code(), e.getMessage()));
+    }
+
     /** Bean Validation 结构性校验失败（@Valid wire DTO）→ 400，错误体保持 ApiError。 */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiError> validation(MethodArgumentNotValidException e) {
