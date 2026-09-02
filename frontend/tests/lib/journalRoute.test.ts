@@ -40,6 +40,12 @@ describe("journal 反代路由", () => {
     expect(fetchMock.mock.calls[0][0]).toBe("http://localhost:8080/api/journal/entries/5");
   });
 
+  it("GET 透传 query string 到上游", async () => {
+    fetchMock.mockResolvedValue(new Response("[]", { status: 200 }));
+    await GET(new Request("http://localhost:3000/api/journal/entries?type=REVIEW"), { params: Promise.resolve({ path: ["entries"] }) });
+    expect(fetchMock.mock.calls[0][0]).toBe("http://localhost:8080/api/journal/entries?type=REVIEW");
+  });
+
   it("透传入站 Cookie 到上游", async () => {
     fetchMock.mockResolvedValue(new Response("[]", { status: 200 }));
     await GET(new Request("http://localhost:3000/api/journal/entries", { headers: { Cookie: "JSESSIONID=abc" } }), { params: Promise.resolve({ path: ["entries"] }) });

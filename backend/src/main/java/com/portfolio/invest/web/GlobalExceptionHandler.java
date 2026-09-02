@@ -115,6 +115,14 @@ public class GlobalExceptionHandler {
                 .body(new ApiError("INVALID_REQUEST", "请求体格式不合法"));
     }
 
+    /** 非法枚举/类型参数（如 ?type=FOO）→ 400，避免落入 500 兜底。 */
+    @ExceptionHandler(org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiError> typeMismatch(
+            org.springframework.web.method.annotation.MethodArgumentTypeMismatchException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(new ApiError("INVALID_REQUEST", "参数类型不合法：" + e.getName()));
+    }
+
     /** 数据库约束兜底：唯一键/长度等约束违例映射 400，避免冒泡成 500。 */
     @ExceptionHandler(org.springframework.dao.DataIntegrityViolationException.class)
     public ResponseEntity<ApiError> dataIntegrity(org.springframework.dao.DataIntegrityViolationException e) {
