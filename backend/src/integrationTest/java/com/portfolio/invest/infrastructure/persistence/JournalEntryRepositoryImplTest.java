@@ -35,15 +35,15 @@ class JournalEntryRepositoryImplTest extends PostgresTestSupport {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
-    /** journal_entry.user_id 外键引用 app_user(id)，需先植入 id=1/2 的用户行。 */
+    /** journal_entry.user_id 外键引用 app_user(id)，需先植入 id=51/52 的用户行（高位哨兵 id，避开全量运行时注册测试自动分配的 1..n）。 */
     @BeforeEach
     void seedUsers() {
         jdbcTemplate.update(
                 "INSERT INTO app_user(id, username, password_hash, role, status) VALUES (?, ?, ?, ?, ?)",
-                1L, "journal-t5-1", "h", "USER", "PENDING");
+                51L, "journal-t5-51", "h", "USER", "PENDING");
         jdbcTemplate.update(
                 "INSERT INTO app_user(id, username, password_hash, role, status) VALUES (?, ?, ?, ?, ?)",
-                2L, "journal-t5-2", "h", "USER", "PENDING");
+                52L, "journal-t5-52", "h", "USER", "PENDING");
     }
 
     private static JournalEntry buyMemo(Long userId) {
@@ -54,10 +54,10 @@ class JournalEntryRepositoryImplTest extends PostgresTestSupport {
 
     @Test
     void 保存记录并回读全部字段() {
-        JournalEntry saved = repository.save(buyMemo(1L));
+        JournalEntry saved = repository.save(buyMemo(51L));
 
         assertThat(saved.id()).isNotNull();
-        var found = repository.findByIdAndUserId(saved.id(), 1L).orElseThrow();
+        var found = repository.findByIdAndUserId(saved.id(), 51L).orElseThrow();
         assertThat(found.type()).isEqualTo(JournalEntryType.BUY_MEMO);
         assertThat(found.stockCode()).isEqualTo("600519");
         assertThat(found.stockName()).isEqualTo("贵州茅台");
@@ -69,32 +69,32 @@ class JournalEntryRepositoryImplTest extends PostgresTestSupport {
 
     @Test
     void 按类型过滤() {
-        repository.save(buyMemo(1L));
-        repository.save(JournalEntry.create(1L, JournalEntryType.REVIEW, null, null, null,
+        repository.save(buyMemo(51L));
+        repository.save(JournalEntry.create(51L, JournalEntryType.REVIEW, null, null, null,
                 "Q3 复盘", "内容", null, null,
                 PeriodType.QUARTERLY, LocalDate.of(2026, 7, 1), LocalDate.of(2026, 9, 30),
                 LocalDate.of(2026, 9, 30), Instant.now()));
 
-        assertThat(repository.findByUserId(1L, JournalEntryType.BUY_MEMO)).hasSize(1);
-        assertThat(repository.findByUserId(1L, JournalEntryType.REVIEW)).hasSize(1);
-        assertThat(repository.findByUserId(1L, null)).hasSize(2);
+        assertThat(repository.findByUserId(51L, JournalEntryType.BUY_MEMO)).hasSize(1);
+        assertThat(repository.findByUserId(51L, JournalEntryType.REVIEW)).hasSize(1);
+        assertThat(repository.findByUserId(51L, null)).hasSize(2);
     }
 
     @Test
     void 用户隔离() {
-        repository.save(buyMemo(1L));
-        assertThat(repository.findByUserId(2L, null)).isEmpty();
-        assertThat(repository.findByIdAndUserId(repository.findByUserId(1L, null).get(0).id(), 2L)).isEmpty();
+        repository.save(buyMemo(51L));
+        assertThat(repository.findByUserId(52L, null)).isEmpty();
+        assertThat(repository.findByIdAndUserId(repository.findByUserId(51L, null).get(0).id(), 52L)).isEmpty();
     }
 
     @Test
     void 更新后替换原记录() {
-        JournalEntry saved = repository.save(buyMemo(1L));
+        JournalEntry saved = repository.save(buyMemo(51L));
         repository.save(saved.update("600519", "贵州茅台", 99L, "新标题", "新内容",
                 new BigDecimal("2000"), new BigDecimal("1600"), null, null, null,
                 LocalDate.of(2026, 9, 3)));
 
-        var found = repository.findByIdAndUserId(saved.id(), 1L).orElseThrow();
+        var found = repository.findByIdAndUserId(saved.id(), 51L).orElseThrow();
         assertThat(found.title()).isEqualTo("新标题");
         assertThat(found.tradeId()).isEqualTo(99L);
         assertThat(found.targetPrice()).isEqualByComparingTo("2000");
@@ -103,8 +103,8 @@ class JournalEntryRepositoryImplTest extends PostgresTestSupport {
 
     @Test
     void 删除记录() {
-        JournalEntry saved = repository.save(buyMemo(1L));
+        JournalEntry saved = repository.save(buyMemo(51L));
         repository.deleteById(saved.id());
-        assertThat(repository.findByIdAndUserId(saved.id(), 1L)).isEmpty();
+        assertThat(repository.findByIdAndUserId(saved.id(), 51L)).isEmpty();
     }
 }
