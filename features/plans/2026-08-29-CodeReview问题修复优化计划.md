@@ -1,10 +1,10 @@
 # CodeReview 问题修复优化计划（2026-08-29）
 
-> 依据：`docs/code-review-2026-08-29.md`（审查报告）
+> 依据：`docs/reviews/code-review-2026-08-29.md`（审查报告）
 > 分支：`chore/code-review-2026-08-29`
 > 原则：按风险优先（P0 → P1 → P2），每个修复附回归测试；改动最小化，不顺手重构无关代码。
 > 状态：全部方案已与作者逐项确认（2026-08-29），关键决策已内联标注【已确认】。
-> 执行状态：**全部阶段已执行完毕（2026-08-29）**，`make test` 三端全绿（后端 242 / 前端 208 / collector 101，覆盖率门槛均过）。详见 `docs/code-review-2026-08-29.md` 修复状态一节。
+> 执行状态：**全部阶段已执行完毕（2026-08-29）**，`make test` 三端全绿（后端 242 / 前端 208 / collector 101，覆盖率门槛均过）。详见 `docs/reviews/code-review-2026-08-29.md` 修复状态一节。
 
 ---
 
@@ -86,4 +86,4 @@ collector（12 条）：
 - 每阶段完成后：`make test` 全绿（阶段 1.1 后含 collector），覆盖率门槛不下降。
 - collector 集成测试不再默认静默 skip（CI 注入 `DATABASE_URL` 或用 testcontainers）。
 - 每个 P0/P1 修复必须附失败在先的回归测试（红-绿）。
-- 完成后更新 `docs/code-review-2026-08-29.md` 条目状态，并同步 AGENTS.md（若涉及流程变更，如 make test 范围）。
+- 完成后更新 `docs/reviews/code-review-2026-08-29.md` 条目状态，并同步 AGENTS.md（若涉及流程变更，如 make test 范围）。

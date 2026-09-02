@@ -25,6 +25,7 @@ frontend/playwright-report/
 # Claude Code / agent 本地配置（不入库）
 .agents/
 .claude/
+.superpowers/
 
 # Env / secrets
 .env

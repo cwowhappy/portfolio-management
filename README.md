@@ -1,9 +1,9 @@
-# portfolio-management · 证券投资与分析系统
+# 砚台 · 价值投资与资产配置系统（portfolio-management）
 
 > **AI Agent Web 服务** —— A股投研对话助手（2026-09）
 
 架构设计：[docs/plans/2026-08-18-投资分析AI-Agent一期设计.md](docs/plans/2026-08-18-投资分析AI-Agent一期设计.md) ·
-用户管理设计：[features/specs/2026-08-21-用户管理-design.md](features/specs/2026-08-21-用户管理-design.md) ·
+用户管理设计：[features/user-management/01-requirement/需求规格说明.md](features/user-management/01-requirement/需求规格说明.md) ·
 决策记录：[docs/technology/decisions/](docs/technology/decisions/) ·
 后端分包规范：[docs/technology/conventions/01-后端DDD分包规范.md](docs/technology/conventions/01-后端DDD分包规范.md)（ArchUnit 强制，DDD 分层）·
 产品功能：[docs/function/](docs/function/) ·
@@ -150,8 +150,8 @@ backend/    Spring Boot 4 + Spring Security 7 + Spring Data JPA（DDD 洋葱分�
 
 collector/  Python 3.12 采集服务（akshare/tushare → PostgreSQL，APScheduler 调度）：市场估值快照 / 指数估值 / 国债曲线 / 申万映射 / 指数成分股 / 个股基本面
 frontend/   Next.js 15（聊天 UI / 行情台 / 估值 / 持仓 / 配置 / 筛选 / 行业 / 登录注册 / 管理页 / API 反代）
-docs/       function/（产品功能）· technology/（技术文档）· 设计文档、ADR
-features/   specs/（设计规格）· plans/（实施计划）
+docs/       function/（产品功能）· technology/（技术文档）· plans/（跨模块/版本级计划）· reviews/（代码审查报告）· code-review-lessons.md（审查经验沉淀）
+features/   <feature>/（特性需求/设计/计划，如 asset-allocation、portfolio-management）· plans/（跨特性工程计划）
 scripts/    smoke.sh 冒烟脚本
 ```
 

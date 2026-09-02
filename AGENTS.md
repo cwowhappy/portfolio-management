@@ -88,6 +88,8 @@ infrastructure ──→ {domain, application, config}
 - `README.md`：功能全览 + API 端点表 + 环境变量表 + 目录结构
 - `docs/technology/conventions/`（01 后端 DDD 分包 / 02 后端 / 03 前端 / 04 采集服务，改代码前必读对应规范）
 - `docs/technology/decisions/`（0001–0009）：Agent 框架、AG-UI 协议、行情源、会话模型、用户认证、后端分层等架构决策
-- `features/specs/`（设计规格）、`features/plans/`（实施计划）
+- `features/<feature>/`（特性需求/设计/计划，索引与「特性↔里程碑↔模块」映射见 `features/README.md`）
 - `docs/technology/`（技术文档）、`docs/function/`（产品功能）
+- `docs/plans/2026-08-27-产品落地计划.md`：里程碑级落地计划与进度跟踪（MS-00~MS-15）
+- `docs/README.md`：文档中心总导航
 - `docs/code-review-lessons.md`：代码审查经验沉淀（问题模式清单，评审/开发前参考）
