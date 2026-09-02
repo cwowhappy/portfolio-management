@@ -2,7 +2,7 @@
 
 > 生成时间：2026-08-29 · 分支：`chore/code-review-2026-08-29`
 > 范围：后端（Spring Boot/Java）、前端（Next.js/CopilotKit）、数据采集服务（collector/Python）
-> 说明：本报告含两部分——对 2026-08-19 旧报告（`docs/code-review.md`）的逐条核验，以及本轮新发现问题。条目按 P0（高）/P1（中）/P2（低）分级，附 file:line 引用。优化计划见 `features/plans/2026-08-29-CodeReview问题修复优化计划.md`。
+> 说明：本报告含两部分——对 2026-08-19 旧报告（`docs/reviews/code-review.md`）的逐条核验，以及本轮新发现问题。条目按 P0（高）/P1（中）/P2（低）分级，附 file:line 引用。优化计划见 `features/plans/2026-08-29-CodeReview问题修复优化计划.md`。
 
 ---
 

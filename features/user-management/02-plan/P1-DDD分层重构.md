@@ -8,7 +8,7 @@
 
 **Tech Stack:** Spring Boot 4 / Java 21 · ArchUnit 1.5.0 · JUnit 5 · AssertJ · Mockito · Jackson 2
 
-**Spec:** [2026-08-21-用户管理-design.md](../specs/2026-08-21-用户管理-design.md)（§3 架构 / §3.2 依赖方向）· [ADR-0009 后端分层 DDD](../../docs/technology/decisions/0009-backend-ddd-layering.md) · [分包规范](../../docs/technology/conventions/01-后端DDD分包规范.md)
+**Spec:** [需求规格说明](../01-requirement/需求规格说明.md)（§3 架构 / §3.2 依赖方向）· [ADR-0009 后端分层 DDD](../../../docs/technology/decisions/0009-backend-ddd-layering.md) · [分包规范](../../../docs/technology/conventions/01-后端DDD分包规范.md)
 
 ## Global Constraints
 

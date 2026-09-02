@@ -12,14 +12,18 @@ docs/technology/
 ├── architecture/            ← 一、系统架构设计
 │   ├── 01-系统架构.md        │   总体架构图、分层职责、请求链路、会话模型
 │   ├── 02-技术栈与工程结构.md │   技术栈版本定版、目录结构、部署拓扑
-│   └── 03-后端测试架构.md     │   四层测试模型、source set、覆盖率门禁、ArchUnit 守护、BDD 设计
+│   ├── 03-后端测试架构.md     │   四层测试模型、source set、覆盖率门禁、ArchUnit 守护、BDD 设计
+│   └── 04-数据采集服务架构.md │   collector 数据采集服务架构（数据源、任务调度、写入链路）
 ├── modules/                 ← 二、技术视角的模块划分与设计
 │   ├── 01-Agent实现.md       │   ReActAgent 装配、模型配置、提示词、6 个 @Tool
 │   ├── 02-行情数据服务.md     │   数据源降级、代码规范化、缓存/限流
 │   ├── 03-接口设计.md        │   认证/管理员/会话/行情/AG-UI/健康检查接口
 │   └── 04-工程与运维.md      │   配置、部署、错误处理、测试、已知限制
 ├── conventions/             ← 三、技术规范（有约束力的执行标准）
-│   └── 01-后端DDD分包规范.md  │   后端包划分与依赖规则（ArchUnit 强制）
+│   ├── 01-后端DDD分包规范.md  │   后端包划分与依赖规则（ArchUnit 强制）
+│   ├── 02-后端架构与代码规范.md │   后端接口/异常/事务/安全编码规范
+│   ├── 03-前端架构与代码规范.md │   前端反代/数据访问/流式组件规范
+│   └── 04-采集服务架构与代码规范.md │  collector 事务/调度/工具链规范
 ├── decisions/               ← 四、技术决策（ADR 0001–0009 + 索引）
 └── research/                ← 五、技术储备与规划
     ├── 00-技术储备与规划.md    │   储备盘点 + MVP/二期/三期技术规划
@@ -33,6 +37,7 @@ docs/technology/
 | [01-系统架构.md](architecture/01-系统架构.md) | 总体架构图（浏览器 → Next.js 反代 → Spring Boot DDD 分层 → 外部依赖）、对话/行情两条请求链路、会话模型 |
 | [02-技术栈与工程结构.md](architecture/02-技术栈与工程结构.md) | 技术栈版本定版表、前后端目录结构、Docker Compose 部署拓扑 |
 | [03-后端测试架构.md](architecture/03-后端测试架构.md) | 后端四层测试模型（单元/切片/集成/BDD）、source set 划分、PostgresTestSupport 单例容器、JaCoCo 聚合门禁、ArchUnit 守护、BDD 场景清单 |
+| [04-数据采集服务架构.md](architecture/04-数据采集服务架构.md) | collector 数据采集服务架构：数据源/转换器/计算/执行/校验/写入链路、任务调度、幂等写入 |
 
 ## 二、技术视角的模块划分与设计（modules/）
 
@@ -52,6 +57,9 @@ docs/technology/
 | 规范 | 约束方式 |
 |------|---------|
 | [01-后端DDD分包规范.md](conventions/01-后端DDD分包规范.md) | ArchUnit 单测强制，违反即构建失败 |
+| [02-后端架构与代码规范.md](conventions/02-后端架构与代码规范.md) | ArchUnit（5 条）+ 测试 + 人工评审 |
+| [03-前端架构与代码规范.md](conventions/03-前端架构与代码规范.md) | eslint + vitest 门槛 + 人工评审 |
+| [04-采集服务架构与代码规范.md](conventions/04-采集服务架构与代码规范.md) | ruff + import-linter + pytest 门槛 + 人工评审 |
 
 ## 四、技术决策（decisions/）
 
@@ -81,6 +89,7 @@ docs/technology/
 - 想知道**对外有哪些接口** → [modules/03-接口设计.md](modules/03-接口设计.md)
 - 想知道**怎么部署、测试、排错** → [modules/04-工程与运维.md](modules/04-工程与运维.md)
 - 想知道**后端测试怎么分层、新测试放哪** → [architecture/03-后端测试架构.md](architecture/03-后端测试架构.md)
+- 想知道**数据采集服务怎么设计** → [architecture/04-数据采集服务架构.md](architecture/04-数据采集服务架构.md)
 - 想知道**某个技术选型为什么** → [decisions/](decisions/)
 - 想知道**后续版本要储备什么技术** → [research/00-技术储备与规划.md](research/00-技术储备与规划.md)
 - 想看**产品功能** → [../function/](../function/)
