@@ -37,7 +37,7 @@ export default function JournalBoard() {
       </div>
       {tab === "timeline" ? <TimelineView events={events} /> : (
         <>
-          <EntryEditor editing={editing} onSaved={onSaved} onCancel={() => setEditing(null)} />
+          <EntryEditor key={editing?.id ?? "new"} editing={editing} onSaved={onSaved} onCancel={() => setEditing(null)} />
           <EntryList entries={entries} onEdit={setEditing} onChanged={reload} />
         </>
       )}
