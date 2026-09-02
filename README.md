@@ -1,6 +1,6 @@
 # portfolio-management · 证券投资与分析系统
 
-> **AI Agent Web 服务** —— A股投研对话助手（2026-08）
+> **AI Agent Web 服务** —— A股投研对话助手（2026-09）
 
 架构设计：[docs/plans/2026-08-18-投资分析AI-Agent一期设计.md](docs/plans/2026-08-18-投资分析AI-Agent一期设计.md) ·
 用户管理设计：[features/specs/2026-08-21-用户管理-design.md](features/specs/2026-08-21-用户管理-design.md) ·
@@ -15,7 +15,12 @@
 - **行情数据台**：指数速览、股票搜索、实时报价、K线（日/周/月 + MA5/MA20）、财务指标、新闻——**公开访问**
 - **用户管理**：注册/登录（用户名 + 密码，密码 ≥8 位含字母数字）；注册需**管理员审核通过**后方可使用 AI；管理员可审核、停用/启用、重置密码；内置管理员（env 种子）
 - **会话持久化**：AI 对话历史存服务端 PostgreSQL、归属账号，换设备可见（标题取首条消息前 24 字）
-- **技术栈**：Spring Boot 4 + Spring Security 7 + PostgreSQL/Flyway + AgentScope Java · Next.js 15 + React 19 + CopilotKit（AG-UI 前端）· 东方财富公开接口（新浪兜底）
+- **市场估值仪表盘**：全 A PE/PB 中位数及分位、股债利差(ERP)、主要指数估值、破净占比、市场情绪温度计、历史走势——**公开访问**（`/valuation`）
+- **持仓组合管理**：持仓/交易/分红/分组，成本与盈亏计算、组合总览与集中度分析——**需登录**（`/portfolio`）
+- **资产配置**：经典模板一键套用 + 自定义方案 + 与持仓的偏离度对比——**需登录**（`/allocation`）
+- **价值筛选器**：估值/盈利/财务健康/成长/市值流动性五维 AND 组合筛选 + 结果排序——**公开访问**（`/screener`）
+- **行业估值**：申万 31 行业 PE/PB/ROE/股息率对比 + 估值热力图，点击跳转筛选器——**公开访问**（`/industry`）
+- **技术栈**：Spring Boot 4 + Spring Security 7 + PostgreSQL/Flyway + AgentScope Java · Next.js 15 + React 19 + CopilotKit（AG-UI 前端）· 东方财富公开接口（新浪兜底）· Python 采集服务（akshare/tushare）
 
 ## 快速开始
 
@@ -100,20 +105,51 @@ Playwright e2e 位于 `frontend/e2e/`，配置见 `frontend/playwright.config.ts
 | GET /api/agent/health | 存活探针（liveness，仅 LLM 配置状态，零外呼） |
 | GET /api/agent/status | 服务状态（LLM 配置 + 行情源连通性，探活结果 30s 缓存） |
 
+**估值 / 筛选**（前端经 /api/valuation/**、/api/screening/** 反代，公开只读）：
+
+| 端点 | 说明 |
+|---|---|
+| GET /api/valuation/overview | 估值总览（全 A 中位数/分位/ERP/温度计/指数估值） |
+| GET /api/valuation/industries?sort=pe | 行业估值对比（PE/PB/ROE/股息率，sort 可 pe/pb/roe/dividendYield） |
+| GET /api/valuation/history | 估值历史序列 |
+| GET /api/screening/stocks?peTtmMax=20&roeMin=15&industryCode=&sortBy=&limit= | 五维组合筛选（12 条件 + 行业 + 排序，limit≤200，至少一个条件） |
+
+**持仓**（前端经 /api/portfolio/** 反代，需登录）：
+
+| 端点 | 说明 |
+|---|---|
+| GET /api/portfolio/overview | 组合总览 |
+| GET /api/portfolio/positions | 持仓列表 |
+| POST /api/portfolio/positions/buy · /sell | 买入 / 卖出 |
+| POST /api/portfolio/positions/cash-dividend · /stock-dividend | 现金 / 股票分红 |
+| GET /api/portfolio/groups · POST /api/portfolio/groups | 持仓分组查询 / 新建 |
+| GET /api/portfolio/allocation · /industry-distribution · /concentration | 配置结构 / 行业分布 / 集中度 |
+
+**配置**（前端经 /api/allocation/** 反代，需登录）：
+
+| 端点 | 说明 |
+|---|---|
+| GET /api/allocation/templates | 配置模板库 |
+| GET /api/allocation/plans · POST /api/allocation/plans | 配置方案列表 / 新建 |
+| PUT /api/allocation/plans/{planId} · DELETE /api/allocation/plans/{planId} | 修改 / 删除方案 |
+| POST /api/allocation/plans/{planId}/activate | 激活方案 |
+| GET /api/allocation/deviation | 目标配置 vs 持仓偏离度 |
+
 ## 目录结构
 
 ```
 backend/    Spring Boot 4 + Spring Security 7 + Spring Data JPA（DDD 洋葱分层）
   src/main/java/com/portfolio/invest/
-    web/              接入层：Auth / UserAdmin / Conversation / Market / Health 控制器
-    application/      应用层：auth / useradmin / conversation / market 用例编排
-    domain/           领域层：user / conversation / market（纯 POJO，零 Spring/JPA）
+    web/              接入层：Auth / UserAdmin / Conversation / Market / Valuation / Portfolio / Allocation / Screening / Health 控制器
+    application/      应用层：auth / useradmin / conversation / market / valuation / portfolio / allocation / screening 用例编排
+    domain/           领域层：user / conversation / market / valuation / portfolio / allocation / screening（纯 POJO，零 Spring/JPA）
     infrastructure/   基础设施：persistence(JPA+Flyway) / security / seed / market(客户端+缓存)
     agent/            独立能力域：AgentConfig / InvestTools / InvestSystemPrompt
     config/           配置属性：InvestProperties
-  src/main/resources/ application.yml / application-prod.yml / db/migration/(V1,V2)
+  src/main/resources/ application.yml / application-prod.yml / db/migration/(V1~V7)
 
-frontend/   Next.js 15（聊天 UI / 行情台 / 登录注册 / 管理页 / API 反代）
+collector/  Python 3.12 采集服务（akshare/tushare → PostgreSQL，APScheduler 调度）：市场估值快照 / 指数估值 / 国债曲线 / 申万映射 / 指数成分股 / 个股基本面
+frontend/   Next.js 15（聊天 UI / 行情台 / 估值 / 持仓 / 配置 / 筛选 / 行业 / 登录注册 / 管理页 / API 反代）
 docs/       function/（产品功能）· technology/（技术文档）· 设计文档、ADR
 features/   specs/（设计规格）· plans/（实施计划）
 scripts/    smoke.sh 冒烟脚本
@@ -130,6 +166,7 @@ scripts/    smoke.sh 冒烟脚本
 | ADMIN_USERNAME / ADMIN_PASSWORD | - | 内置管理员（启动幂等种子，未填则不创建） |
 | BACKEND_URL | http://localhost:8080 | 前端反代目标 |
 | PORT | 8080 | 后端端口 |
+| TUSHARE_TOKEN | - | 采集服务（collector）tushare 数据源 token（个股基本面 / 指数估值 / 申万映射；未填则仅 akshare 数据可用） |
 
 ## 免责声明
 
