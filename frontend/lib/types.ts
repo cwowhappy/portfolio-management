@@ -275,3 +275,36 @@ export interface ScreeningParams {
   sortDirection?: "ASC" | "DESC";
   limit?: number;
 }
+
+// —— 投资决策记录 ——
+
+export type JournalEntryType = "BUY_MEMO" | "SELL_MEMO" | "RESEARCH_NOTE" | "REVIEW";
+export type PeriodType = "QUARTERLY" | "ANNUAL";
+export interface JournalEntryView {
+  id: number;
+  type: JournalEntryType;
+  stockCode: string | null;
+  stockName: string | null;
+  tradeId: number | null;
+  title: string;
+  content: string;
+  targetPrice: number | null;
+  stopLoss: number | null;
+  periodType: PeriodType | null;
+  periodStart: string | null;
+  periodEnd: string | null;
+  eventDate: string;
+  createdAt: string;
+  updatedAt: string;
+}
+export type TimelineEventType = "BUY" | "SELL" | "DIVIDEND" | "BUY_MEMO" | "SELL_MEMO" | "RESEARCH_NOTE" | "REVIEW";
+export interface TimelineEventView {
+  type: TimelineEventType;
+  date: string;
+  title: string;
+  description: string;
+  stockCode: string | null;
+  stockName: string | null;
+  refId: number | null;
+  refType: string;
+}

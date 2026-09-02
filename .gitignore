@@ -22,6 +22,12 @@ frontend/playwright-report/
 *.iml
 .DS_Store
 
+# Eclipse
+.classpath
+.project
+.settings/
+bin/
+
 # Claude Code / agent 本地配置（不入库）
 .agents/
 .claude/

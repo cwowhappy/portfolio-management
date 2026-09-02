@@ -225,3 +225,38 @@ export const ScreeningStockSchema = z.object({
   totalMv: z.number().nullable(),
   turnoverRate: z.number().nullable(),
 });
+
+// —— 投资决策记录（/api/journal/**，与后端 JournalController 的 DTO 对齐）——
+
+export const JournalEntryTypeSchema = z.enum(["BUY_MEMO", "SELL_MEMO", "RESEARCH_NOTE", "REVIEW"]);
+export const PeriodTypeSchema = z.enum(["QUARTERLY", "ANNUAL"]);
+export const JournalEntryViewSchema = z.object({
+  id: z.number(),
+  type: JournalEntryTypeSchema,
+  stockCode: z.string().nullable(),
+  stockName: z.string().nullable(),
+  tradeId: z.number().nullable(),
+  title: z.string(),
+  content: z.string(),
+  targetPrice: z.number().nullable(),
+  stopLoss: z.number().nullable(),
+  periodType: PeriodTypeSchema.nullable(),
+  periodStart: z.string().nullable(),
+  periodEnd: z.string().nullable(),
+  eventDate: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export const TimelineEventTypeSchema = z.enum([
+  "BUY", "SELL", "DIVIDEND", "BUY_MEMO", "SELL_MEMO", "RESEARCH_NOTE", "REVIEW",
+]);
+export const TimelineEventViewSchema = z.object({
+  type: TimelineEventTypeSchema,
+  date: z.string(),
+  title: z.string(),
+  description: z.string(),
+  stockCode: z.string().nullable(),
+  stockName: z.string().nullable(),
+  refId: z.number().nullable(),
+  refType: z.string(),
+});

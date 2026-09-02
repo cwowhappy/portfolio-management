@@ -79,6 +79,16 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new ApiError(e.code(), e.getMessage()));
     }
 
+    @ExceptionHandler(com.portfolio.invest.domain.journal.JournalException.class)
+    public ResponseEntity<ApiError> journal(com.portfolio.invest.domain.journal.JournalException e) {
+        HttpStatus status = switch (e.code()) {
+            case com.portfolio.invest.domain.journal.JournalErrorCode.NOT_FOUND,
+                 com.portfolio.invest.domain.journal.JournalErrorCode.TRADE_NOT_FOUND -> HttpStatus.NOT_FOUND;
+            default -> HttpStatus.BAD_REQUEST;
+        };
+        return ResponseEntity.status(status).body(new ApiError(e.code(), e.getMessage()));
+    }
+
     /** Bean Validation 结构性校验失败（@Valid wire DTO）→ 400，错误体保持 ApiError。 */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiError> validation(MethodArgumentNotValidException e) {
@@ -103,6 +113,14 @@ public class GlobalExceptionHandler {
         log.warn("请求体解析失败: {}", e.getMessage());
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(new ApiError("INVALID_REQUEST", "请求体格式不合法"));
+    }
+
+    /** 非法枚举/类型参数（如 ?type=FOO）→ 400，避免落入 500 兜底。 */
+    @ExceptionHandler(org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiError> typeMismatch(
+            org.springframework.web.method.annotation.MethodArgumentTypeMismatchException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(new ApiError("INVALID_REQUEST", "参数类型不合法：" + e.getName()));
     }
 
     /** 数据库约束兜底：唯一键/长度等约束违例映射 400，避免冒泡成 500。 */
