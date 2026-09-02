@@ -32,6 +32,9 @@ public class ScenarioContext {
     private MvcResult lastResponse;
     private String aguiStreamBody;
     private String lastQueriedCode;
+    private Long journalEntryId;
+    private Long tradeId;
+    private String journalErrorCode;
     private final List<PortfolioOverviewView> overviews = new ArrayList<>();
     private List<StockScreeningResult> screeningResults;
     private ScreeningException screeningError;
@@ -122,6 +125,30 @@ public class ScenarioContext {
 
     public void setLastQueriedCode(String lastQueriedCode) {
         this.lastQueriedCode = lastQueriedCode;
+    }
+
+    public Long getJournalEntryId() {
+        return journalEntryId;
+    }
+
+    public void setJournalEntryId(Long journalEntryId) {
+        this.journalEntryId = journalEntryId;
+    }
+
+    public Long getTradeId() {
+        return tradeId;
+    }
+
+    public void setTradeId(Long tradeId) {
+        this.tradeId = tradeId;
+    }
+
+    public String getJournalErrorCode() {
+        return journalErrorCode;
+    }
+
+    public void setJournalErrorCode(String journalErrorCode) {
+        this.journalErrorCode = journalErrorCode;
     }
 
     public List<PortfolioOverviewView> getOverviews() {
