@@ -13,7 +13,7 @@ test.describe("/journal 投资决策记录", () => {
     await page.getByRole("link", { name: "决策" }).click();
     await expect(page).toHaveURL(/\/journal/, { timeout: 15_000 });
     await expect(page.getByRole("heading", { name: "投资决策记录" })).toBeVisible();
-    await expect(page.getByTestId("timeline")).toContainText("暂无事件");
+    await expect(page.getByText(/暂无事件/)).toBeVisible();
 
     await page.getByRole("button", { name: "记录" }).click();
     await page.getByRole("button", { name: "研究笔记" }).click();
