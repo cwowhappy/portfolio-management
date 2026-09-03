@@ -39,7 +39,7 @@ describe("ConcentrationList", () => {
   it("top5Ratio 超过阈值时显示警示", () => {
     render(<ConcentrationList concentration={concentration} />);
     const warning = screen.getByText("前5大重仓占比超 20%");
-    expect(warning.className).toContain("amber");
+    expect(warning.className).toContain("accent");
   });
 
   it("top5Ratio 恰好等于阈值时不显示警示", () => {

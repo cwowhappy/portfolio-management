@@ -10,7 +10,7 @@ export default function ConcentrationList({ concentration }: { concentration: Co
       <div className="font-[family-name:var(--font-display)] text-[15px] mb-3">
         集中度分析
         {concentration && concentration.top5Ratio > CONCENTRATION_THRESHOLD_PCT && (
-          <span className="ml-2 text-xs text-[color:var(--color-amber)]">前5大重仓占比超 {CONCENTRATION_THRESHOLD_PCT}%</span>
+          <span className="ml-2 text-xs text-[color:var(--color-accent)]">前5大重仓占比超 {CONCENTRATION_THRESHOLD_PCT}%</span>
         )}
       </div>
       {holdings.length === 0 ? (

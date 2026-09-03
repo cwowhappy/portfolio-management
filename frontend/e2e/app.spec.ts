@@ -9,7 +9,7 @@ test.describe("应用导航", () => {
 
   test("首页标题与顶部导航", async ({ page }) => {
     await registerAndApprove(page, uniqueUsername("nav"), TEST_PASSWORD);
-    await expect(page).toHaveTitle(/砚台/);
+    await expect(page).toHaveTitle(/九和/);
     await expect(page.getByRole("link", { name: "对话" })).toBeVisible();
     await expect(page.getByRole("link", { name: "行情台" })).toBeVisible();
   });

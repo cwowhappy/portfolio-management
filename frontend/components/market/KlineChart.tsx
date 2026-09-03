@@ -105,7 +105,7 @@ export default function KlineChart({ bars }: { bars: KlineBar[] }) {
         })}
 
         {/* 均线 */}
-        <path d={model.linePath(model.ma5)} fill="none" stroke="var(--color-amber)" strokeWidth="1" opacity="0.9" />
+        <path d={model.linePath(model.ma5)} fill="none" stroke="var(--color-accent)" strokeWidth="1" opacity="0.9" />
         <path d={model.linePath(model.ma20)} fill="none" stroke="#7d9bd9" strokeWidth="1" opacity="0.9" />
 
         {/* K线 */}

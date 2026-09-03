@@ -3,7 +3,7 @@
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import type { AssetAllocation } from "@/lib/types";
 
-const COLORS = ["var(--color-up)", "var(--color-amber)", "var(--color-ink-faint)"];
+const COLORS = ["var(--color-up)", "var(--color-accent)", "var(--color-ink-faint)"];
 
 export default function AllocationPie({ allocation }: { allocation: AssetAllocation | null }) {
   const data = allocation?.slices ?? [];

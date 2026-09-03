@@ -23,7 +23,7 @@ export default function TrendChart({ snapshots }: { snapshots: ValuationSnapshot
           <YAxis stroke="var(--color-ink-faint)" fontSize={12} />
           <Tooltip contentStyle={{ background: "var(--color-panel)", border: "1px solid var(--color-line)" }} />
           <Line type="monotone" dataKey="pe" name="PE" stroke="var(--color-up)" dot={false} />
-          <Line type="monotone" dataKey="pb" name="PB" stroke="var(--color-amber)" dot={false} />
+          <Line type="monotone" dataKey="pb" name="PB" stroke="var(--color-accent)" dot={false} />
         </LineChart>
       </ResponsiveContainer>
     </div>

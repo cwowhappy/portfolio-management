@@ -158,8 +158,8 @@ function UserMessage({ content }: { content: string }) {
 function ReasoningMessage({ text }: { text: string }) {
   return (
     <div className="animate-rise my-5 flex gap-3.5">
-      <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-md border border-[color:var(--color-line)] bg-[color:var(--color-panel)] text-[13px] text-[color:var(--color-up)]">
-        砚
+      <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-md border border-[color:var(--color-line)] bg-[color:var(--color-panel)] text-[13px] text-[color:var(--color-accent)]">
+        和
       </span>
       <div className="min-w-0 flex-1">
         <Reasoning text={text} />
@@ -177,8 +177,8 @@ const AssistantMessage = memo(function AssistantMessage({ message }: { message: 
 
   return (
     <div className="animate-rise my-5 flex gap-3.5">
-      <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-md border border-[color:var(--color-line)] bg-[color:var(--color-panel)] text-[13px] text-[color:var(--color-up)]">
-        砚
+      <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-md border border-[color:var(--color-line)] bg-[color:var(--color-panel)] text-[13px] text-[color:var(--color-accent)]">
+        和
       </span>
       <div className="min-w-0 flex-1">
         {toolCalls.map((tc) => (
@@ -238,7 +238,7 @@ function EmptyState({
         Agent 会自动调用行情、财务与新闻工具，为你整理数据并给出分析。
       </p>
       {llmReady === false && (
-        <p className="mt-5 max-w-md rounded-lg border border-[color:var(--color-amber)]/40 bg-[color:var(--color-panel)] px-4 py-3 text-[12px] leading-relaxed text-[color:var(--color-amber)]">
+        <p className="mt-5 max-w-md rounded-lg border border-[color:var(--color-accent)]/40 bg-[color:var(--color-panel)] px-4 py-3 text-[12px] leading-relaxed text-[color:var(--color-accent)]">
           未检测到 DEEPSEEK_API_KEY：对话功能暂不可用。请在 backend 的 .env
           中配置后重启服务；行情数据页仍可正常浏览。
         </p>
@@ -480,7 +480,7 @@ export default function ThreadArea({ llmReady }: { llmReady: boolean | null }) {
       </div>
       {sendError && (
         <div className="mx-auto w-full max-w-[860px] px-5 pb-2">
-          <p className="flex items-center justify-between rounded-lg border border-[color:var(--color-amber)]/40 bg-[color:var(--color-panel)] px-4 py-2.5 text-[13px] text-[color:var(--color-amber)]">
+          <p className="flex items-center justify-between rounded-lg border border-[color:var(--color-accent)]/40 bg-[color:var(--color-panel)] px-4 py-2.5 text-[13px] text-[color:var(--color-accent)]">
             <span>{sendError}</span>
             <button
               onClick={() => setSendError(null)}

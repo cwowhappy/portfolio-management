@@ -46,7 +46,7 @@ export default function ValuationBoard() {
       <div className="flex items-center justify-between">
         <h1 className="font-[family-name:var(--font-display)] text-2xl">市场估值仪表盘</h1>
         {overview.dataAccumulating && (
-          <span className="text-xs text-[color:var(--color-amber)]">数据积累中 · 分位仅供参考</span>
+          <span className="text-xs text-[color:var(--color-accent)]">数据积累中 · 分位仅供参考</span>
         )}
       </div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4" data-testid="stat-grid">

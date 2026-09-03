@@ -1,4 +1,4 @@
-# 砚台 · 价值投资与资产配置系统（portfolio-management）
+# 九和 · 价值投资与资产配置系统（portfolio-management）
 
 > **AI Agent Web 服务** —— A股投研对话助手（2026-09）
 

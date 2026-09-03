@@ -85,7 +85,7 @@ export default function Sidebar({
               (health
                 ? health.llmKey && health.marketOk
                   ? "bg-[color:var(--color-down)]"
-                  : "bg-[color:var(--color-amber)]"
+                  : "bg-[color:var(--color-accent)]"
                 : "bg-[color:var(--color-ink-faint)]")
             }
           />

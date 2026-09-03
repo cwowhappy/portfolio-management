@@ -196,7 +196,7 @@ export default function MarketBoard() {
       </section>
 
       {error && (
-        <p className="mb-4 rounded-lg border border-[color:var(--color-amber)]/40 px-4 py-2.5 text-[13px] text-[color:var(--color-amber)]">
+        <p className="mb-4 rounded-lg border border-[color:var(--color-accent)]/40 px-4 py-2.5 text-[13px] text-[color:var(--color-accent)]">
           {error}
         </p>
       )}
@@ -276,7 +276,7 @@ export default function MarketBoard() {
             <KlineChart bars={kline} />
             <div className="mt-2 flex gap-4 text-[11px] text-[color:var(--color-ink-faint)]">
               <span>
-                <span className="mr-1 inline-block h-0.5 w-4 bg-[color:var(--color-amber)] align-middle" />
+                <span className="mr-1 inline-block h-0.5 w-4 bg-[color:var(--color-accent)] align-middle" />
                 MA5
               </span>
               <span>
@@ -343,7 +343,7 @@ export default function MarketBoard() {
                       href={n.url}
                       target="_blank"
                       rel="noreferrer"
-                      className="block text-[13px] leading-snug text-[color:var(--color-ink)] transition-colors hover:text-[color:var(--color-amber)]"
+                      className="block text-[13px] leading-snug text-[color:var(--color-ink)] transition-colors hover:text-[color:var(--color-accent)]"
                     >
                       {n.title}
                     </a>
