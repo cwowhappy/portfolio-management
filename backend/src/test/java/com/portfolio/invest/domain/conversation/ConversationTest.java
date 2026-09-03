@@ -38,6 +38,16 @@ class ConversationTest {
     }
 
     @Test
+    void 标题按码点截断不劈开代理对() {
+        Conversation c = Conversation.create("t-1", 1L, Instant.now());
+        // 23 个 ASCII 'a' + 1 个 emoji（占 2 个 UTF-16 码元）正好 24 个码点；若按 UTF-16 码元截断会劈开代理对
+        String content = "a".repeat(23) + "😀" + "尾部文字";
+        String title = c.renameIfDefault(content).title();
+        assertThat(title.codePointCount(0, title.length())).isEqualTo(24);
+        assertThat(title).isEqualTo("a".repeat(23) + "😀");
+    }
+
+    @Test
     void touch更新updatedAt() {
         Instant before = Instant.parse("2026-08-21T00:00:00Z");
         Conversation c = Conversation.create("t-1", 1L, before);

@@ -128,6 +128,8 @@ tasks.withType(Test).configureEach {
     // Colima 等本地 Docker 运行时的 socket 无法挂载进 Ryuk 资源回收容器，
     // 禁用 Ryuk（容器由静态基座 + shutdown hook 负责启停），保证 Testcontainers 全环境可用
     environment 'TESTCONTAINERS_RYUK_DISABLED', 'true'
+    // remember-me 签名 key 无兜底：测试/集成测试环境显式注入测试 key，避免完整上下文启动失败
+    environment 'REMEMBER_ME_KEY', 'invest-test-remember-me-key'
 }
 
 tasks.named('test') {

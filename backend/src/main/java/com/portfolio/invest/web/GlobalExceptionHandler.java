@@ -76,7 +76,16 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(com.portfolio.invest.domain.screening.ScreeningException.class)
     public ResponseEntity<ApiError> screening(com.portfolio.invest.domain.screening.ScreeningException e) {
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new ApiError(e.code(), e.getMessage()));
+        HttpStatus status = switch (e.code()) {
+            case com.portfolio.invest.domain.screening.ScreeningErrorCode.NO_CONDITION,
+                 com.portfolio.invest.domain.screening.ScreeningErrorCode.INVALID_SORT,
+                 com.portfolio.invest.domain.screening.ScreeningErrorCode.INVALID_LIMIT -> HttpStatus.BAD_REQUEST;
+            default -> {
+                log.warn("未识别的筛选错误码 {}，按 400 处理: {}", e.code(), e.getMessage());
+                yield HttpStatus.BAD_REQUEST;
+            }
+        };
+        return ResponseEntity.status(status).body(new ApiError(e.code(), e.getMessage()));
     }
 
     @ExceptionHandler(com.portfolio.invest.domain.journal.JournalException.class)
@@ -85,6 +94,19 @@ public class GlobalExceptionHandler {
             case com.portfolio.invest.domain.journal.JournalErrorCode.NOT_FOUND,
                  com.portfolio.invest.domain.journal.JournalErrorCode.TRADE_NOT_FOUND -> HttpStatus.NOT_FOUND;
             default -> HttpStatus.BAD_REQUEST;
+        };
+        return ResponseEntity.status(status).body(new ApiError(e.code(), e.getMessage()));
+    }
+
+    @ExceptionHandler(com.portfolio.invest.domain.valuation.ValuationException.class)
+    public ResponseEntity<ApiError> valuation(com.portfolio.invest.domain.valuation.ValuationException e) {
+        HttpStatus status = switch (e.code()) {
+            case com.portfolio.invest.domain.valuation.ValuationErrorCode.NOT_FOUND -> HttpStatus.NOT_FOUND;
+            case com.portfolio.invest.domain.valuation.ValuationErrorCode.INVALID_INPUT -> HttpStatus.BAD_REQUEST;
+            default -> {
+                log.warn("未识别的估值错误码 {}，按 400 处理: {}", e.code(), e.getMessage());
+                yield HttpStatus.BAD_REQUEST;
+            }
         };
         return ResponseEntity.status(status).body(new ApiError(e.code(), e.getMessage()));
     }
@@ -98,6 +120,14 @@ public class GlobalExceptionHandler {
                 .findFirst()
                 .orElse("请求参数不合法");
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new ApiError("INVALID_REQUEST", message));
+    }
+
+    /** 容器元素校验失败（如 {@code List<@Valid T>}）→ Spring 6.1+ 抛 HandlerMethodValidationException，需显式映射 400。 */
+    @ExceptionHandler(org.springframework.web.method.annotation.HandlerMethodValidationException.class)
+    public ResponseEntity<ApiError> containerValidation(
+            org.springframework.web.method.annotation.HandlerMethodValidationException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(new ApiError("INVALID_REQUEST", "请求参数不合法"));
     }
 
     /** 缺必填 query 参数 → 400（兜底 Exception 处理器会抢在 Spring 默认解析前映射成 500，需显式映射）。 */

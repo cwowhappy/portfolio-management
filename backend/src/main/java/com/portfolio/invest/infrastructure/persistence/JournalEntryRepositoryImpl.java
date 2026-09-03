@@ -3,6 +3,7 @@ package com.portfolio.invest.infrastructure.persistence;
 import com.portfolio.invest.domain.journal.JournalEntry;
 import com.portfolio.invest.domain.journal.JournalEntryRepository;
 import com.portfolio.invest.domain.journal.JournalEntryType;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.stereotype.Repository;
@@ -22,6 +23,21 @@ public class JournalEntryRepositoryImpl implements JournalEntryRepository {
         List<JournalEntryJpaEntity> entities = type == null
                 ? jpa.findByUserIdOrderByUpdatedAtDesc(userId)
                 : jpa.findByUserIdAndTypeOrderByUpdatedAtDesc(userId, type);
+        return entities.stream().map(JournalEntryJpaEntity::toDomain).toList();
+    }
+
+    @Override
+    public List<JournalEntry> findByUserIdInDateRange(Long userId, LocalDate from, LocalDate to) {
+        List<JournalEntryJpaEntity> entities;
+        if (from != null && to != null) {
+            entities = jpa.findByUserIdAndEventDateBetweenOrderByEventDateDesc(userId, from, to);
+        } else if (from != null) {
+            entities = jpa.findByUserIdAndEventDateGreaterThanEqualOrderByEventDateDesc(userId, from);
+        } else if (to != null) {
+            entities = jpa.findByUserIdAndEventDateLessThanEqualOrderByEventDateDesc(userId, to);
+        } else {
+            entities = jpa.findByUserIdOrderByUpdatedAtDesc(userId);
+        }
         return entities.stream().map(JournalEntryJpaEntity::toDomain).toList();
     }
 

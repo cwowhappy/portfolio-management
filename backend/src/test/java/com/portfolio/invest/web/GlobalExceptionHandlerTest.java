@@ -9,6 +9,8 @@ import com.portfolio.invest.domain.market.MarketDataException;
 import com.portfolio.invest.domain.conversation.ConversationErrorCode;
 import com.portfolio.invest.domain.user.UserErrorCode;
 import com.portfolio.invest.domain.user.UserException;
+import com.portfolio.invest.domain.valuation.ValuationErrorCode;
+import com.portfolio.invest.domain.valuation.ValuationException;
 import io.agentscope.core.agui.AguiException;
 import java.util.List;
 import org.apache.catalina.connector.ClientAbortException;
@@ -63,6 +65,22 @@ class GlobalExceptionHandlerTest {
         ResponseEntity<ApiError> res = handler.user(new UserException(UserErrorCode.USER_NOT_FOUND, "用户不存在"));
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
         assertThat(res.getBody()).isEqualTo(new ApiError(UserErrorCode.USER_NOT_FOUND, "用户不存在"));
+    }
+
+    @Test
+    void 估值异常NOT_FOUND映射404() {
+        ResponseEntity<ApiError> res = handler.valuation(
+                new ValuationException(ValuationErrorCode.NOT_FOUND, "无估值快照"));
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(res.getBody()).isEqualTo(new ApiError(ValuationErrorCode.NOT_FOUND, "无估值快照"));
+    }
+
+    @Test
+    void 估值异常INVALID_INPUT映射400() {
+        ResponseEntity<ApiError> res = handler.valuation(
+                new ValuationException(ValuationErrorCode.INVALID_INPUT, "非法周期"));
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(res.getBody()).isEqualTo(new ApiError(ValuationErrorCode.INVALID_INPUT, "非法周期"));
     }
 
     @Test

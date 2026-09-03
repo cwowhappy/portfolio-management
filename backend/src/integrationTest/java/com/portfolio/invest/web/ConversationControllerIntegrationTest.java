@@ -174,21 +174,21 @@ class ConversationControllerIntegrationTest extends PostgresTestSupport {
                         .content("{\"id\":\"" + convId + "\"}"))
                 .andExpect(status().isCreated());
 
-        // content 超过 100KB 上限 → 400 INVALID_MESSAGE（旧行为：约束违例冒泡成 500）
+        // content 超过 100KB 上限 → 400（H8/B-8：结构性校验在 wire 层 Bean Validation 拦截，code=INVALID_REQUEST）
         String oversized = "x".repeat(100 * 1024 + 1);
         mockMvc.perform(put("/api/conversations/{id}/messages", convId).session(session)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("[{\"id\":\"m-1\",\"role\":\"user\",\"content\":\"" + oversized
                                 + "\",\"createdAt\":1700000000000}]"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value(ConversationErrorCode.INVALID_MESSAGE));
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
 
-        // 非法 role → 400
+        // 非法 role → 400（同样由 wire 层 Bean Validation 拦截）
         mockMvc.perform(put("/api/conversations/{id}/messages", convId).session(session)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("[{\"id\":\"m-1\",\"role\":\"system\",\"content\":\"hi\",\"createdAt\":1700000000000}]"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value(ConversationErrorCode.INVALID_MESSAGE));
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
     }
 
     private void register(String username, String password) throws Exception {

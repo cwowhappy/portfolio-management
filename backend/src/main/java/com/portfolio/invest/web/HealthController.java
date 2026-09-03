@@ -4,7 +4,6 @@ import com.portfolio.invest.application.cache.ApplicationCache;
 import com.portfolio.invest.config.InvestProperties;
 import com.portfolio.invest.domain.market.MarketDataException;
 import com.portfolio.invest.application.market.MarketDataService;
-import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.springframework.core.env.Environment;
@@ -22,8 +21,6 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/agent")
 public class HealthController {
 
-    /** 行情探活结果缓存 TTL。 */
-    private static final Duration PROBE_CACHE_TTL = Duration.ofSeconds(30);
     /** 探活缓存键：应用级共享缓存（ApplicationCache 端口），带前缀防键冲突。 */
     private static final String PROBE_CACHE_KEY = "health:market-probe";
 
@@ -78,7 +75,7 @@ public class HealthController {
             return hit;
         }
         Map<String, Object> probed = probeMarket();
-        cache.put(PROBE_CACHE_KEY, probed, PROBE_CACHE_TTL);
+        cache.put(PROBE_CACHE_KEY, probed, props.getAppCache().getHealthProbeTtl());
         return probed;
     }
 

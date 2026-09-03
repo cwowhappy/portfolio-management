@@ -69,6 +69,24 @@ class JournalEntryTest {
     }
 
     @Test
+    void 复盘绑定个股抛INVALID_INPUT() {
+        assertThatThrownBy(() -> JournalEntry.create(1L, JournalEntryType.REVIEW, "600519", "贵州茅台", null,
+                "复盘", "内容", null, null, PeriodType.QUARTERLY,
+                LocalDate.of(2026, 7, 1), LocalDate.of(2026, 9, 30), LocalDate.now(), NOW))
+                .isInstanceOfSatisfying(JournalException.class,
+                        e -> assertThat(e.code()).isEqualTo(JournalErrorCode.INVALID_INPUT));
+    }
+
+    @Test
+    void 复盘绑定交易抛INVALID_INPUT() {
+        assertThatThrownBy(() -> JournalEntry.create(1L, JournalEntryType.REVIEW, null, null, 10L,
+                "复盘", "内容", null, null, PeriodType.QUARTERLY,
+                LocalDate.of(2026, 7, 1), LocalDate.of(2026, 9, 30), LocalDate.now(), NOW))
+                .isInstanceOfSatisfying(JournalException.class,
+                        e -> assertThat(e.code()).isEqualTo(JournalErrorCode.INVALID_INPUT));
+    }
+
+    @Test
     void 研究笔记可不关联股票() {
         var e = JournalEntry.create(1L, JournalEntryType.RESEARCH_NOTE, null, null, null,
                 "白酒行业研究", "Markdown 内容", null, null, null, null, null, LocalDate.now(), NOW);

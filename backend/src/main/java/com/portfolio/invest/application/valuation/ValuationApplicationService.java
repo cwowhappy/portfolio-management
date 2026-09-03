@@ -1,11 +1,13 @@
 package com.portfolio.invest.application.valuation;
 
 import com.portfolio.invest.application.cache.ApplicationCache;
+import com.portfolio.invest.config.InvestProperties;
 import com.portfolio.invest.domain.valuation.IndexValuation;
 import com.portfolio.invest.domain.valuation.Percentile;
 import com.portfolio.invest.domain.valuation.TreasuryYield;
 import com.portfolio.invest.domain.valuation.ValuationRepository;
 import com.portfolio.invest.domain.valuation.ValuationSnapshot;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -22,15 +24,25 @@ import java.util.stream.Collectors;
 public class ValuationApplicationService {
 
     private static final String HS300 = "000300";
-    /** 估值按交易日更新，overview/history 结果按当日日期为 key 加短 TTL 缓存，避免匿名请求反复全表扫描。 */
-    private static final Duration CACHE_TTL = Duration.ofMinutes(5);
 
     private final ValuationRepository repository;
     private final ApplicationCache cache;
+    /** 估值结果缓存 TTL（默认 5min；生产经 invest.app-cache.ttl 配置）。 */
+    private final Duration cacheTtl;
+
+    @Autowired
+    public ValuationApplicationService(ValuationRepository repository, ApplicationCache cache, InvestProperties props) {
+        this(repository, cache, props.getAppCache().getTtl());
+    }
 
     public ValuationApplicationService(ValuationRepository repository, ApplicationCache cache) {
+        this(repository, cache, Duration.ofMinutes(5));
+    }
+
+    ValuationApplicationService(ValuationRepository repository, ApplicationCache cache, Duration cacheTtl) {
         this.repository = repository;
         this.cache = cache;
+        this.cacheTtl = cacheTtl;
     }
 
     public ValuationOverviewView overview() {
@@ -62,11 +74,20 @@ public class ValuationApplicationService {
         BigDecimal thermometer = thermometer(pePercentile, erpPercentile, breakerPercentile);
         boolean accumulating = snapshots.size() < 5;
 
-        return new ValuationOverviewView(latest, pePercentile, pbPercentile, breakerPercentile,
+        ValuationOverviewView.SnapshotView latestView = latest == null ? null
+                : new ValuationOverviewView.SnapshotView(
+                        latest.tradingDay(), latest.peMedian(), latest.pbMedian(),
+                        latest.netBreakerCount(), latest.netBreakerRatio());
+        return new ValuationOverviewView(latestView, pePercentile, pbPercentile, breakerPercentile,
                 erp, erpPercentile, thermometer, indices, accumulating);
     }
 
     public List<IndustryValuationView> industries(String sort) {
+        String sortKey = sort == null ? "pe" : sort;
+        return cached("industries:" + sortKey, () -> loadIndustries(sort));
+    }
+
+    private List<IndustryValuationView> loadIndustries(String sort) {
         ValuationSnapshot latest = repository.findLatestSnapshot();
         if (latest == null) {
             return List.of();
@@ -103,7 +124,7 @@ public class ValuationApplicationService {
             return hit;
         }
         T value = loader.get();
-        cache.put(key, value, CACHE_TTL);
+        cache.put(key, value, cacheTtl);
         return value;
     }
 

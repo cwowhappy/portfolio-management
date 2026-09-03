@@ -1,5 +1,6 @@
 package com.portfolio.invest.application.allocation;
 
+import com.portfolio.invest.application.portfolio.AllocationSliceCategory;
 import com.portfolio.invest.application.portfolio.AssetAllocationView;
 import com.portfolio.invest.application.portfolio.PortfolioApplicationService;
 import com.portfolio.invest.domain.allocation.AllocationErrorCode;
@@ -132,8 +133,8 @@ class AllocationApplicationServiceTest {
     void 偏离度映射权益现金并计算差值() {
         when(repo.findActiveByUserId(1L)).thenReturn(Optional.of(activePlan()));
         when(portfolio.allocation(1L)).thenReturn(new AssetAllocationView(List.of(
-                new AssetAllocationView.Slice("权益", new BigDecimal("12000"), new BigDecimal("70.59")),
-                new AssetAllocationView.Slice("现金", new BigDecimal("5000"), new BigDecimal("29.41")))));
+                new AssetAllocationView.Slice(AllocationSliceCategory.EQUITY, new BigDecimal("12000"), new BigDecimal("70.59")),
+                new AssetAllocationView.Slice(AllocationSliceCategory.CASH, new BigDecimal("5000"), new BigDecimal("29.41")))));
 
         var view = service.deviation(1L);
 

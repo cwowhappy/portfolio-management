@@ -1,6 +1,7 @@
 package com.portfolio.invest.infrastructure.persistence;
 
 import com.portfolio.invest.domain.conversation.ChatMessage;
+import com.portfolio.invest.domain.conversation.ChatMessageRole;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -44,7 +45,7 @@ public class ChatMessageJpaEntity {
         e.id = m.dbId();
         e.conversationId = conversationId;
         e.messageId = m.id();
-        e.role = m.role();
+        e.role = m.role().wire();
         e.content = m.content();
         e.payload = m.payload();
         e.createdAtMs = m.createdAtMs();
@@ -52,6 +53,6 @@ public class ChatMessageJpaEntity {
     }
 
     ChatMessage toDomain() {
-        return ChatMessage.create(id, messageId, role, content, payload, createdAtMs);
+        return ChatMessage.create(id, messageId, ChatMessageRole.fromWire(role), content, payload, createdAtMs);
     }
 }

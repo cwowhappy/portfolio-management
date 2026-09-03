@@ -22,10 +22,8 @@ public class ActiveUserFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        String path = request.getServletPath();
-        return path.equals("/api/auth/login") || path.equals("/api/auth/register")
-                || path.startsWith("/api/market/") || path.startsWith("/api/valuation/")
-                || path.equals("/api/agent/health");
+        // 与 SecurityConfig.permitAll 共用同一份公开端点清单（见 PublicEndpointPaths）
+        return PublicEndpointPaths.isPublicPath(request.getServletPath());
     }
 
     @Override

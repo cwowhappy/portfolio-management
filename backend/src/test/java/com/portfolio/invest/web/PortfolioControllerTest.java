@@ -83,7 +83,7 @@ class PortfolioControllerTest {
     }
 
     @Test
-    void 买入返回200() throws Exception {
+    void 买入返回201() throws Exception {
         when(service.buy(eq(1L), any(BuyCommand.class)))
                 .thenReturn(new PositionView(99L, 1L, "600519", "贵州茅台",
                         new BigDecimal("100"), new BigDecimal("1500.05"), new BigDecimal("1500"),
@@ -93,7 +93,7 @@ class PortfolioControllerTest {
         mvc.perform(post("/api/portfolio/positions/buy").principal(auth())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"groupId\":1,\"stockCode\":\"600519\",\"stockName\":\"贵州茅台\",\"tradeDate\":\"2026-08-27\",\"price\":1500,\"quantity\":100,\"fee\":5}"))
-                .andExpect(status().isOk())
+                .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.stockCode").value("600519"));
     }
 
@@ -119,7 +119,7 @@ class PortfolioControllerTest {
 
         mvc.perform(put("/api/portfolio/positions/5/trades/11").principal(auth())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"tradeDate\":\"2026-08-27\",\"price\":110,\"quantity\":100,\"fee\":0}"))
+                        .content("{\"tradeDate\":\"2026-08-27\",\"price\":110,\"quantity\":100,\"fee\":0,\"groupId\":1}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.avgCost").value(110));
     }

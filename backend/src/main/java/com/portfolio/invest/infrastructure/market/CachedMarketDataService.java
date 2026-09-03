@@ -12,7 +12,10 @@ import com.portfolio.invest.domain.market.Quote;
 import com.portfolio.invest.domain.market.StockHit;
 import com.portfolio.invest.domain.market.StockRef;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Supplier;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
@@ -42,6 +45,30 @@ public class CachedMarketDataService implements MarketDataService {
     public Quote quote(String code) {
         StockRef ref = StockRef.from(code);
         return cached("q:" + ref.code(), () -> delegate.quote(code), props.getMarket().getCache().getQuoteTtl());
+    }
+
+    @Override
+    public Map<String, Quote> quoteBatch(List<String> codes) {
+        Map<String, Quote> result = new LinkedHashMap<>();
+        List<String> missing = new ArrayList<>();
+        for (String code : codes) {
+            String key = "q:" + StockRef.from(code).code();
+            Quote hit = cache.get(key);
+            if (hit != null) {
+                result.put(code, hit);
+            } else {
+                missing.add(code);
+            }
+        }
+        if (!missing.isEmpty()) {
+            Map<String, Quote> fetched = delegate.quoteBatch(missing);
+            for (Map.Entry<String, Quote> e : fetched.entrySet()) {
+                cache.put("q:" + StockRef.from(e.getKey()).code(), e.getValue(),
+                        props.getMarket().getCache().getQuoteTtl());
+                result.put(e.getKey(), e.getValue());
+            }
+        }
+        return result;
     }
 
     @Override

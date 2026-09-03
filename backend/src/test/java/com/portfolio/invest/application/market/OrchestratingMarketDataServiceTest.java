@@ -451,4 +451,41 @@ class OrchestratingMarketDataServiceTest {
         });
         assertThat(clocked.probeQuoteLatencyMs()).isEqualTo(120);
     }
+
+    // ———— quoteBatch（NFR：批量取价） ————
+
+    @Test
+    void quoteBatch返回成功标的并跳过失败标的() throws IOException {
+        when(source.quote("1.600519")).thenReturn(fixture("eastmoney-quote.json"));
+        when(source.quote("0.000858"))
+                .thenThrow(new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "东财挂了"));
+        when(source.rawQuote("sz", "000858"))
+                .thenThrow(new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "新浪也挂了"));
+
+        var result = service.quoteBatch(List.of("600519", "000858"));
+
+        assertThat(result).containsOnlyKeys("600519");
+        assertThat(result.get("600519").name()).isEqualTo("贵州茅台");
+    }
+
+    @Test
+    void quoteBatch单只失败记warn日志含code() {
+        ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(OrchestratingMarketDataService.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender = new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            when(source.quote("0.000858"))
+                    .thenThrow(new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "东财挂了"));
+            when(source.rawQuote("sz", "000858"))
+                    .thenThrow(new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "新浪也挂了"));
+
+            assertThat(service.quoteBatch(List.of("000858"))).isEmpty();
+
+            assertThat(appender.list).anyMatch(e -> e.getLevel() == ch.qos.logback.classic.Level.WARN
+                    && e.getFormattedMessage().contains("000858"));
+        } finally {
+            logger.detachAppender(appender);
+        }
+    }
 }

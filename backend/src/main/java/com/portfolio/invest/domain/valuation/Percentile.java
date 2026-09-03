@@ -14,6 +14,9 @@ public final class Percentile {
             return null;
         }
         long below = history.stream().filter(v -> v.compareTo(current) < 0).count();
-        return BigDecimal.valueOf(below * 100.0 / history.size()).setScale(2, RoundingMode.HALF_UP);
+        // C3：分位属精确计算，用 BigDecimal 全程运算，避免 double 中间误差后再舍入
+        return BigDecimal.valueOf(below)
+                .multiply(BigDecimal.valueOf(100))
+                .divide(BigDecimal.valueOf(history.size()), 2, RoundingMode.HALF_UP);
     }
 }

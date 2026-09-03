@@ -6,6 +6,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class PositionTest {
@@ -112,9 +113,9 @@ class PositionTest {
     @Test
     void 卖出超过持仓抛出异常() {
         Position p = newPosition().applyBuy(bd("100"), bd("100"), bd("0"));
-        assertThatThrownBy(() -> p.applySell(bd("120"), bd("101"), bd("0")))
-                .isInstanceOf(PortfolioException.class)
-                .hasMessageContaining("卖出数量超过持仓");
+        PortfolioException ex = catchThrowableOfType(() -> p.applySell(bd("120"), bd("101"), bd("0")), PortfolioException.class);
+        assertThat(ex).isNotNull().hasMessageContaining("卖出数量超过持仓");
+        assertThat(ex.code()).isEqualTo(PortfolioErrorCode.SELL_EXCEEDS_QUANTITY);
     }
 
     @Test
@@ -125,5 +126,53 @@ class PositionTest {
                 .applySell(bd("10"), bd("1"), bd("0"));  // 均价 9.67
         assertThat(p.realizedPnl()).isEqualByComparingTo("0.3333");
         assertThat(p.costBasis().add(p.netCashFlow())).isEqualByComparingTo(p.realizedPnl());
+    }
+
+    @Test
+    void 买入负价格被拒() {
+        Position p = newPosition();
+        assertCode(() -> p.applyBuy(bd("-1"), bd("100"), bd("0")), PortfolioErrorCode.INVALID_INPUT);
+    }
+
+    @Test
+    void 买入零数量被拒() {
+        Position p = newPosition();
+        assertCode(() -> p.applyBuy(bd("100"), bd("0"), bd("0")), PortfolioErrorCode.INVALID_INPUT);
+    }
+
+    @Test
+    void 买入负手续费被拒() {
+        Position p = newPosition();
+        assertCode(() -> p.applyBuy(bd("100"), bd("100"), bd("-1")), PortfolioErrorCode.INVALID_INPUT);
+    }
+
+    @Test
+    void 卖出负数量被拒() {
+        Position p = newPosition().applyBuy(bd("100"), bd("100"), bd("0"));
+        assertCode(() -> p.applySell(bd("120"), bd("-10"), bd("0")), PortfolioErrorCode.INVALID_INPUT);
+    }
+
+    @Test
+    void 卖出负价格被拒() {
+        Position p = newPosition().applyBuy(bd("100"), bd("100"), bd("0"));
+        assertCode(() -> p.applySell(bd("-120"), bd("10"), bd("0")), PortfolioErrorCode.INVALID_INPUT);
+    }
+
+    @Test
+    void 卖出负手续费被拒() {
+        Position p = newPosition().applyBuy(bd("100"), bd("100"), bd("0"));
+        assertCode(() -> p.applySell(bd("120"), bd("10"), bd("-1")), PortfolioErrorCode.INVALID_INPUT);
+    }
+
+    @Test
+    void 现金分红为负被拒() {
+        Position p = newPosition().applyBuy(bd("100"), bd("100"), bd("0"));
+        assertCode(() -> p.applyCashDividend(bd("-1")), PortfolioErrorCode.INVALID_INPUT);
+    }
+
+    private static void assertCode(org.assertj.core.api.ThrowableAssert.ThrowingCallable callable, String code) {
+        PortfolioException ex = catchThrowableOfType(callable, PortfolioException.class);
+        assertThat(ex).isNotNull();
+        assertThat(ex.code()).isEqualTo(code);
     }
 }

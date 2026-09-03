@@ -1,5 +1,6 @@
 package com.portfolio.invest.application.allocation;
 
+import com.portfolio.invest.application.portfolio.AllocationSliceCategory;
 import com.portfolio.invest.application.portfolio.AssetAllocationView;
 import com.portfolio.invest.application.portfolio.PortfolioApplicationService;
 import com.portfolio.invest.domain.allocation.AllocationErrorCode;
@@ -103,13 +104,10 @@ public class AllocationApplicationService {
         Map<AssetClass, BigDecimal> m = new EnumMap<>(AssetClass.class);
         for (var slice : view.slices()) {
             AssetClass ac = switch (slice.category()) {
-                case "权益" -> AssetClass.STOCK;
-                case "现金" -> AssetClass.CASH;
-                default -> null;
+                case AllocationSliceCategory.EQUITY -> AssetClass.STOCK;
+                case AllocationSliceCategory.CASH -> AssetClass.CASH;
             };
-            if (ac != null) {
-                m.put(ac, slice.ratio());
-            }
+            m.put(ac, slice.ratio());
         }
         return m;
     }

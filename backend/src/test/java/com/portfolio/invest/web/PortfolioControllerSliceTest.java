@@ -12,6 +12,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.portfolio.invest.application.portfolio.AllocationSliceCategory;
 import com.portfolio.invest.application.portfolio.AssetAllocationView;
 import com.portfolio.invest.application.portfolio.CashDividendCommand;
 import com.portfolio.invest.application.portfolio.CashTransactionCommand;
@@ -80,7 +81,7 @@ class PortfolioControllerSliceTest {
         mvc.perform(post("/api/portfolio/positions/sell").with(authentication(auth())).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"positionId\":5,\"tradeDate\":\"2026-08-28\",\"price\":120,\"quantity\":50,\"fee\":5}"))
-                .andExpect(status().isOk())
+                .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.stockCode").value("600519"));
     }
 
@@ -100,7 +101,7 @@ class PortfolioControllerSliceTest {
         mvc.perform(post("/api/portfolio/positions/cash-dividend").with(authentication(auth())).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"positionId\":5,\"exDate\":\"2026-08-28\",\"cashPerShare\":1.2}"))
-                .andExpect(status().isOk())
+                .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id").value(5));
     }
 
@@ -120,7 +121,7 @@ class PortfolioControllerSliceTest {
         mvc.perform(post("/api/portfolio/positions/stock-dividend").with(authentication(auth())).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"positionId\":5,\"exDate\":\"2026-08-28\",\"stockRatio\":0.3}"))
-                .andExpect(status().isOk())
+                .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.stockCode").value("600519"));
     }
 
@@ -210,12 +211,12 @@ class PortfolioControllerSliceTest {
     @Test
     void 资产配置返回200() throws Exception {
         when(service.allocation(1L)).thenReturn(new AssetAllocationView(List.of(
-                new AssetAllocationView.Slice("股票", new BigDecimal("7200"), new BigDecimal("41.86")),
-                new AssetAllocationView.Slice("现金", new BigDecimal("10000"), new BigDecimal("58.14")))));
+                new AssetAllocationView.Slice(AllocationSliceCategory.EQUITY, new BigDecimal("7200"), new BigDecimal("41.86")),
+                new AssetAllocationView.Slice(AllocationSliceCategory.CASH, new BigDecimal("10000"), new BigDecimal("58.14")))));
 
         mvc.perform(get("/api/portfolio/allocation").with(authentication(auth())))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.slices[0].category").value("股票"))
+                .andExpect(jsonPath("$.slices[0].category").value("权益"))
                 .andExpect(jsonPath("$.slices[1].category").value("现金"));
     }
 

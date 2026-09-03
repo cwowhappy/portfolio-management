@@ -78,22 +78,22 @@ public class PortfolioController {
 
     @PostMapping("/positions/buy")
     public ResponseEntity<PositionView> buy(Authentication auth, @Valid @RequestBody BuyCommand cmd) {
-        return ResponseEntity.ok(service.buy(currentUserId(auth), cmd));
+        return ResponseEntity.status(HttpStatus.CREATED).body(service.buy(currentUserId(auth), cmd));
     }
 
     @PostMapping("/positions/sell")
     public ResponseEntity<PositionView> sell(Authentication auth, @Valid @RequestBody SellCommand cmd) {
-        return ResponseEntity.ok(service.sell(currentUserId(auth), cmd));
+        return ResponseEntity.status(HttpStatus.CREATED).body(service.sell(currentUserId(auth), cmd));
     }
 
     @PostMapping("/positions/cash-dividend")
     public ResponseEntity<PositionView> cashDividend(Authentication auth, @Valid @RequestBody CashDividendCommand cmd) {
-        return ResponseEntity.ok(service.addCashDividend(currentUserId(auth), cmd));
+        return ResponseEntity.status(HttpStatus.CREATED).body(service.addCashDividend(currentUserId(auth), cmd));
     }
 
     @PostMapping("/positions/stock-dividend")
     public ResponseEntity<PositionView> stockDividend(Authentication auth, @Valid @RequestBody StockDividendCommand cmd) {
-        return ResponseEntity.ok(service.addStockDividend(currentUserId(auth), cmd));
+        return ResponseEntity.status(HttpStatus.CREATED).body(service.addStockDividend(currentUserId(auth), cmd));
     }
 
     @DeleteMapping("/positions/{positionId}")

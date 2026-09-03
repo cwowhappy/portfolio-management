@@ -53,7 +53,7 @@ public final class JournalEntry {
                                       BigDecimal targetPrice, BigDecimal stopLoss,
                                       PeriodType periodType, LocalDate periodStart, LocalDate periodEnd,
                                       LocalDate eventDate, Instant now) {
-        validate(type, stockCode, title, content, targetPrice, stopLoss,
+        validate(type, stockCode, tradeId, title, content, targetPrice, stopLoss,
                 periodType, periodStart, periodEnd, eventDate);
         return new JournalEntry(null, userId, type, stockCode, stockName, tradeId, title, content,
                 targetPrice, stopLoss, periodType, periodStart, periodEnd, eventDate, now, now, null);
@@ -82,13 +82,13 @@ public final class JournalEntry {
                                BigDecimal targetPrice, BigDecimal stopLoss,
                                PeriodType periodType, LocalDate periodStart, LocalDate periodEnd,
                                LocalDate eventDate) {
-        validate(type, stockCode, title, content, targetPrice, stopLoss,
+        validate(type, stockCode, tradeId, title, content, targetPrice, stopLoss,
                 periodType, periodStart, periodEnd, eventDate);
         return new JournalEntry(id, userId, type, stockCode, stockName, tradeId, title, content,
                 targetPrice, stopLoss, periodType, periodStart, periodEnd, eventDate, createdAt, Instant.now(), version);
     }
 
-    private static void validate(JournalEntryType type, String stockCode, String title, String content,
+    private static void validate(JournalEntryType type, String stockCode, Long tradeId, String title, String content,
                                  BigDecimal targetPrice, BigDecimal stopLoss,
                                  PeriodType periodType, LocalDate periodStart, LocalDate periodEnd,
                                  LocalDate eventDate) {
@@ -114,6 +114,13 @@ public final class JournalEntry {
                 }
             }
             case REVIEW -> {
+                // FR-D1：复盘不绑定个股/交易
+                if (stockCode != null && !stockCode.isBlank()) {
+                    throw new JournalException(JournalErrorCode.INVALID_INPUT, "复盘不绑定个股");
+                }
+                if (tradeId != null) {
+                    throw new JournalException(JournalErrorCode.INVALID_INPUT, "复盘不绑定交易");
+                }
                 if (periodType == null || periodStart == null || periodEnd == null) {
                     throw new JournalException(JournalErrorCode.INVALID_INPUT, "复盘期间必填");
                 }

@@ -155,7 +155,7 @@ class InvestToolsTest {
 
     @Test
     void getValuation序列化快照的LocalDate与完整字段() {
-        var snapshot = new ValuationSnapshot(
+        var snapshot = new ValuationOverviewView.SnapshotView(
                 LocalDate.of(2026, 8, 27), new BigDecimal("19.14"), new BigDecimal("1.68"), 220,
                 new BigDecimal("0.041"));
         var idx = new ValuationOverviewView.IndexValuationView(

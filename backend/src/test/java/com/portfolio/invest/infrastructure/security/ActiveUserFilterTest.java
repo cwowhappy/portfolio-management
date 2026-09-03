@@ -34,7 +34,8 @@ class ActiveUserFilterTest {
     void 公开路径豁免用户状态校验() {
         String[] publicPaths = {
                 "/api/auth/login", "/api/auth/register",
-                "/api/market/quote", "/api/valuation/overview", "/api/agent/health"
+                "/api/market/quote", "/api/valuation/overview", "/api/agent/health",
+                "/api/agent/status", "/api/screening/stocks", "/actuator/health"
         };
         for (String path : publicPaths) {
             when(request.getServletPath()).thenReturn(path);

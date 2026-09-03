@@ -1,6 +1,11 @@
 package com.portfolio.invest.application.portfolio;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.core.read.ListAppender;
 import com.portfolio.invest.application.market.MarketDataService;
+import com.portfolio.invest.domain.market.MarketDataErrorCode;
+import com.portfolio.invest.domain.market.MarketDataException;
 import com.portfolio.invest.domain.market.Quote;
 import com.portfolio.invest.domain.portfolio.CashTransaction;
 import com.portfolio.invest.domain.portfolio.CashTransactionType;
@@ -31,6 +36,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -47,6 +53,22 @@ class PortfolioApplicationServiceTest {
         service = new PortfolioApplicationService(repo, market, valuation, new PortfolioCreationService(repo));
         when(repo.findPortfolioByUserId(1L)).thenReturn(Optional.of(Portfolio.reconstitute(10L, 1L,
                 com.portfolio.invest.domain.portfolio.CostMethod.WEIGHTED_AVG, Instant.now(), Instant.now())));
+        // 批量行情：按各 code 委托逐只 stub（与 OrchestratingMarketDataService.quoteBatch 语义一致：单只失败跳过）
+        when(market.quoteBatch(anyList())).thenAnswer(inv -> {
+            java.util.List<String> codes = inv.getArgument(0);
+            java.util.Map<String, Quote> m = new java.util.LinkedHashMap<>();
+            for (String code : codes) {
+                try {
+                    Quote q = market.quote(code);
+                    if (q != null) {
+                        m.put(code, q);
+                    }
+                } catch (RuntimeException ignored) {
+                    // 单只失败跳过
+                }
+            }
+            return m;
+        });
     }
 
     @Test
@@ -70,6 +92,20 @@ class PortfolioApplicationServiceTest {
         assertThatThrownBy(() -> service.deleteGroup(1L, 1L))
                 .isInstanceOf(PortfolioException.class)
                 .hasMessageContaining("先清空");
+    }
+
+    @Test
+    void 删除含现金流水分组被拒() {
+        when(repo.findGroupByIdAndPortfolioId(1L, 10L))
+                .thenReturn(Optional.of(HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now())));
+        when(repo.findPositionsByGroupId(1L)).thenReturn(List.of());
+        when(repo.findCashTransactionsByGroupId(1L)).thenReturn(List.of(
+                new CashTransaction(null, 1L, CashTransactionType.DEPOSIT,
+                        new BigDecimal("10000"), LocalDate.of(2026, 8, 28), "入金", Instant.now())));
+
+        assertThatThrownBy(() -> service.deleteGroup(1L, 1L))
+                .isInstanceOfSatisfying(PortfolioException.class,
+                        e -> assertThat(e.code()).isEqualTo(PortfolioErrorCode.GROUP_HAS_CASH_FLOW));
     }
 
     @Test
@@ -148,12 +184,56 @@ class PortfolioApplicationServiceTest {
 
         var view = service.editTrade(1L, 5L, 11L, new EditTradeCommand(
                 LocalDate.of(2026, 8, 27), new BigDecimal("110"),
-                new BigDecimal("100"), new BigDecimal("0")));
+                new BigDecimal("100"), new BigDecimal("0"), 1L));
 
         // 重放：买入 100@110（成本 11000），卖出 40@120 → 摊薄成本 110、已实现 400
         assertThat(view.avgCost()).isEqualByComparingTo("110");
         assertThat(view.realizedPnl()).isEqualByComparingTo("400");
         assertThat(view.quantity()).isEqualByComparingTo("60");
+    }
+
+    @Test
+    void 编辑买入交易可改所属分组() {
+        when(repo.findPositionByIdAndPortfolioId(5L, 10L)).thenReturn(Optional.of(positionWithId(5)));
+        when(repo.findGroupByIdAndPortfolioId(2L, 10L))
+                .thenReturn(Optional.of(HoldingGroup.reconstitute(2L, 10L, "东财", GroupType.ACCOUNT, Instant.now())));
+        when(repo.findPositionByPortfolioIdAndGroupIdAndStockCode(10L, 2L, "600519")).thenReturn(Optional.empty());
+        when(repo.findTradeById(11L)).thenReturn(Optional.of(
+                new Trade(11L, 5L, TradeType.BUY, LocalDate.of(2026, 8, 27),
+                        new BigDecimal("110"), new BigDecimal("100"), new BigDecimal("0"), Instant.now())));
+        when(repo.saveTrade(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(repo.findTradesByPositionId(5L)).thenReturn(List.of(
+                new Trade(11L, 5L, TradeType.BUY, LocalDate.of(2026, 8, 27),
+                        new BigDecimal("110"), new BigDecimal("100"), new BigDecimal("0"), Instant.now())));
+        when(repo.findDividendsByPositionId(5L)).thenReturn(List.of());
+        when(repo.savePosition(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        var view = service.editTrade(1L, 5L, 11L, new EditTradeCommand(
+                LocalDate.of(2026, 8, 27), new BigDecimal("110"),
+                new BigDecimal("100"), new BigDecimal("0"), 2L));
+
+        ArgumentCaptor<Position> captor = ArgumentCaptor.forClass(Position.class);
+        verify(repo).savePosition(captor.capture());
+        assertThat(captor.getValue().groupId()).isEqualTo(2L);
+        assertThat(view.groupId()).isEqualTo(2L);
+    }
+
+    @Test
+    void 编辑买入交易移到已有同代码持仓的分组被拒() {
+        when(repo.findPositionByIdAndPortfolioId(5L, 10L)).thenReturn(Optional.of(positionWithId(5)));
+        when(repo.findGroupByIdAndPortfolioId(2L, 10L))
+                .thenReturn(Optional.of(HoldingGroup.reconstitute(2L, 10L, "东财", GroupType.ACCOUNT, Instant.now())));
+        when(repo.findPositionByPortfolioIdAndGroupIdAndStockCode(10L, 2L, "600519"))
+                .thenReturn(Optional.of(positionWithId(99L)));
+        when(repo.findTradeById(11L)).thenReturn(Optional.of(
+                new Trade(11L, 5L, TradeType.BUY, LocalDate.of(2026, 8, 27),
+                        new BigDecimal("110"), new BigDecimal("100"), new BigDecimal("0"), Instant.now())));
+
+        assertThatThrownBy(() -> service.editTrade(1L, 5L, 11L, new EditTradeCommand(
+                LocalDate.of(2026, 8, 27), new BigDecimal("110"),
+                new BigDecimal("100"), new BigDecimal("0"), 2L)))
+                .isInstanceOfSatisfying(PortfolioException.class,
+                        e -> assertThat(e.code()).isEqualTo(PortfolioErrorCode.INVALID_INPUT));
     }
 
     @Test
@@ -165,7 +245,7 @@ class PortfolioApplicationServiceTest {
 
         assertThatThrownBy(() -> service.editTrade(1L, 5L, 12L, new EditTradeCommand(
                 LocalDate.of(2026, 8, 28), new BigDecimal("120"),
-                new BigDecimal("40"), new BigDecimal("0"))))
+                new BigDecimal("40"), new BigDecimal("0"), 1L)))
                 .isInstanceOfSatisfying(PortfolioException.class,
                         e -> assertThat(e.code()).isEqualTo(PortfolioErrorCode.NOT_FOUND));
     }
@@ -206,7 +286,7 @@ class PortfolioApplicationServiceTest {
 
         assertThatThrownBy(() -> service.editTrade(1L, 5L, 11L, new EditTradeCommand(
                 LocalDate.of(2026, 8, 27), new BigDecimal("110"),
-                new BigDecimal("100"), new BigDecimal("0"))))
+                new BigDecimal("100"), new BigDecimal("0"), 1L)))
                 .isInstanceOfSatisfying(PortfolioException.class,
                         e -> assertThat(e.code()).isEqualTo(PortfolioErrorCode.NOT_FOUND));
     }
@@ -228,7 +308,7 @@ class PortfolioApplicationServiceTest {
 
         var view = service.editTrade(1L, 5L, 11L, new EditTradeCommand(
                 LocalDate.of(2026, 8, 27), new BigDecimal("100"),
-                new BigDecimal("100"), new BigDecimal("0")));
+                new BigDecimal("100"), new BigDecimal("0"), 1L));
 
         // 重放：先买入 100@100（成本 10000），交易日后再现金分红 1.5*100=150 → 成本 9850
         assertThat(view.quantity()).isEqualByComparingTo("100");
@@ -255,7 +335,7 @@ class PortfolioApplicationServiceTest {
 
         var view = service.editTrade(1L, 5L, 11L, new EditTradeCommand(
                 LocalDate.of(2026, 8, 25), new BigDecimal("100"),
-                new BigDecimal("100"), new BigDecimal("0")));
+                new BigDecimal("100"), new BigDecimal("0"), 1L));
 
         // 重放：买 100@100 → 8-26 除息日早于 8-27 第二笔交易，先送股 100*1.5=150 → 再买 100@100
         // 数量 250，总成本 20000 → 均价 80
@@ -271,7 +351,7 @@ class PortfolioApplicationServiceTest {
 
         var view = service.allocation(1L);
 
-        assertThat(view.slices().get(0).category()).isEqualTo("权益");
+        assertThat(view.slices().get(0).category().label()).isEqualTo("权益");
         assertThat(view.slices().get(0).marketValue()).isEqualByComparingTo("0");
         assertThat(view.slices().get(1).marketValue()).isEqualByComparingTo("0");
     }
@@ -480,7 +560,7 @@ class PortfolioApplicationServiceTest {
         when(repo.saveTrade(any())).thenAnswer(inv -> inv.getArgument(0));
         var replayed = service.editTrade(1L, 5L, 11L, new EditTradeCommand(
                 LocalDate.of(2026, 8, 27), new BigDecimal("100"),
-                new BigDecimal("100"), new BigDecimal("0")));
+                new BigDecimal("100"), new BigDecimal("0"), 1L));
 
         assertThat(replayed.cumulativeCashDividend()).isEqualByComparingTo(view.cumulativeCashDividend());
         assertThat(replayed.quantity()).isEqualByComparingTo("150");
@@ -626,10 +706,10 @@ class PortfolioApplicationServiceTest {
         var view = service.allocation(1L);
 
         assertThat(view.slices()).hasSize(2);
-        assertThat(view.slices().get(0).category()).isEqualTo("权益");
+        assertThat(view.slices().get(0).category().label()).isEqualTo("权益");
         assertThat(view.slices().get(0).marketValue()).isEqualByComparingTo("12000");
         assertThat(view.slices().get(0).ratio()).isEqualByComparingTo("70.59");
-        assertThat(view.slices().get(1).category()).isEqualTo("现金");
+        assertThat(view.slices().get(1).category().label()).isEqualTo("现金");
         assertThat(view.slices().get(1).marketValue()).isEqualByComparingTo("5000");
         assertThat(view.slices().get(1).ratio()).isEqualByComparingTo("29.41");
     }
@@ -699,5 +779,26 @@ class PortfolioApplicationServiceTest {
         assertThat(view.holdings().get(1).stockCode()).isEqualTo("000858");
         assertThat(view.holdings().get(1).ratio()).isEqualByComparingTo("20");
         assertThat(view.top5Ratio()).isEqualByComparingTo("100");
+    }
+
+    @Test
+    void 批量行情单只失败时跳过该标的不崩页面() {
+        when(repo.findPositionsByPortfolioId(10L)).thenReturn(List.of(
+                Position.reconstitute(1L, 10L, 1L, "600519", "贵州茅台",
+                        new BigDecimal("100"), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                        BigDecimal.ZERO, BigDecimal.ZERO, Instant.now(), Instant.now()),
+                Position.reconstitute(2L, 10L, 1L, "000858", "五粮液",
+                        new BigDecimal("100"), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                        BigDecimal.ZERO, BigDecimal.ZERO, Instant.now(), Instant.now())));
+        // 600519 限流失败、000858 有行情
+        when(market.quote("600519")).thenThrow(
+                new MarketDataException(MarketDataErrorCode.RATE_LIMITED, "共享行情限流 5/s"));
+        when(market.quote("000858")).thenReturn(new Quote(
+                "000858", "五粮液", 30, 0, 0, 0, 0, 0, 100, 0, 0, null, null, ""));
+
+        var view = service.concentration(1L);
+
+        assertThat(view.holdings()).hasSize(1);
+        assertThat(view.holdings().get(0).stockCode()).isEqualTo("000858");
     }
 }

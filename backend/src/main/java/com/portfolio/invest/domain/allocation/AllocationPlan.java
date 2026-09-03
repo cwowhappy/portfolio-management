@@ -8,6 +8,8 @@ import java.util.Map;
 public final class AllocationPlan {
 
     private static final BigDecimal HUNDRED = new BigDecimal("100");
+    /** 权重和容差：DB NUMERIC(18,4) 四舍五入后读回值可能非精确 100（如 33.3333×3=99.9999），允许 0.01 内偏差。 */
+    static final BigDecimal WEIGHT_SUM_TOLERANCE = new BigDecimal("0.01");
 
     private final Long id;
     private final Long userId;
@@ -79,8 +81,8 @@ public final class AllocationPlan {
             }
             sum = sum.add(w);
         }
-        if (sum.compareTo(HUNDRED) != 0) {
-            throw new AllocationException(AllocationErrorCode.INVALID_WEIGHTS, "权重之和必须为 100");
+        if (HUNDRED.subtract(sum).abs().compareTo(WEIGHT_SUM_TOLERANCE) > 0) {
+            throw new AllocationException(AllocationErrorCode.INVALID_WEIGHTS, "权重之和必须为 100（容差 ±0.01）");
         }
     }
 

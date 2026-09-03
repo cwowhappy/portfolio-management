@@ -250,6 +250,21 @@ class ValuationApplicationServiceTest {
     }
 
     @Test
+    void industries同日内同sort命中缓存仅查一次() {
+        LocalDate day = LocalDate.of(2026, 8, 27);
+        when(repo.findLatestSnapshot()).thenReturn(new ValuationSnapshot(
+                day, new BigDecimal("19.14"), new BigDecimal("1.68"), 220, new BigDecimal("0.0410")));
+        when(repo.findIndustryValuationsByDay(day)).thenReturn(List.of(
+                new IndustryValuation(day, "801010", "农林牧渔", new BigDecimal("25.0"), new BigDecimal("2.5"), new BigDecimal("8.0"), new BigDecimal("1.2"))));
+
+        service.industries("pe");
+        service.industries("pe");
+
+        verify(repo, times(1)).findLatestSnapshot();
+        verify(repo, times(1)).findIndustryValuationsByDay(day);
+    }
+
+    @Test
     void history返回各序列() {
         List<ValuationSnapshot> snapshots = List.of(new ValuationSnapshot(
                 LocalDate.of(2026, 8, 27), new BigDecimal("19.14"), new BigDecimal("1.68"), 220, new BigDecimal("0.0410")));
