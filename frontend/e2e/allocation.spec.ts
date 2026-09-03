@@ -4,7 +4,6 @@ import { registerAndApprove, TEST_PASSWORD, uniqueUsername } from "./helpers";
 const hasAdminSeed = !!(process.env.ADMIN_USERNAME && process.env.ADMIN_PASSWORD);
 
 test.describe("/allocation 资产配置", () => {
-  test.describe.configure({ retries: 0 });
   test.skip(!hasAdminSeed, "未配置 ADMIN_USERNAME/ADMIN_PASSWORD（无种子管理员），跳过配置用例");
 
   test("登录后访问并套用模板创建方案", async ({ page }) => {

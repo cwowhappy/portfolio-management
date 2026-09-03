@@ -21,6 +21,7 @@ try {
  */
 export default defineConfig({
   testDir: "./e2e",
+  globalTeardown: "./e2e/global-teardown.ts",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   // 行情走真实公开接口，偶发抖动；本地也重试 1 次以吸收瞬时波动
