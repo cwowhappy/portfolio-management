@@ -6,8 +6,6 @@ import { registerAndApprove, TEST_PASSWORD, uniqueUsername } from "./helpers";
 const hasAdminSeed = !!(process.env.ADMIN_USERNAME && process.env.ADMIN_PASSWORD);
 
 test.describe("/portfolio 持仓组合管理", () => {
-  // 注册→审核→登录 是有状态流程（跨用例共享后端），重试会用同一用户名再次注册造成冲突。
-  test.describe.configure({ retries: 0 });
   test.skip(!hasAdminSeed, "未配置 ADMIN_USERNAME/ADMIN_PASSWORD（无种子管理员），跳过持仓用例");
 
   test("登录后访问并渲染空态", async ({ page }) => {

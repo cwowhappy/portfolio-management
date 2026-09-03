@@ -1,6 +1,8 @@
 import { test, expect } from "@playwright/test";
 
-test.describe("行情台", () => {
+test.describe.serial("行情台", () => {
+  // 串行跑避免并发打真实行情接口触发限流；抬超时让 60s 的 expect 可达（默认 30s 会提前掐断）
+  test.setTimeout(120_000);
   test("大盘速览加载三大指数", async ({ page }) => {
     await page.goto("/market");
     // 真实东财/新浪指数接口，超时放宽

@@ -3,7 +3,7 @@
 set -e
 cd "$(dirname "$0")/../frontend"
 
-if [ ! -d .next ]; then
+if [ ! -f .next/BUILD_ID ]; then
   CI=true ./node_modules/.bin/next build
 fi
 

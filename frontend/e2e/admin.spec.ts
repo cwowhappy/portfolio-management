@@ -13,7 +13,6 @@ import {
 const hasAdminSeed = !!(process.env.ADMIN_USERNAME && process.env.ADMIN_PASSWORD);
 
 test.describe("管理后台用户操作", () => {
-  test.describe.configure({ retries: 0 });
   test.skip(!hasAdminSeed, "未配置 ADMIN_USERNAME/ADMIN_PASSWORD（无种子管理员），跳过管理操作流");
 
   test("停用后用户登录被拒，启用后恢复", async ({ page }) => {
