@@ -20,6 +20,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -78,6 +79,18 @@ class AllocationApplicationServiceTest {
         service.activatePlan(1L, 10L);
 
         verify(repo).deactivateAllByUserId(1L);
+    }
+
+    @Test
+    void 重复激活已生效方案仍返回激活态且保存的是激活() {
+        when(repo.findByIdAndUserId(10L, 1L)).thenReturn(Optional.of(activePlan()));
+        when(repo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        PlanView view = service.activatePlan(1L, 10L);
+
+        assertThat(view.active()).isTrue();
+        verify(repo).deactivateAllByUserId(1L);
+        verify(repo).save(argThat(AllocationPlan::active));
     }
 
     @Test

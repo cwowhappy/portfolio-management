@@ -7,6 +7,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -55,6 +56,10 @@ public class PositionJpaEntity {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    @Version
+    @Column(name = "version", nullable = false)
+    private Long version;
+
     protected PositionJpaEntity() {}
 
     public static PositionJpaEntity fromDomain(Position p) {
@@ -72,12 +77,13 @@ public class PositionJpaEntity {
         e.netCashFlow = p.netCashFlow();
         e.createdAt = p.createdAt();
         e.updatedAt = p.updatedAt();
+        e.version = p.version();
         return e;
     }
 
     public Position toDomain() {
         return Position.reconstitute(id, portfolioId, groupId, stockCode, stockName,
                 quantity, costBasis, totalBuyCost, cumulativeCashDividend, realizedPnl, netCashFlow,
-                createdAt, updatedAt);
+                createdAt, updatedAt, version);
     }
 }

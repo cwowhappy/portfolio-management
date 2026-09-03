@@ -211,32 +211,37 @@ public class PortfolioApplicationService {
         return Position.reconstitute(original.id(), original.portfolioId(), original.groupId(),
                 original.stockCode(), original.stockName(),
                 acc.quantity(), acc.costBasis(), acc.totalBuyCost(), acc.cumulativeCashDividend(),
-                acc.realizedPnl(), acc.netCashFlow(), original.createdAt(), Instant.now());
+                acc.realizedPnl(), acc.netCashFlow(), original.createdAt(), Instant.now(), original.version());
     }
 
     @Transactional
     public PositionView addCashDividend(Long userId, CashDividendCommand cmd) {
         Portfolio p = getOrCreatePortfolio(userId);
         var position = requirePosition(p.id(), cmd.positionId());
-        BigDecimal total = cmd.cashPerShare().multiply(position.quantity());
-        var updated = position.applyCashDividend(total);
-        repository.savePosition(updated);
         repository.saveDividend(new Dividend(
-                null, updated.id(), DividendType.CASH,
+                null, position.id(), DividendType.CASH,
                 cmd.exDate(), cmd.cashPerShare(), null, Instant.now()));
-        return positionView(updated);
+        // 与 editTrade 同一 replay 路径：按除息日当时数量重放，避免补录历史分红后账本漂移
+        var replayed = replay(position,
+                repository.findTradesByPositionId(position.id()),
+                repository.findDividendsByPositionId(position.id()));
+        var saved = repository.savePosition(replayed);
+        return positionView(saved);
     }
 
     @Transactional
     public PositionView addStockDividend(Long userId, StockDividendCommand cmd) {
         Portfolio p = getOrCreatePortfolio(userId);
         var position = requirePosition(p.id(), cmd.positionId());
-        var updated = position.applyStockDividend(cmd.stockRatio());
-        repository.savePosition(updated);
         repository.saveDividend(new Dividend(
-                null, updated.id(), DividendType.STOCK,
+                null, position.id(), DividendType.STOCK,
                 cmd.exDate(), null, cmd.stockRatio(), Instant.now()));
-        return positionView(updated);
+        // 与 editTrade 同一 replay 路径：按除息日当时数量重放
+        var replayed = replay(position,
+                repository.findTradesByPositionId(position.id()),
+                repository.findDividendsByPositionId(position.id()));
+        var saved = repository.savePosition(replayed);
+        return positionView(saved);
     }
 
     @Transactional

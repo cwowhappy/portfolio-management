@@ -11,6 +11,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -70,6 +71,10 @@ public class JournalEntryJpaEntity {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    @Version
+    @Column(name = "version", nullable = false)
+    private Long version;
+
     protected JournalEntryJpaEntity() {}
 
     public static JournalEntryJpaEntity fromDomain(JournalEntry e) {
@@ -90,11 +95,12 @@ public class JournalEntryJpaEntity {
         entity.eventDate = e.eventDate();
         entity.createdAt = e.createdAt();
         entity.updatedAt = e.updatedAt();
+        entity.version = e.version();
         return entity;
     }
 
     public JournalEntry toDomain() {
         return JournalEntry.reconstitute(id, userId, type, stockCode, stockName, tradeId, title, content,
-                targetPrice, stopLoss, periodType, periodStart, periodEnd, eventDate, createdAt, updatedAt);
+                targetPrice, stopLoss, periodType, periodStart, periodEnd, eventDate, createdAt, updatedAt, version);
     }
 }

@@ -93,4 +93,32 @@ class AllocationPlanRepositoryImplTest {
         repository.deleteById(saved.id());
         assertThat(repository.findByIdAndUserId(saved.id(), 42L)).isEmpty();
     }
+
+    /**
+     * 回归「重复激活已生效方案后 DB 仍唯一 active」。
+     *
+     * <p>复现应用层 activatePlan 的调用顺序：载入已生效方案 → 批量清空其余 →
+     * 再 save 该方案。批量 UPDATE 缺 clearAutomatically 时，持久化上下文仍持有
+     * 旧快照（active=true）；随后的 save 因脏检查认为无变化而不发 UPDATE，DB 被置为
+     * 无生效方案。注意域方法 activate() 会顺带改 updatedAt 掩盖此缺陷，故这里直接
+     * save 载入的原样快照以隔离「批量更新后上下文陈旧」这一根因。
+     */
+    @Test
+    void 重复激活已生效方案数据库仍唯一生效() {
+        AllocationPlan saved = repository.save(
+                AllocationPlan.create(42L, "A", PlanSource.CUSTOM, w60_40(), Instant.now()));
+        repository.save(saved.activate());
+        AllocationPlan other = repository.save(
+                AllocationPlan.create(42L, "B", PlanSource.CUSTOM, w60_40(), Instant.now()));
+        assertThat(other.active()).isFalse();
+
+        // 复现 service.activatePlan(42L, saved.id()) 的调用序列
+        AllocationPlan loaded = repository.findByIdAndUserId(saved.id(), 42L).orElseThrow();
+        assertThat(loaded.active()).isTrue();
+        repository.deactivateAllByUserId(42L);
+        repository.save(loaded);
+
+        AllocationPlan active = repository.findActiveByUserId(42L).orElseThrow();
+        assertThat(active.id()).isEqualTo(saved.id());
+    }
 }

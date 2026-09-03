@@ -12,7 +12,7 @@ public interface AllocationPlanJpaRepository extends JpaRepository<AllocationPla
     Optional<AllocationPlanJpaEntity> findByIdAndUserId(Long id, Long userId);
     Optional<AllocationPlanJpaEntity> findFirstByUserIdAndActiveOrderByIdAsc(Long userId, boolean active);
 
-    @Modifying
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE AllocationPlanJpaEntity p SET p.active = false WHERE p.userId = :userId AND p.active = true")
     int deactivateAllByUserId(@Param("userId") Long userId);
 }

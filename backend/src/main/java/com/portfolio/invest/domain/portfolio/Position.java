@@ -24,11 +24,13 @@ public final class Position {
     private final BigDecimal netCashFlow;
     private final Instant createdAt;
     private final Instant updatedAt;
+    /** 乐观锁版本：新建为 null，从库载入后携带，整行 merge 写回时用于冲突检测。 */
+    private final Long version;
 
     private Position(Long id, Long portfolioId, Long groupId, String stockCode, String stockName,
                      BigDecimal quantity, BigDecimal costBasis, BigDecimal totalBuyCost,
                      BigDecimal cumulativeCashDividend, BigDecimal realizedPnl, BigDecimal netCashFlow,
-                     Instant createdAt, Instant updatedAt) {
+                     Instant createdAt, Instant updatedAt, Long version) {
         this.id = id;
         this.portfolioId = portfolioId;
         this.groupId = groupId;
@@ -42,20 +44,30 @@ public final class Position {
         this.netCashFlow = netCashFlow;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
+        this.version = version;
     }
 
     public static Position create(Long portfolioId, Long groupId, String stockCode, String stockName, Instant now) {
         return new Position(null, portfolioId, groupId, stockCode, stockName,
-                z(), z(), z(), z(), z(), z(), now, now);
+                z(), z(), z(), z(), z(), z(), now, now, null);
     }
 
     public static Position reconstitute(Long id, Long portfolioId, Long groupId, String stockCode, String stockName,
                                         BigDecimal quantity, BigDecimal costBasis, BigDecimal totalBuyCost,
                                         BigDecimal cumulativeCashDividend, BigDecimal realizedPnl, BigDecimal netCashFlow,
                                         Instant createdAt, Instant updatedAt) {
+        return reconstitute(id, portfolioId, groupId, stockCode, stockName,
+                quantity, costBasis, totalBuyCost, cumulativeCashDividend, realizedPnl, netCashFlow,
+                createdAt, updatedAt, null);
+    }
+
+    public static Position reconstitute(Long id, Long portfolioId, Long groupId, String stockCode, String stockName,
+                                        BigDecimal quantity, BigDecimal costBasis, BigDecimal totalBuyCost,
+                                        BigDecimal cumulativeCashDividend, BigDecimal realizedPnl, BigDecimal netCashFlow,
+                                        Instant createdAt, Instant updatedAt, Long version) {
         return new Position(id, portfolioId, groupId, stockCode, stockName,
                 quantity, costBasis, totalBuyCost, cumulativeCashDividend, realizedPnl, netCashFlow,
-                createdAt, updatedAt);
+                createdAt, updatedAt, version);
     }
 
     /** 买入：数量、成本、现金净贡献更新；摊薄成本价随之变化。 */
@@ -107,7 +119,7 @@ public final class Position {
                 newQuantity.setScale(SCALE, RM), newCostBasis.setScale(SCALE, RM),
                 newTotalBuyCost.setScale(SCALE, RM), newDividend.setScale(SCALE, RM),
                 newRealized.setScale(SCALE, RM), newNetCashFlow.setScale(SCALE, RM),
-                createdAt, Instant.now());
+                createdAt, Instant.now(), version);
     }
 
     private static BigDecimal z() {
@@ -127,4 +139,5 @@ public final class Position {
     public BigDecimal netCashFlow() { return netCashFlow; }
     public Instant createdAt() { return createdAt; }
     public Instant updatedAt() { return updatedAt; }
+    public Long version() { return version; }
 }

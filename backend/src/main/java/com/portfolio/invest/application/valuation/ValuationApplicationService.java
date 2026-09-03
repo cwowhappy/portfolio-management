@@ -14,7 +14,9 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 @Service
 public class ValuationApplicationService {
@@ -50,8 +52,10 @@ public class ValuationApplicationService {
         BigDecimal pbPercentile = latest == null ? null : Percentile.of(latest.pbMedian(), pbHistory);
         BigDecimal breakerPercentile = latest == null ? null : Percentile.of(latest.netBreakerRatio(), breakerHistory);
 
-        BigDecimal erp = erp(hs300, treasuries);
-        BigDecimal erpPercentile = erpPercentile(erp, hs300);
+        // 真实 ERP 历史序列：按 tradingDay 对齐 hs300 股息率与 10Y 国债，逐日 ERP = dividendYield − yield10y
+        List<BigDecimal> erpSeries = erpHistory(hs300, treasuries);
+        BigDecimal erp = erpSeries.isEmpty() ? null : erpSeries.get(erpSeries.size() - 1);
+        BigDecimal erpPercentile = erp == null ? null : Percentile.of(erp, erpSeries);
 
         List<ValuationOverviewView.IndexValuationView> indices = indices();
 
@@ -103,35 +107,20 @@ public class ValuationApplicationService {
         return value;
     }
 
-    /** ERP = 沪深 300 股息率 − 10 年国债收益率；数据缺失返回 null。 */
-    private BigDecimal erp(List<IndexValuation> hs300, List<TreasuryYield> treasuries) {
-        IndexValuation latest = hs300.stream()
+    /**
+     * 真实 ERP 历史序列：按 tradingDay 对齐沪深 300 的股息率与 10Y 国债收益率，
+     * 逐日 ERP = dividendYield − yield10y（按交易日升序，任一缺失的交易日跳过）。
+     */
+    private List<BigDecimal> erpHistory(List<IndexValuation> hs300, List<TreasuryYield> treasuries) {
+        Map<LocalDate, BigDecimal> treasuryByDay = treasuries.stream()
+                .filter(t -> t.yield10y() != null)
+                .collect(Collectors.toMap(TreasuryYield::tradingDay, TreasuryYield::yield10y, (a, b) -> a));
+        return hs300.stream()
                 .filter(i -> i.dividendYield() != null)
-                .max(Comparator.comparing(IndexValuation::tradingDay))
-                .orElse(null);
-        var treasury = treasuries.stream()
-                .max(Comparator.comparing(TreasuryYield::tradingDay))
-                .orElse(null);
-        if (latest == null || treasury == null) {
-            return null;
-        }
-        return latest.dividendYield().subtract(treasury.yield10y()).setScale(2, RoundingMode.HALF_UP);
-    }
-
-    private BigDecimal erpPercentile(BigDecimal erp, List<IndexValuation> hs300) {
-        if (erp == null) {
-            return null;
-        }
-        List<BigDecimal> erpHistory = hs300.stream()
-                .filter(i -> i.dividendYield() != null)
-                .map(IndexValuation::dividendYield)
+                .filter(i -> treasuryByDay.containsKey(i.tradingDay()))
+                .sorted(Comparator.comparing(IndexValuation::tradingDay))
+                .map(i -> i.dividendYield().subtract(treasuryByDay.get(i.tradingDay())).setScale(2, RoundingMode.HALF_UP))
                 .toList();
-        // 简化：以沪深 300 股息率分位近似 ERP 分位（ERP 与股息率同向）
-        if (erpHistory.isEmpty()) {
-            return null;
-        }
-        BigDecimal latestDiv = erpHistory.get(erpHistory.size() - 1);
-        return Percentile.of(latestDiv, erpHistory);
     }
 
     private List<ValuationOverviewView.IndexValuationView> indices() {

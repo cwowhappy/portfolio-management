@@ -82,6 +82,22 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    void 乐观锁冲突映射409() {
+        ResponseEntity<ApiError> res = handler.optimisticLock(
+                new org.springframework.dao.OptimisticLockingFailureException("conflict"));
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(res.getBody()).isEqualTo(new ApiError("CONFLICT", "数据已被他人修改，请刷新后重试"));
+    }
+
+    @Test
+    void Object乐观锁异常同样映射409() {
+        ResponseEntity<ApiError> res = handler.optimisticLock(
+                new org.springframework.orm.ObjectOptimisticLockingFailureException(String.class, "k"));
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(res.getBody().code()).isEqualTo("CONFLICT");
+    }
+
+    @Test
     void agent未注册映射503与友好文案() {
         ResponseEntity<ApiError> res = handler.agentNotFound(new AguiException.AgentNotFoundException("invest"));
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);

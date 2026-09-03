@@ -404,6 +404,12 @@ class PortfolioApplicationServiceTest {
         when(repo.findPositionByIdAndPortfolioId(5L, 10L)).thenReturn(Optional.of(positionWithId(5)));
         when(repo.savePosition(any())).thenAnswer(inv -> inv.getArgument(0));
         when(repo.saveDividend(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(repo.findTradesByPositionId(5L)).thenReturn(List.of(
+                new Trade(11L, 5L, TradeType.BUY, LocalDate.of(2026, 8, 27),
+                        new BigDecimal("100"), new BigDecimal("100"), new BigDecimal("0"), Instant.now())));
+        when(repo.findDividendsByPositionId(5L)).thenReturn(List.of(
+                new Dividend(1L, 5L, DividendType.CASH, LocalDate.of(2026, 8, 28),
+                        new BigDecimal("1.5"), null, Instant.now())));
 
         var view = service.addCashDividend(1L, new CashDividendCommand(5L,
                 LocalDate.of(2026, 8, 28), new BigDecimal("1.5")));
@@ -423,6 +429,12 @@ class PortfolioApplicationServiceTest {
         when(repo.findPositionByIdAndPortfolioId(5L, 10L)).thenReturn(Optional.of(positionWithId(5)));
         when(repo.savePosition(any())).thenAnswer(inv -> inv.getArgument(0));
         when(repo.saveDividend(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(repo.findTradesByPositionId(5L)).thenReturn(List.of(
+                new Trade(11L, 5L, TradeType.BUY, LocalDate.of(2026, 8, 27),
+                        new BigDecimal("100"), new BigDecimal("100"), new BigDecimal("0"), Instant.now())));
+        when(repo.findDividendsByPositionId(5L)).thenReturn(List.of(
+                new Dividend(1L, 5L, DividendType.STOCK, LocalDate.of(2026, 8, 28),
+                        null, new BigDecimal("0.5"), Instant.now())));
 
         var view = service.addStockDividend(1L, new StockDividendCommand(5L,
                 LocalDate.of(2026, 8, 28), new BigDecimal("0.5")));
@@ -433,6 +445,45 @@ class PortfolioApplicationServiceTest {
         ArgumentCaptor<Dividend> captor = ArgumentCaptor.forClass(Dividend.class);
         verify(repo).saveDividend(captor.capture());
         assertThat(captor.getValue().type()).isEqualTo(DividendType.STOCK);
+    }
+
+    @Test
+    void 补录历史现金分红按除息日当时数量且editTrade重放确定性一致() {
+        // 持仓已含两笔买入：08-27 买 100@100、08-29 买 50@100；补录 08-28（两笔买入之间）除息的现金分红。
+        Position pos = Position.reconstitute(5L, 10L, 1L, "600519", "贵州茅台",
+                new BigDecimal("150"), new BigDecimal("15000"), new BigDecimal("15000"),
+                BigDecimal.ZERO, BigDecimal.ZERO, new BigDecimal("-15000"),
+                Instant.now(), Instant.now());
+        when(repo.findPositionByIdAndPortfolioId(5L, 10L)).thenReturn(Optional.of(pos));
+        when(repo.saveDividend(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(repo.savePosition(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(repo.findTradesByPositionId(5L)).thenReturn(List.of(
+                new Trade(11L, 5L, TradeType.BUY, LocalDate.of(2026, 8, 27),
+                        new BigDecimal("100"), new BigDecimal("100"), new BigDecimal("0"), Instant.now()),
+                new Trade(12L, 5L, TradeType.BUY, LocalDate.of(2026, 8, 29),
+                        new BigDecimal("100"), new BigDecimal("50"), new BigDecimal("0"), Instant.now())));
+        when(repo.findDividendsByPositionId(5L)).thenReturn(List.of(
+                new Dividend(1L, 5L, DividendType.CASH, LocalDate.of(2026, 8, 28),
+                        new BigDecimal("1"), null, Instant.now())));
+
+        var view = service.addCashDividend(1L, new CashDividendCommand(5L,
+                LocalDate.of(2026, 8, 28), new BigDecimal("1")));
+
+        // 修复前：按「当前数量 150」直接 apply → 累计分红 150；修复后：按除息日当时数量 100 → 100
+        assertThat(view.quantity()).isEqualByComparingTo("150");
+        assertThat(view.cumulativeCashDividend()).isEqualByComparingTo("100");
+
+        // editTrade 走同一 replay → 账本数字由事件流确定性导出，不会把 100 静默改写回/到别处
+        when(repo.findTradeById(11L)).thenReturn(Optional.of(
+                new Trade(11L, 5L, TradeType.BUY, LocalDate.of(2026, 8, 27),
+                        new BigDecimal("100"), new BigDecimal("100"), new BigDecimal("0"), Instant.now())));
+        when(repo.saveTrade(any())).thenAnswer(inv -> inv.getArgument(0));
+        var replayed = service.editTrade(1L, 5L, 11L, new EditTradeCommand(
+                LocalDate.of(2026, 8, 27), new BigDecimal("100"),
+                new BigDecimal("100"), new BigDecimal("0")));
+
+        assertThat(replayed.cumulativeCashDividend()).isEqualByComparingTo(view.cumulativeCashDividend());
+        assertThat(replayed.quantity()).isEqualByComparingTo("150");
     }
 
     @Test

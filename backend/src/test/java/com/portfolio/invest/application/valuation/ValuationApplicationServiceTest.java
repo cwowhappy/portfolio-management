@@ -6,6 +6,7 @@ import com.portfolio.invest.domain.valuation.ValuationSnapshot;
 import com.portfolio.invest.domain.valuation.TreasuryYield;
 import com.portfolio.invest.domain.valuation.IndexValuation;
 import com.portfolio.invest.domain.valuation.IndustryValuation;
+import com.portfolio.invest.domain.valuation.Percentile;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -120,10 +121,41 @@ class ValuationApplicationServiceTest {
 
         // 不抛异常，且非空值仍被用于分位计算
         assertThat(view.erp()).isEqualByComparingTo("0.14");
-        assertThat(view.erpPercentile()).isEqualByComparingTo("50.00");
+        // 国债序列只有 08-27 一天与 hs300 对齐 → ERP 历史单点 0.14，分位 0.00（真实 ERP 分位，非股息率近似）
+        assertThat(view.erpPercentile()).isEqualByComparingTo("0.00");
         assertThat(view.indices()).hasSize(5);
         assertThat(view.indices().get(0).pePercentile()).isEqualByComparingTo("50.00"); // 000016
         assertThat(view.indices().get(1).pePercentile()).isEqualByComparingTo("66.67"); // 000300
+    }
+
+    @Test
+    void erp分位用真实ERP历史而非股息率分位近似() {
+        // 一组能区分「股息率分位」与「真实 ERP 分位」的数据：
+        // 高股息率的某日若国债收益率也高，其 ERP 反而低——ERP 与股息率并不同向。
+        when(repo.findLatestSnapshot()).thenReturn(null);
+        when(repo.findAllSnapshots()).thenReturn(List.of());
+        when(repo.findAllTreasuryYields()).thenReturn(List.of(
+                new TreasuryYield(LocalDate.of(2026, 1, 1), new BigDecimal("3.0")),
+                new TreasuryYield(LocalDate.of(2026, 1, 2), new BigDecimal("0.5")),
+                new TreasuryYield(LocalDate.of(2026, 1, 3), new BigDecimal("2.0")),
+                new TreasuryYield(LocalDate.of(2026, 1, 4), new BigDecimal("1.0"))));
+        when(repo.findIndexValuations("000300")).thenReturn(List.of(
+                new IndexValuation(LocalDate.of(2026, 1, 1), "000300", "沪深300", new BigDecimal("12"), new BigDecimal("1"), new BigDecimal("2.0")),
+                new IndexValuation(LocalDate.of(2026, 1, 2), "000300", "沪深300", new BigDecimal("12"), new BigDecimal("1"), new BigDecimal("1.0")),
+                new IndexValuation(LocalDate.of(2026, 1, 3), "000300", "沪深300", new BigDecimal("12"), new BigDecimal("1"), new BigDecimal("3.0")),
+                new IndexValuation(LocalDate.of(2026, 1, 4), "000300", "沪深300", new BigDecimal("12"), new BigDecimal("1"), new BigDecimal("2.5"))));
+
+        var view = service.overview();
+
+        // 逐日 ERP：2.0-3.0=-1.00, 1.0-0.5=0.50, 3.0-2.0=1.00, 2.5-1.0=1.50；当前=最新日=1.50
+        assertThat(view.erp()).isEqualByComparingTo("1.50");
+        // ERP 分位：[-1.00,0.50,1.00,1.50] 中小于 1.50 的有 3 个 → 75.00
+        assertThat(view.erpPercentile()).isEqualByComparingTo("75.00");
+        // 对照股息率分位（2.5 in [2.0,1.0,3.0]）= 66.67：旧近似会返回 66.67，验证不再是股息率分位
+        BigDecimal naiveDividendPercentile = Percentile.of(new BigDecimal("2.5"),
+                List.of(new BigDecimal("2.0"), new BigDecimal("1.0"), new BigDecimal("3.0")));
+        assertThat(naiveDividendPercentile).isEqualByComparingTo("66.67");
+        assertThat(view.erpPercentile()).isNotEqualByComparingTo(naiveDividendPercentile);
     }
 
     @Test

@@ -131,6 +131,17 @@ public class GlobalExceptionHandler {
                 .body(new ApiError("INVALID_DATA", "数据不符合存储约束"));
     }
 
+    /**
+     * 乐观锁冲突：并发「读-改-写」同一聚合时版本不符 → 409 Conflict。
+     * ObjectOptimisticLockingFailureException 为其子类，一并落入此处理。
+     */
+    @ExceptionHandler(org.springframework.dao.OptimisticLockingFailureException.class)
+    public ResponseEntity<ApiError> optimisticLock(org.springframework.dao.OptimisticLockingFailureException e) {
+        log.warn("乐观锁冲突: {}", e.getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ApiError("CONFLICT", "数据已被他人修改，请刷新后重试"));
+    }
+
     /** Agent 未注册（未配置 DEEPSEEK_API_KEY 时）→ 友好提示。 */
     @ExceptionHandler(io.agentscope.core.agui.AguiException.AgentNotFoundException.class)
     public ResponseEntity<ApiError> agentNotFound(
