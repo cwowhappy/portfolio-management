@@ -171,3 +171,37 @@
 - PR #10 的 CI 与 review 反馈。
 - `make smoke`（真实行情 + AI 对话）仍未跑，合并前建议补一次端到端冒烟。
 - 下轮 MS-05 计划编写直接套用：FR→实现 可追溯矩阵 + 覆盖率逐任务下沉 + 迁移版本断言同步 + 隔离/全量两段验证。
+
+---
+
+## 2026-09-03 轮（三端全量双轴审查 + P1/P2/P3 修复）
+
+### 本轮做了什么
+
+- 用 mattpocock **双轴 skill（Standards 规范 + Spec 规格）** × 三端（backend/frontend/collector）派 6 个并行只读子代理，全量审查约 510 源文件：65 条发现（P0×0 / P1×13 / P2×46 / P3×6）。
+- **全部 13 处 P1 逐条对照源码复验零误报**；`/industry → /screener` 的 `industryCode` 带入断裂被 Standards 与 Spec 两轴独立命中（收敛 = 高置信）。
+- 4 处设计分叉（ERP 真实实现、@Version 乐观锁、分红统一 replay、备源补全）与作者确认后，P1/P2/P3 按目录隔离并行 + TDD 修复，`make test` 三端全绿（backend test+integrationTest+jacoco、frontend 392 用例、collector 202 用例 94.77%）。
+
+### 方法论经验（值得固化）
+
+1. **双轴并行 + 两轴收敛是高置信信号**。同一缺陷被 Standards 与 Spec 两个独立子代理各自命中（industryCode、权重精度），比单轴命中可信得多——聚合时把「双轴印证」标出来，修复优先级直接提到最高。
+2. **P1 逐条核验源码、P2/P3 信任 + 全量测试兜底**。高严重度发现必须 Read 真实代码逐条复验（本轮零误报），低严重度靠子代理的精确 file:line 引用 + 最终全量 `make test` 兜底，不逐条人工复验——性价比最高。
+3. **修复代理按目录隔离并行 + TDD + 全量 make test 收口**。隔离跑各自目录全绿 ≠ 全量绿：本轮 collector 代理漏跑 `ruff format`，被全量 `make test` 的 `format --check` 拦下。**每个修复代理必须把「格式化/lint」纳入自检，收口仍以全量 make test 为准**。
+4. **设计分叉先确认、机械项自动修**。65 条里真正有两难取舍的只有 4 处（ERP/@Version/replay/备源），其余机械项（错误码、校验、去重、命名）直接修。**先把「分叉点」从「机械项」里分离出来，只对前者做选择题**，返工最低。
+
+### 反复出现的问题模式（新增审查清单）
+
+- **幂等边界：`@Modifying` 批量 UPDATE 与持久化上下文快照**。`deactivateAllByUserId` 缺 `clearAutomatically`，批量置 false 后 `save(plan.activate())` 因脏检查快照未变不发 UPDATE → 重复激活已生效方案反而把 DB 置成无生效方案。→ 凡 `@Modifying` 批量 update 必加 `clearAutomatically=true`；「读-改-写」与「批量 update」混用时，检查持久化上下文是否持有陈旧快照。
+- **钱账聚合无乐观锁**。Position/Portfolio/Group/AllocationPlan/JournalEntry 全是「读-改-整行 merge 写」的钱账聚合却无 `@Version`，并发双提交后写覆盖前写、账本与 trade 历史静默分叉。→ 凡「读-改-写」聚合（钱账、状态机）必加 `@Version` + version 列；读路径依赖的不变量（至多一个 active、账本=Σ事件）下沉 DB 约束。
+- **声明式启停失效：upsert 漏字段 + 不 reconcile**。`UPSERT_TASK` 的 ON CONFLICT 漏 `enabled`，YAML 改 enabled/删除任务后 re-seed 永不生效。→ 凡「YAML/配置声明 + upsert 落库」：upsert 必须覆盖**全部**可声明字段，seed 必须 reconcile（停用/删除不在声明里的残留行）。
+- **区间回填被增量 watermark 架空**。`TreasuryCurveSource` 标 `supports_range=True` 但 fetch 只按 DB `max(trading_day)` 增量、无视 params start/end，backfill 命令对空表/有数据表行为完全不同。→ 凡声明 supports_range 的 source，fetch 必须读区间且**区间优先于 watermark**；backfill 测试要同时覆盖「空表」与「已有数据」两种。
+- **流式切线程竞态：防抖快照跨线程串写**。切线程时防抖持久化的 `pending` 快照把旧线程消息绑定新 threadId，历史回灌慢于防抖窗口时把旧会话 PUT 覆盖新会话。→ 流式/异步场景的快照必须携带**归属标识**（threadId）+「回灌就绪」门，双向守卫（既防旧线程 flush 读新消息，也防新线程 pending 塞旧消息）。
+- **简化/近似冒充真实值**。`erpPercentile` 用股息率分位近似 ERP 分位、弃用已回填的 10Y 国债历史，FR-B2 展示数据系统性失真。→ 凡代码里出现「简化/近似」，对照 spec 的精度/风险条款：spec 要求真实值时不能近似，要么真实现要么显式标注「近似」并写进契约。
+- **scope-creep 与「低置信/可能刻意」项要单独确认，不自动修**。流动比率列、累计分红卡（scope-creep）、已清仓仍在列表、五指数走势（低置信）——这些不是确定性 bug，自动「修」可能删掉刻意功能。→ 审查发现先分「确定性 bug」vs「scope-creep/可能刻意」，后者单独列给作者确认处置（删除 or 补进契约）。
+
+### 待观察 / 下轮关注
+
+- 4 个待确认项（P-B-6 已清仓、P-B-7 五指数、F-8 流动比率列、P-F-2 累计分红卡）的处置结果。
+- `make smoke`（真实行情 + AI 对话）仍未跑，合并本分支前建议补一次端到端冒烟。
+- ERP 真实序列依赖 collector 端指数股息率（`make_index_dividend_fetch`）上线后的真实数据，观察 dividend_yield 是否如期非 None。
+- 本分支 `chore/code-review-2026-09-03` 提交后需开 PR 走 review + CI。
