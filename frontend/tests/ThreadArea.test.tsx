@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Message } from "@ag-ui/client";
 import ThreadArea from "@/components/chat/ThreadArea";
-import { RuntimeProvider } from "@/components/chat/RuntimeProvider";
+import { RuntimeProvider, useChatRuntime } from "@/components/chat/RuntimeProvider";
 import { installConversationsApi } from "@/tests/mockConversationsApi";
 
 // ———— CopilotKit hooks mock ————
@@ -44,6 +44,17 @@ function renderThread(llmReady: boolean | null = null) {
     <RuntimeProvider>
       <ThreadArea llmReady={llmReady} />
     </RuntimeProvider>,
+  );
+}
+
+/** 测试夹具：提供切换线程的入口（对应 Sidebar 的「切换会话」），让用例能真实驱动 RuntimeProvider.switchThread。 */
+function ThreadSwitchHarness({ targetId }: { targetId: string }) {
+  const { switchThread } = useChatRuntime();
+  return (
+    <>
+      <button onClick={() => switchThread(targetId)}>切到 {targetId}</button>
+      <ThreadArea llmReady={null} />
+    </>
   );
 }
 
@@ -240,6 +251,63 @@ describe("ThreadArea", () => {
     const firstPut = putBodies[0];
     expect(firstPut.map((m) => m.content)).toEqual(["旧线程消息"]);
     expect(firstPut.map((m) => m.content)).not.toContain("新线程消息");
+  });
+
+  it("慢历史回灌时切线程：不会把旧线程消息 PUT 到新线程（防抖跨线程串写）", async () => {
+    // 场景：线程 t1 已有消息；切到 t2，但 t2 的历史回灌 GET 挂起（慢于 400ms 防抖窗口）。
+    // 若防抖持久化把 agent.messages（仍是 t1 内容）绑定到新 threadId=t2，放行后会把旧会话内容 PUT 覆盖 t2 服务端记录。
+    let t2GetCount = 0;
+    let resolveGate!: (r: Response) => void;
+    const gate = new Promise<Response>((res) => { resolveGate = res; });
+    const json = (body: unknown) =>
+      new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+    const noContent = () => new Response(null, { status: 204 });
+    const putBodies: Record<string, Array<Array<{ content: string }>>> = { t1: [], t2: [] };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        if (url === "/api/conversations" && method === "GET")
+          return json([
+            { id: "t1", title: "会话1", updatedAt: 2 },
+            { id: "t2", title: "会话2", updatedAt: 1 },
+          ]);
+        if (url === "/api/conversations/t1/messages" && method === "GET")
+          return json([{ id: "a1", role: "user", content: "旧线程消息", createdAt: 1 }]);
+        if (url === "/api/conversations/t2/messages" && method === "GET") {
+          t2GetCount += 1;
+          return gate; // 慢回灌：历史请求挂起（模拟 >400ms 或失败）
+        }
+        const putMatch = url.match(/^\/api\/conversations\/([^/]+)\/messages$/);
+        if (putMatch && method === "PUT") {
+          putBodies[putMatch[1]].push(JSON.parse(String(init?.body)) as Array<{ content: string }>);
+          return noContent();
+        }
+        return json({ message: "not found" });
+      }),
+    );
+
+    mocks.agent.messages = [agentMessage({ id: "a1", role: "user", content: "旧线程消息" })];
+    render(
+      <RuntimeProvider>
+        <ThreadSwitchHarness targetId="t2" />
+      </RuntimeProvider>,
+    );
+    // 等 Provider 就绪且 t1 历史回灌完成
+    await waitFor(() => expect(mocks.agent.setMessages).toHaveBeenCalled());
+    // 切到 t2：t2 回灌 GET 挂起
+    fireEvent.click(screen.getByRole("button", { name: "切到 t2" }));
+    await waitFor(() => expect(t2GetCount).toBe(1));
+    // 若存在跨线程串写，400ms 防抖会把旧线程快照绑定到 t2 并额外发起 GET；这里给它足够时间触发
+    await new Promise((r) => setTimeout(r, 550));
+    // 放行 t2 慢回灌
+    resolveGate(json([]));
+    // 等放行后的微任务 / 可能的 PUT 完成
+    await new Promise((r) => setTimeout(r, 150));
+    // 双保险断言：(1) 只应有一次 t2 历史回灌 GET；(2) 不得向 t2 写入任何旧线程消息
+    expect(t2GetCount).toBe(1);
+    expect(putBodies.t2).toHaveLength(0);
   });
 
   it("无消息时不调用持久化接口", async () => {

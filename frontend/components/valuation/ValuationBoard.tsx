@@ -8,6 +8,7 @@ import IndexValuationTable from "./IndexValuationTable";
 import Thermometer from "./Thermometer";
 import TrendChart from "./TrendChart";
 import IndustryTable from "./IndustryTable";
+import Disclaimer from "@/components/Disclaimer";
 
 export default function ValuationBoard() {
   const [overview, setOverview] = useState<ValuationOverview | null>(null);
@@ -65,6 +66,7 @@ export default function ValuationBoard() {
       <div className="mt-6" data-testid="industries">
         <IndustryTable industries={industries} />
       </div>
+      <Disclaimer />
     </div>
   );
 }

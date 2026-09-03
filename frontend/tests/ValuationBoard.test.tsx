@@ -45,6 +45,12 @@ describe("ValuationBoard", () => {
     expect(screen.queryByText("数据积累中 · 分位仅供参考")).toBeNull();
   });
 
+  it("渲染页脚免责声明", async () => {
+    render(<ValuationBoard />);
+    expect(await screen.findByText("市场估值仪表盘")).toBeTruthy();
+    expect(screen.getByText(/不构成投资建议/)).toBeTruthy();
+  });
+
   it("加载失败时显示错误文案", async () => {
     api.fetchValuationOverview.mockRejectedValue(new Error("估值服务不可用"));
     render(<ValuationBoard />);

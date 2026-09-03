@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { fetchScreenedStocks } from "@/lib/screeningApi";
 import { fetchValuationIndustries } from "@/lib/valuationApi";
 import type { IndustryValuation, ScreeningParams, ScreeningStock } from "@/lib/types";
@@ -9,7 +10,18 @@ import ScreeningForm from "./ScreeningForm";
 import ScreeningResultsTable from "./ScreeningResultsTable";
 
 export default function ScreenerBoard() {
-  const [params, setParams] = useState<ScreeningParams>({ sortBy: "pe_ttm", sortDirection: "ASC", limit: 200 });
+  // 行业页跳转「/screener?industryCode=…」带入行业条件：挂载时读取一次并初始化到 params，
+  // 避免行业条件丢失（否则提交会误报「请至少填写一个筛选条件」）。
+  const searchParams = useSearchParams();
+  const [params, setParams] = useState<ScreeningParams>(() => {
+    const industryCode = searchParams.get("industryCode") ?? undefined;
+    return {
+      sortBy: "pe_ttm",
+      sortDirection: "ASC",
+      limit: 200,
+      industryCode: industryCode || undefined,
+    };
+  });
   const [industries, setIndustries] = useState<IndustryValuation[]>([]);
   const [results, setResults] = useState<ScreeningStock[] | null>(null);
   const [error, setError] = useState<string | null>(null);

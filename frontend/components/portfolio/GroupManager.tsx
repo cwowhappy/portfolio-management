@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { addCashTransaction, createGroup, renameGroup } from "@/lib/portfolioApi";
+import { addCashTransaction, createGroup, deleteGroup, renameGroup } from "@/lib/portfolioApi";
 import type { GroupView } from "@/lib/types";
 
 const inputClass =
@@ -56,6 +56,20 @@ export default function GroupManager({ groups, onChanged }: { groups: GroupView[
       onChanged();
     } catch (e) {
       setError(e instanceof Error ? e.message : "改名失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onDelete(g: GroupView) {
+    if (!window.confirm(`确认删除分组「${g.name}」？删除后不可恢复。`)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await deleteGroup(g.id);
+      onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "删除失败");
     } finally {
       setBusy(false);
     }
@@ -192,6 +206,15 @@ export default function GroupManager({ groups, onChanged }: { groups: GroupView[
                 >
                   改名
                 </button>
+                {g.positionCount === 0 && g.cashBalance === 0 && (
+                  <button
+                    className="rounded-md border border-[color:var(--color-line)] px-2 py-1 text-xs text-[color:var(--color-down)] hover:border-[color:var(--color-down)]"
+                    onClick={() => onDelete(g)}
+                    disabled={busy}
+                  >
+                    删除
+                  </button>
+                )}
               </span>
             )}
           </li>
