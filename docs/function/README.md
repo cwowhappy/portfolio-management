@@ -1,6 +1,6 @@
 # 产品功能目录（docs/function）
 
-> 本目录从**产品功能**视角梳理「砚台 · 价值投资与资产配置系统」的全部能力，
+> 本目录从**产品功能**视角梳理「九和 · 价值投资与资产配置系统」的全部能力，
 > 供产品、设计、测试与新成员快速建立对系统的整体认知。
 > 技术实现见 [docs/technology/](../technology/)，技术决策见 [docs/technology/decisions/](../technology/decisions/)，实施计划见 [docs/plans/](../plans/) 与 [features/plans/](../../features/plans/)。
 

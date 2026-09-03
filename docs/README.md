@@ -1,6 +1,6 @@
 # docs · 项目文档
 
-> 「砚台 · 价值投资与资产配置系统」的文档中心。特性级开发文档见 [features/](../features/)，代码规范入口见 [AGENTS.md](../AGENTS.md)。
+> 「九和 · 价值投资与资产配置系统」的文档中心。特性级开发文档见 [features/](../features/)，代码规范入口见 [AGENTS.md](../AGENTS.md)。
 
 ## 目录导航
 

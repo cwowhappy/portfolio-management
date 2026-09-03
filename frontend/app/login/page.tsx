@@ -3,7 +3,7 @@ import Link from "next/link";
 import { LoginForm } from "@/components/auth/LoginForm";
 
 export const metadata: Metadata = {
-  title: "登录 · 砚台",
+  title: "登录 · 九和",
 };
 
 export default function LoginPage() {
@@ -12,7 +12,7 @@ export default function LoginPage() {
       <div className="w-full max-w-sm rounded-xl border border-[color:var(--color-line)] bg-[color:var(--color-panel)] p-7 shadow-[var(--shadow-panel)]">
         <div className="mb-6 text-center">
           <h1 className="font-[family-name:var(--font-display)] text-[22px] tracking-wide text-[color:var(--color-ink)]">
-            登录砚台
+            登录九和
           </h1>
           <p className="mt-1.5 text-[13px] text-[color:var(--color-ink-faint)]">
             A股投研助手 · 请使用已审核账号
