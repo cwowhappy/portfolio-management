@@ -1,6 +1,8 @@
 import datetime as dt
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from collector.model.run import STATUS_SKIPPED, STATUS_SUCCESS
 from collector.model.task import Collector
 from collector.scheduler.calendar import TradingCalendar
@@ -17,7 +19,9 @@ def test_non_trading_day_skipped():
     cal = TradingCalendar(set())  # 空集合 = 全非交易日
     ex = MagicMock()
     runner = TaskRunner("postgresql://u:p@localhost:5432/db", cal, ex)
-    res = runner.run(_task())
+    with _patched_pg() as pg:
+        pg.connect.return_value.__enter__.return_value = MagicMock()
+        res = runner.run(_task())
     assert res.status == STATUS_SKIPPED
     ex.run.assert_not_called()
 
@@ -62,8 +66,6 @@ def test_concurrent_lock_skipped():
 
 
 # ---------------------------------------------------------------- C-P0-1 / C-P1-1 重试与连接
-
-import pytest
 
 from collector.executor.executor import StoreError
 from collector.scheduler.runner import backoff_delays
@@ -179,7 +181,9 @@ def test_gating_skips_user_specified_non_trading_date():
     cal = TradingCalendar({dt.date(2026, 8, 28)})
     ex = MagicMock()
     runner = TaskRunner("postgresql://u:p@localhost:5432/db", cal, ex)
-    res = runner.run(_task(), params={"date": "2026-08-27"})
+    with _patched_pg() as pg:
+        pg.connect.return_value.__enter__.return_value = MagicMock()
+        res = runner.run(_task(), params={"date": "2026-08-27"})
     assert res.status == STATUS_SKIPPED
     ex.run.assert_not_called()
 
@@ -188,3 +192,83 @@ def test_invalid_date_raises_friendly_error():
     runner = TaskRunner("postgresql://u:p@localhost:5432/db", TradingCalendar(set()), MagicMock())
     with pytest.raises(ValueError, match="非法日期参数"):
         runner.run(_task(), params={"date": "2026/08/28"})
+
+
+# ---------------------------------------------------------------- C-6 running 态与 skipped 落库
+
+
+def _pg_ctx(acquired=True):
+    conn = MagicMock()
+    lock_cur = MagicMock()
+    lock_cur.fetchone.return_value = (acquired,)
+    conn.execute.return_value = lock_cur
+    ctx = MagicMock()
+    ctx.__enter__.return_value = conn
+    ctx.__exit__.return_value = False
+    return ctx
+
+
+def test_non_trading_day_skip_records_skipped_run():
+    """C-6/FR-10：非交易日 skipped 也要落库（此前直接 return 不记录）。"""
+    cal = TradingCalendar(set())
+    ex = MagicMock()
+    runner = TaskRunner("postgresql://u:p@localhost:5432/db", cal, ex)
+    with _patched_pg() as pg, patch("collector.scheduler.runner.RunRepository") as R:
+        pg.connect.return_value.__enter__.return_value = MagicMock()
+        rr = R.return_value
+        res = runner.run(_task())
+    assert res.status == STATUS_SKIPPED
+    ex.run.assert_not_called()
+    rr.record.assert_called_once()
+    args = rr.record.call_args
+    assert args[0][2] == STATUS_SKIPPED
+    assert args.kwargs.get("message") == "非交易日"
+
+
+def test_lock_conflict_skip_records_skipped_run():
+    """C-6/FR-10：锁冲突 skipped 也要落库。"""
+    cal = TradingCalendar({dt.date.today()})
+    ex = MagicMock()
+    runner = TaskRunner("postgresql://u:p@localhost:5432/db", cal, ex)
+    with _patched_pg() as pg, patch("collector.scheduler.runner.RunRepository") as R:
+        pg.connect.side_effect = lambda *a, **k: _pg_ctx(acquired=False)
+        rr = R.return_value
+        res = runner.run(_task())
+    assert res.status == STATUS_SKIPPED
+    ex.run.assert_not_called()
+    rr.record.assert_called_once()
+    assert rr.record.call_args.args[2] == STATUS_SKIPPED
+    assert rr.record.call_args.kwargs.get("message") == "上一实例运行中"
+
+
+def test_success_path_starts_running_row_and_passes_run_id():
+    """C-6/FR-10：执行前插 running 前置行，并把 run_id 传给 executor 收尾。"""
+    cal = TradingCalendar({dt.date.today()})
+    ex = MagicMock()
+    ex.run.return_value = MagicMock(status=STATUS_SUCCESS, task_code="t", mode="incremental")
+    runner = TaskRunner("postgresql://u:p@localhost:5432/db", cal, ex)
+    with _patched_pg() as pg, patch("collector.scheduler.runner.RunRepository") as R:
+        pg.connect.side_effect = lambda *a, **k: _pg_ctx(acquired=True)
+        rr = R.return_value
+        rr.start_run.return_value = 42
+        res = runner.run(_task())
+    assert res.status == STATUS_SUCCESS
+    rr.start_run.assert_called_once()
+    assert ex.run.call_args.kwargs["run_id"] == 42
+
+
+def test_unexpected_exception_finalizes_running_row_as_failed():
+    """意外异常（converter 裸抛）逃逸时，running 前置行要兜底置 failed，不留悬挂 running。"""
+    cal = TradingCalendar({dt.date.today()})
+    ex = MagicMock()
+    ex.run.side_effect = ValueError("converter bug")
+    runner = TaskRunner("postgresql://u:p@localhost:5432/db", cal, ex)
+    with _patched_pg() as pg, patch("collector.scheduler.runner.RunRepository") as R:
+        pg.connect.side_effect = lambda *a, **k: _pg_ctx(acquired=True)
+        rr = R.return_value
+        rr.start_run.return_value = 42
+        with pytest.raises(ValueError, match="converter bug"):
+            runner.run(_task())
+    rr.finish_run.assert_called_once()
+    assert rr.finish_run.call_args.args[0] == 42
+    assert rr.finish_run.call_args.args[1] == "failed"

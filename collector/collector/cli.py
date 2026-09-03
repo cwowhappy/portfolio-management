@@ -65,9 +65,13 @@ def main(argv=None):
             return
 
         if args.command == "list":
-            rows = TaskRepository(conn).list_enabled()
+            task_repo = TaskRepository(conn)
+            rows = task_repo.list_enabled() if args.enabled_only else task_repo.list_all()
+            latest = RunRepository(conn).latest_run_status()
             for row in rows:
-                print(f"{row['task_code']}  enabled={row['enabled']}  schedule={row['schedule']}")
+                started, status = latest.get(row["task_code"], (None, None))
+                last_run = f"{started:%Y-%m-%d %H:%M} {status}" if started else "-"
+                print(f"{row['task_code']}  enabled={row['enabled']}  schedule={row['schedule']}  last_run={last_run}")
             return
 
         row = TaskRepository(conn).get(args.task_code)

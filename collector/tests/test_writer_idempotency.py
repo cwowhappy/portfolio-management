@@ -93,3 +93,32 @@ def test_index_constituent_upsert_idempotent(pg_conn):
     assert len(rows) == 1
     assert rows[0][0] == "贵州茅台"
     assert float(rows[0][1]) == 6.5
+
+
+def test_index_constituent_replaces_members_on_rerun(pg_conn):
+    """C-9：半年任务重跑是快照语义——先删后插，被调出指数的成员不再残留旧行，
+    且不影响本次未涉及的其它指数。"""
+    store = Store()
+    store.upsert(
+        pg_conn,
+        "index_constituent",
+        [
+            {"index_code": "000300", "stock_code": "600519", "stock_name": "贵州茅台", "weight": 5.0},
+            {"index_code": "000300", "stock_code": "000001", "stock_name": "平安银行", "weight": 3.0},
+            {"index_code": "000905", "stock_code": "600519", "stock_name": "贵州茅台", "weight": 2.0},
+        ],
+    )
+    # 第二次快照：000001 被调出，新增 000858
+    store.upsert(
+        pg_conn,
+        "index_constituent",
+        [
+            {"index_code": "000300", "stock_code": "600519", "stock_name": "贵州茅台", "weight": 6.0},
+            {"index_code": "000300", "stock_code": "000858", "stock_name": "五粮液", "weight": 4.0},
+        ],
+    )
+    hs300 = pg_conn.execute("SELECT stock_code FROM index_constituent WHERE index_code='000300'").fetchall()
+    assert sorted(r[0] for r in hs300) == ["000858", "600519"]  # 000001 已剔除，000858 新纳入
+    # 未涉及的其它指数不受影响
+    zz500 = pg_conn.execute("SELECT stock_code FROM index_constituent WHERE index_code='000905'").fetchall()
+    assert [r[0] for r in zz500] == ["600519"]

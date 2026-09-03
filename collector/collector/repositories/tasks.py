@@ -50,11 +50,18 @@ class TaskRepository:
     def __init__(self, conn):
         self.conn = conn
 
-    def list_enabled(self):
+    def _list(self, sql):
         with self.conn.cursor() as cur:
-            cur.execute(f"SELECT {','.join(TASK_COLS)} FROM collector_task WHERE enabled")
+            cur.execute(sql)
             rows = cur.fetchall()
         return [_parse_row(row) for row in rows]
+
+    def list_enabled(self):
+        return self._list(f"SELECT {','.join(TASK_COLS)} FROM collector_task WHERE enabled")
+
+    def list_all(self):
+        """列出全部任务（含停用），供 `cli list` 默认模式展示。"""
+        return self._list(f"SELECT {','.join(TASK_COLS)} FROM collector_task")
 
     def all_codes(self) -> set[str]:
         """DB 中已存在的全部 task_code（含停用），供 seed reconcile 判定残留任务。"""

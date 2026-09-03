@@ -5,7 +5,8 @@ import time
 import psycopg
 
 from collector.executor.executor import AllSourcesFailed, StoreError
-from collector.model.run import STATUS_SKIPPED, RunResult
+from collector.model.run import STATUS_FAILED, STATUS_SKIPPED, RunResult
+from collector.repositories.runs import RunRepository
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,7 @@ class TaskRunner:
         day = run_date(params)
         if task.trading_day_gated and not force and not self.calendar.is_trading_day(day):
             logger.info("任务 %s 跳过：%s 非交易日", task.task_code, day)
+            self._record_skip(task, mode, params, "非交易日")
             return RunResult(task.task_code, mode, STATUS_SKIPPED, message="非交易日")
 
         retry_max = getattr(task, "retry_max", None)
@@ -64,10 +66,16 @@ class TaskRunner:
                 acquired = conn.execute(LOCK_SQL, (task.task_code,)).fetchone()[0]
                 if not acquired:
                     logger.info("任务 %s 跳过：上一实例运行中", task.task_code)
+                    RunRepository(conn).record(
+                        task.task_code, mode, STATUS_SKIPPED, params=params, message="上一实例运行中"
+                    )
                     return RunResult(task.task_code, mode, STATUS_SKIPPED, message="上一实例运行中")
+                # FR-10：执行前置 running 行，executor 成功/失败时回填 finished_at 与终态；
+                # 未知任务（start_run 返回 None）则退回 executor 的旧 record 路径。
+                run_id = RunRepository(conn).start_run(task.task_code, mode, params)
                 try:
                     # 熔断计数按任务运行而非尝试次数：重试不再放大 consecutive_failures。
-                    return self.executor.run(task, mode, params, conn, count_failures=(attempt == 0))
+                    return self.executor.run(task, mode, params, conn, count_failures=(attempt == 0), run_id=run_id)
                 except (AllSourcesFailed, StoreError) as e:
                     last_error = e
                     if attempt >= retry_max:
@@ -75,7 +83,26 @@ class TaskRunner:
                     delay = delays[attempt]
                     logger.warning("任务 %s 第 %d 次运行失败：%s；%ds 后重试", task.task_code, attempt + 1, e, delay)
                     time.sleep(delay)
+                except Exception as e:
+                    # converter 等原生异常逃逸不会触发 executor 的 finish_run：这里兜底把 running 行
+                    # 置为 failed，避免留下永远 running 的悬挂记录（FR-10 状态可观测）。
+                    self._abort_run(conn, run_id, e)
+                    raise
                 finally:
                     conn.execute(UNLOCK_SQL, (task.task_code,))
         logger.error("任务 %s 重试 %d 次后仍失败：%s", task.task_code, retry_max, last_error)
         raise last_error
+
+    def _record_skip(self, task, mode, params, message):
+        """skipped（非交易日）也落一条 task_run，满足 FR-10「每次执行记录」。"""
+        with psycopg.connect(self.database_url) as conn:
+            RunRepository(conn).record(task.task_code, mode, STATUS_SKIPPED, params=params, message=message)
+
+    def _abort_run(self, conn, run_id, error):
+        """意外异常逃逸时兜底把 running 行置 failed；连接可能处于 aborted，失败只记日志不掩盖原异常。"""
+        if run_id is None:
+            return
+        try:
+            RunRepository(conn).finish_run(run_id, STATUS_FAILED, error=str(error), message="执行异常")
+        except Exception:
+            logger.exception("任务运行异常后回填 failed 状态失败（run_id=%s）", run_id)

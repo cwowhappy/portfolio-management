@@ -6,6 +6,11 @@ import akshare as ak
 import pandas as pd
 
 from collector.sources.base import Source, SourceError
+from collector.sources.ratelimit import RateLimiter
+
+# StockFinancialSource 并发拉取各报告期前的最小调用间隔（秒）：4 worker 并发 12 期时，
+# 由全局限速器把请求起始时刻错开，避免突发并发触发上游限流。
+FINANCIAL_MIN_INTERVAL = 0.1
 
 INDEX_CODES = {"000016": "上证50", "000300": "沪深300", "000905": "中证500", "399006": "创业板指", "000688": "科创50"}
 
@@ -14,6 +19,16 @@ _DATE_COMPACT = re.compile(r"\d{8}")
 
 def _ts_code(code):
     return code + (".SH" if code.startswith("0") else ".SZ")
+
+
+def _valid_universe_ts_codes(pro):
+    """全 A 有效个股 ts_code 集合：仅沪深正常交易股，剔除 ST/退市/北交所（value-screening P1 口径）。"""
+    basic = pro.stock_basic(list_status="L", fields="ts_code,name")
+    if basic is None or basic.empty:
+        return set()
+    basic = basic[basic["ts_code"].str.endswith((".SH", ".SZ"))]
+    basic = basic[~basic["name"].str.contains("ST|退", na=False)]
+    return set(basic["ts_code"])
 
 
 def normalize_date(value, name="date"):
@@ -264,20 +279,27 @@ class StockFinancialSource(Source):
 
     supports_range = False
 
-    def __init__(self, source_id, pro_factory, periods=12):
+    def __init__(self, source_id, pro_factory, periods=12, limiter=None):
         self.source_id = source_id
         self.pro_factory = pro_factory
         self.periods = periods
+        # FR-11 客户端限速：每个报告期请求前 wait() 一次，全局错开调用起始时刻。
+        self.limiter = limiter if limiter is not None else RateLimiter(min_interval=FINANCIAL_MIN_INTERVAL)
 
     def fetch(self, params):
         pro = self.pro_factory()
         periods = _last_n_periods(self.periods)
+        # 一次取全 A 有效池（剔除 ST/退市/北交所），各期结果按池内股票过滤，与全 A 口径一致。
+        valid = _valid_universe_ts_codes(pro)
 
         def _fetch_period(period):
+            self.limiter.wait()
             df = pro.fina_indicator(period=period)
             if df is None or df.empty:
                 return None
             df = df[df["ts_code"].str.endswith((".SH", ".SZ"))]
+            if valid:
+                df = df[df["ts_code"].isin(valid)]
             return df[
                 [
                     "ts_code",

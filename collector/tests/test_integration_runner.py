@@ -14,7 +14,7 @@ import pytest
 
 from collector.executor.executor import Executor, StoreError
 from collector.executor.selector import SourceSelector
-from collector.model.run import STATUS_FAILED, STATUS_SUCCESS
+from collector.model.run import STATUS_FAILED, STATUS_SKIPPED, STATUS_SUCCESS
 from collector.model.task import Collector
 from collector.scheduler.calendar import TradingCalendar
 from collector.scheduler.runner import TaskRunner
@@ -101,6 +101,57 @@ def test_store_failure_rolls_back_and_retry_uses_fresh_connection(pg_url, pg_con
         "SELECT count(*) FROM valuation_snapshot WHERE trading_day=%s", (dt.date(2026, 8, 28),)
     ).fetchone()[0]
     assert count == 1
+
+
+def test_success_run_records_single_row_with_start_before_finish(pg_url, pg_conn):
+    """C-6/FR-10：一次成功执行先插 running 行、结束回填，单行同时含起止时间。"""
+    _seed_task(pg_conn)
+    task = _task()
+    good = [
+        {
+            "trading_day": dt.date(2026, 8, 28),
+            "pe_median": 15.0,
+            "pb_median": 1.5,
+            "net_breaker_count": 10,
+            "net_breaker_ratio": 0.1,
+        }
+    ]
+    task.converter.convert.return_value = good
+    runner = TaskRunner(pg_url, TradingCalendar(set()), Executor(SourceSelector(), Store()))
+    result = runner.run(task)
+    assert result.status == STATUS_SUCCESS
+
+    rows = pg_conn.execute(
+        "SELECT started_at, finished_at, status FROM collector_task_run r"
+        " JOIN collector_task t ON t.id = r.task_id WHERE t.task_code='itest'"
+    ).fetchall()
+    assert len(rows) == 1
+    started_at, finished_at, status = rows[0]
+    assert status == STATUS_SUCCESS
+    assert started_at is not None and finished_at is not None
+    assert started_at <= finished_at  # running 前置行保证起止分离（时长可算）
+
+
+def test_non_trading_day_skip_records_skipped_row(pg_url, pg_conn):
+    """C-6/FR-10：非交易日 skipped 也要落一条 task_run，不能只 return 不记录。"""
+    _seed_task(pg_conn)
+    task = Collector(
+        "itest",
+        "集成测试",
+        [_DummySource()],
+        MagicMock(),
+        None,
+        target_table="valuation_snapshot",
+        schedule={},
+        trading_day_gated=True,
+    )
+    runner = TaskRunner(pg_url, TradingCalendar(set()), MagicMock())
+    res = runner.run(task)
+    assert res.status == STATUS_SKIPPED
+    rows = pg_conn.execute(
+        "SELECT status FROM collector_task_run r JOIN collector_task t ON t.id = r.task_id WHERE t.task_code='itest'"
+    ).fetchall()
+    assert [r[0] for r in rows] == [STATUS_SKIPPED]
 
 
 def test_upsert_unknown_table_raises_store_error():
