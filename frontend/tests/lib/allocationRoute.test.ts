@@ -48,4 +48,10 @@ describe("allocation 反代路由", () => {
     const init = fetchMock.mock.calls[0][1] as RequestInit;
     expect((init.headers as Record<string, string>).Cookie).toBe("JSESSIONID=abc");
   });
+
+  it("GET 透传 query string 到上游", async () => {
+    fetchMock.mockResolvedValue(new Response("[]", { status: 200 }));
+    await GET(new Request("http://localhost:3000/api/allocation/plans?active=true"), { params: Promise.resolve({ path: ["plans"] }) });
+    expect(fetchMock.mock.calls[0][0]).toBe("http://localhost:8080/api/allocation/plans?active=true");
+  });
 });

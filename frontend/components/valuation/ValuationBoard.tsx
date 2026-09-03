@@ -53,7 +53,13 @@ export default function ValuationBoard() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4" data-testid="stat-grid">
         <StatCard title="全A PE 中位数" value={overview.latestSnapshot?.peMedian ?? null} percentile={overview.pePercentile} />
         <StatCard title="全A PB 中位数" value={overview.latestSnapshot?.pbMedian ?? null} percentile={overview.pbPercentile} />
-        <StatCard title="破净股占比" value={overview.latestSnapshot ? Number((overview.latestSnapshot.netBreakerRatio * 100).toFixed(2)) : null} unit="%" percentile={overview.netBreakerPercentile} />
+        <StatCard
+          title="破净股"
+          value={overview.latestSnapshot?.netBreakerCount ?? null}
+          unit=" 家"
+          caption={overview.latestSnapshot ? `占比 ${(overview.latestSnapshot.netBreakerRatio * 100).toFixed(1)}%` : null}
+          percentile={overview.netBreakerPercentile}
+        />
         <StatCard title="股债利差 (ERP)" value={overview.erp} unit="%" percentile={overview.erpPercentile} />
       </div>
       <div className="mt-6">

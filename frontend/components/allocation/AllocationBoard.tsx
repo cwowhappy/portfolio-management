@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchTemplates, fetchPlans, fetchDeviation } from "@/lib/allocationApi";
 import type { TemplateView, PlanView, DeviationView } from "@/lib/types";
 import DeviationChart from "./DeviationChart";
@@ -13,11 +13,19 @@ export default function AllocationBoard() {
   const [deviation, setDeviation] = useState<DeviationView | null>(null);
   const [editing, setEditing] = useState<PlanView | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const requestSeqRef = useRef(0);
 
   const reload = useCallback(() => {
+    const seq = ++requestSeqRef.current;
     Promise.all([fetchTemplates(), fetchPlans(), fetchDeviation()])
-      .then(([t, p, d]) => { setTemplates(t); setPlans(p); setDeviation(d); })
-      .catch((e) => setError(e instanceof Error ? e.message : "加载失败"));
+      .then(([t, p, d]) => {
+        if (seq !== requestSeqRef.current) return; // 已有更新的 reload，丢弃过期响应
+        setTemplates(t); setPlans(p); setDeviation(d);
+      })
+      .catch((e) => {
+        if (seq !== requestSeqRef.current) return;
+        setError(e instanceof Error ? e.message : "加载失败");
+      });
   }, []);
 
   useEffect(() => { reload(); }, [reload]);

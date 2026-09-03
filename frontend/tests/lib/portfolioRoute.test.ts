@@ -81,6 +81,27 @@ describe("portfolio 反代路由", () => {
     expect(fetchMock.mock.calls[0][0]).toBe("http://localhost:8080/api/portfolio");
   });
 
+  it("GET 透传 query string 到上游（fetchPositions ?groupId= 不被丢弃）", async () => {
+    fetchMock.mockResolvedValue(new Response("[]", { status: 200 }));
+    await GET(req("http://localhost:3000/api/portfolio/positions?groupId=3"), {
+      params: Promise.resolve({ path: ["positions"] }),
+    });
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "http://localhost:8080/api/portfolio/positions?groupId=3",
+    );
+  });
+
+  it("DELETE 透传 query string 到上游", async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
+    await DELETE(
+      req("http://localhost:3000/api/portfolio/positions/5?foo=bar", { method: "DELETE" }),
+      { params: Promise.resolve({ path: ["positions", "5"] }) },
+    );
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "http://localhost:8080/api/portfolio/positions/5?foo=bar",
+    );
+  });
+
   it("GET 透传入站 Cookie 到上游", async () => {
     fetchMock.mockResolvedValue(new Response("[]", { status: 200 }));
     await GET(

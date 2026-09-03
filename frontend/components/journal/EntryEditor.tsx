@@ -45,6 +45,19 @@ export default function EntryEditor({ editing, onSaved, onCancel }: {
     };
     if (!input.title) { setError("标题不能为空"); return; }
     if (!input.content) { setError("内容不能为空"); return; }
+    // stockCode 必填：除非已提供 tradeId（后端可从交易反查标的）
+    if (type === "RESEARCH_NOTE" && !stockCode.trim()) { setError("请填写股票代码"); return; }
+    if (isMemo && !tradeId.trim() && !stockCode.trim()) { setError("请填写股票代码或关联交易 ID"); return; }
+    // targetPrice / stopLoss 必须为正数（填了就要 >0）
+    if (isBuyMemo) {
+      if (targetPrice.trim() !== "" && !(Number(targetPrice) > 0)) { setError("目标价需大于 0"); return; }
+      if (stopLoss.trim() !== "" && !(Number(stopLoss) > 0)) { setError("止损价需大于 0"); return; }
+    }
+    // 复盘：区间必填且 start ≤ end
+    if (isReview) {
+      if (!periodStart || !periodEnd) { setError("请填写复盘区间起止日期"); return; }
+      if (periodStart > periodEnd) { setError("开始日期不能晚于结束日期"); return; }
+    }
     try {
       if (editing) await updateEntry(editing.id, input);
       else await createEntry(input);
@@ -90,8 +103,8 @@ export default function EntryEditor({ editing, onSaved, onCancel }: {
               <option value="QUARTERLY">{PERIOD_TYPE_LABELS.QUARTERLY}</option>
               <option value="ANNUAL">{PERIOD_TYPE_LABELS.ANNUAL}</option>
             </select>
-            <input className="rounded-md border border-[color:var(--color-line)] px-3 py-1.5 text-sm" type="date" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} />
-            <input className="rounded-md border border-[color:var(--color-line)] px-3 py-1.5 text-sm" type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} />
+            <input aria-label="复盘开始" className="rounded-md border border-[color:var(--color-line)] px-3 py-1.5 text-sm" type="date" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} />
+            <input aria-label="复盘结束" className="rounded-md border border-[color:var(--color-line)] px-3 py-1.5 text-sm" type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} />
           </>
         )}
         <input className="rounded-md border border-[color:var(--color-line)] px-3 py-1.5 text-sm" type="date" value={eventDate} onChange={(e) => setEventDate(e.target.value)} />

@@ -4,6 +4,7 @@ import type { NextRequest } from "next/server";
 // 反代路由只依赖 fetch 与 Response，直接测试其代理/降级行为与 no-store 头。
 
 import { GET as marketGet } from "@/app/api/market/[...path]/route";
+import { GET as screeningGet } from "@/app/api/screening/[...path]/route";
 import { GET as healthGet } from "@/app/api/agent/health/route";
 import { GET as statusGet } from "@/app/api/agent/status/route";
 import { GET as valuationGet } from "@/app/api/valuation/[...path]/route";
@@ -72,13 +73,46 @@ describe("market 反代路由", () => {
     expect(res.headers.get("Content-Type")).toBe("text/html");
   });
 
-  it("下游不可达返回 502", async () => {
+  it("下游不可达返回 502（relay 统一兜底）", async () => {
     fetchMock.mockRejectedValue(new Error("ECONNREFUSED"));
     const res = await marketGet(req("http://localhost:3000/api/market/overview"), {
       params: Promise.resolve({ path: ["overview"] }),
     });
     expect(res.status).toBe(502);
-    expect(await res.json()).toEqual({ message: "无法连接行情服务" });
+    expect(await res.json()).toEqual({ message: "无法连接后端服务" });
+  });
+});
+
+describe("screening 反代路由（收编到 relay）", () => {
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    vi.stubGlobal("fetch", fetchMock);
+    fetchMock.mockReset();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("拼路径与查询串并透传状态码", async () => {
+    fetchMock.mockResolvedValue(
+      new Response('{"rows":[]}', { status: 200, headers: { "Content-Type": "application/json" } }),
+    );
+    const res = await screeningGet(
+      reqWithNextUrl("http://localhost:3000/api/screening/stocks?peTtmMax=10&sortBy=pb"),
+    );
+    expect(res.status).toBe(200);
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "http://localhost:8080/api/screening/stocks?peTtmMax=10&sortBy=pb",
+    );
+  });
+
+  it("下游不可达返回 502 统一 JSON", async () => {
+    fetchMock.mockRejectedValue(new Error("ECONNREFUSED"));
+    const res = await screeningGet(reqWithNextUrl("http://localhost:3000/api/screening/stocks"));
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ message: "无法连接后端服务" });
   });
 });
 
@@ -94,11 +128,11 @@ describe("health 反代路由", () => {
     vi.unstubAllGlobals();
   });
 
-  it("下游不可达返回 502 与 degraded", async () => {
+  it("下游不可达返回 502 统一 JSON（relay 兜底）", async () => {
     fetchMock.mockRejectedValue(new Error("ECONNREFUSED"));
     const res = await healthGet();
     expect(res.status).toBe(502);
-    expect(await res.json()).toEqual({ status: "degraded", message: "后端不可达" });
+    expect(await res.json()).toEqual({ message: "无法连接后端服务" });
   });
 
   it("liveness 反代目标是后端 /api/agent/health（无行情探活）", async () => {
@@ -111,6 +145,14 @@ describe("health 反代路由", () => {
     const res = await healthGet();
     expect(res.status).toBe(200);
     expect(fetchMock.mock.calls[0][0]).toBe("http://localhost:8080/api/agent/health");
+  });
+
+  it("health 用 10s 上游超时（比其余 15s 更快兜底）", async () => {
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout");
+    fetchMock.mockResolvedValue(new Response("{}"));
+    await healthGet();
+    expect(timeoutSpy).toHaveBeenCalledWith(10_000);
+    timeoutSpy.mockRestore();
   });
 });
 
@@ -139,11 +181,11 @@ describe("status 反代路由（完整结构，含行情探活）", () => {
     expect(await res.json()).toEqual({ status: "up", llm: {}, market: { ok: true } });
   });
 
-  it("下游不可达返回 502 与 degraded", async () => {
+  it("下游不可达返回 502 统一 JSON（relay 兜底）", async () => {
     fetchMock.mockRejectedValue(new Error("ECONNREFUSED"));
     const res = await statusGet();
     expect(res.status).toBe(502);
-    expect(await res.json()).toEqual({ status: "degraded", message: "后端不可达" });
+    expect(await res.json()).toEqual({ message: "无法连接后端服务" });
   });
 });
 
@@ -173,11 +215,11 @@ describe("valuation 反代路由", () => {
     );
   });
 
-  it("下游不可达返回 502", async () => {
+  it("下游不可达返回 502（relay 统一兜底）", async () => {
     fetchMock.mockRejectedValue(new Error("ECONNREFUSED"));
     const res = await valuationGet(reqWithNextUrl("http://localhost:3000/api/valuation/overview"));
     expect(res.status).toBe(502);
-    expect(await res.json()).toEqual({ message: "无法连接估值服务" });
+    expect(await res.json()).toEqual({ message: "无法连接后端服务" });
   });
 });
 
@@ -228,6 +270,17 @@ describe("conversations 反代路由（收编到 relay）", () => {
     const res = await conversationsGet(new Request("http://localhost:3000/api/conversations"), ctx([]));
     expect(res.status).toBe(502);
     expect(await res.json()).toEqual({ message: "无法连接后端服务" });
+  });
+
+  it("GET 透传 query string 到上游", async () => {
+    fetchMock.mockResolvedValue(new Response("[]", { status: 200 }));
+    await conversationsGet(
+      new Request("http://localhost:3000/api/conversations/t1/messages?limit=10"),
+      ctx(["t1", "messages"]),
+    );
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "http://localhost:8080/api/conversations/t1/messages?limit=10",
+    );
   });
 });
 

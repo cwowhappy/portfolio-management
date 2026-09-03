@@ -101,6 +101,16 @@ describe("反代中继（lib/proxy）", () => {
     expect(init.signal).toBeInstanceOf(AbortSignal);
   });
 
+  it("path 形式：可覆盖超时时长（health 用 10s）", async () => {
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout");
+    const fetchSpy = vi.fn().mockResolvedValue(new Response("{}"));
+    vi.stubGlobal("fetch", fetchSpy);
+    const req = { headers: new Headers() } as unknown as Request;
+    await relay("/api/agent/health", "GET", req, undefined, 10_000);
+    expect(timeoutSpy).toHaveBeenCalledWith(10_000);
+    timeoutSpy.mockRestore();
+  });
+
   it("path 形式：后端不可达（fetch 抛错）→ 502 JSON", async () => {
     vi.stubGlobal(
       "fetch",

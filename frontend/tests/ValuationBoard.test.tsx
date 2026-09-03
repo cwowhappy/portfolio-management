@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import ValuationBoard from "@/components/valuation/ValuationBoard";
 import * as valuationApi from "@/lib/valuationApi";
 
@@ -49,6 +49,15 @@ describe("ValuationBoard", () => {
     render(<ValuationBoard />);
     expect(await screen.findByText("市场估值仪表盘")).toBeTruthy();
     expect(screen.getByText(/不构成投资建议/)).toBeTruthy();
+  });
+
+  it("渲染破净股数量与占比（netBreakerCount + netBreakerRatio）", async () => {
+    render(<ValuationBoard />);
+    await screen.findByText("市场估值仪表盘");
+    const grid = screen.getByTestId("stat-grid");
+    expect(within(grid).getByText("破净股")).toBeTruthy();
+    expect(within(grid).getByText(/220/)).toBeTruthy();
+    expect(within(grid).getByText(/占比 4\.1%/)).toBeTruthy();
   });
 
   it("加载失败时显示错误文案", async () => {

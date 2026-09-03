@@ -119,6 +119,35 @@ describe("ThreadArea", () => {
     expect(mocks.runAgent).not.toHaveBeenCalled();
   });
 
+  it("AI 请求遇 401（如使用中被停用）触发 onUnauthorized 跳登录", async () => {
+    const onUnauthorized = vi.fn();
+    mocks.runAgent.mockRejectedValue(Object.assign(new Error("Unauthorized"), { status: 401 }));
+    render(
+      <RuntimeProvider>
+        <ThreadArea llmReady={null} onUnauthorized={onUnauthorized} />
+      </RuntimeProvider>,
+    );
+    await waitFor(() => expect(screen.getByText("问行情 · 看走势 · 读财报")).toBeTruthy());
+    fireEvent.click(screen.getByText(/贵州茅台/));
+    await waitFor(() => expect(onUnauthorized).toHaveBeenCalled());
+    // 401 不当作普通错误横幅展示（应走登录跳转）
+    expect(screen.queryByText(/Unauthorized/)).toBeNull();
+  });
+
+  it("非 401 错误仍展示 sendError 且不跳登录", async () => {
+    const onUnauthorized = vi.fn();
+    mocks.runAgent.mockRejectedValue(new Error("上游限流"));
+    render(
+      <RuntimeProvider>
+        <ThreadArea llmReady={null} onUnauthorized={onUnauthorized} />
+      </RuntimeProvider>,
+    );
+    await waitFor(() => expect(screen.getByText("问行情 · 看走势 · 读财报")).toBeTruthy());
+    fireEvent.click(screen.getByText(/贵州茅台/));
+    expect(await screen.findByText(/上游限流/)).toBeTruthy();
+    expect(onUnauthorized).not.toHaveBeenCalled();
+  });
+
   it("渲染用户消息", async () => {
     mocks.agent.messages = [agentMessage({ id: "u1", role: "user", content: "你好" })];
     renderThread();

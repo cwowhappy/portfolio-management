@@ -331,7 +331,22 @@ function Composer({
 
 // ———— 会话区 ————
 
-export default function ThreadArea({ llmReady }: { llmReady: boolean | null }) {
+/** 判断 AI 请求错误是否为登录失效（401），用于触发跳登录（对齐 /api/auth/me 的 401 处理）。 */
+function isUnauthorizedError(e: unknown): boolean {
+  if (typeof e !== "object" || e === null) return false;
+  const err = e as { status?: unknown; response?: { status?: unknown }; cause?: { status?: unknown }; message?: unknown };
+  const status =
+    [err.status, err.response?.status, err.cause?.status].find(
+      (s): s is number => typeof s === "number",
+    ) ?? null;
+  if (status === 401) return true;
+  const msg = typeof err.message === "string" ? err.message : "";
+  return /\b401\b|unauthorized/i.test(msg);
+}
+
+export default function ThreadArea({ llmReady, onUnauthorized }: {
+  llmReady: boolean | null; onUnauthorized?: () => void;
+}) {
   const { currentThreadId, persistMessages, setRunning } = useChatRuntime();
   const { agent, isReady } = useAgent({
     agentId: AGENT_ID,
@@ -368,10 +383,16 @@ export default function ThreadArea({ llmReady }: { llmReady: boolean | null }) {
       try {
         await copilotkit.runAgent({ agent });
       } catch (e) {
+        // 登录失效（如使用中被停用）：触发上层跳登录，与 /api/auth/me 的 401 处理一致，
+        // 不再作为普通错误横幅展示。
+        if (isUnauthorizedError(e)) {
+          onUnauthorized?.();
+          return;
+        }
         setSendError(e instanceof Error ? e.message : "请求失败，请稍后重试");
       }
     },
-    [agent, copilotkit, isReady],
+    [agent, copilotkit, isReady, onUnauthorized],
   );
 
   // 历史回灌：真实 agent 就绪后，把服务端历史种回去（后端 server-side-memory=false）。
