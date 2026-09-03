@@ -1,5 +1,6 @@
 task_code: index_constituent
 task_name: 指数成分股
+# 备源后置：暂为单源（tushare index_weight），后续补 akshare 备源
 source_ids:
   - { source_id: index_constituent, type: plugin, class: index_constituent }
 converter: field_mapping_constituent

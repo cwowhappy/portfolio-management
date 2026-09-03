@@ -1,5 +1,6 @@
 task_code: index_valuation
 task_name: 指数估值(含股息率)
+# 备源后置：暂为单源（tushare index_dailybasic），后续补 akshare 备源
 source_ids:
   - { source_id: index_valuation, type: plugin, class: index_valuation }
 converter: field_mapping_index

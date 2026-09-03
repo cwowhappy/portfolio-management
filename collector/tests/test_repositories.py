@@ -79,6 +79,13 @@ def test_get_parses_null_jsonb_columns_as_none():
     assert row["source_ids"] == [{"source_id": "a"}]
 
 
+def test_upsert_sql_updates_enabled_on_conflict():
+    """C-1：ON CONFLICT DO UPDATE 必须含 enabled=EXCLUDED.enabled，否则声明式启停失效。"""
+    from collector.repositories.tasks import UPSERT_TASK
+
+    assert "enabled=EXCLUDED.enabled" in UPSERT_TASK
+
+
 def test_upsert_serializes_jsonb_and_commits():
     conn = MagicMock()
     cur = conn.cursor.return_value.__enter__.return_value

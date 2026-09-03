@@ -166,3 +166,43 @@ def test_industry_universe_empty_result_fails_min_rows_hard(mocker):
     validator = RuleValidator([{"check": "min_rows", "value": 1, "level": "hard"}])
     with pytest.raises(SourceError, match="行数 0 < 1"):
         validator.validate(records)
+
+
+# ---------------------------------------------------------------- C-3.2 指数股息率 dividend_fetch
+
+
+def test_make_index_dividend_fetch_returns_weighted_non_none(mocker):
+    """真实股息率拉取：成分股权重 × dv_ttm 加权均值，返回非 None。"""
+    from collector.sources.plugins import make_index_dividend_fetch
+
+    pro = mocker.Mock()
+    pro.trade_cal.return_value = pd.DataFrame({"cal_date": ["20260828"], "is_open": [1]})
+    pro.index_weight.return_value = pd.DataFrame({"con_code": ["600519.SH", "000001.SZ"], "weight": [60.0, 40.0]})
+    pro.daily_basic.return_value = pd.DataFrame({"ts_code": ["600519.SH", "000001.SZ"], "dv_ttm": [2.0, 3.0]})
+    fetch = make_index_dividend_fetch(pro_factory=lambda: pro)
+    value = fetch("000300", "20260801", "20260828")
+    assert value is not None
+    assert value == 2.4  # (60*2 + 40*3) / 100
+
+
+def test_make_index_dividend_fetch_falls_back_default_when_no_data(mocker):
+    """积分不足/无数据时不崩，回退默认值（非 None）。"""
+    from collector.sources.plugins import make_index_dividend_fetch
+
+    pro = mocker.Mock()
+    pro.trade_cal.return_value = pd.DataFrame({"cal_date": ["20260828"], "is_open": [1]})
+    pro.index_weight.return_value = pd.DataFrame(columns=["con_code", "weight"])
+    pro.daily_basic.return_value = pd.DataFrame(columns=["ts_code", "dv_ttm"])
+    fetch = make_index_dividend_fetch(pro_factory=lambda: pro, default=0.0)
+    assert fetch("000300", "20260801", "20260828") == 0.0
+
+
+def test_make_index_dividend_fetch_swallows_api_exception(mocker):
+    """tushare 抛错（积分/限流）时也应返回默认值，不向外崩。"""
+    from collector.sources.plugins import make_index_dividend_fetch
+
+    def boom_pro():
+        raise RuntimeError("tushare 403")
+
+    fetch = make_index_dividend_fetch(pro_factory=boom_pro, default=0.0)
+    assert fetch("000300", "20260801", "20260828") == 0.0

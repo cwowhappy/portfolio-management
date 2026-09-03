@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 import akshare as ak
 import pandas as pd
 
-from collector.sources.base import Source
+from collector.sources.base import Source, SourceError
 
 INDEX_CODES = {"000016": "上证50", "000300": "沪深300", "000905": "中证500", "399006": "创业板指", "000688": "科创50"}
 
@@ -150,9 +150,26 @@ class TreasuryCurveSource(Source):
             cur.execute("SELECT max(trading_day) FROM treasury_yield_curve")
             return cur.fetchone()[0]
 
+    def _range_bounds(self, params):
+        """显式 start/end 区间（backfill）→ (start_date, end_date)；无区间 → (None, None)。
+
+        区间以 params 为准并优先于 DB watermark：backfill 需按调用方指定区间回填，
+        而不是被 DB 已入库最大交易日静默改写语义。start/end 可只给一端。
+        """
+        start_s = params.get("start") and normalize_date(params["start"], "start")
+        end_s = params.get("end") and normalize_date(params["end"], "end")
+        if not start_s and not end_s:
+            return None, None
+        start = dt.datetime.strptime(start_s, "%Y%m%d").date() if start_s else None
+        end = dt.datetime.strptime(end_s, "%Y%m%d").date() if end_s else None
+        return start, end
+
     def fetch(self, params):
-        since = self._max_trading_day()
         df = ak.bond_zh_us_rate()
+        start, end = self._range_bounds(params)
+        # 有显式区间时以区间为准，不再以 DB max(trading_day) 做增量下界；
+        # 无区间（日常增量调度）才回退到 watermark 行为。
+        since = None if start is not None or end is not None else self._max_trading_day()
         rows = []
         for _, r in df.iterrows():
             day = r["日期"]
@@ -162,6 +179,10 @@ class TreasuryCurveSource(Source):
                 day = dt.date.fromisoformat(str(day))
             if since is not None and day <= since:
                 continue  # 增量：只拉入库最大交易日之后的行
+            if start is not None and day < start:
+                continue
+            if end is not None and day > end:
+                continue
             for term, col in TERMS:
                 if col in df.columns and pd.notna(r[col]):
                     rows.append({"trading_day": day, "term": term, "yield": float(r[col])})
@@ -311,3 +332,105 @@ class StockFinancialSource(Source):
                 "netprofit_yoy",
             ]
         ]
+
+
+class AllASpotBackupSource(Source):
+    """全A估值快照的 tushare 备源（akshare stock_zh_a_spot_em 失败时降级）。
+
+    用 daily_basic 按交易日取全市场估值，与 stock_basic 内接股票名，剔除 ST/退市/北交所；
+    输出列与 akshare spot 同构（代码/名称/市盈率-动态/市净率/总市值），使
+    field_mapping_all_a 与 snapshot calc 无需区分来源。目标日无数据时沿交易日历前溯。
+    """
+
+    supports_range = False
+
+    def __init__(self, source_id, pro_factory):
+        self.source_id = source_id
+        self.pro_factory = pro_factory
+
+    def _open_days(self, pro, day_ymd, lookback=15):
+        """end（含）往前 lookback 个自然日内的开市日，按降序（最近在前）。"""
+        end = dt.datetime.strptime(day_ymd, "%Y%m%d").date()
+        start = end - dt.timedelta(days=lookback)
+        cal = pro.trade_cal(exchange="SSE", start_date=start.strftime("%Y%m%d"), end_date=day_ymd)
+        if cal is None or cal.empty:
+            return []
+        cal = cal[cal["is_open"] == 1]
+        return sorted((str(c) for c in cal["cal_date"]), reverse=True)
+
+    def fetch(self, params):
+        pro = self.pro_factory()
+        target = normalize_date(params.get("date") or dt.date.today(), "date")
+        # 目标日若 daily_basic 尚未发布，沿最近开市日回溯；仍取不到则报 SourceError 触发换源。
+        df = pro.daily_basic(trade_date=target)
+        if df is None or df.empty:
+            day = next((d for d in self._open_days(pro, target) if d < target), None)
+            if day is None:
+                raise SourceError(f"备源 {self.source_id}: 目标日 {target} 无 daily_basic 数据")
+            df = pro.daily_basic(trade_date=day)
+        if df is None or df.empty:
+            raise SourceError(f"备源 {self.source_id}: daily_basic 无数据")
+        basic = pro.stock_basic(list_status="L", fields="ts_code,name")
+        df = df.merge(basic, on="ts_code", how="inner")
+        df = df[df["ts_code"].str.endswith((".SH", ".SZ"))]
+        df = df[~df["name"].str.contains("ST|退", na=False)]
+        df = df.copy()
+        df["代码"] = df["ts_code"].str.split(".").str[0]
+        df["名称"] = df["name"]
+        df["市盈率-动态"] = df["pe_ttm"]
+        df["市净率"] = df["pb"]
+        df["总市值"] = df["total_mv"] * 10000  # tushare 万元 → 元（与 akshare 总市值口径一致）
+        return df[["代码", "名称", "市盈率-动态", "市净率", "总市值"]]
+
+
+def _open_days_desc(pro, end_ymd, lookback=45):
+    """end（含）往前 lookback 自然日内的开市日（trade_cal），按降序。
+
+    lookback 取 45 自然日：index_weight 仅在调仓日发布，需能回溯到最近一个调仓日。
+    """
+    end = dt.datetime.strptime(end_ymd, "%Y%m%d").date()
+    start = end - dt.timedelta(days=lookback)
+    cal = pro.trade_cal(exchange="SSE", start_date=start.strftime("%Y%m%d"), end_date=end_ymd)
+    if cal is None or cal.empty:
+        return []
+    cal = cal[cal["is_open"] == 1]
+    return sorted((str(c) for c in cal["cal_date"]), reverse=True)
+
+
+def _index_dividend_yield(pro, index_code, end_ymd):
+    """指数股息率近似：index_weight 最新成分权重 × daily_basic dv_ttm 的加权均值（口径 %）。
+
+    index_weight 不带 trade_date（与 IndexConstituentSource 一致）取最新生效权重；
+    个股 dv_ttm 在 end（含）最近有数据的开市日取一次。任一步无数据返回 None（调用方回退默认）。
+    """
+    weights = pro.index_weight(index_code=_ts_code(index_code))
+    if weights is None or weights.empty or "con_code" not in weights.columns or "weight" not in weights.columns:
+        return None
+    for day in _open_days_desc(pro, end_ymd):
+        basic = pro.daily_basic(trade_date=day, fields="ts_code,dv_ttm")
+        if basic is None or basic.empty:
+            continue
+        merged = weights.merge(basic, left_on="con_code", right_on="ts_code", how="inner")
+        merged = merged.dropna(subset=["weight", "dv_ttm"])
+        merged = merged[merged["dv_ttm"] > 0]
+        if merged.empty:
+            continue
+        return round(float((merged["weight"] * merged["dv_ttm"]).sum() / merged["weight"].sum()), 4)
+    return None
+
+
+def make_index_dividend_fetch(pro_factory, default=0.0):
+    """构造 IndexValuationSource 的 dividend_fetch：(index_code, start, end) -> float。
+
+    真实拉取 tushare 成分股权重×dv_ttm 估算指数股息率；积分不足/无数据时回退
+    default（默认 0.0），保证 dividend_yield 不为 None 且不崩。
+    """
+
+    def fetch(index_code, start, end):
+        try:
+            value = _index_dividend_yield(pro_factory(), index_code, end or start)
+        except Exception:
+            value = None
+        return default if value is None else value
+
+    return fetch

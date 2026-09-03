@@ -1,5 +1,6 @@
 task_code: industry_valuation
 task_name: 行业加权估值
+# 备源后置：暂为单源（industry_universe 复合源），后续补全A快照备源
 source_ids:
   - { source_id: industry_universe, type: plugin, class: industry_universe }
 converter: field_mapping_industry

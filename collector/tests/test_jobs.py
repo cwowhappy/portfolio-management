@@ -31,6 +31,8 @@ def test_assemble_collector_wires_registries():
 
 def test_seed_tasks_upserts():
     conn = MagicMock()
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.fetchall.return_value = []  # reconcile 查询：无残留任务
     seed_tasks(
         conn,
         [
@@ -52,6 +54,17 @@ def test_seed_tasks_upserts():
     )
     conn.cursor.return_value.__enter__.return_value.execute.assert_called()
     conn.commit.assert_called()
+
+
+def test_seed_tasks_disables_stale_tasks():
+    """seed reconcile：DB 中存在但不在当前 YAML 集合的 task 被停用（enabled=false）。"""
+    conn = MagicMock()
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.fetchall.return_value = [("t",), ("stale",)]  # all_codes 返回两个，其中 stale 不在 defs
+    seed_tasks(conn, [dict(_valid_task_def(), task_code="t")])
+    disable_calls = [c for c in cur.execute.call_args_list if "UPDATE collector_task SET enabled=false" in c.args[0]]
+    assert len(disable_calls) == 1
+    assert disable_calls[0].args[1] == ("stale",)
 
 
 def test_assemble_collector_validator_none_ok():
@@ -196,8 +209,11 @@ def test_seed_tasks_unknown_key_fails():
 def test_seed_tasks_real_yaml_defs_pass():
     """真实 8 个任务 YAML 必须通过键校验（封闭契约与存量配置一一对应）。"""
     conn = MagicMock()
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.fetchall.return_value = []  # reconcile 查询：无残留任务
     seed_tasks(conn, load_task_defs(str(TASKS_DIR)))
-    assert conn.cursor.return_value.__enter__.return_value.execute.call_count == 8
+    # 8 次 upsert + 1 次 reconcile all_codes 查询（无残留则不额外 disable）
+    assert cur.execute.call_count == 9
 
 
 # ---------------------------------------------------------------- S1 调度属性 / S3 异常兜底

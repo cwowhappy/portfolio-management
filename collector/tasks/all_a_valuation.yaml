@@ -1,7 +1,9 @@
 task_code: all_a_valuation
 task_name: 全A估值快照
+# 主源 akshare spot；备源 all_a_spot_backup（tushare daily_basic）在 akshare 失败时降级
 source_ids:
   - { source_id: akshare_spot_em, type: akshare, call: stock_zh_a_spot_em }
+  - { source_id: all_a_spot_backup, type: plugin, class: all_a_spot_backup }
 converter: field_mapping_all_a
 calc: snapshot
 validator:
