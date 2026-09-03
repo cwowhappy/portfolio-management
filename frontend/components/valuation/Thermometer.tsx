@@ -1,6 +1,6 @@
 function tier(value: number): { color: string; label: string } {
   if (value < 30) return { color: "var(--color-down)", label: "低估" };
-  if (value <= 70) return { color: "var(--color-amber)", label: "中性" };
+  if (value <= 70) return { color: "var(--color-accent)", label: "中性" };
   return { color: "var(--color-up)", label: "高估" };
 }
 

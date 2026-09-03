@@ -16,7 +16,7 @@ const statusLabel: Record<AdminUserView["status"], string> = {
 };
 
 const statusClass: Record<AdminUserView["status"], string> = {
-  PENDING: "text-[color:var(--color-amber)]",
+  PENDING: "text-[color:var(--color-accent)]",
   APPROVED: "text-[color:var(--color-down)]",
   REJECTED: "text-[color:var(--color-up)]",
 };

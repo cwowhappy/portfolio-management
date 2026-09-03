@@ -21,13 +21,13 @@ describe("Thermometer", () => {
     expect(screen.getByText("20")).toBeTruthy();
     expect(screen.getByText(/低估/)).toBeTruthy();
   });
-  it("30 边界为中性档（amber）", () => {
+  it("30 边界为中性档（cyan）", () => {
     const { container } = render(<Thermometer value={30} />);
     expect(screen.getByText("30")).toBeTruthy();
     expect(screen.getByText(/中性/)).toBeTruthy();
     expect(barWidth(container)).toBe("30%");
   });
-  it("70 边界为中性档（amber）", () => {
+  it("70 边界为中性档（cyan）", () => {
     const { container } = render(<Thermometer value={70} />);
     expect(screen.getByText("70")).toBeTruthy();
     expect(screen.getByText(/中性/)).toBeTruthy();

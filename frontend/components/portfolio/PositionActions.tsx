@@ -137,7 +137,7 @@ export default function PositionActions({ position, onChanged }: { position: Pos
       <div className="flex flex-wrap items-center gap-1.5 text-sm">
         <input className={`${inputClass} w-20`} placeholder="价" value={price} onChange={(e) => setPrice(e.target.value)} aria-label="卖价" />
         <input className={`${inputClass} w-20`} placeholder="量" value={quantity} onChange={(e) => setQuantity(e.target.value)} aria-label="卖量" />
-        <button className="rounded-md bg-[color:var(--color-amber)] px-3 py-1.5 text-white" onClick={onSell} disabled={busy}>
+        <button className="rounded-md bg-[color:var(--color-accent)] px-3 py-1.5 text-white" onClick={onSell} disabled={busy}>
           卖出
         </button>
       </div>
