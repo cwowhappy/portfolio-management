@@ -50,6 +50,13 @@ def test_all_yaml_tasks_assemble():
         assert make_trigger(c.schedule) is not None
 
 
+def test_all_a_valuation_yaml_has_tushare_backup_source():
+    """C-3.1：all_a_valuation 主源 akshare_spot_em + 备源 all_a_spot_backup（降级）。"""
+    defs = {d["task_code"]: d for d in load_task_defs(str(TASKS_DIR))}
+    sources = [s["source_id"] for s in defs["all_a_valuation"]["source_ids"]]
+    assert sources == ["akshare_spot_em", "all_a_spot_backup"]
+
+
 def test_make_trigger_cron():
     trigger = make_trigger({"type": "cron", "cron": "30 15 * * 1-5"})
     assert isinstance(trigger, CronTrigger)

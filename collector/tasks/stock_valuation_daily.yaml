@@ -1,5 +1,6 @@
 task_code: stock_valuation_daily
 task_name: 个股估值日快照
+# 备源后置：暂为单源（tushare daily_basic），后续补 akshare 备源
 source_ids:
   - { source_id: stock_valuation_daily, type: plugin, class: stock_valuation_daily }
 converter: field_mapping_stock_valuation

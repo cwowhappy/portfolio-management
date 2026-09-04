@@ -25,11 +25,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class PortfolioApplicationService {
+
+    private static final Logger log = LoggerFactory.getLogger(PortfolioApplicationService.class);
 
     private final PortfolioRepository repository;
     private final MarketDataService marketDataService;
@@ -60,10 +64,13 @@ public class PortfolioApplicationService {
     public List<GroupView> groups(Long userId) {
         Portfolio p = getOrCreatePortfolio(userId);
         return repository.findGroupsByPortfolioId(p.id()).stream()
-                .map(g -> GroupView.from(g,
-                        repository.findPositionsByGroupId(g.id()).size(),
-                        cashBalance(g.id(), repository.findPositionsByGroupId(g.id()),
-                                repository.findCashTransactionsByGroupId(g.id()))))
+                .map(g -> {
+                    var groupPositions = repository.findPositionsByGroupId(g.id());
+                    return GroupView.from(g,
+                            openPositions(groupPositions).size(),
+                            cashBalance(g.id(), groupPositions,
+                                    repository.findCashTransactionsByGroupId(g.id())));
+                })
                 .toList();
     }
 
@@ -82,6 +89,10 @@ public class PortfolioApplicationService {
         if (!repository.findPositionsByGroupId(groupId).isEmpty()) {
             throw new PortfolioException(PortfolioErrorCode.GROUP_NOT_EMPTY, "分组内还有持仓，请先清空");
         }
+        if (!repository.findCashTransactionsByGroupId(groupId).isEmpty()) {
+            // 防 ON DELETE CASCADE 静默删光整组现金流水 → 账户现金账本消失
+            throw new PortfolioException(PortfolioErrorCode.GROUP_HAS_CASH_FLOW, "分组内还有现金流水，请先处理");
+        }
         repository.deleteGroup(groupId);
     }
 
@@ -91,7 +102,7 @@ public class PortfolioApplicationService {
         HoldingGroup group = requireGroup(p.id(), groupId);
         HoldingGroup saved = repository.saveGroup(group.rename(cmd.name().trim()));
         var positions = repository.findPositionsByGroupId(groupId);
-        return GroupView.from(saved, positions.size(),
+        return GroupView.from(saved, openPositions(positions).size(),
                 cashBalance(groupId, positions, repository.findCashTransactionsByGroupId(groupId)));
     }
 
@@ -161,17 +172,28 @@ public class PortfolioApplicationService {
     public PositionView editTrade(Long userId, Long positionId, Long tradeId, EditTradeCommand cmd) {
         Portfolio p = getOrCreatePortfolio(userId);
         var position = requirePosition(p.id(), positionId);
+        Long targetGroupId = cmd.groupId();
         Trade trade = repository.findTradeById(tradeId)
                 .orElseThrow(() -> new PortfolioException(PortfolioErrorCode.NOT_FOUND, "交易不存在"));
         // 仅可编辑属于该持仓的买入交易；卖出/他人交易一律不泄露存在性。
         if (!trade.positionId().equals(positionId) || trade.type() != TradeType.BUY) {
             throw new PortfolioException(PortfolioErrorCode.NOT_FOUND, "交易不存在");
         }
+        // FR-A2：编辑买入交易可顺带改所属分组；移动前校验目标分组归属与同代码重复
+        Position base = position;
+        if (!targetGroupId.equals(position.groupId())) {
+            requireGroup(p.id(), targetGroupId);
+            if (repository.findPositionByPortfolioIdAndGroupIdAndStockCode(
+                    p.id(), targetGroupId, position.stockCode()).isPresent()) {
+                throw new PortfolioException(PortfolioErrorCode.INVALID_INPUT, "目标分组已有同代码持仓");
+            }
+            base = position.moveToGroup(targetGroupId, Instant.now());
+        }
         repository.saveTrade(new Trade(
                 trade.id(), positionId, TradeType.BUY,
                 cmd.tradeDate(), cmd.price(), cmd.quantity(), cmd.fee(), trade.createdAt()));
 
-        var replayed = replay(position,
+        var replayed = replay(base,
                 repository.findTradesByPositionId(positionId),
                 repository.findDividendsByPositionId(positionId));
         var saved = repository.savePosition(replayed);
@@ -211,32 +233,37 @@ public class PortfolioApplicationService {
         return Position.reconstitute(original.id(), original.portfolioId(), original.groupId(),
                 original.stockCode(), original.stockName(),
                 acc.quantity(), acc.costBasis(), acc.totalBuyCost(), acc.cumulativeCashDividend(),
-                acc.realizedPnl(), acc.netCashFlow(), original.createdAt(), Instant.now());
+                acc.realizedPnl(), acc.netCashFlow(), original.createdAt(), Instant.now(), original.version());
     }
 
     @Transactional
     public PositionView addCashDividend(Long userId, CashDividendCommand cmd) {
         Portfolio p = getOrCreatePortfolio(userId);
         var position = requirePosition(p.id(), cmd.positionId());
-        BigDecimal total = cmd.cashPerShare().multiply(position.quantity());
-        var updated = position.applyCashDividend(total);
-        repository.savePosition(updated);
         repository.saveDividend(new Dividend(
-                null, updated.id(), DividendType.CASH,
+                null, position.id(), DividendType.CASH,
                 cmd.exDate(), cmd.cashPerShare(), null, Instant.now()));
-        return positionView(updated);
+        // 与 editTrade 同一 replay 路径：按除息日当时数量重放，避免补录历史分红后账本漂移
+        var replayed = replay(position,
+                repository.findTradesByPositionId(position.id()),
+                repository.findDividendsByPositionId(position.id()));
+        var saved = repository.savePosition(replayed);
+        return positionView(saved);
     }
 
     @Transactional
     public PositionView addStockDividend(Long userId, StockDividendCommand cmd) {
         Portfolio p = getOrCreatePortfolio(userId);
         var position = requirePosition(p.id(), cmd.positionId());
-        var updated = position.applyStockDividend(cmd.stockRatio());
-        repository.savePosition(updated);
         repository.saveDividend(new Dividend(
-                null, updated.id(), DividendType.STOCK,
+                null, position.id(), DividendType.STOCK,
                 cmd.exDate(), null, cmd.stockRatio(), Instant.now()));
-        return positionView(updated);
+        // 与 editTrade 同一 replay 路径：按除息日当时数量重放
+        var replayed = replay(position,
+                repository.findTradesByPositionId(position.id()),
+                repository.findDividendsByPositionId(position.id()));
+        var saved = repository.savePosition(replayed);
+        return positionView(saved);
     }
 
     @Transactional
@@ -263,22 +290,24 @@ public class PortfolioApplicationService {
         if (groupId != null) {
             requireGroup(p.id(), groupId);
         }
-        List<Position> list = groupId == null
+        List<Position> list = openPositions(groupId == null
                 ? repository.findPositionsByPortfolioId(p.id())
-                : repository.findPositionsByGroupId(groupId);
-        return list.stream().map(this::positionView).toList();
+                : repository.findPositionsByGroupId(groupId));
+        Map<String, Quote> quotes = batchQuotes(list);
+        return list.stream().map(pos -> PositionView.from(pos, quotes.get(pos.stockCode()))).toList();
     }
 
     public PortfolioOverviewView overview(Long userId) {
         Portfolio p = getOrCreatePortfolio(userId);
         var positions = repository.findPositionsByPortfolioId(p.id());
         var groups = repository.findGroupsByPortfolioId(p.id());
+        Map<String, Quote> quotes = batchQuotes(positions);
         BigDecimal totalAssets = BigDecimal.ZERO, totalCost = BigDecimal.ZERO,
                 totalPnl = BigDecimal.ZERO, todayPnl = BigDecimal.ZERO,
                 cashTotal = BigDecimal.ZERO, totalCashDividend = BigDecimal.ZERO;
 
         for (var pos : positions) {
-            var q = quoteQuietly(pos.stockCode());
+            var q = quotes.get(pos.stockCode());
             totalCost = totalCost.add(pos.totalBuyCost());
             totalCashDividend = totalCashDividend.add(pos.cumulativeCashDividend());
             if (q != null) {
@@ -299,15 +328,16 @@ public class PortfolioApplicationService {
             }
         }
         return new PortfolioOverviewView(totalAssets, totalCost, totalPnl, todayPnl, cashTotal,
-                totalCashDividend, positions.size(), groups.size());
+                totalCashDividend, openPositions(positions).size(), groups.size());
     }
 
     public AssetAllocationView allocation(Long userId) {
         Portfolio p = getOrCreatePortfolio(userId);
-        var positions = repository.findPositionsByPortfolioId(p.id());
+        var positions = openPositions(repository.findPositionsByPortfolioId(p.id()));
+        Map<String, Quote> quotes = batchQuotes(positions);
         BigDecimal equity = BigDecimal.ZERO;
         for (var pos : positions) {
-            var q = quoteQuietly(pos.stockCode());
+            var q = quotes.get(pos.stockCode());
             if (q != null) {
                 equity = equity.add(BigDecimal.valueOf(q.price()).multiply(pos.quantity()));
             }
@@ -321,25 +351,26 @@ public class PortfolioApplicationService {
         }
         BigDecimal total = equity.add(cash);
         return new AssetAllocationView(List.of(
-                new AssetAllocationView.Slice("权益", equity, ratio(equity, total)),
-                new AssetAllocationView.Slice("现金", cash, ratio(cash, total))));
+                new AssetAllocationView.Slice(AllocationSliceCategory.EQUITY, equity, ratio(equity, total)),
+                new AssetAllocationView.Slice(AllocationSliceCategory.CASH, cash, ratio(cash, total))));
     }
 
     public IndustryDistributionView industryDistribution(Long userId) {
         Portfolio p = getOrCreatePortfolio(userId);
-        var positions = repository.findPositionsByPortfolioId(p.id());
+        var positions = openPositions(repository.findPositionsByPortfolioId(p.id()));
         var mapping = valuationRepository.findAllIndustryMappings().stream()
                 .collect(Collectors.toMap(
                         m -> m.stockCode(), m -> m.industryName(), (a, b) -> a));
 
         Map<String, BigDecimal> byIndustry = new LinkedHashMap<>();
         BigDecimal total = BigDecimal.ZERO;
-        for (var pos : positions) {
+        var mappedPositions = positions.stream()
+                .filter(pos -> mapping.containsKey(pos.stockCode()))
+                .toList();
+        Map<String, Quote> quotes = batchQuotes(mappedPositions);
+        for (var pos : mappedPositions) {
             String industry = mapping.get(pos.stockCode());
-            if (industry == null) {
-                continue; // ETF 或无映射的标的排除
-            }
-            var q = quoteQuietly(pos.stockCode());
+            var q = quotes.get(pos.stockCode());
             if (q == null) {
                 continue;
             }
@@ -357,8 +388,10 @@ public class PortfolioApplicationService {
 
     public ConcentrationView concentration(Long userId) {
         Portfolio p = getOrCreatePortfolio(userId);
-        var positions = repository.findPositionsByPortfolioId(p.id()).stream()
-                .map(this::positionView)
+        var allPositions = openPositions(repository.findPositionsByPortfolioId(p.id()));
+        Map<String, Quote> quotes = batchQuotes(allPositions);
+        var positions = allPositions.stream()
+                .map(pos -> PositionView.from(pos, quotes.get(pos.stockCode())))
                 .filter(v -> v.marketValue() != null)
                 .sorted(Comparator.comparing(PositionView::marketValue).reversed())
                 .toList();
@@ -378,6 +411,35 @@ public class PortfolioApplicationService {
                 .orElseThrow(() -> new PortfolioException(PortfolioErrorCode.NOT_FOUND, "持仓不存在"));
     }
 
+    /** 读侧过滤已清仓（quantity=0）持仓：持仓列表/聚合视图不再展示；
+     *  写路径（buy/sell/editTrade/replay）仍按 id/code 可寻址已清仓行以便重新买入。 */
+    private static List<Position> openPositions(List<Position> positions) {
+        return positions.stream()
+                .filter(p -> p.quantity().signum() > 0)
+                .toList();
+    }
+
+    /** 批量取价：NFR「现价批量查询，禁止逐只串行调用行情」。 */
+    private Map<String, Quote> batchQuotes(List<Position> positions) {
+        List<String> codes = positions.stream().map(Position::stockCode).distinct().toList();
+        if (codes.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Quote> batch = marketDataService.quoteBatch(codes);
+        if (batch != null) {
+            return batch;
+        }
+        // 仅当调用方未实现/打桩 quoteBatch（返回 null）时逐只兜底；生产实现恒返回非 null map
+        Map<String, Quote> fallback = new LinkedHashMap<>();
+        for (String code : codes) {
+            Quote q = quoteQuietly(code);
+            if (q != null) {
+                fallback.put(code, q);
+            }
+        }
+        return fallback;
+    }
+
     private PositionView positionView(Position pos) {
         return PositionView.from(pos, quoteQuietly(pos.stockCode()));
     }
@@ -385,7 +447,15 @@ public class PortfolioApplicationService {
     private Quote quoteQuietly(String code) {
         try {
             return marketDataService.quote(code);
+        } catch (com.portfolio.invest.domain.market.MarketDataException e) {
+            if (com.portfolio.invest.domain.market.MarketDataErrorCode.RATE_LIMITED.equals(e.getCode())) {
+                log.warn("行情限流，跳过 {} 现价（资产/盈亏可能被低估）: {}", code, e.getMessage());
+            } else {
+                log.warn("行情获取失败，跳过 {} 现价（资产/盈亏可能被低估）: code={} msg={}", code, e.getCode(), e.getMessage());
+            }
+            return null;
         } catch (RuntimeException e) {
+            log.warn("行情服务异常，跳过 {} 现价（资产/盈亏可能被低估）: {}", code, e.getMessage());
             return null;
         }
     }

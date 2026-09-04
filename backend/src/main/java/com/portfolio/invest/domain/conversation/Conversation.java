@@ -30,13 +30,18 @@ public final class Conversation {
         return new Conversation(id, userId, title, createdAt, updatedAt);
     }
 
-    /** 标题仍为默认值且存在首条用户消息时，取前 24 字设为标题（幂等）。 */
+    /** 标题仍为默认值且存在首条用户消息时，取前 24 字设为标题（幂等）。按码点截断，避免劈开代理对。 */
     public Conversation renameIfDefault(String firstUserContent) {
         if (!DEFAULT_TITLE.equals(title) || firstUserContent == null) {
             return this;
         }
         String t = firstUserContent.trim();
-        String next = t.length() > TITLE_MAX ? t.substring(0, TITLE_MAX) : t;
+        if (t.isEmpty()) {
+            return this;
+        }
+        String next = t.codePointCount(0, t.length()) > TITLE_MAX
+                ? t.substring(0, t.offsetByCodePoints(0, TITLE_MAX))
+                : t;
         return next.isEmpty() ? this : new Conversation(id, userId, next, createdAt, updatedAt);
     }
 

@@ -2,6 +2,7 @@ package com.portfolio.invest.infrastructure.persistence;
 
 import com.portfolio.invest.domain.valuation.ValuationRepository;
 import com.portfolio.invest.support.PostgresTestSupport;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
@@ -45,18 +46,20 @@ class ValuationRepositoryImplTest {
                 java.sql.Date.valueOf("2026-08-27"), "000300", "沪深300", new java.math.BigDecimal("12.8"), new java.math.BigDecimal("1.42"), new java.math.BigDecimal("2.35"));
     }
 
+    @DisplayName("查询最新快照")
     @Test
     @Transactional
-    void 查询最新快照() {
+    void givenSeededValuationData_whenFindLatestSnapshot_thenReturned() {
         seed();
         var snapshot = valuationRepository.findLatestSnapshot();
         assertThat(snapshot.tradingDay()).isEqualTo(java.time.LocalDate.of(2026, 8, 27));
         assertThat(snapshot.peMedian()).isEqualByComparingTo("19.14");
     }
 
+    @DisplayName("查询行业估值与国债")
     @Test
     @Transactional
-    void 查询行业估值与国债() {
+    void givenSeededValuationData_whenQueryIndustriesAndTreasury_thenBothReturned() {
         seed();
         var industries = valuationRepository.findIndustryValuationsByDay(java.time.LocalDate.of(2026, 8, 27));
         assertThat(industries).hasSize(1);
@@ -64,9 +67,10 @@ class ValuationRepositoryImplTest {
         assertThat(valuationRepository.findAllTreasuryYields()).hasSize(1);
     }
 
+    @DisplayName("国债只返回10年期")
     @Test
     @Transactional
-    void 国债只返回10年期() {
+    void given10yAnd3yTreasuryRows_whenFindAllTreasuryYields_thenOnly10yReturned() {
         jdbcTemplate.update("INSERT INTO treasury_yield_curve(trading_day, term, yield) VALUES (?, ?, ?)",
                 java.sql.Date.valueOf("2026-08-27"), "10Y", new java.math.BigDecimal("2.21"));
         jdbcTemplate.update("INSERT INTO treasury_yield_curve(trading_day, term, yield) VALUES (?, ?, ?)",
@@ -76,9 +80,10 @@ class ValuationRepositoryImplTest {
         assertThat(yields.get(0).yield10y()).isEqualByComparingTo("2.21");
     }
 
+    @DisplayName("查询全部快照")
     @Test
     @Transactional
-    void 查询全部快照() {
+    void givenSeededSnapshot_whenFindAllSnapshots_thenReturned() {
         seed();
         var snapshots = valuationRepository.findAllSnapshots();
         assertThat(snapshots).hasSize(1);
@@ -86,9 +91,10 @@ class ValuationRepositoryImplTest {
         assertThat(snapshots.get(0).pbMedian()).isEqualByComparingTo("1.68");
     }
 
+    @DisplayName("按代码查询指数估值历史")
     @Test
     @Transactional
-    void 按代码查询指数估值历史() {
+    void givenSeededIndexHistory_whenFindByIndexCode_thenReturned() {
         seed();
         var indexVals = valuationRepository.findIndexValuations("000300");
         assertThat(indexVals).hasSize(1);
@@ -96,9 +102,10 @@ class ValuationRepositoryImplTest {
         assertThat(indexVals.get(0).dividendYield()).isEqualByComparingTo("2.35");
     }
 
+    @DisplayName("查询全部申万行业映射")
     @Test
     @Transactional
-    void 查询全部申万行业映射() {
+    void givenSavedIndustryMapping_whenFindAllMappings_thenReturned() {
         jdbcTemplate.update("INSERT INTO shenwan_industry_mapping(stock_code, stock_name, industry_code, industry_name) VALUES (?, ?, ?, ?)",
                 "600000", "浦发银行", "801780", "银行");
         var mappings = valuationRepository.findAllIndustryMappings();
@@ -108,9 +115,10 @@ class ValuationRepositoryImplTest {
         assertThat(mappings.get(0).industryName()).isEqualTo("银行");
     }
 
+    @DisplayName("空表时最新快照为空")
     @Test
     @Transactional
-    void 空表时最新快照为空() {
+    void givenEmptyTables_whenFindLatestSnapshot_thenNull() {
         assertThat(valuationRepository.findLatestSnapshot()).isNull();
     }
 }

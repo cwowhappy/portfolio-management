@@ -19,6 +19,7 @@ import com.portfolio.invest.domain.market.Quote;
 import com.portfolio.invest.domain.market.StockHit;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /** 缓存装饰器：命中缓存不触发委托；key 按规整后参数；探活绕过缓存。 */
@@ -49,8 +50,9 @@ class CachedMarketDataServiceTest {
         @Override public long probeQuoteLatencyMs() { return target.probeQuoteLatencyMs(); }
     }
 
+    @DisplayName("search按trim后key缓存")
     @Test
-    void search按trim后key缓存() {
+    void whenSearchWithWhitespacePaddedKey_thenCachesByTrimmedKey() {
         StockHit h = new StockHit("600519", "贵州茅台", "SH", "沪A");
         when(delegate.search("茅台")).thenReturn(List.of(h));
         assertThat(service.search(" 茅台 ")).hasSize(1);
@@ -58,16 +60,18 @@ class CachedMarketDataServiceTest {
         verify(delegate, times(1)).search("茅台");
     }
 
+    @DisplayName("kline按归一化参数缓存")
     @Test
-    void kline按归一化参数缓存() {
+    void givenNormalizedKlineParams_whenKlineTwice_thenCached() {
         when(delegate.kline("600519", "day", 60)).thenReturn(List.of());
         service.kline("600519", "day", 60);
         service.kline("600519", "day", 60);
         verify(delegate, times(1)).kline("600519", "day", 60);
     }
 
+    @DisplayName("news按夹取条数缓存")
     @Test
-    void news按夹取条数缓存() {
+    void givenClampedNewsCount_whenNewsTwice_thenCached() {
         when(delegate.news("600519", 10)).thenReturn(List.of());
         service.news("600519", 10);
         service.news("600519", 0);   // 夹取到 10 → 同 key
@@ -77,8 +81,9 @@ class CachedMarketDataServiceTest {
         verify(delegate, times(1)).news("600519", 25);
     }
 
+    @DisplayName("financials按代码缓存")
     @Test
-    void financials按代码缓存() {
+    void givenFinancialsCode_whenFinancialsTwice_thenCached() {
         Financials f = new Financials("600519", "贵州茅台", 21.35, 7.82, List.of());
         when(delegate.financials("600519")).thenReturn(f);
         assertThat(service.financials("600519")).isSameAs(f);
@@ -86,8 +91,9 @@ class CachedMarketDataServiceTest {
         verify(delegate, times(1)).financials("600519");
     }
 
+    @DisplayName("overview缓存")
     @Test
-    void overview缓存() {
+    void whenOverviewCalledTwice_thenCached() {
         MarketOverview o = new MarketOverview("2026-08-18 15:00",
                 List.of(new IndexQuote("sh000001", "上证指数", 3000.1, 10.2, 0.34)));
         when(delegate.overview()).thenReturn(o);
@@ -96,8 +102,9 @@ class CachedMarketDataServiceTest {
         verify(delegate, times(1)).overview();
     }
 
+    @DisplayName("probe绕过缓存")
     @Test
-    void probe绕过缓存() {
+    void whenProbeQuoteLatencyMs_thenBypassesCache() {
         service.quote("600519");
         service.probeQuoteLatencyMs();
         verify(delegate).probeQuoteLatencyMs();

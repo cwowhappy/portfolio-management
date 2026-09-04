@@ -22,9 +22,11 @@ VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 ON CONFLICT (task_code) DO UPDATE SET
   task_name=EXCLUDED.task_name, source_ids=EXCLUDED.source_ids, converter=EXCLUDED.converter,
   calc=EXCLUDED.calc, validator=EXCLUDED.validator, target_table=EXCLUDED.target_table,
-  schedule=EXCLUDED.schedule, trading_day_gated=EXCLUDED.trading_day_gated,
+  schedule=EXCLUDED.schedule, enabled=EXCLUDED.enabled, trading_day_gated=EXCLUDED.trading_day_gated,
   retry_max=EXCLUDED.retry_max, retry_backoff=EXCLUDED.retry_backoff
 """
+
+DISABLE_TASK = "UPDATE collector_task SET enabled=false WHERE task_code=%s"
 
 
 def _parse_json(v):
@@ -48,11 +50,30 @@ class TaskRepository:
     def __init__(self, conn):
         self.conn = conn
 
-    def list_enabled(self):
+    def _list(self, sql):
         with self.conn.cursor() as cur:
-            cur.execute(f"SELECT {','.join(TASK_COLS)} FROM collector_task WHERE enabled")
+            cur.execute(sql)
             rows = cur.fetchall()
         return [_parse_row(row) for row in rows]
+
+    def list_enabled(self):
+        return self._list(f"SELECT {','.join(TASK_COLS)} FROM collector_task WHERE enabled")
+
+    def list_all(self):
+        """列出全部任务（含停用），供 `cli list` 默认模式展示。"""
+        return self._list(f"SELECT {','.join(TASK_COLS)} FROM collector_task")
+
+    def all_codes(self) -> set[str]:
+        """DB 中已存在的全部 task_code（含停用），供 seed reconcile 判定残留任务。"""
+        with self.conn.cursor() as cur:
+            cur.execute("SELECT task_code FROM collector_task")
+            return {row[0] for row in cur.fetchall()}
+
+    def disable(self, task_code: str):
+        """停用任务（enabled=false）：删除 YAML 后 re-seed 使残留任务不再被调度。"""
+        with self.conn.cursor() as cur:
+            cur.execute(DISABLE_TASK, (task_code,))
+        self.conn.commit()
 
     def get(self, task_code: str) -> dict | None:
         with self.conn.cursor() as cur:

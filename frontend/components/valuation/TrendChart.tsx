@@ -1,10 +1,39 @@
 "use client";
 
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
-import type { ValuationSnapshot } from "@/lib/types";
+import type { ValuationSnapshot, IndexValuationSeries } from "@/lib/types";
 
-export default function TrendChart({ snapshots }: { snapshots: ValuationSnapshot[] }) {
-  const data = snapshots.map((s) => ({ day: s.tradingDay, pe: s.peMedian, pb: s.pbMedian }));
+interface TrendPoint {
+  day: string;
+  pe: number | null;
+  pb: number | null;
+}
+
+function toPoints(
+  snapshots: ValuationSnapshot[],
+  indexValuations: IndexValuationSeries[],
+  selectedIndex: string,
+): TrendPoint[] {
+  if (selectedIndex === "market") {
+    return snapshots.map((s) => ({ day: s.tradingDay, pe: s.peMedian, pb: s.pbMedian }));
+  }
+  return indexValuations
+    .filter((p) => p.indexCode === selectedIndex)
+    .slice()
+    .sort((a, b) => a.tradingDay.localeCompare(b.tradingDay))
+    .map((p) => ({ day: p.tradingDay, pe: p.pe, pb: p.pb }));
+}
+
+export default function TrendChart({
+  snapshots,
+  indexValuations = [],
+  selectedIndex = "market",
+}: {
+  snapshots: ValuationSnapshot[];
+  indexValuations?: IndexValuationSeries[];
+  selectedIndex?: string;
+}) {
+  const data = toPoints(snapshots, indexValuations, selectedIndex);
   if (data.length === 0) {
     return (
       <div className="rounded-2xl border border-[color:var(--color-line)] bg-[color:var(--color-panel)]/70 p-5">

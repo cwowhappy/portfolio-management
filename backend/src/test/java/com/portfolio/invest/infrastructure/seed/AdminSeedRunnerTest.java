@@ -12,6 +12,7 @@ import com.portfolio.invest.domain.user.UserRepository;
 import com.portfolio.invest.domain.user.UserRole;
 import com.portfolio.invest.domain.user.UserStatus;
 import java.util.Optional;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
@@ -22,14 +23,16 @@ class AdminSeedRunnerTest {
     private final PasswordEncoder encoder = mock(PasswordEncoder.class);
     private final AdminSeedRunner runner = new AdminSeedRunner(props, repo, encoder);
 
+    @DisplayName("未配置管理员账号时跳过")
     @Test
-    void 未配置管理员账号时跳过() {
+    void givenAdminAccountNotConfigured_whenRun_thenSkips() {
         runner.run(null);
         verify(repo, never()).save(any());
     }
 
+    @DisplayName("仅配置用户名未配置密码时跳过")
     @Test
-    void 仅配置用户名未配置密码时跳过() {
+    void givenOnlyUsernameWithoutPassword_whenRun_thenSkips() {
         props.getAdmin().setUsername("admin");
 
         runner.run(null);
@@ -37,8 +40,9 @@ class AdminSeedRunnerTest {
         verify(repo, never()).save(any());
     }
 
+    @DisplayName("用户名或密码为空白时跳过")
     @Test
-    void 用户名或密码为空白时跳过() {
+    void givenUsernameOrPasswordBlank_whenRun_thenSkips() {
         props.getAdmin().setUsername("   ");
         props.getAdmin().setPassword("admin123");
         runner.run(null);
@@ -50,8 +54,9 @@ class AdminSeedRunnerTest {
         verify(repo, never()).save(any());
     }
 
+    @DisplayName("配置后创建内置管理员")
     @Test
-    void 配置后创建内置管理员() {
+    void givenAdminConfigured_whenRun_thenCreatesBuiltInAdmin() {
         props.getAdmin().setUsername("admin");
         props.getAdmin().setPassword("admin123");
         when(encoder.encode("admin123")).thenReturn("$2a$hash");
@@ -63,8 +68,9 @@ class AdminSeedRunnerTest {
         verify(repo).save(argIsAdmin());
     }
 
+    @DisplayName("用户名已存在时幂等跳过")
     @Test
-    void 用户名已存在时幂等跳过() {
+    void givenUsernameAlreadyExists_whenRun_thenSkipsIdempotently() {
         props.getAdmin().setUsername("admin");
         props.getAdmin().setPassword("admin123");
         when(repo.findByUsername("admin")).thenReturn(Optional.of(

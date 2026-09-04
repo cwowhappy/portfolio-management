@@ -1,25 +1,11 @@
-// 反代筛选 REST：/api/screening/** → 后端 /api/screening/**。
-import { NextRequest } from "next/server";
+// 反代筛选 REST：/api/screening/** → 后端 /api/screening/**（收编到 relay，统一超时/兜底）。
+import type { NextRequest } from "next/server";
+import { relay } from "@/lib/proxy";
 
 export const dynamic = "force-dynamic";
-const BACKEND = process.env.BACKEND_URL ?? "http://localhost:8080";
 
 export async function GET(req: NextRequest) {
   const path = req.nextUrl.pathname.replace(/^\/api\/screening/, "");
   const search = req.nextUrl.search;
-  try {
-    const upstream = await fetch(`${BACKEND}/api/screening${path}${search}`, {
-      headers: { Accept: "application/json" },
-      signal: AbortSignal.timeout(15_000),
-      cache: "no-store",
-    });
-    const text = await upstream.text();
-    return new Response(text, {
-      status: upstream.status,
-      headers: { "Content-Type": upstream.headers.get("Content-Type") ?? "application/json" },
-    });
-  } catch (e) {
-    console.error("[screening proxy] 上游请求失败:", e instanceof Error ? e.message : e);
-    return Response.json({ message: "无法连接筛选服务" }, { status: 502 });
-  }
+  return relay(`/api/screening${path}${search}`, "GET", req);
 }

@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 class MarketHttpDataSourceTest {
@@ -17,8 +18,9 @@ class MarketHttpDataSourceTest {
     private final ObjectMapper mapper = new ObjectMapper();
     private final JsonNode node = mapper.createObjectNode();
 
+    @DisplayName("主源方法委托东财")
     @Test
-    void 主源方法委托东财() {
+    void whenPrimarySourceMethodCalled_thenDelegatesToEastmoney() {
         when(eastmoney.search("茅台")).thenReturn(node);
         assertThat(source.search("茅台")).isSameAs(node);
         when(eastmoney.quote("1.600519")).thenReturn(node);
@@ -33,8 +35,9 @@ class MarketHttpDataSourceTest {
         assertThat(source.overview()).isSameAs(node);
     }
 
+    @DisplayName("兜底方法委托新浪与腾讯")
     @Test
-    void 兜底方法委托新浪与腾讯() {
+    void whenFallbackMethodCalled_thenDelegatesToSinaAndTencent() {
         when(sina.rawQuote("sh", "600519")).thenReturn("txt");
         assertThat(source.rawQuote("sh", "600519")).isEqualTo("txt");
         when(sina.rawIndices()).thenReturn("idx");

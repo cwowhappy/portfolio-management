@@ -11,6 +11,7 @@ public class InvestProperties {
     private Market market = new Market();
     private Admin admin = new Admin();
     private Security security = new Security();
+    private AppCache appCache = new AppCache();
 
     public Llm getLlm() {
         return llm;
@@ -42,6 +43,14 @@ public class InvestProperties {
 
     public void setSecurity(Security security) {
         this.security = security;
+    }
+
+    public AppCache getAppCache() {
+        return appCache;
+    }
+
+    public void setAppCache(AppCache appCache) {
+        this.appCache = appCache;
     }
 
     public static class Llm {
@@ -216,9 +225,40 @@ public class InvestProperties {
     }
 
     public static class Security {
-        /** remember-me 签名 key：生产环境应经 REMEMBER_ME_KEY 覆盖。 */
-        private String rememberMeKey = "invest-agent-remember-me";
+        /** remember-me 签名 key：必须经配置提供，缺失/空白时拒绝启动（去公开兜底 key）。 */
+        private String rememberMeKey = "";
         public String getRememberMeKey() { return rememberMeKey; }
         public void setRememberMeKey(String rememberMeKey) { this.rememberMeKey = rememberMeKey; }
+    }
+
+    /** 应用级共享缓存（ApplicationCache）配置：估值/筛选/探活等结果缓存。 */
+    public static class AppCache {
+        private int maxEntries = 1000;
+        private Duration ttl = Duration.ofMinutes(5);
+        private Duration healthProbeTtl = Duration.ofSeconds(30);
+
+        public int getMaxEntries() {
+            return maxEntries;
+        }
+
+        public void setMaxEntries(int maxEntries) {
+            this.maxEntries = maxEntries;
+        }
+
+        public Duration getTtl() {
+            return ttl;
+        }
+
+        public void setTtl(Duration ttl) {
+            this.ttl = ttl;
+        }
+
+        public Duration getHealthProbeTtl() {
+            return healthProbeTtl;
+        }
+
+        public void setHealthProbeTtl(Duration healthProbeTtl) {
+            this.healthProbeTtl = healthProbeTtl;
+        }
     }
 }

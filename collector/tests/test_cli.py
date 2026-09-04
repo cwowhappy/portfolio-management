@@ -267,18 +267,48 @@ def test_backfill_non_range_source_exits_with_message(mocker, capsys):
 from collector.executor.executor import AllSourcesFailed, StoreError
 
 
-def test_list_prints_enabled_tasks(mocker, capsys):
+def test_list_default_lists_all_tasks_and_shows_last_run(mocker, capsys):
     _, task_repo, _, _ = _cli_mocks(mocker)
-    task_repo.list_enabled.return_value = [
+    task_repo.list_all.return_value = [
         {"task_code": "all_a_valuation", "enabled": True, "schedule": {"type": "cron", "cron": "30 15 * * 1-5"}},
+        {"task_code": "old_task", "enabled": False, "schedule": {"type": "interval", "days": 7}},
     ]
+    run_repo = MagicMock()
+    run_repo.latest_run_status.return_value = {
+        "all_a_valuation": (dt.datetime(2026, 8, 28, 15, 30), "success"),
+        "old_task": (None, None),
+    }
+    mocker.patch("collector.cli.RunRepository", return_value=run_repo)
 
     main(["list"])
 
     out = capsys.readouterr().out
+    # 默认列出全部（含停用）
+    task_repo.list_all.assert_called_once_with()
+    task_repo.list_enabled.assert_not_called()
+    assert "all_a_valuation" in out
+    assert "old_task" in out
+    assert "enabled=False" in out
+    assert "success" in out  # 展示上次运行状态
+    assert "30 15 * * 1-5" in out
+
+
+def test_list_enabled_only_calls_list_enabled(mocker, capsys):
+    _, task_repo, _, _ = _cli_mocks(mocker)
+    task_repo.list_enabled.return_value = [
+        {"task_code": "all_a_valuation", "enabled": True, "schedule": {"type": "cron", "cron": "30 15 * * 1-5"}},
+    ]
+    run_repo = MagicMock()
+    run_repo.latest_run_status.return_value = {"all_a_valuation": (None, None)}
+    mocker.patch("collector.cli.RunRepository", return_value=run_repo)
+
+    main(["list", "--enabled-only"])
+
+    task_repo.list_enabled.assert_called_once_with()
+    task_repo.list_all.assert_not_called()
+    out = capsys.readouterr().out
     assert "all_a_valuation" in out
     assert "enabled=True" in out
-    assert "30 15 * * 1-5" in out
 
 
 def test_history_empty_prints_hint(mocker, capsys):

@@ -331,7 +331,22 @@ function Composer({
 
 // ———— 会话区 ————
 
-export default function ThreadArea({ llmReady }: { llmReady: boolean | null }) {
+/** 判断 AI 请求错误是否为登录失效（401），用于触发跳登录（对齐 /api/auth/me 的 401 处理）。 */
+function isUnauthorizedError(e: unknown): boolean {
+  if (typeof e !== "object" || e === null) return false;
+  const err = e as { status?: unknown; response?: { status?: unknown }; cause?: { status?: unknown }; message?: unknown };
+  const status =
+    [err.status, err.response?.status, err.cause?.status].find(
+      (s): s is number => typeof s === "number",
+    ) ?? null;
+  if (status === 401) return true;
+  const msg = typeof err.message === "string" ? err.message : "";
+  return /\b401\b|unauthorized/i.test(msg);
+}
+
+export default function ThreadArea({ llmReady, onUnauthorized }: {
+  llmReady: boolean | null; onUnauthorized?: () => void;
+}) {
   const { currentThreadId, persistMessages, setRunning } = useChatRuntime();
   const { agent, isReady } = useAgent({
     agentId: AGENT_ID,
@@ -344,6 +359,15 @@ export default function ThreadArea({ llmReady }: { llmReady: boolean | null }) {
   const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 防抖窗口内待写入的快照：供「运行停止立即 flush」与「卸载/切线程 best-effort flush」使用
   const pendingPersist = useRef<{ threadId: string; msgs: Message[] } | null>(null);
+  // 最新 currentThreadId：供防抖定时器到期 / 运行停止 flush 前校验 pending 是否已过期（双保险）
+  const currentThreadIdRef = useRef(currentThreadId);
+  // agent.messages 当前内容归属的线程：成功回灌某线程历史后更新。为 null 表示尚未回灌任何线程。
+  const hydratedThreadIdRef = useRef<string | null>(null);
+
+  // 同步最新线程到 ref，供异步 flush 前比对 pending.threadId
+  useEffect(() => {
+    currentThreadIdRef.current = currentThreadId;
+  }, [currentThreadId]);
 
   // 同步运行状态到 Provider，供 Sidebar 在运行中禁用切换/新建
   useEffect(() => {
@@ -359,24 +383,35 @@ export default function ThreadArea({ llmReady }: { llmReady: boolean | null }) {
       try {
         await copilotkit.runAgent({ agent });
       } catch (e) {
+        // 登录失效（如使用中被停用）：触发上层跳登录，与 /api/auth/me 的 401 处理一致，
+        // 不再作为普通错误横幅展示。
+        if (isUnauthorizedError(e)) {
+          onUnauthorized?.();
+          return;
+        }
         setSendError(e instanceof Error ? e.message : "请求失败，请稍后重试");
       }
     },
-    [agent, copilotkit, isReady],
+    [agent, copilotkit, isReady, onUnauthorized],
   );
 
-  // 历史回灌：真实 agent 就绪后，把服务端历史种回去（后端 server-side-memory=false）
+  // 历史回灌：真实 agent 就绪后，把服务端历史种回去（后端 server-side-memory=false）。
+  // 仅在回灌成功后把 hydratedThreadIdRef 指向当前线程：此前 agent.messages 仍属于旧线程，
+  // 防抖持久化必须等回灌完成（或至少不把旧线程内容写进新线程）后再启动。
   useEffect(() => {
     if (!isReady) return;
     let cancelled = false;
+    const threadId = currentThreadId;
     (async () => {
       try {
-        const history = await loadMessages(currentThreadId);
+        const history = await loadMessages(threadId);
         if (cancelled) return;
         if (agent.isRunning) agent.abortRun(); // 切换线程时停止旧流，避免跨线程串写
         agent.setMessages(historyToAgentMessages(history));
+        hydratedThreadIdRef.current = threadId;
       } catch (e) {
-        if (!cancelled) console.error("[ThreadArea] 加载会话历史失败", currentThreadId, e);
+        if (!cancelled) console.error("[ThreadArea] 加载会话历史失败", threadId, e);
+        // 回灌失败不 setMessages：hydrated 仍指向旧线程，防抖不会把旧内容写进本线程
       }
     })();
     return () => {
@@ -403,13 +438,24 @@ export default function ThreadArea({ llmReady }: { llmReady: boolean | null }) {
 
   // 消息变化 → 防抖持久化（流式期间高频触发，避免每个 token 都整段重写；400ms 后先拉取现有历史再整体 PUT）
   useEffect(() => {
+    // 双保险 (1)：切线程/历史回灌完成前，agent.messages 仍是旧线程内容，不启动新线程的防抖持久化，
+    // 否则 400ms 后 flushPersist(newThreadId, oldMsgs) 会把旧会话内容 PUT 覆盖新线程服务端记录。
+    const hydrated = hydratedThreadIdRef.current;
+    if (hydrated !== null && hydrated !== currentThreadId) {
+      pendingPersist.current = null;
+      return;
+    }
     pendingPersist.current = { threadId: currentThreadId, msgs: agent.messages ?? [] };
     if (persistTimer.current) clearTimeout(persistTimer.current);
     persistTimer.current = setTimeout(() => {
       persistTimer.current = null;
       const pending = pendingPersist.current;
       pendingPersist.current = null;
-      if (pending) flushPersist(pending.threadId, pending.msgs);
+      // 双保险 (2)：防抖到期时线程已切换（pending.threadId 落后于 currentThreadId）则丢弃快照。
+      // 旧线程快照的落库由「卸载/切线程 cleanup」以 keepalive flush 负责。
+      if (pending && pending.threadId === currentThreadIdRef.current) {
+        flushPersist(pending.threadId, pending.msgs);
+      }
     }, 400);
     return () => {
       if (persistTimer.current) {
@@ -431,7 +477,10 @@ export default function ThreadArea({ llmReady }: { llmReady: boolean | null }) {
     }
     const pending = pendingPersist.current;
     pendingPersist.current = null;
-    if (pending) flushPersist(pending.threadId, pending.msgs);
+    // 运行期间 RuntimeProvider 已禁止切线程，此处校验 pending.threadId === 当前线程为双保险
+    if (pending && pending.threadId === currentThreadIdRef.current) {
+      flushPersist(pending.threadId, pending.msgs);
+    }
   }, [agent.isRunning, flushPersist]);
 
   // 卸载/切换线程时，把仍在防抖窗口内的 pending 写入 best-effort flush（keepalive 保证请求送达）。

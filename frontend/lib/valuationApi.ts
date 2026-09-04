@@ -3,15 +3,7 @@
 import { z } from "zod";
 import { ValuationOverviewSchema, IndustryValuationSchema, ValuationHistorySchema } from "./schemas";
 import type { ValuationOverview, IndustryValuation, ValuationHistory } from "./types";
-
-async function get<T>(path: string, schema: z.ZodType<T>): Promise<T> {
-  const res = await fetch(path, { cache: "no-store" });
-  if (!res.ok) throw new Error(`请求失败 (${res.status})`);
-  const data = await res.json();
-  const parsed = schema.safeParse(data);
-  if (!parsed.success) throw new Error("数据格式异常");
-  return parsed.data;
-}
+import { get } from "./http";
 
 export function fetchValuationOverview(): Promise<ValuationOverview> {
   return get("/api/valuation/overview", ValuationOverviewSchema);

@@ -60,7 +60,7 @@ invest:
     username: ${ADMIN_USERNAME:}
     password: ${ADMIN_PASSWORD:}
   security:
-    remember-me-key: ${REMEMBER_ME_KEY:invest-agent-remember-me}
+    remember-me-key: ${REMEMBER_ME_KEY:}
   market:
     connect-timeout: 3s
     read-timeout: 5s

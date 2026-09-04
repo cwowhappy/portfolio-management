@@ -69,10 +69,9 @@ public class JournalApplicationService {
     public List<TimelineEventView> timeline(Long userId, LocalDate from, LocalDate to) {
         List<TimelineEventView> events = new ArrayList<>();
 
-        for (JournalEntry e : repository.findByUserId(userId, null)) {
-            if (inRange(e.eventDate(), from, to)) {
-                events.add(journalEvent(e));
-            }
+        // journal 日期过滤下推到仓库查询（利用 (user_id, event_date) 索引），避免整表载入内存再滤
+        for (JournalEntry e : repository.findByUserIdInDateRange(userId, from, to)) {
+            events.add(journalEvent(e));
         }
 
         var portfolio = portfolioRepository.findPortfolioByUserId(userId);

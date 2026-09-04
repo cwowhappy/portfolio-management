@@ -11,7 +11,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 价值筛选 REST 接口（P3 前端反代消费；无需登录）。 */
+/**
+ * 价值筛选 REST 接口（P3 前端反代消费；无需登录）。
+ *
+ * <p>A1 取舍（显式记录）：{@link StockScreeningResult} 为纯数据读模型（仓库行映射，无行为），
+ * 直接作为 @ResponseBody 即对外契约；若未来该对象引入行为/内部变化再拆应用层 DTO。
+ */
 @RestController
 @RequestMapping("/api/screening")
 public class ScreeningController {

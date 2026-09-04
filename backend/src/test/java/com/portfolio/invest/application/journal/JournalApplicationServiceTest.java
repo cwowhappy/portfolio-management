@@ -15,6 +15,7 @@ import com.portfolio.invest.domain.portfolio.Position;
 import com.portfolio.invest.domain.portfolio.Trade;
 import com.portfolio.invest.domain.portfolio.TradeType;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -62,8 +63,9 @@ class JournalApplicationServiceTest {
                 null, null, null, LocalDate.of(2026, 8, 2), Instant.now(), Instant.now());
     }
 
+    @DisplayName("创建备忘关联交易时回查股票")
     @Test
-    void 创建备忘关联交易时回查股票() {
+    void givenEntryLinkedToTrade_whenCreateEntry_thenFetchStock() {
         when(portfolioRepo.findPortfolioByUserId(1L)).thenReturn(Optional.of(portfolio()));
         when(portfolioRepo.findTradeById(10L)).thenReturn(Optional.of(buyTrade()));
         when(portfolioRepo.findPositionByIdAndPortfolioId(100L, 1L)).thenReturn(Optional.of(pos()));
@@ -78,8 +80,9 @@ class JournalApplicationServiceTest {
         assertThat(view.tradeId()).isEqualTo(10L);
     }
 
+    @DisplayName("关联非本人交易抛TRADE_NOT_FOUND")
     @Test
-    void 关联非本人交易抛TRADE_NOT_FOUND() {
+    void givenLinkedOthersTrade_whenCreateEntry_thenThrowTradeNotFound() {
         when(portfolioRepo.findPortfolioByUserId(1L)).thenReturn(Optional.of(portfolio()));
         when(portfolioRepo.findTradeById(999L)).thenReturn(Optional.of(buyTrade()));
         when(portfolioRepo.findPositionByIdAndPortfolioId(100L, 1L)).thenReturn(Optional.empty());
@@ -90,8 +93,9 @@ class JournalApplicationServiceTest {
                         e -> assertThat(e.code()).isEqualTo(JournalErrorCode.TRADE_NOT_FOUND));
     }
 
+    @DisplayName("客户端股票代码与交易不一致抛INVALID_INPUT")
     @Test
-    void 客户端股票代码与交易不一致抛INVALID_INPUT() {
+    void givenClientStockCodeMismatch_whenCreateEntry_thenThrowInvalidInput() {
         when(portfolioRepo.findPortfolioByUserId(1L)).thenReturn(Optional.of(portfolio()));
         when(portfolioRepo.findTradeById(10L)).thenReturn(Optional.of(buyTrade()));
         when(portfolioRepo.findPositionByIdAndPortfolioId(100L, 1L)).thenReturn(Optional.of(pos()));
@@ -102,16 +106,18 @@ class JournalApplicationServiceTest {
                         e -> assertThat(e.code()).isEqualTo(JournalErrorCode.INVALID_INPUT));
     }
 
+    @DisplayName("非本人记录抛NOT_FOUND")
     @Test
-    void 非本人记录抛NOT_FOUND() {
+    void givenOthersEntry_whenDeleteEntry_thenThrowNotFound() {
         when(repo.findByIdAndUserId(5L, 1L)).thenReturn(Optional.empty());
         assertThatThrownBy(() -> service.deleteEntry(1L, 5L))
                 .isInstanceOfSatisfying(JournalException.class,
                         e -> assertThat(e.code()).isEqualTo(JournalErrorCode.NOT_FOUND));
     }
 
+    @DisplayName("更新记录")
     @Test
-    void 更新记录() {
+    void givenOwnedEntry_whenUpdateEntry_thenSucceed() {
         when(repo.findByIdAndUserId(7L, 1L)).thenReturn(Optional.of(entry(7L)));
         when(portfolioRepo.findPortfolioByUserId(1L)).thenReturn(Optional.of(portfolio()));
         when(portfolioRepo.findTradeById(10L)).thenReturn(Optional.of(buyTrade()));
@@ -126,9 +132,10 @@ class JournalApplicationServiceTest {
         assertThat(view.eventDate()).isEqualTo(LocalDate.of(2026, 8, 3));
     }
 
+    @DisplayName("时间线合并journal与M08事件并按事件日倒序")
     @Test
-    void 时间线合并journal与M08事件并按事件日倒序() {
-        when(repo.findByUserId(1L, null)).thenReturn(List.of(
+    void givenJournalTradesAndDividends_whenTimeline_thenMergeAndSortByDateDesc() {
+        when(repo.findByUserIdInDateRange(1L, null, null)).thenReturn(List.of(
                 entry(1L), // eventDate 2026-08-02
                 JournalEntry.reconstitute(2L, 1L, JournalEntryType.REVIEW, null, null, null,
                         "复盘", "内容", null, null, PeriodType.QUARTERLY,
@@ -154,17 +161,34 @@ class JournalApplicationServiceTest {
         assertThat(events.get(0).date()).isEqualTo(LocalDate.of(2026, 9, 30));
     }
 
+    @DisplayName("时间线日期范围过滤")
     @Test
-    void 时间线日期范围过滤() {
-        when(repo.findByUserId(1L, null)).thenReturn(List.of(entry(1L)));
+    void givenDateRange_whenTimeline_thenFilterByRange() {
+        when(repo.findByUserIdInDateRange(1L, LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 1))).thenReturn(List.of());
+        when(repo.findByUserIdInDateRange(1L, LocalDate.of(2026, 8, 2), null)).thenReturn(List.of(entry(1L)));
         when(portfolioRepo.findPortfolioByUserId(1L)).thenReturn(Optional.empty());
 
         assertThat(service.timeline(1L, LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 1))).isEmpty();
         assertThat(service.timeline(1L, LocalDate.of(2026, 8, 2), null)).hasSize(1);
     }
 
+    @DisplayName("时间线把日期范围下推给仓库查询")
     @Test
-    void 删除记录() {
+    void givenDateRange_whenTimeline_thenDelegateRangeToRepository() {
+        LocalDate from = LocalDate.of(2026, 8, 1);
+        LocalDate to = LocalDate.of(2026, 8, 31);
+        when(repo.findByUserIdInDateRange(1L, from, to)).thenReturn(List.of(entry(1L)));
+        when(portfolioRepo.findPortfolioByUserId(1L)).thenReturn(Optional.empty());
+
+        var events = service.timeline(1L, from, to);
+
+        assertThat(events).hasSize(1);
+        verify(repo).findByUserIdInDateRange(1L, from, to);
+    }
+
+    @DisplayName("删除记录")
+    @Test
+    void givenOwnedEntry_whenDeleteEntry_thenSucceed() {
         when(repo.findByIdAndUserId(7L, 1L)).thenReturn(Optional.of(entry(7L)));
         service.deleteEntry(1L, 7L);
         verify(repo).deleteById(7L);

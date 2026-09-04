@@ -24,11 +24,13 @@ public final class Position {
     private final BigDecimal netCashFlow;
     private final Instant createdAt;
     private final Instant updatedAt;
+    /** 乐观锁版本：新建为 null，从库载入后携带，整行 merge 写回时用于冲突检测。 */
+    private final Long version;
 
     private Position(Long id, Long portfolioId, Long groupId, String stockCode, String stockName,
                      BigDecimal quantity, BigDecimal costBasis, BigDecimal totalBuyCost,
                      BigDecimal cumulativeCashDividend, BigDecimal realizedPnl, BigDecimal netCashFlow,
-                     Instant createdAt, Instant updatedAt) {
+                     Instant createdAt, Instant updatedAt, Long version) {
         this.id = id;
         this.portfolioId = portfolioId;
         this.groupId = groupId;
@@ -42,24 +44,37 @@ public final class Position {
         this.netCashFlow = netCashFlow;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
+        this.version = version;
     }
 
     public static Position create(Long portfolioId, Long groupId, String stockCode, String stockName, Instant now) {
         return new Position(null, portfolioId, groupId, stockCode, stockName,
-                z(), z(), z(), z(), z(), z(), now, now);
+                z(), z(), z(), z(), z(), z(), now, now, null);
     }
 
     public static Position reconstitute(Long id, Long portfolioId, Long groupId, String stockCode, String stockName,
                                         BigDecimal quantity, BigDecimal costBasis, BigDecimal totalBuyCost,
                                         BigDecimal cumulativeCashDividend, BigDecimal realizedPnl, BigDecimal netCashFlow,
                                         Instant createdAt, Instant updatedAt) {
+        return reconstitute(id, portfolioId, groupId, stockCode, stockName,
+                quantity, costBasis, totalBuyCost, cumulativeCashDividend, realizedPnl, netCashFlow,
+                createdAt, updatedAt, null);
+    }
+
+    public static Position reconstitute(Long id, Long portfolioId, Long groupId, String stockCode, String stockName,
+                                        BigDecimal quantity, BigDecimal costBasis, BigDecimal totalBuyCost,
+                                        BigDecimal cumulativeCashDividend, BigDecimal realizedPnl, BigDecimal netCashFlow,
+                                        Instant createdAt, Instant updatedAt, Long version) {
         return new Position(id, portfolioId, groupId, stockCode, stockName,
                 quantity, costBasis, totalBuyCost, cumulativeCashDividend, realizedPnl, netCashFlow,
-                createdAt, updatedAt);
+                createdAt, updatedAt, version);
     }
 
     /** 买入：数量、成本、现金净贡献更新；摊薄成本价随之变化。 */
     public Position applyBuy(BigDecimal price, BigDecimal qty, BigDecimal fee) {
+        requirePositive(price, "买入价格");
+        requirePositive(qty, "买入数量");
+        requireNonNegative(fee, "手续费");
         BigDecimal cost = price.multiply(qty).add(fee);
         return copy(quantity.add(qty), costBasis.add(cost), totalBuyCost.add(cost),
                 cumulativeCashDividend, realizedPnl, netCashFlow.subtract(cost));
@@ -67,8 +82,11 @@ public final class Position {
 
     /** 卖出：按精确移除成本匹配，计算已实现收益与现金流入。 */
     public Position applySell(BigDecimal price, BigDecimal qty, BigDecimal fee) {
+        requirePositive(price, "卖出价格");
+        requirePositive(qty, "卖出数量");
+        requireNonNegative(fee, "手续费");
         if (qty.compareTo(quantity) > 0) {
-            throw new PortfolioException("SELL_EXCEEDS_QUANTITY", "卖出数量超过持仓");
+            throw new PortfolioException(PortfolioErrorCode.SELL_EXCEEDS_QUANTITY, "卖出数量超过持仓");
         }
         BigDecimal proceeds = price.multiply(qty).subtract(fee);
         BigDecimal remaining = quantity.subtract(qty);
@@ -83,6 +101,7 @@ public final class Position {
 
     /** 现金分红：降低摊薄成本，增加现金净贡献与累计分红。 */
     public Position applyCashDividend(BigDecimal totalAmount) {
+        requireNonNegative(totalAmount, "分红金额");
         return copy(quantity, costBasis.subtract(totalAmount), totalBuyCost,
                 cumulativeCashDividend.add(totalAmount), realizedPnl, netCashFlow.add(totalAmount));
     }
@@ -91,6 +110,13 @@ public final class Position {
     public Position applyStockDividend(BigDecimal ratio) {
         BigDecimal bonus = quantity.multiply(ratio);
         return copy(quantity.add(bonus), costBasis, totalBuyCost, cumulativeCashDividend, realizedPnl, netCashFlow);
+    }
+
+    /** 移动到新分组（FR-A2：编辑持仓可改所属分组）。 */
+    public Position moveToGroup(Long newGroupId, Instant now) {
+        return new Position(id, portfolioId, newGroupId, stockCode, stockName,
+                quantity, costBasis, totalBuyCost, cumulativeCashDividend, realizedPnl, netCashFlow,
+                createdAt, now, version);
     }
 
     /** 摊薄成本价 = costBasis / quantity；无持仓时返回 null。 */
@@ -107,11 +133,23 @@ public final class Position {
                 newQuantity.setScale(SCALE, RM), newCostBasis.setScale(SCALE, RM),
                 newTotalBuyCost.setScale(SCALE, RM), newDividend.setScale(SCALE, RM),
                 newRealized.setScale(SCALE, RM), newNetCashFlow.setScale(SCALE, RM),
-                createdAt, Instant.now());
+                createdAt, Instant.now(), version);
     }
 
     private static BigDecimal z() {
         return BigDecimal.ZERO.setScale(SCALE, RM);
+    }
+
+    private static void requirePositive(BigDecimal v, String name) {
+        if (v == null || v.signum() <= 0) {
+            throw new PortfolioException(PortfolioErrorCode.INVALID_INPUT, name + "必须为正数");
+        }
+    }
+
+    private static void requireNonNegative(BigDecimal v, String name) {
+        if (v == null || v.signum() < 0) {
+            throw new PortfolioException(PortfolioErrorCode.INVALID_INPUT, name + "不能为负数");
+        }
     }
 
     public Long id() { return id; }
@@ -127,4 +165,5 @@ public final class Position {
     public BigDecimal netCashFlow() { return netCashFlow; }
     public Instant createdAt() { return createdAt; }
     public Instant updatedAt() { return updatedAt; }
+    public Long version() { return version; }
 }

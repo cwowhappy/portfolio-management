@@ -105,6 +105,12 @@ class Store:
         rows = [tuple(r.get(c) for c in cols) for r in records]
         try:
             with conn.cursor() as cur:
+                if table == "index_constituent":
+                    # 成分股是「每半年全量快照」语义：先删后插，被调出指数的成员不再残留。
+                    # 只删本次涉及的 index_code，不动其它指数；删与插在同一事务，失败即回滚。
+                    index_codes = sorted({r.get("index_code") for r in records if r.get("index_code") is not None})
+                    if index_codes:
+                        cur.execute("DELETE FROM index_constituent WHERE index_code = ANY(%s)", (index_codes,))
                 cur.executemany(sql, rows)
             conn.commit()
         except psycopg.Error as e:

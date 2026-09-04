@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import PortfolioBoard from "@/components/portfolio/PortfolioBoard";
 import * as portfolioApi from "@/lib/portfolioApi";
-import type { GroupView, PositionView } from "@/lib/types";
+import type { GroupView, PortfolioOverview, PositionView } from "@/lib/types";
 
 vi.mock("@/lib/portfolioApi", () => ({
   fetchOverview: vi.fn(),
@@ -106,5 +106,39 @@ describe("PortfolioBoard", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "卖出" })[0]);
     await vi.waitFor(() => expect(api.fetchOverview).toHaveBeenCalledTimes(2));
     expect(api.sell).toHaveBeenCalledWith(expect.objectContaining({ positionId: 1, price: 1600, quantity: 50 }));
+  });
+
+  it("reload 竞态：丢弃过期响应，只保留最新一次加载结果", async () => {
+    let resolveStale!: (v: PortfolioOverview) => void;
+    const staleGate = new Promise<PortfolioOverview>((res) => { resolveStale = res; });
+    const staleData = { totalAssets: 111111, totalCost: 0, totalPnl: 0, todayPnl: 0, cashTotal: 0, totalCashDividend: 0, positionCount: 0, groupCount: 0 };
+    const freshData = { totalAssets: 999999, totalCost: 0, totalPnl: 0, todayPnl: 0, cashTotal: 0, totalCashDividend: 0, positionCount: 0, groupCount: 0 };
+
+    // 第 1 次（挂载）正常返回；第 2 次（旧 reload）挂起；第 3 次（新 reload）立即返回 fresh
+    api.fetchOverview.mockResolvedValueOnce({ totalAssets: 500, totalCost: 0, totalPnl: 0, todayPnl: 0, cashTotal: 0, totalCashDividend: 0, positionCount: 0, groupCount: 0 });
+    api.fetchOverview.mockReturnValueOnce(staleGate);
+    api.fetchOverview.mockResolvedValueOnce(freshData);
+
+    render(<PortfolioBoard />);
+    await screen.findByText("500.00");
+    expect(api.fetchOverview).toHaveBeenCalledTimes(1);
+
+    // 触发 reload #2（挂起中）
+    const nameInput = screen.getByPlaceholderText("分组名（如 华泰）");
+    fireEvent.change(nameInput, { target: { value: "组A" } });
+    fireEvent.click(screen.getByRole("button", { name: "新建" }));
+    await vi.waitFor(() => expect(api.fetchOverview).toHaveBeenCalledTimes(2));
+
+    // 触发 reload #3（立即返回 fresh），应覆盖 UI
+    fireEvent.change(nameInput, { target: { value: "组B" } });
+    fireEvent.click(screen.getByRole("button", { name: "新建" }));
+    await vi.waitFor(() => expect(api.fetchOverview).toHaveBeenCalledTimes(3));
+    expect(await screen.findByText("999,999.00")).toBeTruthy();
+
+    // 放行旧 reload 的过期响应：守卫应丢弃，UI 不被覆盖成 111,111.00
+    await act(async () => { resolveStale(staleData); });
+    await vi.waitFor(() => expect(api.fetchOverview).toHaveBeenCalledTimes(3));
+    expect(screen.queryByText("111,111.00")).toBeNull();
+    expect(screen.getByText("999,999.00")).toBeTruthy();
   });
 });

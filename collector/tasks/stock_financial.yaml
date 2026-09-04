@@ -1,5 +1,6 @@
 task_code: stock_financial
 task_name: 个股财务季数据
+# 备源后置：暂为单源（tushare fina_indicator），后续补 akshare 备源
 source_ids:
   - { source_id: stock_financial, type: plugin, class: stock_financial }
 converter: field_mapping_stock_financial

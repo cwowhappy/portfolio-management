@@ -48,7 +48,7 @@ public class ConversationController {
 
     @PutMapping("/{id}/messages")
     public ResponseEntity<Void> saveMessages(Authentication auth, @PathVariable String id,
-                                             @RequestBody List<ChatMessageWire> messages) {
+                                             @Valid @RequestBody List<@Valid ChatMessageWire> messages) {
         service.saveMessages(currentUserId(auth), id, messages);
         return ResponseEntity.noContent().build();
     }

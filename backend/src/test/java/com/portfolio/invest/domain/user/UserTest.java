@@ -3,6 +3,7 @@ package com.portfolio.invest.domain.user;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 class UserTest {
@@ -11,8 +12,9 @@ class UserTest {
         return User.register("alice", "hash");
     }
 
+    @DisplayName("注册初始为PENDING_USER")
     @Test
-    void 注册初始为PENDING_USER() {
+    void whenRegister_thenStartAsPendingUser() {
         User u = newUser();
         assertThat(u.status()).isEqualTo(UserStatus.PENDING);
         assertThat(u.role()).isEqualTo(UserRole.USER);
@@ -20,13 +22,15 @@ class UserTest {
         assertThat(u.canLogin()).isFalse();
     }
 
+    @DisplayName("审核通过后可登录")
     @Test
-    void 审核通过后可登录() {
+    void givenApprovedUser_whenCanLogin_thenTrue() {
         assertThat(newUser().approve().canLogin()).isTrue();
     }
 
+    @DisplayName("被拒后重新注册恢复PENDING")
     @Test
-    void 被拒后重新注册恢复PENDING() {
+    void givenRejectedUser_whenReRegister_thenResetToPending() {
         User rejected = newUser().reject();
         assertThat(rejected.status()).isEqualTo(UserStatus.REJECTED);
         User re = rejected.reRegister("newhash");
@@ -34,14 +38,16 @@ class UserTest {
         assertThat(re.passwordHash()).isEqualTo("newhash");
     }
 
+    @DisplayName("停用后不可登录且再启用可恢复")
     @Test
-    void 停用后不可登录且再启用可恢复() {
+    void givenApprovedUser_whenDisableThenEnable_thenLoginAbilityRecovers() {
         assertThat(newUser().approve().disable().canLogin()).isFalse();
         assertThat(newUser().approve().disable().enable().canLogin()).isTrue();
     }
 
+    @DisplayName("对非PENDING用户审核抛异常")
     @Test
-    void 对非PENDING用户审核抛异常() {
+    void givenNonPendingUser_whenApprove_thenThrow() {
         assertThatThrownBy(() -> newUser().approve().approve())
                 .isInstanceOf(UserException.class).hasMessageContaining("状态");
     }

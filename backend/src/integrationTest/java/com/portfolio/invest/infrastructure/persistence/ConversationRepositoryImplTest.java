@@ -3,6 +3,7 @@ package com.portfolio.invest.infrastructure.persistence;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.portfolio.invest.domain.conversation.ChatMessage;
+import com.portfolio.invest.domain.conversation.ChatMessageRole;
 import com.portfolio.invest.domain.conversation.Conversation;
 import com.portfolio.invest.domain.conversation.ConversationRepository;
 import com.portfolio.invest.domain.user.User;
@@ -11,6 +12,7 @@ import com.portfolio.invest.support.PostgresTestSupport;
 import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
@@ -44,31 +46,34 @@ class ConversationRepositoryImplTest {
         userId = users.save(User.register("conv-owner", "h")).id();
     }
 
+    @DisplayName("按归属保存与查询")
     @Test
-    void 按归属保存与查询() {
+    void givenSavedConversation_whenQueryByOwnership_thenFilteredByUser() {
         Conversation c = conversations.save(Conversation.create("t-1", userId, Instant.now()));
         assertThat(conversations.findByIdAndUserId("t-1", userId)).isPresent();
         assertThat(conversations.findByIdAndUserId("t-1", userId + 1)).isEmpty(); // 归属过滤
         assertThat(conversations.findByUserId(userId)).hasSize(1);
     }
 
+    @DisplayName("消息替换与读取")
     @Test
-    void 消息替换与读取() {
+    void givenConversation_whenReplaceMessages_thenReadBackReplacedMessages() {
         conversations.save(Conversation.create("t-2", userId, Instant.now()));
-        ChatMessage m = ChatMessage.create(null, "m-1", "user", "你好", null, 1700000000000L);
+        ChatMessage m = ChatMessage.create(null, "m-1", ChatMessageRole.USER, "你好", null, 1700000000000L);
         conversations.replaceMessages("t-2", List.of(m));
         assertThat(conversations.findMessages("t-2")).hasSize(1).first()
                 .satisfies(x -> assertThat(x.content()).isEqualTo("你好"));
 
-        conversations.replaceMessages("t-2", List.of(ChatMessage.create(null, "m-2", "user", "第二版", null, 1700000001000L)));
+        conversations.replaceMessages("t-2", List.of(ChatMessage.create(null, "m-2", ChatMessageRole.USER, "第二版", null, 1700000001000L)));
         assertThat(conversations.findMessages("t-2")).hasSize(1) // 全量替换
                 .first().satisfies(x -> assertThat(x.content()).isEqualTo("第二版"));
     }
 
+    @DisplayName("删除会话连带消息")
     @Test
-    void 删除会话连带消息() {
+    void givenConversationWithMessages_whenDelete_thenCascadesMessages() {
         conversations.save(Conversation.create("t-3", userId, Instant.now()));
-        conversations.replaceMessages("t-3", List.of(ChatMessage.create(null, "m-1", "user", "x", null, 0L)));
+        conversations.replaceMessages("t-3", List.of(ChatMessage.create(null, "m-1", ChatMessageRole.USER, "x", null, 0L)));
         conversations.delete("t-3");
         assertThat(conversations.findByIdAndUserId("t-3", userId)).isEmpty();
         assertThat(conversations.findMessages("t-3")).isEmpty();

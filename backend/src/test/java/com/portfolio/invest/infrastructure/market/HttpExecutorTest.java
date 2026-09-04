@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.portfolio.invest.domain.market.MarketDataException;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.client.HttpClientErrorException;
@@ -17,8 +18,9 @@ import com.portfolio.invest.domain.market.MarketDataErrorCode;
 /** 统一「限流 + 重试」执行器：每次真实 HTTP 尝试前限流，重试语义与领域错误处理。 */
 class HttpExecutorTest {
 
+    @DisplayName("可重试错误重试至上限且每次尝试都取令牌")
     @Test
-    void 可重试错误重试至上限且每次尝试都取令牌() {
+    void givenRetryableError_whenExecute_thenRetriesToLimitAcquiringTokenEachAttempt() {
         RateLimiter limiter = mock(RateLimiter.class);
         when(limiter.tryAcquire(anyLong())).thenReturn(true);
         HttpExecutor executor = new HttpExecutor(limiter, 3, 0, 2000, "上游");
@@ -30,8 +32,9 @@ class HttpExecutorTest {
         verify(limiter, times(3)).tryAcquire(anyLong()); // 每次真实 HTTP 尝试前都限流
     }
 
+    @DisplayName("领域错误不重试直接上抛")
     @Test
-    void 领域错误不重试直接上抛() {
+    void givenDomainError_whenExecute_thenRethrowsWithoutRetry() {
         RateLimiter limiter = mock(RateLimiter.class);
         when(limiter.tryAcquire(anyLong())).thenReturn(true);
         HttpExecutor executor = new HttpExecutor(limiter, 3, 0, 2000, "上游");
@@ -43,8 +46,9 @@ class HttpExecutorTest {
         verify(limiter, times(1)).tryAcquire(anyLong());
     }
 
+    @DisplayName("客户端4xx错误不重试")
     @Test
-    void 客户端4xx错误不重试() {
+    void givenClient4xxError_whenExecute_thenNotRetried() {
         RateLimiter limiter = mock(RateLimiter.class);
         when(limiter.tryAcquire(anyLong())).thenReturn(true);
         HttpExecutor executor = new HttpExecutor(limiter, 3, 0, 2000, "上游");
@@ -55,8 +59,9 @@ class HttpExecutorTest {
         verify(limiter, times(1)).tryAcquire(anyLong());
     }
 
+    @DisplayName("拿不到令牌抛RATE_LIMITED")
     @Test
-    void 拿不到令牌抛RATE_LIMITED() {
+    void givenNoTokenAcquired_whenExecute_thenThrowsRateLimited() {
         RateLimiter limiter = mock(RateLimiter.class);
         when(limiter.tryAcquire(anyLong())).thenReturn(false);
         HttpExecutor executor = new HttpExecutor(limiter, 3, 0, 2000, "上游");

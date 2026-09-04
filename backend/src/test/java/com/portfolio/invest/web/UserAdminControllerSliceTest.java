@@ -10,6 +10,7 @@ import com.portfolio.invest.application.useradmin.UserAdminApplicationService;
 import com.portfolio.invest.application.useradmin.UserAdminView;
 import com.portfolio.invest.domain.user.UserRepository;
 import com.portfolio.invest.infrastructure.security.SecurityConfig;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -51,35 +52,40 @@ class UserAdminControllerSliceTest {
         return new UserAdminView(2L, "alice", "USER", "APPROVED", true);
     }
 
+    @DisplayName("匿名访问用户列表返回401")
     @Test
-    void 匿名访问用户列表返回401() throws Exception {
+    void givenAnonymous_whenGetUserList_thenReturn401() throws Exception {
         mvc.perform(get("/api/admin/users"))
                 .andExpect(status().isUnauthorized());
     }
 
+    @DisplayName("匿名操作审核端点返回401")
     @Test
-    void 匿名操作审核端点返回401() throws Exception {
+    void givenAnonymous_whenRejectUser_thenReturn401() throws Exception {
         mvc.perform(post("/api/admin/users/2/reject"))
                 .andExpect(status().isUnauthorized());
     }
 
+    @DisplayName("非管理员访问返回403")
     @Test
     @WithMockUser(roles = "USER")
-    void 非管理员访问返回403() throws Exception {
+    void givenNonAdminUser_whenGetUserList_thenReturn403() throws Exception {
         mvc.perform(get("/api/admin/users"))
                 .andExpect(status().isForbidden());
     }
 
+    @DisplayName("非管理员操作停用端点返回403")
     @Test
     @WithMockUser(roles = "USER")
-    void 非管理员操作停用端点返回403() throws Exception {
+    void givenNonAdminUser_whenDisableUser_thenReturn403() throws Exception {
         mvc.perform(post("/api/admin/users/2/disable"))
                 .andExpect(status().isForbidden());
     }
 
+    @DisplayName("管理员拒绝用户返回200")
     @Test
     @WithMockUser(roles = "ADMIN")
-    void 管理员拒绝用户返回200() throws Exception {
+    void givenAdminRole_whenRejectUser_thenReturn200() throws Exception {
         when(service.reject(2L)).thenReturn(
                 new UserAdminView(2L, "alice", "USER", "REJECTED", true));
 
@@ -88,9 +94,10 @@ class UserAdminControllerSliceTest {
                 .andExpect(jsonPath("$.status").value("REJECTED"));
     }
 
+    @DisplayName("管理员启用用户返回200")
     @Test
     @WithMockUser(roles = "ADMIN")
-    void 管理员启用用户返回200() throws Exception {
+    void givenAdminRole_whenEnableUser_thenReturn200() throws Exception {
         when(service.enable(2L)).thenReturn(adminView());
 
         mvc.perform(post("/api/admin/users/2/enable"))
@@ -98,9 +105,10 @@ class UserAdminControllerSliceTest {
                 .andExpect(jsonPath("$.enabled").value(true));
     }
 
+    @DisplayName("管理员停用用户返回200")
     @Test
     @WithMockUser(roles = "ADMIN")
-    void 管理员停用用户返回200() throws Exception {
+    void givenAdminRole_whenDisableUser_thenReturn200() throws Exception {
         when(service.disable(2L)).thenReturn(
                 new UserAdminView(2L, "alice", "USER", "APPROVED", false));
 
@@ -109,9 +117,10 @@ class UserAdminControllerSliceTest {
                 .andExpect(jsonPath("$.enabled").value(false));
     }
 
+    @DisplayName("管理员重置密码返回200")
     @Test
     @WithMockUser(roles = "ADMIN")
-    void 管理员重置密码返回200() throws Exception {
+    void givenAdminRole_whenResetPassword_thenReturn200() throws Exception {
         when(service.resetPassword(2L, "NewPass1")).thenReturn(adminView());
 
         mvc.perform(post("/api/admin/users/2/reset-password")
@@ -121,9 +130,10 @@ class UserAdminControllerSliceTest {
                 .andExpect(jsonPath("$.username").value("alice"));
     }
 
+    @DisplayName("重置密码为空校验失败返回400")
     @Test
     @WithMockUser(roles = "ADMIN")
-    void 重置密码为空校验失败返回400() throws Exception {
+    void givenEmptyNewPassword_whenResetPassword_thenReturn400() throws Exception {
         mvc.perform(post("/api/admin/users/2/reset-password")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"newPassword\":\"\"}"))

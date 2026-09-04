@@ -1,5 +1,6 @@
 task_code: treasury_yield_curve
 task_name: 国债收益率曲线
+# 备源后置：暂为单源（akshare bond_zh_us_rate），后续补 tushare 备源
 source_ids:
   - { source_id: treasury_curve, type: plugin, class: treasury_curve }
 converter: field_mapping_curve

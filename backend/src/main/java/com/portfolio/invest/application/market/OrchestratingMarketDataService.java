@@ -13,7 +13,9 @@ import com.portfolio.invest.domain.market.Quote;
 import com.portfolio.invest.domain.market.StockHit;
 import com.portfolio.invest.domain.market.StockRef;
 import java.time.Clock;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -54,6 +56,22 @@ public class OrchestratingMarketDataService implements MarketDataService {
     public Quote quote(String code) {
         StockRef ref = StockRef.from(code);
         return fetchQuoteFresh(ref);
+    }
+
+    @Override
+    public Map<String, Quote> quoteBatch(List<String> codes) {
+        Map<String, Quote> result = new LinkedHashMap<>();
+        for (String code : codes) {
+            try {
+                Quote q = quote(code);
+                if (q != null) {
+                    result.put(code, q);
+                }
+            } catch (RuntimeException e) {
+                log.warn("批量行情跳过 {}: {}", code, e.getMessage());
+            }
+        }
+        return result;
     }
 
     private Quote fetchQuoteFresh(StockRef ref) {

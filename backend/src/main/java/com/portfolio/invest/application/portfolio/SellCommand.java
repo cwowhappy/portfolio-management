@@ -10,5 +10,5 @@ public record SellCommand(
         @NotNull LocalDate tradeDate,
         @NotNull @DecimalMin("0.0001") BigDecimal price,
         @NotNull @DecimalMin("0.0001") BigDecimal quantity,
-        @NotNull BigDecimal fee
+        @NotNull @DecimalMin("0") BigDecimal fee
 ) {}

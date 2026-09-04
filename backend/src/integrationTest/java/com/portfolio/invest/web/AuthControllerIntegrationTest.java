@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.portfolio.invest.domain.user.UserRepository;
 import com.portfolio.invest.support.PostgresTestSupport;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -22,8 +23,9 @@ class AuthControllerIntegrationTest extends PostgresTestSupport {
     @Autowired MockMvc mockMvc;
     @Autowired UserRepository userRepository;
 
+    @DisplayName("注册后待审核不能登录")
     @Test
-    void 注册后待审核不能登录() throws Exception {
+    void givenRegisteredPendingUser_whenLogin_thenForbidden() throws Exception {
         mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"username\":\"auth_alice\",\"password\":\"abc12345\"}"))
@@ -37,8 +39,9 @@ class AuthControllerIntegrationTest extends PostgresTestSupport {
                 .andExpect(jsonPath("$.code").value("ACCOUNT_PENDING"));
     }
 
+    @DisplayName("审核通过后登录成功并访问me")
     @Test
-    void 审核通过后登录成功并访问me() throws Exception {
+    void givenApprovedUser_whenLogin_thenSucceedsAndMeAccessible() throws Exception {
         register("auth_bob", "abc12345");
         approve("auth_bob");
 
@@ -55,8 +58,9 @@ class AuthControllerIntegrationTest extends PostgresTestSupport {
                 .andExpect(jsonPath("$.username").value("auth_bob"));
     }
 
+    @DisplayName("错误密码返回401")
     @Test
-    void 错误密码返回401() throws Exception {
+    void givenRegisteredUser_whenLoginWithWrongPassword_thenUnauthorized() throws Exception {
         register("auth_carol", "abc12345");
         mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -65,8 +69,9 @@ class AuthControllerIntegrationTest extends PostgresTestSupport {
                 .andExpect(jsonPath("$.code").value("BAD_CREDENTIALS"));
     }
 
+    @DisplayName("登录成功后轮换sessionId防会话固定")
     @Test
-    void 登录成功后轮换sessionId防会话固定() throws Exception {
+    void givenAnonymousPreLoginSession_whenLoginSucceeds_thenSessionIdRotated() throws Exception {
         register("auth_dave", "abc12345");
         approve("auth_dave");
 
@@ -89,8 +94,25 @@ class AuthControllerIntegrationTest extends PostgresTestSupport {
                 .andExpect(jsonPath("$.username").value("auth_dave"));
     }
 
+    @DisplayName("rememberMe仅传JSON字段也下发cookie")
     @Test
-    void 注册登录结构性校验失败返回400() throws Exception {
+    void givenApprovedUser_whenLoginWithJsonRememberMe_thenRememberMeCookieIssued() throws Exception {
+        register("auth_erin", "abc12345");
+        approve("auth_erin");
+
+        // 前端登录只发 JSON body 的 rememberMe 字段，不带 remember-me 请求参数（真实浏览器链路）；
+        // 回归：loginSuccess 内部曾因缺该参数静默不下发 cookie
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"auth_erin\",\"password\":\"abc12345\",\"rememberMe\":true}"))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie()
+                        .exists(com.portfolio.invest.infrastructure.security.SecurityConfig.REMEMBER_ME_COOKIE));
+    }
+
+    @DisplayName("注册登录结构性校验失败返回400")
+    @Test
+    void givenBlankUsernameOrMissingPassword_whenRegisterOrLogin_thenBadRequest() throws Exception {
         // 空白用户名注册 → Bean Validation 拦截（H8）
         mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)

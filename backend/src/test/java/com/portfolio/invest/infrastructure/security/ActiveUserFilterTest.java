@@ -12,6 +12,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -30,11 +31,13 @@ class ActiveUserFilterTest {
         SecurityContextHolder.clearContext();
     }
 
+    @DisplayName("公开路径豁免用户状态校验")
     @Test
-    void 公开路径豁免用户状态校验() {
+    void givenPublicPath_whenShouldNotFilter_thenExemptsFromStatusCheck() {
         String[] publicPaths = {
                 "/api/auth/login", "/api/auth/register",
-                "/api/market/quote", "/api/valuation/overview", "/api/agent/health"
+                "/api/market/quote", "/api/valuation/overview", "/api/agent/health",
+                "/api/agent/status", "/api/screening/stocks", "/actuator/health"
         };
         for (String path : publicPaths) {
             when(request.getServletPath()).thenReturn(path);
@@ -45,8 +48,9 @@ class ActiveUserFilterTest {
         assertThat(filter.shouldNotFilter(request)).isFalse();
     }
 
+    @DisplayName("无认证信息时直接放行且不查库")
     @Test
-    void 无认证信息时直接放行且不查库() throws Exception {
+    void givenNoAuthentication_whenDoFilterInternal_thenPassesThroughWithoutQuerying() throws Exception {
         SecurityContextHolder.clearContext();
 
         filter.doFilterInternal(request, response, chain);
@@ -55,8 +59,9 @@ class ActiveUserFilterTest {
         verifyNoInteractions(repo);
     }
 
+    @DisplayName("认证未建立时直接放行且不查库")
     @Test
-    void 认证未建立时直接放行且不查库() throws Exception {
+    void givenAuthenticationNotEstablished_whenDoFilterInternal_thenPassesThroughWithoutQuerying() throws Exception {
         // 无 authorities 的构造器 → isAuthenticated() = false
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken("alice", null));
@@ -67,8 +72,9 @@ class ActiveUserFilterTest {
         verifyNoInteractions(repo);
     }
 
+    @DisplayName("认证主体非AuthenticatedUser时直接放行且不查库")
     @Test
-    void 认证主体非AuthenticatedUser时直接放行且不查库() throws Exception {
+    void givenPrincipalNotAuthenticatedUser_whenDoFilterInternal_thenPassesThroughWithoutQuerying() throws Exception {
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken("anonymous", null, List.of()));
 

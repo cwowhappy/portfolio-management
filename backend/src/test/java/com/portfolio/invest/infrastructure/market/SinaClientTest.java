@@ -11,6 +11,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import com.portfolio.invest.domain.market.MarketDataException;
 import java.nio.charset.Charset;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
@@ -31,8 +32,9 @@ class SinaClientTest {
         client = new SinaClient(builder.build());
     }
 
+    @DisplayName("rawQuote按GBK解码返回原始行")
     @Test
-    void rawQuote按GBK解码返回原始行() {
+    void givenGbkResponse_whenRawQuote_thenDecodesAndReturnsRawLine() {
         String line = "var hq_str_sh600519=\"贵州茅台,1410.000,...\";";
         server.expect(requestTo(startsWith("https://hq.sinajs.cn/list=sh600519")))
                 .andRespond(withSuccess(line.getBytes(GBK), MediaType.TEXT_PLAIN));
@@ -40,16 +42,18 @@ class SinaClientTest {
         server.verify();
     }
 
+    @DisplayName("rawIndices返回原始多行")
     @Test
-    void rawIndices返回原始多行() {
+    void whenRawIndices_thenReturnsRawLines() {
         server.expect(requestTo(startsWith("https://hq.sinajs.cn/list=s_sh000001")))
                 .andRespond(withSuccess("a;b;c".getBytes(GBK), MediaType.TEXT_PLAIN));
         assertThat(client.rawIndices()).isEqualTo("a;b;c");
         server.verify();
     }
 
+    @DisplayName("空响应抛UPSTREAM_UNAVAILABLE且不重试")
     @Test
-    void 空响应抛UPSTREAM_UNAVAILABLE且不重试() {
+    void givenEmptyResponse_whenRawQuote_thenThrowsUpstreamUnavailableWithoutRetry() {
         String url = "https://hq.sinajs.cn/list=sh600519";
         server.expect(requestTo(startsWith(url)))
                 .andRespond(withSuccess(new byte[0], MediaType.TEXT_PLAIN));
@@ -59,8 +63,9 @@ class SinaClientTest {
         server.verify();
     }
 
+    @DisplayName("无内容响应视为空响应抛UPSTREAM_UNAVAILABLE")
     @Test
-    void 无内容响应视为空响应抛UPSTREAM_UNAVAILABLE() {
+    void givenNoContentResponse_whenRawQuote_thenThrowsUpstreamUnavailable() {
         // 204 No Content → body(byte[].class) 为 null，与空字节数组同等处理
         server.expect(requestTo(startsWith("https://hq.sinajs.cn/list=sh600519")))
                 .andRespond(withNoContent());
@@ -70,8 +75,9 @@ class SinaClientTest {
         server.verify();
     }
 
+    @DisplayName("前两次失败第三次成功")
     @Test
-    void 前两次失败第三次成功() {
+    void givenTwoFailures_whenRawQuote_thenSucceedsOnThird() {
         String url = "https://hq.sinajs.cn/list=sh600519";
         server.expect(requestTo(startsWith(url))).andRespond(withServerError());
         server.expect(requestTo(startsWith(url))).andRespond(withServerError());
@@ -81,8 +87,9 @@ class SinaClientTest {
         server.verify();
     }
 
+    @DisplayName("三次全失败抛UPSTREAM_UNAVAILABLE")
     @Test
-    void 三次全失败抛UPSTREAM_UNAVAILABLE() {
+    void givenThreeFailures_whenRawQuote_thenThrowsUpstreamUnavailable() {
         String url = "https://hq.sinajs.cn/list=sh600519";
         server.expect(requestTo(startsWith(url))).andRespond(withServerError());
         server.expect(requestTo(startsWith(url))).andRespond(withServerError());

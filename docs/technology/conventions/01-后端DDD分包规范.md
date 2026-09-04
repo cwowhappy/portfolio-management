@@ -53,7 +53,7 @@ com.portfolio.invest                    # 根包：仅启动类
 - **理由**：领域规则可脱离 DB 单测（受益于纯 domain + infra 映射）；依赖方向最底层，被所有上层安全引用。
 
 ### infrastructure（基础设施层）
-- **作用**：`persistence`（JPA 实体 + 仓库实现 + 映射器 + Flyway）、`security`（SecurityConfig、UserDetailsService、remember-me）、`seed`（AdminSeedRunner）、`market`（EastmoneyClient/SinaClient 实现 `MarketDataSource`、TtlCache、RateLimiter、RestClientFactory、缓存/限流装饰器）。
+- **作用**：`persistence`（JPA 实体 + 仓库实现 + 映射器 + Flyway）、`security`（SecurityConfig、UserDetailsService、remember-me）、`seed`（AdminSeedRunner）、`cache`（TtlCache：`ApplicationCache` 端口实现，有界 LRU + TTL）、`market`（EastmoneyClient/SinaClient 实现 `MarketDataSource`、RateLimiter、RestClientFactory、缓存/限流装饰器）。
 - **定位**：最外层技术实现，实现 `domain` 定义的接口；**缓存/限流等横切用装饰器包裹**应用层服务，保证应用层不被技术细节污染。
 - **理由**：技术栈可替换而不影响领域/应用层；外部客户端、持久化、安全都收敛于此。
 

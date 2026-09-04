@@ -28,7 +28,42 @@ class Executor:
         self.selector = selector
         self.store = store
 
-    def run(self, task, mode=MODE_INCREMENTAL, params=None, conn=None, count_failures=True):
+    def _finish_or_record(
+        self,
+        run_repo,
+        task,
+        mode,
+        status,
+        run_id,
+        *,
+        params=None,
+        source_used=None,
+        rows_written=None,
+        error=None,
+        message=None,
+        record_kwargs=None,
+    ):
+        """有 run_id（TaskRunner 已插 running 前置行）则回填该行；否则按旧逻辑新插一行。
+
+        record_kwargs 用于精确复刻旧 record 调用的关键字集合，避免多传 None 参数改变调用签名。
+        """
+        if run_id is not None:
+            run_repo.finish_run(
+                run_id, status, source_used=source_used, rows_written=rows_written, error=error, message=message
+            )
+            return
+        kwargs = {
+            "params": params,
+            "source_used": source_used,
+            "rows_written": rows_written,
+            "error": error,
+            "message": message,
+        }
+        if record_kwargs is not None:
+            kwargs = {k: v for k, v in kwargs.items() if k in record_kwargs}
+        run_repo.record(task.task_code, mode, status, **kwargs)
+
+    def run(self, task, mode=MODE_INCREMENTAL, params=None, conn=None, count_failures=True, run_id=None):
         params = params or {}
         health_repo = HealthRepository(conn)
         run_repo = RunRepository(conn)
@@ -38,7 +73,16 @@ class Executor:
 
         if not candidates:
             msg = "所有源熔断或不可用"
-            run_repo.record(task.task_code, mode, STATUS_FAILED, message=msg, params=params)
+            self._finish_or_record(
+                run_repo,
+                task,
+                mode,
+                STATUS_FAILED,
+                run_id,
+                params=params,
+                message=msg,
+                record_kwargs={"params", "message"},
+            )
             return RunResult(task.task_code, mode, STATUS_FAILED, message=msg)
 
         for src in candidates:
@@ -73,19 +117,32 @@ class Executor:
                 try:
                     rows = self.store.upsert(conn, task.target_table, records)
                 except StoreError as e:
-                    run_repo.record(task.task_code, mode, STATUS_FAILED, error=str(e), params=params)
+                    self._finish_or_record(
+                        run_repo,
+                        task,
+                        mode,
+                        STATUS_FAILED,
+                        run_id,
+                        params=params,
+                        error=str(e),
+                        record_kwargs={"params", "error"},
+                    )
                     raise
                 latency = int((time.monotonic() - started) * 1000)
                 health_repo.save(self.selector.record_success(h, latency))
                 status = STATUS_PARTIAL if issues else STATUS_SUCCESS
-                run_repo.record(
-                    task.task_code,
+                msg = "; ".join(issues) or None
+                self._finish_or_record(
+                    run_repo,
+                    task,
                     mode,
                     status,
-                    source_used=src.source_id,
+                    run_id,
                     params=params,
+                    source_used=src.source_id,
                     rows_written=rows,
-                    message="; ".join(issues) or None,
+                    message=msg,
+                    record_kwargs={"params", "source_used", "rows_written", "message"},
                 )
                 return RunResult(
                     task.task_code,
@@ -93,12 +150,21 @@ class Executor:
                     status,
                     source_used=src.source_id,
                     rows_written=rows,
-                    message="; ".join(issues) or None,
+                    message=msg,
                 )
             except SourceError as e:
                 if count_failures:
                     health_repo.save(self.selector.record_failure(h, str(e)))
                 continue
 
-        run_repo.record(task.task_code, mode, STATUS_FAILED, error="AllSourcesFailed", params=params)
+        self._finish_or_record(
+            run_repo,
+            task,
+            mode,
+            STATUS_FAILED,
+            run_id,
+            params=params,
+            error="AllSourcesFailed",
+            record_kwargs={"params", "error"},
+        )
         raise AllSourcesFailed(task.task_code)

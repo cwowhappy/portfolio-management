@@ -1,11 +1,13 @@
 package com.portfolio.invest.domain.portfolio;
 
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class PositionTest {
@@ -20,8 +22,9 @@ class PositionTest {
         return new BigDecimal(v);
     }
 
+    @DisplayName("买入建立数量与成本")
     @Test
-    void 买入建立数量与成本() {
+    void givenBuyOrder_whenApplyBuy_thenEstablishQuantityAndCost() {
         Position p = newPosition().applyBuy(bd("1500"), bd("100"), bd("5"));
         assertThat(p.quantity()).isEqualByComparingTo("100");
         assertThat(p.costBasis()).isEqualByComparingTo("150005"); // 1500*100 + 5
@@ -30,8 +33,9 @@ class PositionTest {
         assertThat(p.netCashFlow()).isEqualByComparingTo("-150005");
     }
 
+    @DisplayName("多次买入按加权平均")
     @Test
-    void 多次买入按加权平均() {
+    void givenRepeatedBuys_whenApplyBuy_thenUseWeightedAverageCost() {
         Position p = newPosition()
                 .applyBuy(bd("100"), bd("100"), bd("0"))   // cost 10000
                 .applyBuy(bd("200"), bd("100"), bd("0"));  // cost 20000
@@ -40,8 +44,9 @@ class PositionTest {
         assertThat(p.totalBuyCost()).isEqualByComparingTo("30000");
     }
 
+    @DisplayName("卖出计算已实现收益并减少持仓")
     @Test
-    void 卖出计算已实现收益并减少持仓() {
+    void givenPositionWithBuy_whenApplySell_thenComputeRealizedPnlAndReducePosition() {
         Position p = newPosition()
                 .applyBuy(bd("100"), bd("100"), bd("0"))   // avgCost 100
                 .applySell(bd("120"), bd("40"), bd("0"));  // realized (120-100)*40 = 800
@@ -51,16 +56,18 @@ class PositionTest {
         assertThat(p.netCashFlow()).isEqualByComparingTo("-5200"); // -10000 + 4800
     }
 
+    @DisplayName("卖出手续费从已实现收益扣除")
     @Test
-    void 卖出手续费从已实现收益扣除() {
+    void givenSellWithFee_whenApplySell_thenDeductFeeFromRealizedPnl() {
         Position p = newPosition()
                 .applyBuy(bd("100"), bd("100"), bd("0"))
                 .applySell(bd("120"), bd("40"), bd("10")); // proceeds 4800-10, realized 4790-4000=790
         assertThat(p.realizedPnl()).isEqualByComparingTo("790");
     }
 
+    @DisplayName("现金分红降低摊薄成本")
     @Test
-    void 现金分红降低摊薄成本() {
+    void givenCashDividend_whenApplyCashDividend_thenLowerDilutedCost() {
         Position p = newPosition()
                 .applyBuy(bd("100"), bd("100"), bd("0"))     // costBasis 10000
                 .applyCashDividend(bd("500"));               // 每股分红 5 元
@@ -70,8 +77,9 @@ class PositionTest {
         assertThat(p.netCashFlow()).isEqualByComparingTo("-9500"); // -10000 + 500
     }
 
+    @DisplayName("送股增加股数摊薄每股成本")
     @Test
-    void 送股增加股数摊薄每股成本() {
+    void givenStockDividend_whenApplyStockDividend_thenIncreaseSharesAndDiluteCost() {
         Position p = newPosition()
                 .applyBuy(bd("100"), bd("100"), bd("0"))   // 100 股
                 .applyStockDividend(bd("0.3"));            // 10送3
@@ -80,8 +88,9 @@ class PositionTest {
         assertThat(p.avgCost()).isEqualByComparingTo("76.92");   // 10000/130，四舍五入两位
     }
 
+    @DisplayName("分红后卖出按摊薄成本匹配")
     @Test
-    void 分红后卖出按摊薄成本匹配() {
+    void givenSellAfterDividend_whenApplySell_thenMatchDilutedCost() {
         Position p = newPosition()
                 .applyBuy(bd("100"), bd("100"), bd("0"))     // avgCost 100
                 .applyCashDividend(bd("500"))                // avgCost 95
@@ -90,16 +99,18 @@ class PositionTest {
         assertThat(p.quantity()).isEqualByComparingTo("50");
     }
 
+    @DisplayName("部分卖出后摊薄成本不变")
     @Test
-    void 部分卖出后摊薄成本不变() {
+    void givenPartialSell_whenApplySell_thenKeepDilutedCostUnchanged() {
         Position p = newPosition()
                 .applyBuy(bd("100"), bd("100"), bd("0"))
                 .applySell(bd("120"), bd("40"), bd("0"));
         assertThat(p.avgCost()).isEqualByComparingTo("100"); // 摊薄成本不因卖出改变
     }
 
+    @DisplayName("全部卖出后数量归零成本清零")
     @Test
-    void 全部卖出后数量归零成本清零() {
+    void givenFullSell_whenApplySell_thenZeroQuantityAndClearCost() {
         Position p = newPosition()
                 .applyBuy(bd("100"), bd("100"), bd("0"))
                 .applySell(bd("120"), bd("100"), bd("0"));
@@ -109,21 +120,78 @@ class PositionTest {
         assertThat(p.realizedPnl()).isEqualByComparingTo("2000");
     }
 
+    @DisplayName("卖出超过持仓抛出异常")
     @Test
-    void 卖出超过持仓抛出异常() {
+    void givenSellExceedingQuantity_whenApplySell_thenThrowException() {
         Position p = newPosition().applyBuy(bd("100"), bd("100"), bd("0"));
-        assertThatThrownBy(() -> p.applySell(bd("120"), bd("101"), bd("0")))
-                .isInstanceOf(PortfolioException.class)
-                .hasMessageContaining("卖出数量超过持仓");
+        PortfolioException ex = catchThrowableOfType(() -> p.applySell(bd("120"), bd("101"), bd("0")), PortfolioException.class);
+        assertThat(ex).isNotNull().hasMessageContaining("卖出数量超过持仓");
+        assertThat(ex.code()).isEqualTo(PortfolioErrorCode.SELL_EXCEEDS_QUANTITY);
     }
 
+    @DisplayName("盈亏恒等式在非整数均价下仍成立")
     @Test
-    void 盈亏恒等式在非整数均价下仍成立() {
+    void givenNonIntegerAvgCost_whenApplyBuyDividendAndSell_thenPnlIdentityHolds() {
         Position p = newPosition()
                 .applyBuy(bd("10"), bd("3"), bd("0"))    // cost 30
                 .applyCashDividend(bd("1"))              // costBasis 29
                 .applySell(bd("10"), bd("1"), bd("0"));  // 均价 9.67
         assertThat(p.realizedPnl()).isEqualByComparingTo("0.3333");
         assertThat(p.costBasis().add(p.netCashFlow())).isEqualByComparingTo(p.realizedPnl());
+    }
+
+    @DisplayName("买入负价格被拒")
+    @Test
+    void givenNegativeBuyPrice_whenApplyBuy_thenRejected() {
+        Position p = newPosition();
+        assertCode(() -> p.applyBuy(bd("-1"), bd("100"), bd("0")), PortfolioErrorCode.INVALID_INPUT);
+    }
+
+    @DisplayName("买入零数量被拒")
+    @Test
+    void givenZeroBuyQuantity_whenApplyBuy_thenRejected() {
+        Position p = newPosition();
+        assertCode(() -> p.applyBuy(bd("100"), bd("0"), bd("0")), PortfolioErrorCode.INVALID_INPUT);
+    }
+
+    @DisplayName("买入负手续费被拒")
+    @Test
+    void givenNegativeBuyFee_whenApplyBuy_thenRejected() {
+        Position p = newPosition();
+        assertCode(() -> p.applyBuy(bd("100"), bd("100"), bd("-1")), PortfolioErrorCode.INVALID_INPUT);
+    }
+
+    @DisplayName("卖出负数量被拒")
+    @Test
+    void givenNegativeSellQuantity_whenApplySell_thenRejected() {
+        Position p = newPosition().applyBuy(bd("100"), bd("100"), bd("0"));
+        assertCode(() -> p.applySell(bd("120"), bd("-10"), bd("0")), PortfolioErrorCode.INVALID_INPUT);
+    }
+
+    @DisplayName("卖出负价格被拒")
+    @Test
+    void givenNegativeSellPrice_whenApplySell_thenRejected() {
+        Position p = newPosition().applyBuy(bd("100"), bd("100"), bd("0"));
+        assertCode(() -> p.applySell(bd("-120"), bd("10"), bd("0")), PortfolioErrorCode.INVALID_INPUT);
+    }
+
+    @DisplayName("卖出负手续费被拒")
+    @Test
+    void givenNegativeSellFee_whenApplySell_thenRejected() {
+        Position p = newPosition().applyBuy(bd("100"), bd("100"), bd("0"));
+        assertCode(() -> p.applySell(bd("120"), bd("10"), bd("-1")), PortfolioErrorCode.INVALID_INPUT);
+    }
+
+    @DisplayName("现金分红为负被拒")
+    @Test
+    void givenNegativeCashDividend_whenApplyCashDividend_thenRejected() {
+        Position p = newPosition().applyBuy(bd("100"), bd("100"), bd("0"));
+        assertCode(() -> p.applyCashDividend(bd("-1")), PortfolioErrorCode.INVALID_INPUT);
+    }
+
+    private static void assertCode(org.assertj.core.api.ThrowableAssert.ThrowingCallable callable, String code) {
+        PortfolioException ex = catchThrowableOfType(callable, PortfolioException.class);
+        assertThat(ex).isNotNull();
+        assertThat(ex.code()).isEqualTo(code);
     }
 }

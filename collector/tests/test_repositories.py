@@ -4,6 +4,47 @@ from unittest.mock import MagicMock
 from collector.repositories.tasks import TaskRepository
 
 
+def test_list_all_parses_jsonb_without_enabled_filter():
+    conn = MagicMock()
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.fetchall.return_value = [
+        (
+            "all_a_valuation",
+            "全A估值",
+            json.dumps([{"source_id": "a"}]),
+            "fc",
+            None,
+            json.dumps([{"check": "min_rows", "value": 1000, "level": "hard"}]),
+            "valuation_snapshot",
+            json.dumps({"type": "cron", "cron": "30 15 * * 1-5"}),
+            True,
+            True,
+            3,
+            "exponential",
+        ),
+        (
+            "old_task",
+            "停用任务",
+            json.dumps([{"source_id": "b"}]),
+            "fc",
+            None,
+            None,
+            "x",
+            json.dumps({"type": "interval", "days": 7}),
+            False,
+            False,
+            3,
+            "exponential",
+        ),
+    ]
+    rows = TaskRepository(conn).list_all()
+    assert [r["task_code"] for r in rows] == ["all_a_valuation", "old_task"]
+    assert rows[1]["enabled"] is False
+    # 不附加 enabled 过滤条件：整表查询，无 WHERE 子句
+    sql = cur.execute.call_args.args[0]
+    assert "WHERE" not in sql.upper()
+
+
 def test_list_enabled_parses_jsonb():
     conn = MagicMock()
     cur = conn.cursor.return_value.__enter__.return_value
@@ -77,6 +118,13 @@ def test_get_parses_null_jsonb_columns_as_none():
     assert row["task_code"] == "t"
     assert row["validator"] is None
     assert row["source_ids"] == [{"source_id": "a"}]
+
+
+def test_upsert_sql_updates_enabled_on_conflict():
+    """C-1：ON CONFLICT DO UPDATE 必须含 enabled=EXCLUDED.enabled，否则声明式启停失效。"""
+    from collector.repositories.tasks import UPSERT_TASK
+
+    assert "enabled=EXCLUDED.enabled" in UPSERT_TASK
 
 
 def test_upsert_serializes_jsonb_and_commits():
@@ -190,6 +238,63 @@ def test_run_record_warns_on_unknown_task(caplog):
     with caplog.at_level(logging.WARNING):
         assert RunRepository(conn).record("nope", "incremental", "success") is None
     assert "未知任务 nope" in caplog.text
+
+
+def test_start_run_inserts_running_row_and_returns_id():
+    from collector.repositories.runs import RunRepository
+
+    conn = MagicMock()
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.fetchone.return_value = (77,)  # INSERT..SELECT..RETURNING id -> 77
+    run_id = RunRepository(conn).start_run("t", "incremental", {"date": "2026-08-28"})
+    assert run_id == 77
+    sql = cur.execute.call_args.args[0]
+    assert "running" in sql  # 单条 INSERT..SELECT 的 status 为 running
+    assert "finished_at" not in sql  # running 行不写 finished_at
+    assert "WHERE task_code" in sql  # 未知任务返回空，不插行
+    conn.commit.assert_called_once()
+
+
+def test_start_run_returns_none_when_task_missing():
+    from collector.repositories.runs import RunRepository
+
+    conn = MagicMock()
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.fetchone.return_value = None
+    assert RunRepository(conn).start_run("nope", "incremental", None) is None
+
+
+def test_finish_run_updates_row_with_finished_at(caplog):
+    import logging
+
+    from collector.repositories.runs import RunRepository
+
+    conn = MagicMock()
+    cur = conn.cursor.return_value.__enter__.return_value
+    RunRepository(conn).finish_run(77, "success", source_used="a", rows_written=5)
+    sql = cur.execute.call_args.args[0]
+    assert "UPDATE collector_task_run" in sql
+    assert "finished_at=now()" in sql
+    conn.commit.assert_called_once()
+    # run_id 为 None 时 no-op
+    with caplog.at_level(logging.DEBUG):
+        assert RunRepository(conn).finish_run(None, "success") is None
+
+
+def test_latest_run_status_returns_mapping():
+    import datetime as dt
+
+    from collector.repositories.runs import RunRepository
+
+    conn = MagicMock()
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.fetchall.return_value = [
+        ("t1", dt.datetime(2026, 8, 28, 15, 30), "success"),
+        ("t2", None, None),  # 无运行记录
+    ]
+    result = RunRepository(conn).latest_run_status()
+    assert result["t1"] == (dt.datetime(2026, 8, 28, 15, 30), "success")
+    assert result["t2"] == (None, None)
 
 
 def test_never_succeeded_returns_codes():

@@ -26,6 +26,7 @@ from collector.repositories.tasks import TASK_COLS, TaskRepository
 from collector.scheduler.calendar import TradingCalendar
 from collector.scheduler.runner import TaskRunner
 from collector.sources.plugins import (
+    AllASpotBackupSource,
     IndexConstituentSource,
     IndexValuationSource,
     IndustryUniverseSource,
@@ -33,6 +34,7 @@ from collector.sources.plugins import (
     StockFinancialSource,
     StockValuationDailySource,
     TreasuryCurveSource,
+    make_index_dividend_fetch,
 )
 from collector.sources.registry import SourceRegistry
 from collector.store.writer import Store
@@ -74,6 +76,11 @@ def seed_tasks(conn, task_defs):
     for t in task_defs:
         _validate_task_keys(t)
         repo.upsert(t)
+    # reconcile：YAML 删除的任务在库中残留且仍 enabled，会被调度——停用（保留历史与回溯）。
+    codes = {t["task_code"] for t in task_defs}
+    for stale in sorted(repo.all_codes() - codes):
+        logger.warning("任务 %s 不在当前 YAML 定义中，seed reconcile 停用", stale)
+        repo.disable(stale)
 
 
 def assemble_collector(row, registries):
@@ -239,10 +246,15 @@ def build_registries(config):
         tushare_token=config.tushare_token,
         plugins={
             "shenwan_mapping": ShenwanMappingSource("shenwan_mapping", pro_factory=pro),
-            "index_valuation": IndexValuationSource("index_valuation", pro_factory=pro),
+            "index_valuation": IndexValuationSource(
+                "index_valuation",
+                pro_factory=pro,
+                dividend_fetch=make_index_dividend_fetch(pro),
+            ),
             "industry_universe": IndustryUniverseSource("industry_universe", conn_factory=conn_factory),
             "treasury_curve": TreasuryCurveSource("treasury_curve", conn_factory=conn_factory),
             "index_constituent": IndexConstituentSource("index_constituent", pro_factory=pro),
+            "all_a_spot_backup": AllASpotBackupSource("all_a_spot_backup", pro_factory=pro),
             "stock_valuation_daily": StockValuationDailySource("stock_valuation_daily", pro_factory=pro),
             "stock_financial": StockFinancialSource("stock_financial", pro_factory=pro),
         },

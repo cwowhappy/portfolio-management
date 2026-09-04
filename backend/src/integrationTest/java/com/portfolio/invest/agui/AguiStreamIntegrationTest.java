@@ -18,6 +18,7 @@ import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
 import java.util.List;
 import java.util.UUID;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -67,9 +68,10 @@ class AguiStreamIntegrationTest extends PostgresTestSupport {
         return new FixedReplyModel();
     }
 
+    @DisplayName("认证用户发起对话返回完整AGUI事件流")
     @Test
-    void 认证用户发起对话返回完整AGUI事件流() throws Exception {
-        MockHttpSession session = 注册审核并登录("agui_alice");
+    void givenAuthenticatedUser_whenRunConversation_thenFullAguiEventStreamReturned() throws Exception {
+        MockHttpSession session = registerApproveAndLogin("agui_alice");
 
         MvcResult result = mockMvc.perform(post("/agui/run")
                         .session(session)
@@ -95,9 +97,10 @@ class AguiStreamIntegrationTest extends PostgresTestSupport {
         assertThat(investModel).isInstanceOf(FixedReplyModel.class);
     }
 
+    @DisplayName("请求未注册Agent返回流内错误事件而非500")
     @Test
-    void 请求未注册Agent返回流内错误事件而非500() throws Exception {
-        MockHttpSession session = 注册审核并登录("agui_bob");
+    void givenUnregisteredAgent_whenRunConversation_thenInStreamErrorNot500() throws Exception {
+        MockHttpSession session = registerApproveAndLogin("agui_bob");
 
         // AguiMvcController 在异步线程内捕获 AgentNotFoundException，
         // 降级为流内 error 事件 + RUN_FINISHED（HTTP 200），不会冒泡到 GlobalExceptionHandler
@@ -118,9 +121,10 @@ class AguiStreamIntegrationTest extends PostgresTestSupport {
         assertThat(body).doesNotContain("TEXT_MESSAGE_START");
     }
 
+    @DisplayName("非法请求体返回结构化错误而非事件流")
     @Test
-    void 非法请求体返回结构化错误而非事件流() throws Exception {
-        MockHttpSession session = 注册审核并登录("agui_carol");
+    void givenInvalidRequestBody_whenRunConversation_thenStructuredErrorNotEventStream() throws Exception {
+        MockHttpSession session = registerApproveAndLogin("agui_carol");
 
         // JSON 解析在控制器入参绑定阶段失败，走不到 SSE：
         // GlobalExceptionHandler 的 HttpMessageNotReadableException 映射 → 400 INVALID_REQUEST
@@ -132,7 +136,7 @@ class AguiStreamIntegrationTest extends PostgresTestSupport {
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
     }
 
-    private MockHttpSession 注册审核并登录(String username) throws Exception {
+    private MockHttpSession registerApproveAndLogin(String username) throws Exception {
         String password = "abc12345";
         mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)

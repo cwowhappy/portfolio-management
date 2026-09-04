@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.portfolio.invest.support.PostgresTestSupport;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -23,20 +24,22 @@ class FlywayMigrationIntegrationTest extends PostgresTestSupport {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @DisplayName("全部迁移脚本应用成功且无失败记录")
     @Test
-    void 全部迁移脚本应用成功且无失败记录() {
+    void whenFlywayMigrates_thenAllAppliedWithNoFailures() {
         List<String> versions = jdbcTemplate.queryForList(
                 "SELECT version FROM flyway_schema_history WHERE type = 'SQL' ORDER BY installed_rank",
                 String.class);
-        assertThat(versions).containsExactly("1", "2", "3", "4", "5", "6", "7", "8");
+        assertThat(versions).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9");
 
         Integer failed = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM flyway_schema_history WHERE success = false", Integer.class);
         assertThat(failed).isZero();
     }
 
+    @DisplayName("估值快照表契约")
     @Test
-    void 估值快照表契约() {
+    void whenSchemaMigrated_thenValuationSnapshotTableMatchesContract() {
         assertPrimaryKey("valuation_snapshot", "id");
         assertColumn("valuation_snapshot", "trading_day", "date", false);
         assertColumn("valuation_snapshot", "pe_median", "numeric", false, 12, 4);
@@ -46,8 +49,9 @@ class FlywayMigrationIntegrationTest extends PostgresTestSupport {
         assertUniqueColumns("valuation_snapshot", "trading_day");
     }
 
+    @DisplayName("行业与指数估值表契约")
     @Test
-    void 行业与指数估值表契约() {
+    void whenSchemaMigrated_thenIndustryAndIndexTablesMatchContract() {
         assertColumn("industry_valuation", "trading_day", "date", false);
         assertColumn("industry_valuation", "industry_code", "character varying", false);
         assertColumn("industry_valuation", "pe", "numeric", true);
@@ -58,8 +62,9 @@ class FlywayMigrationIntegrationTest extends PostgresTestSupport {
         assertUniqueColumns("index_valuation_history", "trading_day,index_code");
     }
 
+    @DisplayName("国债收益率曲线与指数成分表契约")
     @Test
-    void 国债收益率曲线与指数成分表契约() {
+    void whenSchemaMigrated_thenTreasuryAndIndexConstituentTablesMatchContract() {
         // V4：treasury_yield 迁移到 treasury_yield_curve 后废弃旧表
         assertThat(jdbcTemplate.queryForObject("SELECT to_regclass('public.treasury_yield')", String.class))
                 .isNull();
@@ -75,8 +80,9 @@ class FlywayMigrationIntegrationTest extends PostgresTestSupport {
         assertUniqueColumns("index_constituent", "index_code,stock_code");
     }
 
+    @DisplayName("申万行业映射表契约")
     @Test
-    void 申万行业映射表契约() {
+    void whenSchemaMigrated_thenShenwanIndustryMappingTableMatchesContract() {
         assertPrimaryKey("shenwan_industry_mapping", "id");
         assertColumn("shenwan_industry_mapping", "stock_code", "character varying", false);
         assertColumn("shenwan_industry_mapping", "industry_code", "character varying", false);

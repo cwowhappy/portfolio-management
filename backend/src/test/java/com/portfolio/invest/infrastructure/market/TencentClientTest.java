@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
@@ -39,8 +40,9 @@ class TencentClientTest {
         }
     }
 
+    @DisplayName("kline返回原始JSON")
     @Test
-    void kline返回原始JSON() throws IOException {
+    void whenKline_thenReturnsRawJson() throws IOException {
         server.expect(requestTo(startsWith("https://web.ifzq.gtimg.cn/appstock/app/fqkline/get")))
                 .andRespond(withSuccess(fixture("tencent-kline.json"), MediaType.APPLICATION_JSON));
         JsonNode node = client.kline("sh600519", "day", 120);
@@ -48,8 +50,9 @@ class TencentClientTest {
         server.verify();
     }
 
+    @DisplayName("周期映射与默认值")
     @Test
-    void 周期映射与默认值() throws IOException {
+    void givenKlinePeriodVariants_whenKline_thenMapsPeriodAndAppliesDefaults() throws IOException {
         String url = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get";
         server.expect(requestTo(startsWith(url))).andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
         server.expect(requestTo(startsWith(url))).andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
@@ -60,8 +63,9 @@ class TencentClientTest {
         server.verify();
     }
 
+    @DisplayName("三次全失败抛UPSTREAM_UNAVAILABLE")
     @Test
-    void 三次全失败抛UPSTREAM_UNAVAILABLE() {
+    void givenThreeFailures_whenKline_thenThrowsUpstreamUnavailable() {
         String url = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get";
         // 腾讯与东财/新浪一致：三次尝试均失败后包装为领域异常
         server.expect(requestTo(startsWith(url))).andRespond(withServerError());

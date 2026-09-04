@@ -16,6 +16,7 @@ import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ModelRegistry;
 import io.agentscope.core.model.ToolSchema;
 import java.util.List;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
@@ -39,8 +40,9 @@ class AgentConfigContextTest {
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
             .withUserConfiguration(StubDependencies.class, AgentConfig.class);
 
+    @DisplayName("无APIKEY时Model与Agent不装配但上下文可启动")
     @Test
-    void 无APIKEY时Model与Agent不装配但上下文可启动() {
+    void givenNoApiKey_whenContextStarts_thenModelAndAgentNotAssembled() {
         // 显式置空：make 会 export .env 中的真实 DEEPSEEK_API_KEY 进测试进程，
         // runner 环境会继承该环境变量；withPropertyValues 落在 systemProperties，
         // 优先级高于 systemEnvironment，置空后 hasText 为 false。
@@ -51,8 +53,9 @@ class AgentConfigContextTest {
         });
     }
 
+    @DisplayName("有APIKEY时Model与Agent装配成功")
     @Test
-    void 有APIKEY时Model与Agent装配成功() {
+    void givenApiKey_whenContextStarts_thenModelAndAgentAssembled() {
         ModelRegistry.registerFactory("deepseek:.*", (modelId, creationContext) -> new FakeModel());
 
         runner.withPropertyValues("DEEPSEEK_API_KEY=test-key")

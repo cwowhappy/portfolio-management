@@ -1,13 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { fetchHealth } from "@/lib/api";
 import { RequireAuth } from "@/components/auth/RequireAuth";
+import { useAuth } from "@/lib/auth";
 import Sidebar from "./Sidebar";
 import { RuntimeProvider } from "./RuntimeProvider";
 import ThreadArea from "./ThreadArea";
 
-function ChatShell() {
+function ChatShell({ onUnauthorized }: { onUnauthorized: () => void }) {
   const [health, setHealth] = useState<{ llmKey: boolean; marketOk: boolean } | null>(null);
 
   useEffect(() => {
@@ -33,16 +35,23 @@ function ChatShell() {
     <div className="flex h-full">
       <Sidebar health={health} />
       {/* null=检测中，true=已配置，false=确实未配置 */}
-      <ThreadArea llmReady={health ? health.llmKey : null} />
+      <ThreadArea llmReady={health ? health.llmKey : null} onUnauthorized={onUnauthorized} />
     </div>
   );
 }
 
 export default function ChatPage() {
+  const { logout } = useAuth();
+  const router = useRouter();
+  // AI 对话遇 401（如使用中被停用）→ 清本地登录态并跳登录（对齐 /api/auth/me 401 处理）
+  const handleUnauthorized = useCallback(() => {
+    void logout().finally(() => router.replace("/login"));
+  }, [logout, router]);
+
   return (
     <RequireAuth>
       <RuntimeProvider>
-        <ChatShell />
+        <ChatShell onUnauthorized={handleUnauthorized} />
       </RuntimeProvider>
     </RequireAuth>
   );

@@ -1,11 +1,13 @@
 package com.portfolio.invest.application.valuation;
 
 import com.portfolio.invest.application.cache.ApplicationCache;
+import com.portfolio.invest.config.InvestProperties;
 import com.portfolio.invest.domain.valuation.IndexValuation;
 import com.portfolio.invest.domain.valuation.Percentile;
 import com.portfolio.invest.domain.valuation.TreasuryYield;
 import com.portfolio.invest.domain.valuation.ValuationRepository;
 import com.portfolio.invest.domain.valuation.ValuationSnapshot;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -14,21 +16,35 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 @Service
 public class ValuationApplicationService {
 
     private static final String HS300 = "000300";
-    /** 估值按交易日更新，overview/history 结果按当日日期为 key 加短 TTL 缓存，避免匿名请求反复全表扫描。 */
-    private static final Duration CACHE_TTL = Duration.ofMinutes(5);
+    /** FR-B6 走势的 5 个指数：上证50/沪深300/中证500/创业板指/科创50。 */
+    private static final List<String> INDEX_CODES = List.of("000016", "000300", "000905", "399006", "000688");
 
     private final ValuationRepository repository;
     private final ApplicationCache cache;
+    /** 估值结果缓存 TTL（默认 5min；生产经 invest.app-cache.ttl 配置）。 */
+    private final Duration cacheTtl;
+
+    @Autowired
+    public ValuationApplicationService(ValuationRepository repository, ApplicationCache cache, InvestProperties props) {
+        this(repository, cache, props.getAppCache().getTtl());
+    }
 
     public ValuationApplicationService(ValuationRepository repository, ApplicationCache cache) {
+        this(repository, cache, Duration.ofMinutes(5));
+    }
+
+    ValuationApplicationService(ValuationRepository repository, ApplicationCache cache, Duration cacheTtl) {
         this.repository = repository;
         this.cache = cache;
+        this.cacheTtl = cacheTtl;
     }
 
     public ValuationOverviewView overview() {
@@ -50,19 +66,30 @@ public class ValuationApplicationService {
         BigDecimal pbPercentile = latest == null ? null : Percentile.of(latest.pbMedian(), pbHistory);
         BigDecimal breakerPercentile = latest == null ? null : Percentile.of(latest.netBreakerRatio(), breakerHistory);
 
-        BigDecimal erp = erp(hs300, treasuries);
-        BigDecimal erpPercentile = erpPercentile(erp, hs300);
+        // 真实 ERP 历史序列：按 tradingDay 对齐 hs300 股息率与 10Y 国债，逐日 ERP = dividendYield − yield10y
+        List<BigDecimal> erpSeries = erpHistory(hs300, treasuries);
+        BigDecimal erp = erpSeries.isEmpty() ? null : erpSeries.get(erpSeries.size() - 1);
+        BigDecimal erpPercentile = erp == null ? null : Percentile.of(erp, erpSeries);
 
         List<ValuationOverviewView.IndexValuationView> indices = indices();
 
         BigDecimal thermometer = thermometer(pePercentile, erpPercentile, breakerPercentile);
         boolean accumulating = snapshots.size() < 5;
 
-        return new ValuationOverviewView(latest, pePercentile, pbPercentile, breakerPercentile,
+        ValuationOverviewView.SnapshotView latestView = latest == null ? null
+                : new ValuationOverviewView.SnapshotView(
+                        latest.tradingDay(), latest.peMedian(), latest.pbMedian(),
+                        latest.netBreakerCount(), latest.netBreakerRatio());
+        return new ValuationOverviewView(latestView, pePercentile, pbPercentile, breakerPercentile,
                 erp, erpPercentile, thermometer, indices, accumulating);
     }
 
     public List<IndustryValuationView> industries(String sort) {
+        String sortKey = sort == null ? "pe" : sort;
+        return cached("industries:" + sortKey, () -> loadIndustries(sort));
+    }
+
+    private List<IndustryValuationView> loadIndustries(String sort) {
         ValuationSnapshot latest = repository.findLatestSnapshot();
         if (latest == null) {
             return List.of();
@@ -85,10 +112,13 @@ public class ValuationApplicationService {
     }
 
     private ValuationHistoryView loadHistory() {
+        List<IndexValuation> indexValuations = INDEX_CODES.stream()
+                .flatMap(code -> repository.findIndexValuations(code).stream())
+                .toList();
         return new ValuationHistoryView(
                 repository.findAllSnapshots(),
                 repository.findAllTreasuryYields(),
-                repository.findIndexValuations(HS300));
+                indexValuations);
     }
 
     private <T> T cached(String kind, Supplier<T> loader) {
@@ -99,43 +129,28 @@ public class ValuationApplicationService {
             return hit;
         }
         T value = loader.get();
-        cache.put(key, value, CACHE_TTL);
+        cache.put(key, value, cacheTtl);
         return value;
     }
 
-    /** ERP = 沪深 300 股息率 − 10 年国债收益率；数据缺失返回 null。 */
-    private BigDecimal erp(List<IndexValuation> hs300, List<TreasuryYield> treasuries) {
-        IndexValuation latest = hs300.stream()
+    /**
+     * 真实 ERP 历史序列：按 tradingDay 对齐沪深 300 的股息率与 10Y 国债收益率，
+     * 逐日 ERP = dividendYield − yield10y（按交易日升序，任一缺失的交易日跳过）。
+     */
+    private List<BigDecimal> erpHistory(List<IndexValuation> hs300, List<TreasuryYield> treasuries) {
+        Map<LocalDate, BigDecimal> treasuryByDay = treasuries.stream()
+                .filter(t -> t.yield10y() != null)
+                .collect(Collectors.toMap(TreasuryYield::tradingDay, TreasuryYield::yield10y, (a, b) -> a));
+        return hs300.stream()
                 .filter(i -> i.dividendYield() != null)
-                .max(Comparator.comparing(IndexValuation::tradingDay))
-                .orElse(null);
-        var treasury = treasuries.stream()
-                .max(Comparator.comparing(TreasuryYield::tradingDay))
-                .orElse(null);
-        if (latest == null || treasury == null) {
-            return null;
-        }
-        return latest.dividendYield().subtract(treasury.yield10y()).setScale(2, RoundingMode.HALF_UP);
-    }
-
-    private BigDecimal erpPercentile(BigDecimal erp, List<IndexValuation> hs300) {
-        if (erp == null) {
-            return null;
-        }
-        List<BigDecimal> erpHistory = hs300.stream()
-                .filter(i -> i.dividendYield() != null)
-                .map(IndexValuation::dividendYield)
+                .filter(i -> treasuryByDay.containsKey(i.tradingDay()))
+                .sorted(Comparator.comparing(IndexValuation::tradingDay))
+                .map(i -> i.dividendYield().subtract(treasuryByDay.get(i.tradingDay())).setScale(2, RoundingMode.HALF_UP))
                 .toList();
-        // 简化：以沪深 300 股息率分位近似 ERP 分位（ERP 与股息率同向）
-        if (erpHistory.isEmpty()) {
-            return null;
-        }
-        BigDecimal latestDiv = erpHistory.get(erpHistory.size() - 1);
-        return Percentile.of(latestDiv, erpHistory);
     }
 
     private List<ValuationOverviewView.IndexValuationView> indices() {
-        return List.of("000016", "000300", "000905", "399006", "000688").stream()
+        return INDEX_CODES.stream()
                 .map(code -> {
                     List<IndexValuation> history = repository.findIndexValuations(code);
                     if (history.isEmpty()) {

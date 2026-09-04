@@ -16,6 +16,7 @@ import com.portfolio.invest.domain.user.UserRole;
 import com.portfolio.invest.domain.user.UserStatus;
 import com.portfolio.invest.infrastructure.security.AuthenticatedUser;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -55,8 +56,9 @@ class AllocationControllerTest {
                 principal, null, principal.getAuthorities());
     }
 
+    @DisplayName("templates返回200")
     @Test
-    void templates返回200() throws Exception {
+    void whenGetTemplates_thenReturn200() throws Exception {
         when(service.templates()).thenReturn(List.of(
                 new TemplateView("BALANCED_60_40", "60/40 股债平衡",
                         List.of(new WeightView(AssetClass.STOCK, new BigDecimal("60"))))));
@@ -65,8 +67,9 @@ class AllocationControllerTest {
                 .andExpect(jsonPath("$[0].name").value("60/40 股债平衡"));
     }
 
+    @DisplayName("创建方案返回201")
     @Test
-    void 创建方案返回201() throws Exception {
+    void whenCreatePlan_thenReturn201() throws Exception {
         when(service.createPlan(eq(1L), any(CreatePlanCommand.class)))
                 .thenReturn(new PlanView(5L, "平衡", PlanSource.TEMPLATE,
                         List.of(new WeightView(AssetClass.STOCK, new BigDecimal("60"))), false));
@@ -77,8 +80,9 @@ class AllocationControllerTest {
                 .andExpect(jsonPath("$.name").value("平衡"));
     }
 
+    @DisplayName("更新方案返回200")
     @Test
-    void 更新方案返回200() throws Exception {
+    void whenUpdatePlan_thenReturn200() throws Exception {
         when(service.updatePlan(eq(1L), eq(5L), any(UpdatePlanCommand.class)))
                 .thenReturn(new PlanView(5L, "稳健", PlanSource.CUSTOM,
                         List.of(new WeightView(AssetClass.STOCK, new BigDecimal("40"))), true));
@@ -89,8 +93,9 @@ class AllocationControllerTest {
                 .andExpect(jsonPath("$.name").value("稳健"));
     }
 
+    @DisplayName("偏离度返回200")
     @Test
-    void 偏离度返回200() throws Exception {
+    void whenGetDeviation_thenReturn200() throws Exception {
         when(service.deviation(1L)).thenReturn(new DeviationView(List.of(
                 new DeviationView.DeviationSlice(AssetClass.STOCK, new BigDecimal("60"),
                         new BigDecimal("70"), new BigDecimal("10")))));
@@ -99,8 +104,9 @@ class AllocationControllerTest {
                 .andExpect(jsonPath("$.slices[0].assetClass").value("STOCK"));
     }
 
+    @DisplayName("非本人方案映射404")
     @Test
-    void 非本人方案映射404() throws Exception {
+    void givenOthersPlan_whenGetPlans_thenReturn404() throws Exception {
         when(service.plans(1L)).thenThrow(new AllocationException(AllocationErrorCode.NOT_FOUND, "方案不存在"));
         mvc.perform(get("/api/allocation/plans").principal(auth()))
                 .andExpect(status().isNotFound())

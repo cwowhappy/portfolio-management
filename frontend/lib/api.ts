@@ -19,27 +19,7 @@ import type {
   Quote,
   StockHit,
 } from "./types";
-
-async function get<T>(path: string, schema: z.ZodType<T>): Promise<T> {
-  const res = await fetch(path, { cache: "no-store" });
-  if (!res.ok) {
-    let message = "请求失败";
-    try {
-      const body = await res.json();
-      if (body?.message) message = body.message;
-    } catch {
-      // ignore
-    }
-    throw new Error(message);
-  }
-  const data: unknown = await res.json();
-  try {
-    return schema.parse(data);
-  } catch (e) {
-    console.error("[api] 响应 schema 校验失败", path, e);
-    throw new Error("数据格式异常");
-  }
-}
+import { get } from "./http";
 
 export const fetchOverview = () => get<MarketOverview>("/api/market/overview", MarketOverviewSchema);
 export const fetchQuote = (code: string) => get<Quote>("/api/market/quote/" + code, QuoteSchema);

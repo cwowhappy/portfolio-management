@@ -3,15 +3,7 @@
 import { z } from "zod";
 import { ScreeningStockSchema } from "./schemas";
 import type { ScreeningStock, ScreeningParams } from "./types";
-
-async function get<T>(path: string, schema: z.ZodType<T>): Promise<T> {
-  const res = await fetch(path, { cache: "no-store" });
-  if (!res.ok) throw new Error(`请求失败 (${res.status})`);
-  const data = await res.json();
-  const parsed = schema.safeParse(data);
-  if (!parsed.success) throw new Error("数据格式异常");
-  return parsed.data;
-}
+import { get } from "./http";
 
 export function fetchScreenedStocks(params: ScreeningParams): Promise<ScreeningStock[]> {
   const qs = new URLSearchParams();

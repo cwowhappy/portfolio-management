@@ -10,6 +10,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import java.time.Instant;
 
 @Entity
@@ -33,6 +34,10 @@ public class HoldingGroupJpaEntity {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
+    @Version
+    @Column(name = "version", nullable = false)
+    private Long version;
+
     protected HoldingGroupJpaEntity() {}
 
     public static HoldingGroupJpaEntity fromDomain(HoldingGroup g) {
@@ -42,10 +47,11 @@ public class HoldingGroupJpaEntity {
         e.name = g.name();
         e.type = g.type();
         e.createdAt = g.createdAt();
+        e.version = g.version();
         return e;
     }
 
     public HoldingGroup toDomain() {
-        return HoldingGroup.reconstitute(id, portfolioId, name, type, createdAt);
+        return HoldingGroup.reconstitute(id, portfolioId, name, type, createdAt, version);
     }
 }

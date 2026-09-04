@@ -11,6 +11,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Map;
@@ -42,6 +43,10 @@ public class AllocationPlanJpaEntity {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    @Version
+    @Column(name = "version", nullable = false)
+    private Long version;
+
     protected AllocationPlanJpaEntity() {}
 
     public static AllocationPlanJpaEntity fromDomain(AllocationPlan p) {
@@ -53,11 +58,12 @@ public class AllocationPlanJpaEntity {
         e.active = p.active();
         e.createdAt = p.createdAt();
         e.updatedAt = p.updatedAt();
+        e.version = p.version();
         return e;
     }
 
     public AllocationPlan toDomain(Map<AssetClass, BigDecimal> weights) {
-        return AllocationPlan.reconstitute(id, userId, name, source, weights, active, createdAt, updatedAt);
+        return AllocationPlan.reconstitute(id, userId, name, source, weights, active, createdAt, updatedAt, version);
     }
 
     Long getId() { return id; }

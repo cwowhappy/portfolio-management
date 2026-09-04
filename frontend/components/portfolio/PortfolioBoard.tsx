@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchOverview, fetchPositions, fetchGroups, fetchAllocation, fetchIndustryDistribution, fetchConcentration } from "@/lib/portfolioApi";
 import type { GroupView, PortfolioOverview, PositionView, AssetAllocation, IndustryDistribution, Concentration } from "@/lib/types";
 import OverviewCards from "@/components/portfolio/OverviewCards";
@@ -20,8 +20,10 @@ export default function PortfolioBoard() {
   const [concentration, setConcentration] = useState<Concentration | null>(null);
   const [activeGroup, setActiveGroup] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const requestSeqRef = useRef(0);
 
   const reload = useCallback(() => {
+    const seq = ++requestSeqRef.current;
     Promise.all([
       fetchOverview(),
       fetchGroups(),
@@ -31,6 +33,7 @@ export default function PortfolioBoard() {
       fetchConcentration(),
     ])
       .then(([o, g, p, a, ind, c]) => {
+        if (seq !== requestSeqRef.current) return; // 已有更新的 reload，丢弃过期响应
         setOverview(o);
         setGroups(g);
         setPositions(p);
@@ -39,6 +42,7 @@ export default function PortfolioBoard() {
         setConcentration(c);
       })
       .catch((e) => {
+        if (seq !== requestSeqRef.current) return;
         setError(e instanceof Error ? e.message : "加载失败");
       });
   }, []);

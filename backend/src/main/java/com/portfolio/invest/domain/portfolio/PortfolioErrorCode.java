@@ -7,6 +7,7 @@ public final class PortfolioErrorCode {
     public static final String NOT_FOUND = "NOT_FOUND";
     public static final String SELL_EXCEEDS_QUANTITY = "SELL_EXCEEDS_QUANTITY";
     public static final String GROUP_NOT_EMPTY = "GROUP_NOT_EMPTY";
+    public static final String GROUP_HAS_CASH_FLOW = "GROUP_HAS_CASH_FLOW";
     public static final String INVALID_GROUP_TYPE = "INVALID_GROUP_TYPE";
     public static final String INVALID_INPUT = "INVALID_INPUT";
 }

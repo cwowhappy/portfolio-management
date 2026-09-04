@@ -1,11 +1,12 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { cleanup, render, screen, fireEvent } from "@testing-library/react";
 import GroupManager from "@/components/portfolio/GroupManager";
-import { addCashTransaction, createGroup, renameGroup } from "@/lib/portfolioApi";
+import { addCashTransaction, createGroup, deleteGroup, renameGroup } from "@/lib/portfolioApi";
 
 vi.mock("@/lib/portfolioApi", () => ({
   createGroup: vi.fn().mockResolvedValue({}),
   renameGroup: vi.fn().mockResolvedValue({}),
+  deleteGroup: vi.fn().mockResolvedValue({}),
   addCashTransaction: vi.fn().mockResolvedValue({}),
 }));
 
@@ -16,6 +17,7 @@ const groups = [
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
 });
 
 describe("GroupManager", () => {
@@ -59,5 +61,34 @@ describe("GroupManager", () => {
     expect(vi.mocked(addCashTransaction)).toHaveBeenCalledWith(
       expect.objectContaining({ groupId: 1, type: "WITHDRAW", amount: 5000 }),
     );
+  });
+
+  describe("删除分组", () => {
+    it("确认后调用 deleteGroup 并刷新", async () => {
+      vi.spyOn(window, "confirm").mockReturnValue(true);
+      const onChanged = vi.fn();
+      render(<GroupManager groups={groups} onChanged={onChanged} />);
+      fireEvent.click(screen.getAllByRole("button", { name: /删除/ })[0]);
+      await vi.waitFor(() => expect(onChanged).toHaveBeenCalled());
+      expect(vi.mocked(deleteGroup)).toHaveBeenCalledWith(1);
+      expect(window.confirm).toHaveBeenCalled();
+    });
+
+    it("取消二次确认时不调用 deleteGroup", async () => {
+      vi.spyOn(window, "confirm").mockReturnValue(false);
+      const onChanged = vi.fn();
+      render(<GroupManager groups={groups} onChanged={onChanged} />);
+      fireEvent.click(screen.getAllByRole("button", { name: /删除/ })[0]);
+      expect(vi.mocked(deleteGroup)).not.toHaveBeenCalled();
+      expect(onChanged).not.toHaveBeenCalled();
+    });
+
+    it("非空分组不显示删除按钮", () => {
+      const nonEmpty = [
+        { id: 1, name: "有持仓", type: "ACCOUNT" as const, positionCount: 3, cashBalance: 0 },
+      ];
+      render(<GroupManager groups={nonEmpty} onChanged={vi.fn()} />);
+      expect(screen.queryByRole("button", { name: /删除/ })).toBeNull();
+    });
   });
 });

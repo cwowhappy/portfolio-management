@@ -128,6 +128,8 @@ describe("行情 REST 客户端（lib/api）", () => {
   it("所有请求都禁用缓存（cache: no-store）", async () => {
     fetchMock.mockResolvedValue(okResponse(validQuote));
     await api.fetchQuote("600519");
-    expect(fetchMock.mock.calls[0][1]).toEqual({ cache: "no-store" });
+    expect(fetchMock.mock.calls[0][1]).toEqual(
+      expect.objectContaining({ cache: "no-store" }),
+    );
   });
 });

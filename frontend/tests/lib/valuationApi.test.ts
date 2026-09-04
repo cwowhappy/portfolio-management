@@ -58,7 +58,7 @@ describe("valuationApi", () => {
 
   it("fetchValuationHistory 非 2xx 抛错", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 502 }));
-    await expect(fetchValuationHistory()).rejects.toThrow("请求失败 (502)");
+    await expect(fetchValuationHistory()).rejects.toThrow("请求失败");
   });
 
   it("fetchValuationHistory 响应格式非法时报数据格式异常", async () => {
@@ -86,7 +86,7 @@ describe("valuationApi", () => {
 
   it("fetchValuationIndustries 非 2xx 抛错", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 500 }));
-    await expect(fetchValuationIndustries()).rejects.toThrow("请求失败 (500)");
+    await expect(fetchValuationIndustries()).rejects.toThrow("请求失败");
   });
 
   it("fetchValuationIndustries 响应格式非法时报数据格式异常", async () => {

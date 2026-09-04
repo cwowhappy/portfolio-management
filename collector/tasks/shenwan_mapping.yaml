@@ -1,5 +1,6 @@
 task_code: shenwan_mapping
 task_name: 申万行业映射
+# 备源后置：暂为单源（tushare index_classify/index_member_all），后续补 akshare 备源
 source_ids:
   - { source_id: shenwan_mapping, type: plugin, class: shenwan_mapping }
 converter: field_mapping_sw

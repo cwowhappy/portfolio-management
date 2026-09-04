@@ -12,6 +12,7 @@ import com.portfolio.invest.domain.portfolio.PortfolioException;
 import com.portfolio.invest.domain.user.UserErrorCode;
 import com.portfolio.invest.domain.user.UserException;
 import java.util.Map;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -81,62 +82,70 @@ class GlobalExceptionHandlerSliceTest {
         void notReadable(@RequestBody Map<String, Object> body) {}
     }
 
+    @DisplayName("用户名已占用映射400")
     @Test
-    void 用户名已占用映射400() throws Exception {
+    void givenUsernameTaken_whenRequestThrows_thenReturn400() throws Exception {
         mvc.perform(get("/test-throw/user-taken"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(UserErrorCode.USERNAME_TAKEN))
                 .andExpect(jsonPath("$.message").value("用户名已被占用"));
     }
 
+    @DisplayName("用户非法状态落入默认分支映射400")
     @Test
-    void 用户非法状态落入默认分支映射400() throws Exception {
+    void givenUserInvalidState_whenRequestThrows_thenReturn400() throws Exception {
         mvc.perform(get("/test-throw/user-invalid-state"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(UserErrorCode.INVALID_STATE));
     }
 
+    @DisplayName("会话不存在映射404")
     @Test
-    void 会话不存在映射404() throws Exception {
+    void givenConversationNotFound_whenRequestThrows_thenReturn404() throws Exception {
         mvc.perform(get("/test-throw/conversation-not-found"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value(ConversationErrorCode.NOT_FOUND))
                 .andExpect(jsonPath("$.message").value("会话不存在"));
     }
 
+    @DisplayName("会话ID非法映射400")
     @Test
-    void 会话ID非法映射400() throws Exception {
+    void givenConversationInvalidId_whenRequestThrows_thenReturn400() throws Exception {
         mvc.perform(get("/test-throw/conversation-invalid-id"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(ConversationErrorCode.INVALID_ID));
     }
 
+    @DisplayName("持仓不存在映射404")
     @Test
-    void 持仓不存在映射404() throws Exception {
+    void givenPortfolioNotFound_whenRequestThrows_thenReturn404() throws Exception {
         mvc.perform(get("/test-throw/portfolio-not-found"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value(PortfolioErrorCode.NOT_FOUND))
                 .andExpect(jsonPath("$.message").value("持仓不存在"));
     }
 
+    @DisplayName("持仓业务错误落入默认分支映射400")
     @Test
-    void 持仓业务错误落入默认分支映射400() throws Exception {
+    void givenPortfolioSellExceeds_whenRequestThrows_thenReturn400() throws Exception {
         mvc.perform(get("/test-throw/portfolio-sell-exceeds"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(PortfolioErrorCode.SELL_EXCEEDS_QUANTITY))
                 .andExpect(jsonPath("$.message").value("卖出数量超过持仓"));
     }
 
+    @DisplayName("缺少必填query参数映射400")
     @Test
-    void 缺少必填query参数映射400() throws Exception {
+    void givenMissingRequiredQueryParam_whenRequestThrows_thenReturn400() throws Exception {
         mvc.perform(get("/test-throw/missing-param"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
                 .andExpect(jsonPath("$.message").value("缺少必填参数：q"));
     }
 
+    @DisplayName("非法JSON请求体映射400")
     @Test
-    void 非法JSON请求体映射400() throws Exception {
+    void givenMalformedJsonBody_whenRequestThrows_thenReturn400() throws Exception {
         mvc.perform(post("/test-throw/not-readable")
                         .with(org.springframework.security.test.web.servlet.request
                                 .SecurityMockMvcRequestPostProcessors.csrf())

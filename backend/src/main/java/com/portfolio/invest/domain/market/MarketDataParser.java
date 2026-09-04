@@ -184,15 +184,9 @@ public final class MarketDataParser {
         return hits;
     }
 
-    /** 市场名称：以代码前缀为准（与 StockRef 规则一致），北交所单独识别。 */
+    /** 市场名称：统一走 StockRef.Exchange 判定（B-25，收敛代码前缀与 MktNum 兜底）。 */
     private static String marketNameOf(String code, String mkt) {
-        if (code.startsWith("4") || code.startsWith("8")) {
-            return "北交所";
-        }
-        if (code.startsWith("6") || code.startsWith("9") || "1".equals(mkt)) {
-            return "沪市";
-        }
-        return "深市";
+        return StockRef.Exchange.of(code, mkt).displayName();
     }
 
     /** 财务指标序列（东财 F10 数据中台）。 */

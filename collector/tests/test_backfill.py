@@ -38,6 +38,7 @@ def test_build_registries_has_all_plugins():
         "treasury_curve",
         "index_constituent",
         "industry_universe",
+        "all_a_spot_backup",
     }
     assert set(regs["converter"].plugins) >= {
         "field_mapping_all_a",
@@ -48,3 +49,13 @@ def test_build_registries_has_all_plugins():
         "field_mapping_industry",
     }
     assert set(regs["calc"].plugins) >= {"snapshot", "industry_weighted"}
+
+
+def test_index_valuation_plugin_wired_with_dividend_fetch():
+    """C-3.2：index_valuation 插件必须装配 dividend_fetch，否则 dividend_yield 恒 None。"""
+    from collector.sources.plugins import IndexValuationSource
+
+    regs = build_registries(Config(database_url="postgresql://x", tushare_token="tok"))
+    plugin = regs["source"].plugins["index_valuation"]
+    assert isinstance(plugin, IndexValuationSource)
+    assert plugin.dividend_fetch is not None
