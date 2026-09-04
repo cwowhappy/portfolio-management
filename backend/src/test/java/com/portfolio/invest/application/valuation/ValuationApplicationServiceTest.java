@@ -279,7 +279,30 @@ class ValuationApplicationServiceTest {
 
         assertThat(view.snapshots()).isSameAs(snapshots);
         assertThat(view.treasuryYields()).isSameAs(yields);
-        assertThat(view.indexValuations()).isSameAs(indices);
+        assertThat(view.indexValuations()).containsExactlyElementsOf(indices);
+    }
+
+    @Test
+    void history返回全部五个指数的估值序列() {
+        when(repo.findAllSnapshots()).thenReturn(List.of());
+        when(repo.findAllTreasuryYields()).thenReturn(List.of());
+        when(repo.findIndexValuations("000016")).thenReturn(List.of(new IndexValuation(
+                LocalDate.of(2026, 8, 27), "000016", "上证50", new BigDecimal("10.0"), new BigDecimal("1.20"), new BigDecimal("3.0"))));
+        when(repo.findIndexValuations("000300")).thenReturn(List.of(new IndexValuation(
+                LocalDate.of(2026, 8, 27), "000300", "沪深300", new BigDecimal("12.8"), new BigDecimal("1.42"), new BigDecimal("2.35"))));
+        when(repo.findIndexValuations("000905")).thenReturn(List.of(new IndexValuation(
+                LocalDate.of(2026, 8, 27), "000905", "中证500", new BigDecimal("22.0"), new BigDecimal("1.80"), new BigDecimal("1.50"))));
+        when(repo.findIndexValuations("399006")).thenReturn(List.of(new IndexValuation(
+                LocalDate.of(2026, 8, 27), "399006", "创业板指", new BigDecimal("30.0"), new BigDecimal("3.00"), new BigDecimal("0.80"))));
+        when(repo.findIndexValuations("000688")).thenReturn(List.of(new IndexValuation(
+                LocalDate.of(2026, 8, 27), "000688", "科创50", new BigDecimal("40.0"), new BigDecimal("3.50"), new BigDecimal("1.00"))));
+
+        var view = service.history();
+
+        // FR-B6：近 10 年走势应含全部 5 个宽基/风格指数，而非仅沪深 300
+        assertThat(view.indexValuations())
+                .extracting(IndexValuation::indexCode)
+                .containsExactlyInAnyOrder("000016", "000300", "000905", "399006", "000688");
     }
 
     @Test

@@ -364,6 +364,16 @@ class PortfolioApplicationServiceTest {
                 base.realizedPnl(), base.netCashFlow(), base.createdAt(), base.updatedAt());
     }
 
+    /** 全卖出后仍留在仓库（交易历史需保留）的已清仓持仓：数量 0、成本 0、已实现 2000、净现金流 2000。 */
+    private Position clearedPosition(long id) {
+        var base = Position.create(10L, 1L, "600519", "贵州茅台", Instant.now())
+                .applyBuy(new BigDecimal("100"), new BigDecimal("100"), new BigDecimal("0"))
+                .applySell(new BigDecimal("120"), new BigDecimal("100"), new BigDecimal("0"));
+        return Position.reconstitute(id, base.portfolioId(), base.groupId(), base.stockCode(), base.stockName(),
+                base.quantity(), base.costBasis(), base.totalBuyCost(), base.cumulativeCashDividend(),
+                base.realizedPnl(), base.netCashFlow(), base.createdAt(), base.updatedAt());
+    }
+
     @Test
     void 缺省时自动创建组合() {
         Portfolio created = Portfolio.reconstitute(20L, 2L, CostMethod.WEIGHTED_AVG,
@@ -800,5 +810,78 @@ class PortfolioApplicationServiceTest {
 
         assertThat(view.holdings()).hasSize(1);
         assertThat(view.holdings().get(0).stockCode()).isEqualTo("000858");
+    }
+
+    @Test
+    void 全卖出后持仓列表不含已清仓行但buy可重开() {
+        when(repo.findPositionsByPortfolioId(10L)).thenReturn(List.of(clearedPosition(5L)));
+
+        assertThat(service.positions(1L, null)).isEmpty();
+
+        // buy 仍能按 组合+分组+代码 命中已清仓行，重新买入（FR-A4：交易历史保留、可再开仓）
+        when(repo.findGroupByIdAndPortfolioId(1L, 10L))
+                .thenReturn(Optional.of(HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now())));
+        when(repo.findPositionByPortfolioIdAndGroupIdAndStockCode(10L, 1L, "600519"))
+                .thenReturn(Optional.of(clearedPosition(5L)));
+        when(repo.savePosition(any())).thenAnswer(inv -> {
+            Position p = inv.getArgument(0);
+            return Position.reconstitute(p.id(), p.portfolioId(), p.groupId(), p.stockCode(), p.stockName(),
+                    p.quantity(), p.costBasis(), p.totalBuyCost(), p.cumulativeCashDividend(),
+                    p.realizedPnl(), p.netCashFlow(), p.createdAt(), p.updatedAt());
+        });
+        when(repo.saveTrade(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        var reopened = service.buy(1L, new BuyCommand(1L, "600519", "贵州茅台",
+                LocalDate.of(2026, 8, 28), new BigDecimal("150"), new BigDecimal("100"), new BigDecimal("5")));
+
+        assertThat(reopened.id()).isEqualTo(5L);
+        assertThat(reopened.quantity()).isEqualByComparingTo("100");
+    }
+
+    @Test
+    void 按组查持仓列表也过滤已清仓行() {
+        when(repo.findGroupByIdAndPortfolioId(1L, 10L))
+                .thenReturn(Optional.of(HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now())));
+        when(repo.findPositionsByGroupId(1L)).thenReturn(List.of(clearedPosition(5L)));
+
+        assertThat(service.positions(1L, 1L)).isEmpty();
+    }
+
+    @Test
+    void 分组持仓数不计已清仓行但现金余额保留其现金流() {
+        when(repo.findGroupsByPortfolioId(10L)).thenReturn(List.of(
+                HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now())));
+        when(repo.findPositionsByGroupId(1L)).thenReturn(List.of(clearedPosition(5L)));
+        when(repo.findCashTransactionsByGroupId(1L)).thenReturn(List.of());
+
+        var groups = service.groups(1L);
+
+        assertThat(groups.get(0).positionCount()).isZero();
+        // 全卖出已实现现金（净现金流 2000）仍需计入该账户分组现金余额
+        assertThat(groups.get(0).cashBalance()).isEqualByComparingTo("2000");
+    }
+
+    @Test
+    void 总览持仓数不计已清仓行但总盈亏保留已实现盈亏() {
+        when(repo.findPositionsByPortfolioId(10L)).thenReturn(List.of(clearedPosition(5L)));
+        when(repo.findGroupsByPortfolioId(10L)).thenReturn(List.of());
+
+        var view = service.overview(1L);
+
+        assertThat(view.positionCount()).isZero();
+        assertThat(view.totalPnl()).isEqualByComparingTo("2000");
+    }
+
+    @Test
+    void 行业分布忽略已清仓行不产生零值分片() {
+        when(repo.findPositionsByPortfolioId(10L)).thenReturn(List.of(clearedPosition(5L)));
+        when(valuation.findAllIndustryMappings()).thenReturn(List.of(
+                new ShenwanIndustryMapping("600519", "贵州茅台", "801120", "食品饮料")));
+        when(market.quote("600519")).thenReturn(new Quote(
+                "600519", "贵州茅台", 120, 0, 0, 0, 0, 0, 100, 0, 0, null, null, ""));
+
+        var view = service.industryDistribution(1L);
+
+        assertThat(view.slices()).isEmpty();
     }
 }

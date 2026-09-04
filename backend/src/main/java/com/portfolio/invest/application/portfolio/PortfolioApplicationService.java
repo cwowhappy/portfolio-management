@@ -64,10 +64,13 @@ public class PortfolioApplicationService {
     public List<GroupView> groups(Long userId) {
         Portfolio p = getOrCreatePortfolio(userId);
         return repository.findGroupsByPortfolioId(p.id()).stream()
-                .map(g -> GroupView.from(g,
-                        repository.findPositionsByGroupId(g.id()).size(),
-                        cashBalance(g.id(), repository.findPositionsByGroupId(g.id()),
-                                repository.findCashTransactionsByGroupId(g.id()))))
+                .map(g -> {
+                    var groupPositions = repository.findPositionsByGroupId(g.id());
+                    return GroupView.from(g,
+                            openPositions(groupPositions).size(),
+                            cashBalance(g.id(), groupPositions,
+                                    repository.findCashTransactionsByGroupId(g.id())));
+                })
                 .toList();
     }
 
@@ -99,7 +102,7 @@ public class PortfolioApplicationService {
         HoldingGroup group = requireGroup(p.id(), groupId);
         HoldingGroup saved = repository.saveGroup(group.rename(cmd.name().trim()));
         var positions = repository.findPositionsByGroupId(groupId);
-        return GroupView.from(saved, positions.size(),
+        return GroupView.from(saved, openPositions(positions).size(),
                 cashBalance(groupId, positions, repository.findCashTransactionsByGroupId(groupId)));
     }
 
@@ -287,9 +290,9 @@ public class PortfolioApplicationService {
         if (groupId != null) {
             requireGroup(p.id(), groupId);
         }
-        List<Position> list = groupId == null
+        List<Position> list = openPositions(groupId == null
                 ? repository.findPositionsByPortfolioId(p.id())
-                : repository.findPositionsByGroupId(groupId);
+                : repository.findPositionsByGroupId(groupId));
         Map<String, Quote> quotes = batchQuotes(list);
         return list.stream().map(pos -> PositionView.from(pos, quotes.get(pos.stockCode()))).toList();
     }
@@ -325,12 +328,12 @@ public class PortfolioApplicationService {
             }
         }
         return new PortfolioOverviewView(totalAssets, totalCost, totalPnl, todayPnl, cashTotal,
-                totalCashDividend, positions.size(), groups.size());
+                totalCashDividend, openPositions(positions).size(), groups.size());
     }
 
     public AssetAllocationView allocation(Long userId) {
         Portfolio p = getOrCreatePortfolio(userId);
-        var positions = repository.findPositionsByPortfolioId(p.id());
+        var positions = openPositions(repository.findPositionsByPortfolioId(p.id()));
         Map<String, Quote> quotes = batchQuotes(positions);
         BigDecimal equity = BigDecimal.ZERO;
         for (var pos : positions) {
@@ -354,7 +357,7 @@ public class PortfolioApplicationService {
 
     public IndustryDistributionView industryDistribution(Long userId) {
         Portfolio p = getOrCreatePortfolio(userId);
-        var positions = repository.findPositionsByPortfolioId(p.id());
+        var positions = openPositions(repository.findPositionsByPortfolioId(p.id()));
         var mapping = valuationRepository.findAllIndustryMappings().stream()
                 .collect(Collectors.toMap(
                         m -> m.stockCode(), m -> m.industryName(), (a, b) -> a));
@@ -385,7 +388,7 @@ public class PortfolioApplicationService {
 
     public ConcentrationView concentration(Long userId) {
         Portfolio p = getOrCreatePortfolio(userId);
-        var allPositions = repository.findPositionsByPortfolioId(p.id());
+        var allPositions = openPositions(repository.findPositionsByPortfolioId(p.id()));
         Map<String, Quote> quotes = batchQuotes(allPositions);
         var positions = allPositions.stream()
                 .map(pos -> PositionView.from(pos, quotes.get(pos.stockCode())))
@@ -406,6 +409,14 @@ public class PortfolioApplicationService {
     private Position requirePosition(Long portfolioId, Long positionId) {
         return repository.findPositionByIdAndPortfolioId(positionId, portfolioId)
                 .orElseThrow(() -> new PortfolioException(PortfolioErrorCode.NOT_FOUND, "持仓不存在"));
+    }
+
+    /** 读侧过滤已清仓（quantity=0）持仓：持仓列表/聚合视图不再展示；
+     *  写路径（buy/sell/editTrade/replay）仍按 id/code 可寻址已清仓行以便重新买入。 */
+    private static List<Position> openPositions(List<Position> positions) {
+        return positions.stream()
+                .filter(p -> p.quantity().signum() > 0)
+                .toList();
     }
 
     /** 批量取价：NFR「现价批量查询，禁止逐只串行调用行情」。 */

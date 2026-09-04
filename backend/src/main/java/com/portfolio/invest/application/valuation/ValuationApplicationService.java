@@ -24,6 +24,8 @@ import java.util.stream.Collectors;
 public class ValuationApplicationService {
 
     private static final String HS300 = "000300";
+    /** FR-B6 走势的 5 个指数：上证50/沪深300/中证500/创业板指/科创50。 */
+    private static final List<String> INDEX_CODES = List.of("000016", "000300", "000905", "399006", "000688");
 
     private final ValuationRepository repository;
     private final ApplicationCache cache;
@@ -110,10 +112,13 @@ public class ValuationApplicationService {
     }
 
     private ValuationHistoryView loadHistory() {
+        List<IndexValuation> indexValuations = INDEX_CODES.stream()
+                .flatMap(code -> repository.findIndexValuations(code).stream())
+                .toList();
         return new ValuationHistoryView(
                 repository.findAllSnapshots(),
                 repository.findAllTreasuryYields(),
-                repository.findIndexValuations(HS300));
+                indexValuations);
     }
 
     private <T> T cached(String kind, Supplier<T> loader) {
@@ -145,7 +150,7 @@ public class ValuationApplicationService {
     }
 
     private List<ValuationOverviewView.IndexValuationView> indices() {
-        return List.of("000016", "000300", "000905", "399006", "000688").stream()
+        return INDEX_CODES.stream()
                 .map(code -> {
                     List<IndexValuation> history = repository.findIndexValuations(code);
                     if (history.isEmpty()) {
