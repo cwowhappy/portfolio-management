@@ -55,18 +55,27 @@ def test_index_valuation_defaults_range_to_date_param(mocker):
     pro.index_dailybasic.assert_called_once_with(ts_code="000300.SH", start_date="20260828", end_date="20260828")
 
 
-def test_industry_universe_joins_mapping(mocker):
-    universe = pd.DataFrame(
-        {
-            "代码": ["000001", "600519"],
-            "名称": ["平安银行", "贵州茅台"],
-            "市盈率-动态": [10.0, 30.0],
-            "市净率": [1.2, 8.0],
-            "总市值": [2.0e11, 2.0e12],
-        }
-    )
-    mocker.patch("akshare.stock_zh_a_spot_em", return_value=universe)
+def _industry_pro():
+    """IndustryUniverseSource 用的 tushare FakePro：daily_basic 全市场估值 + stock_basic 股票名。"""
 
+    class FakePro:
+        def daily_basic(self, trade_date=None):
+            return pd.DataFrame(
+                {
+                    "ts_code": ["000001.SZ", "600519.SH"],
+                    "pe_ttm": [10.0, 30.0],
+                    "pb": [1.2, 8.0],
+                    "total_mv": [2.0e7, 2.0e8],  # 万元
+                }
+            )
+
+        def stock_basic(self, list_status=None, fields=None):
+            return pd.DataFrame({"ts_code": ["000001.SZ", "600519.SH"], "name": ["平安银行", "贵州茅台"]})
+
+    return FakePro()
+
+
+def test_industry_universe_joins_mapping(mocker):
     cursor = mocker.MagicMock()
     cursor.fetchall.side_effect = [
         [
@@ -90,7 +99,9 @@ def test_industry_universe_joins_mapping(mocker):
     def fake_conn_factory():
         return conn
 
-    src = IndustryUniverseSource("industry_universe", conn_factory=fake_conn_factory)
+    src = IndustryUniverseSource(
+        "industry_universe", conn_factory=fake_conn_factory, pro_factory=lambda: _industry_pro()
+    )
     df = src.fetch({})
     assert "industry_code" in df.columns
     assert "industry_name" in df.columns
@@ -143,10 +154,11 @@ def _empty_mapping_conn_factory(mocker):
 
 def test_industry_universe_empty_upstream_table_yields_zero_rows(mocker):
     """shenwan_industry_mapping 为空（冷启动缝隙）时 inner join 产出 0 行，而非报错或全量直通。"""
-    universe = pd.DataFrame({"代码": ["000001"], "名称": ["平安银行"], "市盈率-动态": [10.0]})
-    mocker.patch("akshare.stock_zh_a_spot_em", return_value=universe)
-
-    src = IndustryUniverseSource("industry_universe", conn_factory=_empty_mapping_conn_factory(mocker))
+    src = IndustryUniverseSource(
+        "industry_universe",
+        conn_factory=_empty_mapping_conn_factory(mocker),
+        pro_factory=lambda: _industry_pro(),
+    )
     df = src.fetch({})
     assert len(df) == 0
     assert "industry_code" in df.columns
@@ -157,10 +169,11 @@ def test_industry_universe_empty_result_fails_min_rows_hard(mocker):
     from collector.sources.base import SourceError
     from collector.validators.rules import RuleValidator
 
-    universe = pd.DataFrame({"代码": ["000001"], "名称": ["平安银行"], "市盈率-动态": [10.0]})
-    mocker.patch("akshare.stock_zh_a_spot_em", return_value=universe)
-
-    src = IndustryUniverseSource("industry_universe", conn_factory=_empty_mapping_conn_factory(mocker))
+    src = IndustryUniverseSource(
+        "industry_universe",
+        conn_factory=_empty_mapping_conn_factory(mocker),
+        pro_factory=lambda: _industry_pro(),
+    )
     records = src.fetch({}).to_dict("records")
     assert records == []
     validator = RuleValidator([{"check": "min_rows", "value": 1, "level": "hard"}])

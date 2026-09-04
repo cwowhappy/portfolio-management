@@ -251,7 +251,9 @@ def build_registries(config):
                 pro_factory=pro,
                 dividend_fetch=make_index_dividend_fetch(pro),
             ),
-            "industry_universe": IndustryUniverseSource("industry_universe", conn_factory=conn_factory),
+            "industry_universe": IndustryUniverseSource(
+                "industry_universe", conn_factory=conn_factory, pro_factory=pro
+            ),
             "treasury_curve": TreasuryCurveSource("treasury_curve", conn_factory=conn_factory),
             "index_constituent": IndexConstituentSource("index_constituent", pro_factory=pro),
             "all_a_spot_backup": AllASpotBackupSource("all_a_spot_backup", pro_factory=pro),
