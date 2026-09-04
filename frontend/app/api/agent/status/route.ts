@@ -4,6 +4,6 @@ import { relay } from "@/lib/proxy";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(req?: Request) {
+export async function GET(req: Request) {
   return relay("/api/agent/status", "GET", req);
 }
