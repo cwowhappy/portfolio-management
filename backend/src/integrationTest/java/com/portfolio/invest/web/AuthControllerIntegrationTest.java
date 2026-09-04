@@ -90,6 +90,21 @@ class AuthControllerIntegrationTest extends PostgresTestSupport {
     }
 
     @Test
+    void rememberMe仅传JSON字段也下发cookie() throws Exception {
+        register("auth_erin", "abc12345");
+        approve("auth_erin");
+
+        // 前端登录只发 JSON body 的 rememberMe 字段，不带 remember-me 请求参数（真实浏览器链路）；
+        // 回归：loginSuccess 内部曾因缺该参数静默不下发 cookie
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"auth_erin\",\"password\":\"abc12345\",\"rememberMe\":true}"))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie()
+                        .exists(com.portfolio.invest.infrastructure.security.SecurityConfig.REMEMBER_ME_COOKIE));
+    }
+
+    @Test
     void 注册登录结构性校验失败返回400() throws Exception {
         // 空白用户名注册 → Bean Validation 拦截（H8）
         mockMvc.perform(post("/api/auth/register")

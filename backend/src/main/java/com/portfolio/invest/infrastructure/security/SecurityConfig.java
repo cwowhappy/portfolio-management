@@ -79,6 +79,9 @@ public class SecurityConfig {
                 requireRememberMeKey(props.getSecurity().getRememberMeKey()), userDetailsService, tokenRepository);
         svc.setCookieName(REMEMBER_ME_COOKIE);
         svc.setTokenValiditySeconds(REMEMBER_ME_SECONDS);
+        // 登录是 JSON API，请求里没有 remember-me 表单参数；loginSuccess 内部会再校验该参数，
+        // 不开 alwaysRemember 会静默不下发 cookie。是否签发已由 AuthController 按 body 的 rememberMe 字段把关。
+        svc.setAlwaysRemember(true);
         // Spring Security 7 已移除 setCookiePath，改用 Cookie 自定义器
         svc.setCookieCustomizer(cookie -> cookie.setPath("/"));
         return svc;
