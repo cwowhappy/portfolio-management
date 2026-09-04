@@ -10,10 +10,19 @@ import TrendChart from "./TrendChart";
 import IndustryTable from "./IndustryTable";
 import Disclaimer from "@/components/Disclaimer";
 
+const HISTORY_INDEX_OPTIONS: { code: string; name: string }[] = [
+  { code: "000016", name: "上证50" },
+  { code: "000300", name: "沪深300" },
+  { code: "000905", name: "中证500" },
+  { code: "399006", name: "创业板指" },
+  { code: "000688", name: "科创50" },
+];
+
 export default function ValuationBoard() {
   const [overview, setOverview] = useState<ValuationOverview | null>(null);
   const [history, setHistory] = useState<ValuationHistory | null>(null);
   const [industries, setIndustries] = useState<IndustryValuation[]>([]);
+  const [selectedIndex, setSelectedIndex] = useState<string>("market");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -67,7 +76,24 @@ export default function ValuationBoard() {
       </div>
       <div className="grid md:grid-cols-2 gap-6" data-testid="charts">
         <Thermometer value={overview.thermometer} />
-        <TrendChart snapshots={history?.snapshots ?? []} />
+        <div className="flex flex-col gap-2">
+          <select
+            aria-label="历史走势范围"
+            value={selectedIndex}
+            onChange={(e) => setSelectedIndex(e.target.value)}
+            className="self-end rounded-md border border-[color:var(--color-line)] bg-[color:var(--color-panel)] px-2 py-1 text-sm text-[color:var(--color-ink-strong)]"
+          >
+            <option value="market">全市场</option>
+            {HISTORY_INDEX_OPTIONS.map((o) => (
+              <option key={o.code} value={o.code}>{o.name}</option>
+            ))}
+          </select>
+          <TrendChart
+            snapshots={history?.snapshots ?? []}
+            indexValuations={history?.indexValuations ?? []}
+            selectedIndex={selectedIndex}
+          />
+        </div>
       </div>
       <div className="mt-6" data-testid="industries">
         <IndustryTable industries={industries} />
