@@ -12,34 +12,34 @@ class PercentileTest {
 
     @DisplayName("当前值或历史为null时返回null")
     @Test
-    void nullCurrentOrHistoryReturnsNull() {
+    void givenNullCurrentOrHistory_whenPercentileOf_thenReturnNull() {
         assertThat(Percentile.of(null, List.of(BigDecimal.ONE))).isNull();
         assertThat(Percentile.of(BigDecimal.ONE, null)).isNull();
     }
 
     @DisplayName("空历史返回null表示数据积累中")
     @Test
-    void emptyHistoryReturnsNullMeansAccumulating() {
+    void givenEmptyHistory_whenPercentileOf_thenReturnNull() {
         assertThat(Percentile.of(BigDecimal.valueOf(18), List.of())).isNull();
     }
 
     @DisplayName("当前值低于全部历史返回0")
     @Test
-    void currentBelowAllHistoryReturnsZero() {
+    void givenCurrentBelowAllHistory_whenPercentileOf_thenReturnZero() {
         List<BigDecimal> history = List.of(BigDecimal.valueOf(20), BigDecimal.valueOf(25), BigDecimal.valueOf(30));
         assertThat(Percentile.of(BigDecimal.valueOf(10), history)).isEqualByComparingTo("0.00");
     }
 
     @DisplayName("当前值高于全部历史返回100")
     @Test
-    void currentAboveAllHistoryReturns100() {
+    void givenCurrentAboveAllHistory_whenPercentileOf_thenReturn100() {
         List<BigDecimal> history = List.of(BigDecimal.valueOf(10), BigDecimal.valueOf(15));
         assertThat(Percentile.of(BigDecimal.valueOf(20), history)).isEqualByComparingTo("100.00");
     }
 
     @DisplayName("中间值按小于样本占比计算")
     @Test
-    void middleValueComputedByShareBelowSamples() {
+    void givenCurrentInMiddleOfHistory_whenPercentileOf_thenComputeByShareBelowSamples() {
         List<BigDecimal> history = List.of(BigDecimal.valueOf(10), BigDecimal.valueOf(20), BigDecimal.valueOf(30), BigDecimal.valueOf(40));
         // 当前 25：小于 25 的有 10、20 → 2/4 = 50%
         assertThat(Percentile.of(BigDecimal.valueOf(25), history)).isEqualByComparingTo("50.00");

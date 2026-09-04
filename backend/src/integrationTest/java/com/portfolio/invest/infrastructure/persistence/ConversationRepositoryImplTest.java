@@ -48,7 +48,7 @@ class ConversationRepositoryImplTest {
 
     @DisplayName("按归属保存与查询")
     @Test
-    void saveAndQueryByOwnership() {
+    void givenSavedConversation_whenQueryByOwnership_thenFilteredByUser() {
         Conversation c = conversations.save(Conversation.create("t-1", userId, Instant.now()));
         assertThat(conversations.findByIdAndUserId("t-1", userId)).isPresent();
         assertThat(conversations.findByIdAndUserId("t-1", userId + 1)).isEmpty(); // 归属过滤
@@ -57,7 +57,7 @@ class ConversationRepositoryImplTest {
 
     @DisplayName("消息替换与读取")
     @Test
-    void replaceMessagesAndReadBack() {
+    void givenConversation_whenReplaceMessages_thenReadBackReplacedMessages() {
         conversations.save(Conversation.create("t-2", userId, Instant.now()));
         ChatMessage m = ChatMessage.create(null, "m-1", ChatMessageRole.USER, "你好", null, 1700000000000L);
         conversations.replaceMessages("t-2", List.of(m));
@@ -71,7 +71,7 @@ class ConversationRepositoryImplTest {
 
     @DisplayName("删除会话连带消息")
     @Test
-    void deleteConversationCascadesMessages() {
+    void givenConversationWithMessages_whenDelete_thenCascadesMessages() {
         conversations.save(Conversation.create("t-3", userId, Instant.now()));
         conversations.replaceMessages("t-3", List.of(ChatMessage.create(null, "m-1", ChatMessageRole.USER, "x", null, 0L)));
         conversations.delete("t-3");

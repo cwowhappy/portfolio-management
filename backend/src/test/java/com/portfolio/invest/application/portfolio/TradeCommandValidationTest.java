@@ -33,7 +33,7 @@ class TradeCommandValidationTest {
 
     @DisplayName("买入负手续费被拒")
     @Test
-    void buyNegativeFeeRejected() {
+    void givenBuyWithNegativeFee_whenValidate_thenRejected() {
         var cmd = new BuyCommand(1L, "600519", "贵州茅台", day(),
                 new BigDecimal("1500"), new BigDecimal("100"), new BigDecimal("-5"));
         assertThat(hasViolationOn(validator.validate(cmd), "fee")).isTrue();
@@ -41,7 +41,7 @@ class TradeCommandValidationTest {
 
     @DisplayName("买入超长股票代码被拒")
     @Test
-    void buyOversizedStockCodeRejected() {
+    void givenBuyWithOversizedStockCode_whenValidate_thenRejected() {
         var cmd = new BuyCommand(1L, "60051900000000000", "贵州茅台", day(),
                 new BigDecimal("1500"), new BigDecimal("100"), new BigDecimal("0"));
         assertThat(hasViolationOn(validator.validate(cmd), "stockCode")).isTrue();
@@ -49,7 +49,7 @@ class TradeCommandValidationTest {
 
     @DisplayName("买入超长股票名称被拒")
     @Test
-    void buyOversizedStockNameRejected() {
+    void givenBuyWithOversizedStockName_whenValidate_thenRejected() {
         var cmd = new BuyCommand(1L, "600519", "贵".repeat(65), day(),
                 new BigDecimal("1500"), new BigDecimal("100"), new BigDecimal("0"));
         assertThat(hasViolationOn(validator.validate(cmd), "stockName")).isTrue();
@@ -57,14 +57,14 @@ class TradeCommandValidationTest {
 
     @DisplayName("卖出负手续费被拒")
     @Test
-    void sellNegativeFeeRejected() {
+    void givenSellWithNegativeFee_whenValidate_thenRejected() {
         var cmd = new SellCommand(1L, day(), new BigDecimal("120"), new BigDecimal("10"), new BigDecimal("-1"));
         assertThat(hasViolationOn(validator.validate(cmd), "fee")).isTrue();
     }
 
     @DisplayName("编辑交易负手续费被拒")
     @Test
-    void editTradeNegativeFeeRejected() {
+    void givenEditTradeWithNegativeFee_whenValidate_thenRejected() {
         var cmd = new EditTradeCommand(day(), new BigDecimal("120"), new BigDecimal("10"), new BigDecimal("-1"), 1L);
         assertThat(hasViolationOn(validator.validate(cmd), "fee")).isTrue();
     }

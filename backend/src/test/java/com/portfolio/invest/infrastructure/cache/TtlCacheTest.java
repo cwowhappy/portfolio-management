@@ -13,7 +13,7 @@ class TtlCacheTest {
 
     @DisplayName("写入后未过期可命中")
     @Test
-    void hitWhenWrittenAndNotExpired() {
+    void givenEntryWrittenNotExpired_whenGet_thenHit() {
         TtlCache cache = new TtlCache(10);
         assertThat((Object) cache.get("k1")).isNull();
         cache.put("k1", "v1", Duration.ofMinutes(1));
@@ -22,13 +22,13 @@ class TtlCacheTest {
 
     @DisplayName("不存在的键返回null")
     @Test
-    void returnsNullForMissingKey() {
+    void givenMissingKey_whenGet_thenReturnsNull() {
         assertThat(new TtlCache(100).<String>get("nope")).isNull();
     }
 
     @DisplayName("过期后返回null")
     @Test
-    void returnsNullAfterExpiry() {
+    void givenEntryExpired_whenGet_thenReturnsNull() {
         AtomicLong now = new AtomicLong(0);
         TtlCache cache = new TtlCache(10, now::get);
         cache.put("k1", "v1", Duration.ofSeconds(30));
@@ -38,7 +38,7 @@ class TtlCacheTest {
 
     @DisplayName("超出条目上限淘汰最久未写入")
     @Test
-    void evictsLeastRecentlyWrittenWhenOverCapacity() {
+    void givenCacheOverCapacity_whenPut_thenEvictsLeastRecentlyWritten() {
         TtlCache cache = new TtlCache(2);
         cache.put("a", "1", Duration.ofMinutes(1));
         cache.put("b", "2", Duration.ofMinutes(1));
@@ -51,7 +51,7 @@ class TtlCacheTest {
 
     @DisplayName("访问刷新活跃度后淘汰最久未访问")
     @Test
-    void evictsLeastRecentlyAccessedAfterAccessRefreshesRecency() {
+    void givenAccessRefreshesRecency_whenOverCapacity_thenEvictsLeastRecentlyAccessed() {
         TtlCache cache = new TtlCache(2);
         cache.put("a", 1, Duration.ofMinutes(1));
         cache.put("b", 2, Duration.ofMinutes(1));
@@ -64,7 +64,7 @@ class TtlCacheTest {
 
     @DisplayName("容量非正数抛异常")
     @Test
-    void throwsOnNonPositiveCapacity() {
+    void givenNonPositiveCapacity_whenNewCache_thenThrows() {
         assertThatThrownBy(() -> new TtlCache(0)).isInstanceOf(IllegalArgumentException.class);
     }
 }

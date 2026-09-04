@@ -11,7 +11,7 @@ class SecurityConfigRememberMeKeyTest {
 
     @DisplayName("空白key拒绝启动")
     @Test
-    void blankKeyRejectsStartup() {
+    void givenBlankKey_whenRequireRememberMeKey_thenRejectsStartup() {
         assertThatThrownBy(() -> SecurityConfig.requireRememberMeKey(""))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("REMEMBER_ME_KEY");
@@ -24,7 +24,7 @@ class SecurityConfigRememberMeKeyTest {
 
     @DisplayName("显式配置key通过")
     @Test
-    void explicitlyConfiguredKeyPasses() {
+    void givenExplicitlyConfiguredKey_whenRequireRememberMeKey_thenPasses() {
         assertThat(SecurityConfig.requireRememberMeKey("prod-secret-key")).isEqualTo("prod-secret-key");
     }
 }

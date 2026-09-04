@@ -30,7 +30,7 @@ class ConversationControllerIntegrationTest extends PostgresTestSupport {
 
     @DisplayName("登录用户建会话写读列_非本人404_未登录401")
     @Test
-    void loggedInUserConversationCrudNotOwner404Unauthenticated401() throws Exception {
+    void givenLoggedInOwnerAndOtherUser_whenConversationCrud_thenOwnerSucceedsOtherNotFoundAnonymousUnauthorized() throws Exception {
         register("conv_alice", "abc12345");
         register("conv_bob", "abc12345");
         approve("conv_alice");
@@ -103,7 +103,7 @@ class ConversationControllerIntegrationTest extends PostgresTestSupport {
 
     @DisplayName("他人占用id创建返回404且不改写归属")
     @Test
-    void createConversationWithOccupiedIdReturns404KeepsOwnership() throws Exception {
+    void givenConversationIdOccupiedByOtherUser_whenCreate_thenNotFoundAndOwnershipKept() throws Exception {
         register("conv_take_a", "abc12345");
         register("conv_take_b", "abc12345");
         approve("conv_take_a");
@@ -147,7 +147,7 @@ class ConversationControllerIntegrationTest extends PostgresTestSupport {
 
     @DisplayName("创建会话id结构性校验失败返回400")
     @Test
-    void createConversationInvalidIdReturns400() throws Exception {
+    void givenBlankOrOversizedConversationId_whenCreate_thenBadRequest() throws Exception {
         register("conv_carol", "abc12345");
         approve("conv_carol");
         MockHttpSession session = login("conv_carol", "abc12345");
@@ -169,7 +169,7 @@ class ConversationControllerIntegrationTest extends PostgresTestSupport {
 
     @DisplayName("保存消息超长content返回400而非500")
     @Test
-    void saveMessageOversizedContentReturns400Not500() throws Exception {
+    void givenOversizedContentOrIllegalRole_whenSaveMessage_thenBadRequestNot500() throws Exception {
         register("conv_dave", "abc12345");
         approve("conv_dave");
         MockHttpSession session = login("conv_dave", "abc12345");

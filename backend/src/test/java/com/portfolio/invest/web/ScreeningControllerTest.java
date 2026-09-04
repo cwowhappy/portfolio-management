@@ -31,7 +31,7 @@ class ScreeningControllerTest {
 
     @DisplayName("合法条件返回200")
     @Test
-    void validConditionsReturn200() throws Exception {
+    void givenValidConditions_whenScreen_thenReturn200() throws Exception {
         when(service.screen(any())).thenReturn(List.of());
         mvc.perform(get("/api/screening/stocks").param("peTtmMax", "20").param("roeMin", "15"))
                 .andExpect(status().isOk());
@@ -39,7 +39,7 @@ class ScreeningControllerTest {
 
     @DisplayName("空条件返回400")
     @Test
-    void emptyConditionsReturn400() throws Exception {
+    void givenEmptyConditions_whenScreen_thenReturn400() throws Exception {
         when(service.screen(any())).thenThrow(new ScreeningException("SCREENING_NO_CONDITION", "至少需要一个筛选条件"));
         mvc.perform(get("/api/screening/stocks"))
                 .andExpect(status().isBadRequest())

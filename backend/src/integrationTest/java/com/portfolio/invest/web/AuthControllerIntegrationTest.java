@@ -25,7 +25,7 @@ class AuthControllerIntegrationTest extends PostgresTestSupport {
 
     @DisplayName("注册后待审核不能登录")
     @Test
-    void registeredPendingUserCannotLogin() throws Exception {
+    void givenRegisteredPendingUser_whenLogin_thenForbidden() throws Exception {
         mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"username\":\"auth_alice\",\"password\":\"abc12345\"}"))
@@ -41,7 +41,7 @@ class AuthControllerIntegrationTest extends PostgresTestSupport {
 
     @DisplayName("审核通过后登录成功并访问me")
     @Test
-    void approvedUserLoginSucceedsAndAccessesMe() throws Exception {
+    void givenApprovedUser_whenLogin_thenSucceedsAndMeAccessible() throws Exception {
         register("auth_bob", "abc12345");
         approve("auth_bob");
 
@@ -60,7 +60,7 @@ class AuthControllerIntegrationTest extends PostgresTestSupport {
 
     @DisplayName("错误密码返回401")
     @Test
-    void wrongPasswordReturns401() throws Exception {
+    void givenRegisteredUser_whenLoginWithWrongPassword_thenUnauthorized() throws Exception {
         register("auth_carol", "abc12345");
         mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -71,7 +71,7 @@ class AuthControllerIntegrationTest extends PostgresTestSupport {
 
     @DisplayName("登录成功后轮换sessionId防会话固定")
     @Test
-    void loginSuccessRotatesSessionIdPreventingFixation() throws Exception {
+    void givenAnonymousPreLoginSession_whenLoginSucceeds_thenSessionIdRotated() throws Exception {
         register("auth_dave", "abc12345");
         approve("auth_dave");
 
@@ -96,7 +96,7 @@ class AuthControllerIntegrationTest extends PostgresTestSupport {
 
     @DisplayName("rememberMe仅传JSON字段也下发cookie")
     @Test
-    void rememberMeJsonFieldOnlyStillIssuesCookie() throws Exception {
+    void givenApprovedUser_whenLoginWithJsonRememberMe_thenRememberMeCookieIssued() throws Exception {
         register("auth_erin", "abc12345");
         approve("auth_erin");
 
@@ -112,7 +112,7 @@ class AuthControllerIntegrationTest extends PostgresTestSupport {
 
     @DisplayName("注册登录结构性校验失败返回400")
     @Test
-    void registerLoginStructuralValidationFailureReturns400() throws Exception {
+    void givenBlankUsernameOrMissingPassword_whenRegisterOrLogin_thenBadRequest() throws Exception {
         // 空白用户名注册 → Bean Validation 拦截（H8）
         mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)

@@ -36,7 +36,7 @@ class UserRepositoryImplTest {
 
     @DisplayName("保存后按用户名与id可查回")
     @Test
-    void savedUserFindableByUsernameAndId() {
+    void whenSaveUser_thenFindableByUsernameAndId() {
         User saved = userRepository.save(User.register("bob", "hash"));
         assertThat(saved.id()).isNotNull();
         assertThat(userRepository.findByUsername("bob")).isPresent();
@@ -48,7 +48,7 @@ class UserRepositoryImplTest {
 
     @DisplayName("username唯一约束生效")
     @Test
-    void usernameUniqueConstraintEnforced() {
+    void givenSameUsernameSaved_whenSaveDuplicate_thenUniqueConstraintViolated() {
         userRepository.save(User.register("carol", "h1"));
         assertThatThrownBy(() -> userRepository.save(User.register("carol", "h2")))
                 .isInstanceOf(DataIntegrityViolationException.class);
@@ -56,7 +56,7 @@ class UserRepositoryImplTest {
 
     @DisplayName("findAll返回全部")
     @Test
-    void findAllReturnsAll() {
+    void givenSavedUsers_whenFindAll_thenAllReturned() {
         userRepository.save(User.register("dave", "h"));
         assertThat(userRepository.findAll()).isNotEmpty();
     }

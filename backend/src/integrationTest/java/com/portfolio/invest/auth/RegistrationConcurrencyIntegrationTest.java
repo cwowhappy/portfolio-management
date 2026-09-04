@@ -35,7 +35,7 @@ class RegistrationConcurrencyIntegrationTest extends ConcurrencyTestSupport {
 
     @DisplayName("并发注册同一用户名仅一个成功其余得到业务异常")
     @Test
-    void concurrentRegisterSameUsernameOneSucceedsOthersGetBusinessException() throws Exception {
+    void givenConcurrentSameUsernameRegistrations_whenRegister_thenOneSucceedsOthersGetBusinessException() throws Exception {
         int threads = 8;
         AtomicInteger success = new AtomicInteger();
         AtomicInteger usernameTaken = new AtomicInteger();

@@ -41,7 +41,7 @@ class HealthControllerTest {
 
     @DisplayName("health只报llm配置不外呼行情")
     @Test
-    void healthOnlyReportsLlmConfigWithoutCallingMarket() {
+    void givenLlmKeyConfigured_whenGetHealth_thenReportOnlyLlmAndNoMarketCall() {
         when(env.getProperty("DEEPSEEK_API_KEY")).thenReturn("sk-xxx");
         Map<String, Object> body = controller.health();
         assertThat(body.get("status")).isEqualTo("up");
@@ -56,7 +56,7 @@ class HealthControllerTest {
 
     @DisplayName("health在key未配置时状态degraded")
     @Test
-    void healthIsDegradedWhenKeyNotConfigured() {
+    void givenLlmKeyNotConfigured_whenGetHealth_thenDegraded() {
         when(env.getProperty("DEEPSEEK_API_KEY")).thenReturn(null);
         Map<String, Object> body = controller.health();
         assertThat(body.get("status")).isEqualTo("degraded");
@@ -67,7 +67,7 @@ class HealthControllerTest {
 
     @DisplayName("health在key为空白字符串时视为未配置")
     @Test
-    void healthTreatsBlankKeyAsNotConfigured() {
+    void givenLlmKeyBlank_whenGetHealth_thenTreatAsNotConfigured() {
         when(env.getProperty("DEEPSEEK_API_KEY")).thenReturn("   ");
         Map<?, ?> llm = (Map<?, ?>) controller.health().get("llm");
         assertThat(llm.get("keyConfigured")).isEqualTo(false);
@@ -77,7 +77,7 @@ class HealthControllerTest {
 
     @DisplayName("status在key已配置且行情可用时状态up")
     @Test
-    void statusIsUpWhenKeyConfiguredAndMarketAvailable() {
+    void givenKeyConfiguredAndMarketAvailable_whenGetStatus_thenUp() {
         when(env.getProperty("DEEPSEEK_API_KEY")).thenReturn("sk-xxx");
         when(market.probeQuoteLatencyMs()).thenReturn(42L);
         Map<String, Object> body = controller.status();
@@ -89,7 +89,7 @@ class HealthControllerTest {
 
     @DisplayName("status在key未配置时即使行情可用仍degraded")
     @Test
-    void statusStillDegradedWhenKeyNotConfiguredEvenIfMarketAvailable() {
+    void givenKeyNotConfiguredButMarketAvailable_whenGetStatus_thenStillDegraded() {
         when(env.getProperty("DEEPSEEK_API_KEY")).thenReturn(null);
         when(market.probeQuoteLatencyMs()).thenReturn(42L);
 
@@ -102,7 +102,7 @@ class HealthControllerTest {
 
     @DisplayName("status在行情探活失败时标记不可用并附消息")
     @Test
-    void statusMarksUnavailableWithMessageWhenMarketProbeFails() {
+    void givenMarketProbeFails_whenGetStatus_thenMarketUnavailableWithMessage() {
         when(env.getProperty("DEEPSEEK_API_KEY")).thenReturn("sk-xxx");
         when(market.probeQuoteLatencyMs())
                 .thenThrow(new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "行情源挂了"));
@@ -115,7 +115,7 @@ class HealthControllerTest {
 
     @DisplayName("status连续调用时探活结果命中缓存只外呼一次")
     @Test
-    void statusRepeatedCallsHitCacheAndCallProbeOnlyOnce() {
+    void givenMarketProbeAvailable_whenGetStatusRepeatedly_thenProbeOnlyOnceViaCache() {
         when(env.getProperty("DEEPSEEK_API_KEY")).thenReturn("sk-xxx");
         when(market.probeQuoteLatencyMs()).thenReturn(42L);
         controller.status();
@@ -125,7 +125,7 @@ class HealthControllerTest {
 
     @DisplayName("status探活缓存过期后重新外呼")
     @Test
-    void statusProbeCacheExpiryTriggersReProbe() {
+    void givenProbeCacheExpired_whenGetStatusAgain_thenReProbe() {
         when(env.getProperty("DEEPSEEK_API_KEY")).thenReturn("sk-xxx");
         when(market.probeQuoteLatencyMs()).thenReturn(42L);
         controller.status();
@@ -136,7 +136,7 @@ class HealthControllerTest {
 
     @DisplayName("status探活失败结果同样被缓存")
     @Test
-    void statusFailedProbeResultIsCachedToo() {
+    void givenMarketProbeFails_whenGetStatusRepeatedly_thenFailedResultCached() {
         when(env.getProperty("DEEPSEEK_API_KEY")).thenReturn("sk-xxx");
         when(market.probeQuoteLatencyMs())
                 .thenThrow(new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "行情源挂了"));

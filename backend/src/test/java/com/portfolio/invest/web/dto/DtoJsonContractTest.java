@@ -30,7 +30,7 @@ class DtoJsonContractTest {
 
     @DisplayName("登录响应序列化字段名与枚举名称")
     @Test
-    void loginResponseSerializesFieldNamesAndEnumNames() throws Exception {
+    void givenLoginResponse_whenSerialized_thenFieldNamesAndEnumNamesMatch() throws Exception {
         var view = new UserView(1L, "alice", UserRole.USER, UserStatus.APPROVED, true,
                 Instant.parse("2026-08-01T02:03:04Z"));
 
@@ -43,7 +43,7 @@ class DtoJsonContractTest {
 
     @DisplayName("错误体仅含code与message")
     @Test
-    void errorBodyContainsOnlyCodeAndMessage() throws Exception {
+    void givenApiError_whenSerialized_thenBodyContainsOnlyCodeAndMessage() throws Exception {
         JsonNode content = objectMapper.readTree(
                 objectMapper.writeValueAsString(new ApiError("INVALID_REQUEST", "用户名不能为空")));
 
@@ -53,7 +53,7 @@ class DtoJsonContractTest {
 
     @DisplayName("持仓视图空值字段序列化为null且保留字段名")
     @Test
-    void positionViewNullFieldsSerializeAsNullKeepingFieldNames() throws Exception {
+    void givenPositionViewWithNullQuoteFields_whenSerialized_thenNullFieldsKeepFieldNames() throws Exception {
         var view = new PositionView(5L, 1L, "600519", "贵州茅台",
                 new BigDecimal("100"), new BigDecimal("1500.05"), null,
                 null, null, null,
@@ -73,7 +73,7 @@ class DtoJsonContractTest {
 
     @DisplayName("用户管理视图角色与状态序列化为字符串")
     @Test
-    void userAdminViewSerializesRoleAndStatusAsStrings() throws Exception {
+    void givenUserAdminView_whenSerialized_thenRoleAndStatusSerializeAsStrings() throws Exception {
         JsonNode content = objectMapper.readTree(objectMapper.writeValueAsString(
                 new UserAdminView(2L, "bob", "USER", "PENDING", true)));
 
@@ -83,7 +83,7 @@ class DtoJsonContractTest {
 
     @DisplayName("登录请求缺省rememberMe反序列化为false")
     @Test
-    void loginRequestDefaultRememberMeDeserializesToFalse() throws Exception {
+    void givenLoginRequestJsonWithoutRememberMe_whenDeserialized_thenRememberMeIsFalse() throws Exception {
         LoginRequest req = objectMapper.readValue(
                 "{\"username\":\"u\",\"password\":\"p\"}", LoginRequest.class);
 
@@ -92,7 +92,7 @@ class DtoJsonContractTest {
 
     @DisplayName("登录请求rememberMe为true时生效")
     @Test
-    void loginRequestRememberMeTrueTakesEffect() throws Exception {
+    void givenLoginRequestJsonWithRememberMeTrue_whenDeserialized_thenRememberMeIsTrue() throws Exception {
         LoginRequest req = objectMapper.readValue(
                 "{\"username\":\"u\",\"password\":\"p\",\"rememberMe\":true}", LoginRequest.class);
 

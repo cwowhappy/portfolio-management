@@ -42,7 +42,7 @@ class AgentConfigContextTest {
 
     @DisplayName("无APIKEY时Model与Agent不装配但上下文可启动")
     @Test
-    void withoutApiKeyModelAndAgentNotAssembledContextStarts() {
+    void givenNoApiKey_whenContextStarts_thenModelAndAgentNotAssembled() {
         // 显式置空：make 会 export .env 中的真实 DEEPSEEK_API_KEY 进测试进程，
         // runner 环境会继承该环境变量；withPropertyValues 落在 systemProperties，
         // 优先级高于 systemEnvironment，置空后 hasText 为 false。
@@ -55,7 +55,7 @@ class AgentConfigContextTest {
 
     @DisplayName("有APIKEY时Model与Agent装配成功")
     @Test
-    void withApiKeyModelAndAgentAssembled() {
+    void givenApiKey_whenContextStarts_thenModelAndAgentAssembled() {
         ModelRegistry.registerFactory("deepseek:.*", (modelId, creationContext) -> new FakeModel());
 
         runner.withPropertyValues("DEEPSEEK_API_KEY=test-key")

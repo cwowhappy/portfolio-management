@@ -77,7 +77,7 @@ class PortfolioControllerSliceTest {
 
     @DisplayName("卖出正常绑定返回200")
     @Test
-    void sellNormalBindingReturns200() throws Exception {
+    void givenValidSellCommand_whenSell_thenReturn200() throws Exception {
         when(service.sell(eq(1L), any(SellCommand.class))).thenReturn(positionView());
 
         mvc.perform(post("/api/portfolio/positions/sell").with(authentication(auth())).with(csrf())
@@ -89,7 +89,7 @@ class PortfolioControllerSliceTest {
 
     @DisplayName("卖出缺少price校验失败返回400")
     @Test
-    void sellMissingPriceValidationFailsReturns400() throws Exception {
+    void givenSellCommandMissingPrice_whenSell_thenReturn400() throws Exception {
         mvc.perform(post("/api/portfolio/positions/sell").with(authentication(auth())).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"positionId\":5,\"tradeDate\":\"2026-08-28\",\"quantity\":50,\"fee\":5}"))
@@ -99,7 +99,7 @@ class PortfolioControllerSliceTest {
 
     @DisplayName("现金分红正常绑定返回200")
     @Test
-    void cashDividendNormalBindingReturns200() throws Exception {
+    void givenValidCashDividendCommand_whenAddCashDividend_thenReturn200() throws Exception {
         when(service.addCashDividend(eq(1L), any(CashDividendCommand.class))).thenReturn(positionView());
 
         mvc.perform(post("/api/portfolio/positions/cash-dividend").with(authentication(auth())).with(csrf())
@@ -111,7 +111,7 @@ class PortfolioControllerSliceTest {
 
     @DisplayName("现金分红每股金额为0校验失败返回400")
     @Test
-    void cashDividendZeroCashPerShareValidationFailsReturns400() throws Exception {
+    void givenZeroCashPerShareCommand_whenAddCashDividend_thenReturn400() throws Exception {
         mvc.perform(post("/api/portfolio/positions/cash-dividend").with(authentication(auth())).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"positionId\":5,\"exDate\":\"2026-08-28\",\"cashPerShare\":0}"))
@@ -121,7 +121,7 @@ class PortfolioControllerSliceTest {
 
     @DisplayName("送股正常绑定返回200")
     @Test
-    void stockDividendNormalBindingReturns200() throws Exception {
+    void givenValidStockDividendCommand_whenAddStockDividend_thenReturn200() throws Exception {
         when(service.addStockDividend(eq(1L), any(StockDividendCommand.class))).thenReturn(positionView());
 
         mvc.perform(post("/api/portfolio/positions/stock-dividend").with(authentication(auth())).with(csrf())
@@ -133,7 +133,7 @@ class PortfolioControllerSliceTest {
 
     @DisplayName("送股缺少stockRatio校验失败返回400")
     @Test
-    void stockDividendMissingStockRatioValidationFailsReturns400() throws Exception {
+    void givenStockDividendMissingRatio_whenAddStockDividend_thenReturn400() throws Exception {
         mvc.perform(post("/api/portfolio/positions/stock-dividend").with(authentication(auth())).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"positionId\":5,\"exDate\":\"2026-08-28\"}"))
@@ -143,7 +143,7 @@ class PortfolioControllerSliceTest {
 
     @DisplayName("删除持仓返回204并透传positionId")
     @Test
-    void deletePositionReturns204AndPassesThroughPositionId() throws Exception {
+    void givenPositionId_whenDeletePosition_thenReturn204AndPassThroughPositionId() throws Exception {
         mvc.perform(delete("/api/portfolio/positions/5").with(authentication(auth())).with(csrf()))
                 .andExpect(status().isNoContent());
 
@@ -152,7 +152,7 @@ class PortfolioControllerSliceTest {
 
     @DisplayName("交易流水返回200")
     @Test
-    void tradesReturns200() throws Exception {
+    void whenGetTrades_thenReturn200() throws Exception {
         when(service.trades(1L, 5L)).thenReturn(List.of(
                 new TradeView(11L, TradeType.BUY, LocalDate.parse("2026-08-27"),
                         new BigDecimal("110"), new BigDecimal("100"), new BigDecimal("5"))));
@@ -165,7 +165,7 @@ class PortfolioControllerSliceTest {
 
     @DisplayName("分红流水返回200")
     @Test
-    void dividendRecordsReturns200() throws Exception {
+    void whenGetDividends_thenReturn200() throws Exception {
         when(service.dividends(1L, 5L)).thenReturn(List.of(
                 new DividendView(21L, DividendType.CASH, LocalDate.parse("2026-08-28"),
                         new BigDecimal("1.2"), null)));
@@ -178,7 +178,7 @@ class PortfolioControllerSliceTest {
 
     @DisplayName("新增现金流水返回201")
     @Test
-    void addCashTransactionReturns201() throws Exception {
+    void givenValidCashTransactionCommand_whenAddCashTransaction_thenReturn201() throws Exception {
         when(service.addCashTransaction(eq(1L), any(CashTransactionCommand.class))).thenReturn(
                 new CashTransactionView(31L, 1L, CashTransactionType.DEPOSIT,
                         new BigDecimal("10000"), LocalDate.parse("2026-08-28"), "入金"));
@@ -193,7 +193,7 @@ class PortfolioControllerSliceTest {
 
     @DisplayName("现金流水金额为0校验失败返回400")
     @Test
-    void cashTransactionZeroAmountValidationFailsReturns400() throws Exception {
+    void givenZeroAmountCashTransaction_whenAddCashTransaction_thenReturn400() throws Exception {
         mvc.perform(post("/api/portfolio/cash-transactions").with(authentication(auth())).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"groupId\":1,\"type\":\"WITHDRAW\",\"amount\":0,\"txDate\":\"2026-08-28\"}"))
@@ -203,7 +203,7 @@ class PortfolioControllerSliceTest {
 
     @DisplayName("查询现金流水返回200")
     @Test
-    void queryCashTransactionsReturns200() throws Exception {
+    void givenGroupId_whenQueryCashTransactions_thenReturn200() throws Exception {
         when(service.cashTransactions(1L, 1L)).thenReturn(List.of(
                 new CashTransactionView(31L, 1L, CashTransactionType.WITHDRAW,
                         new BigDecimal("2000"), LocalDate.parse("2026-08-29"), null)));
@@ -216,7 +216,7 @@ class PortfolioControllerSliceTest {
 
     @DisplayName("查询现金流水缺少groupId映射400")
     @Test
-    void queryCashTransactionsMissingGroupIdMapsTo400() throws Exception {
+    void givenMissingGroupId_whenQueryCashTransactions_thenReturn400() throws Exception {
         mvc.perform(get("/api/portfolio/cash-transactions").with(authentication(auth())))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
@@ -224,7 +224,7 @@ class PortfolioControllerSliceTest {
 
     @DisplayName("资产配置返回200")
     @Test
-    void assetAllocationReturns200() throws Exception {
+    void whenGetAssetAllocation_thenReturn200() throws Exception {
         when(service.allocation(1L)).thenReturn(new AssetAllocationView(List.of(
                 new AssetAllocationView.Slice(AllocationSliceCategory.EQUITY, new BigDecimal("7200"), new BigDecimal("41.86")),
                 new AssetAllocationView.Slice(AllocationSliceCategory.CASH, new BigDecimal("10000"), new BigDecimal("58.14")))));
@@ -237,7 +237,7 @@ class PortfolioControllerSliceTest {
 
     @DisplayName("行业分布返回200")
     @Test
-    void industryDistributionReturns200() throws Exception {
+    void whenGetIndustryDistribution_thenReturn200() throws Exception {
         when(service.industryDistribution(1L)).thenReturn(new IndustryDistributionView(List.of(
                 new IndustryDistributionView.Slice("白酒", new BigDecimal("7200"), new BigDecimal("100")))));
 
@@ -248,7 +248,7 @@ class PortfolioControllerSliceTest {
 
     @DisplayName("集中度返回200")
     @Test
-    void concentrationReturns200() throws Exception {
+    void whenGetConcentration_thenReturn200() throws Exception {
         when(service.concentration(1L)).thenReturn(new ConcentrationView(List.of(
                 new ConcentrationView.Holding("600519", "贵州茅台",
                         new BigDecimal("7200"), new BigDecimal("100"))),

@@ -49,7 +49,7 @@ class ValuationRepositoryImplTest {
     @DisplayName("查询最新快照")
     @Test
     @Transactional
-    void queryLatestSnapshot() {
+    void givenSeededValuationData_whenFindLatestSnapshot_thenReturned() {
         seed();
         var snapshot = valuationRepository.findLatestSnapshot();
         assertThat(snapshot.tradingDay()).isEqualTo(java.time.LocalDate.of(2026, 8, 27));
@@ -59,7 +59,7 @@ class ValuationRepositoryImplTest {
     @DisplayName("查询行业估值与国债")
     @Test
     @Transactional
-    void queryIndustryValuationsAndTreasuryYields() {
+    void givenSeededValuationData_whenQueryIndustriesAndTreasury_thenBothReturned() {
         seed();
         var industries = valuationRepository.findIndustryValuationsByDay(java.time.LocalDate.of(2026, 8, 27));
         assertThat(industries).hasSize(1);
@@ -70,7 +70,7 @@ class ValuationRepositoryImplTest {
     @DisplayName("国债只返回10年期")
     @Test
     @Transactional
-    void treasuryYieldsReturnOnly10Year() {
+    void given10yAnd3yTreasuryRows_whenFindAllTreasuryYields_thenOnly10yReturned() {
         jdbcTemplate.update("INSERT INTO treasury_yield_curve(trading_day, term, yield) VALUES (?, ?, ?)",
                 java.sql.Date.valueOf("2026-08-27"), "10Y", new java.math.BigDecimal("2.21"));
         jdbcTemplate.update("INSERT INTO treasury_yield_curve(trading_day, term, yield) VALUES (?, ?, ?)",
@@ -83,7 +83,7 @@ class ValuationRepositoryImplTest {
     @DisplayName("查询全部快照")
     @Test
     @Transactional
-    void queryAllSnapshots() {
+    void givenSeededSnapshot_whenFindAllSnapshots_thenReturned() {
         seed();
         var snapshots = valuationRepository.findAllSnapshots();
         assertThat(snapshots).hasSize(1);
@@ -94,7 +94,7 @@ class ValuationRepositoryImplTest {
     @DisplayName("按代码查询指数估值历史")
     @Test
     @Transactional
-    void queryIndexValuationHistoryByCode() {
+    void givenSeededIndexHistory_whenFindByIndexCode_thenReturned() {
         seed();
         var indexVals = valuationRepository.findIndexValuations("000300");
         assertThat(indexVals).hasSize(1);
@@ -105,7 +105,7 @@ class ValuationRepositoryImplTest {
     @DisplayName("查询全部申万行业映射")
     @Test
     @Transactional
-    void queryAllShenwanIndustryMappings() {
+    void givenSavedIndustryMapping_whenFindAllMappings_thenReturned() {
         jdbcTemplate.update("INSERT INTO shenwan_industry_mapping(stock_code, stock_name, industry_code, industry_name) VALUES (?, ?, ?, ?)",
                 "600000", "浦发银行", "801780", "银行");
         var mappings = valuationRepository.findAllIndustryMappings();
@@ -118,7 +118,7 @@ class ValuationRepositoryImplTest {
     @DisplayName("空表时最新快照为空")
     @Test
     @Transactional
-    void latestSnapshotIsNullWhenNoData() {
+    void givenEmptyTables_whenFindLatestSnapshot_thenNull() {
         assertThat(valuationRepository.findLatestSnapshot()).isNull();
     }
 }

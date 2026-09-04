@@ -14,6 +14,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 class MarketDataParserTest {
@@ -38,8 +39,9 @@ class MarketDataParserTest {
         sinaRaw = fixtureText("sina-quote.txt");
     }
 
+    @DisplayName("东财行情JSON解析出报价")
     @Test
-    void parsesEastmoneyQuote() {
+    void givenEastmoneyQuoteJson_whenParseQuote_thenReturnQuote() {
         Quote q = MarketDataParser.parseQuote(quoteJson);
         assertThat(q.code()).isEqualTo("600519");
         assertThat(q.name()).isEqualTo("贵州茅台");
@@ -52,8 +54,9 @@ class MarketDataParserTest {
         assertThat(q.time()).isEqualTo(expectedTime);
     }
 
+    @DisplayName("新浪行情文本解析出报价")
     @Test
-    void parsesSinaQuoteFallback() {
+    void givenSinaRawText_whenParseSinaQuote_thenReturnQuote() {
         Quote q = MarketDataParser.parseSinaQuote(sinaRaw, "600519");
         assertThat(q.name()).isEqualTo("贵州茅台");
         assertThat(q.price()).isEqualTo(1415.0);
@@ -62,8 +65,9 @@ class MarketDataParserTest {
         assertThat(q.time()).isEqualTo("2026-08-18 14:35:00");
     }
 
+    @DisplayName("东财K线JSON解析出K线柱")
     @Test
-    void parsesKline() {
+    void givenEastmoneyKlineJson_whenParseKline_thenReturnBars() {
         List<KlineBar> bars = MarketDataParser.parseKline(klineJson);
         assertThat(bars).hasSize(3);
         assertThat(bars.get(0).date()).isEqualTo("2026-08-14");
@@ -71,8 +75,9 @@ class MarketDataParserTest {
         assertThat(bars.get(2).volume()).isEqualTo(2345600L);
     }
 
+    @DisplayName("东财搜索JSON解析出命中并过滤指数")
     @Test
-    void parsesSearchAndFiltersIndices() {
+    void givenEastmoneySearchJson_whenParseSearch_thenReturnHitsAndFilterIndices() {
         List<StockHit> hits = MarketDataParser.parseSearch(searchJson);
         assertThat(hits).hasSize(2);
         assertThat(hits.get(0).code()).isEqualTo("600519");
@@ -80,8 +85,9 @@ class MarketDataParserTest {
         assertThat(hits).noneMatch(h -> "上证指数".equals(h.name()));
     }
 
+    @DisplayName("北交所代码映射到北交所市场")
     @Test
-    void parsesSearchMapsBeijingMarket() throws IOException {
+    void givenBeijingStockCode_whenParseSearch_thenMapToBeijingMarket() throws IOException {
         JsonNode node = MAPPER.readTree(
                 "{\"QuotationCodeTable\":{\"Data\":["
                         + "{\"Code\":\"830799\",\"Name\":\"艾融软件\",\"MktNum\":\"0\",\"SecurityTypeName\":\"北A\"}]}}");
@@ -90,8 +96,9 @@ class MarketDataParserTest {
         assertThat(hits.get(0).marketName()).isEqualTo("北交所");
     }
 
+    @DisplayName("财务JSON构建出财务指标")
     @Test
-    void parsesFinancials() {
+    void givenFinancialJson_whenBuildFinancials_thenReturnFinancials() {
         Financials f = MarketDataParser.buildFinancials("600519", "贵州茅台", 21.35, 7.82, financialsJson);
         assertThat(f.pe()).isEqualTo(21.35);
         assertThat(f.indicators()).hasSize(2);
@@ -99,24 +106,27 @@ class MarketDataParserTest {
         assertThat(f.indicators().get(0).weightedRoe()).isEqualTo(34.12);
     }
 
+    @DisplayName("新闻JSON解析剥离HTML并返回条目")
     @Test
-    void parsesNewsAndStripsHtml() {
+    void givenNewsJson_whenParseNews_thenStripHtmlAndReturnItems() {
         List<NewsItem> items = MarketDataParser.parseNews(newsJson);
         assertThat(items).hasSize(2);
         assertThat(items.get(0).title()).isEqualTo("贵州茅台发布2025年度报告");
         assertThat(items.get(0).summary()).doesNotContain("<em>").doesNotContain("&nbsp;");
     }
 
+    @DisplayName("大盘JSON构建出指数速览")
     @Test
-    void parsesOverview() {
+    void givenOverviewJson_whenBuildOverview_thenReturnIndices() {
         MarketOverview o = MarketDataParser.buildOverview(overviewJson);
         assertThat(o.indices()).hasSize(3);
         assertThat(o.indices().get(0).code()).isEqualTo("000001");
         assertThat(o.indices().get(0).changePct()).isEqualTo(0.85);
     }
 
+    @DisplayName("腾讯K线JSON解析出K线柱")
     @Test
-    void parsesTencentKlineFallback() throws IOException {
+    void givenTencentKlineJson_whenParseTencentKline_thenReturnBars() throws IOException {
         List<KlineBar> bars = MarketDataParser.parseTencentKline(
                 fixture("tencent-kline.json"), "sh600519", "day");
         assertThat(bars).hasSize(3);
@@ -127,8 +137,9 @@ class MarketDataParserTest {
         assertThat(bars.get(2).amplitudePct()).isEqualTo(0.0); // 腾讯无振幅字段
     }
 
+    @DisplayName("新浪指数文本构建出指数速览")
     @Test
-    void parsesSinaIndicesFallback() throws IOException {
+    void givenSinaIndicesRaw_whenBuildSinaOverview_thenReturnIndices() throws IOException {
         MarketOverview o = MarketDataParser.buildSinaOverview(fixtureText("sina-indices.txt"));
         assertThat(o.indices()).hasSize(3);
         assertThat(o.indices().get(0).name()).isEqualTo("上证指数");
@@ -136,14 +147,16 @@ class MarketDataParserTest {
         assertThat(o.indices().get(1).changePct()).isEqualTo(-0.56);
     }
 
+    @DisplayName("手数成交量归一化为股数")
     @Test
-    void normalizesQuoteVolumeToShares() {
+    void givenVolumeInLots_whenNormalizeVolume_thenConvertToShares() {
         assertThat(MarketDataParser.normalizeVolume(38723, 5.007e9, 1297.99)).isEqualTo(3872300L);
         assertThat(MarketDataParser.normalizeVolume(3872283, 5.007e9, 1297.99)).isEqualTo(3872283L);
     }
 
+    @DisplayName("空行情JSON解析抛异常")
     @Test
-    void rejectsEmptyQuote() {
+    void givenEmptyQuoteJson_whenParseQuote_thenThrowBadResponse() {
         assertThatThrownBy(() -> MarketDataParser.parseQuote(MAPPER.createObjectNode()))
                 .isInstanceOf(MarketDataException.class)
                 .hasMessageContaining("行情数据为空");

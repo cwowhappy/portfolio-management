@@ -42,7 +42,7 @@ class TencentClientTest {
 
     @DisplayName("kline返回原始JSON")
     @Test
-    void klineReturnsRawJson() throws IOException {
+    void whenKline_thenReturnsRawJson() throws IOException {
         server.expect(requestTo(startsWith("https://web.ifzq.gtimg.cn/appstock/app/fqkline/get")))
                 .andRespond(withSuccess(fixture("tencent-kline.json"), MediaType.APPLICATION_JSON));
         JsonNode node = client.kline("sh600519", "day", 120);
@@ -52,7 +52,7 @@ class TencentClientTest {
 
     @DisplayName("周期映射与默认值")
     @Test
-    void periodMappingAndDefaults() throws IOException {
+    void givenKlinePeriodVariants_whenKline_thenMapsPeriodAndAppliesDefaults() throws IOException {
         String url = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get";
         server.expect(requestTo(startsWith(url))).andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
         server.expect(requestTo(startsWith(url))).andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
@@ -65,7 +65,7 @@ class TencentClientTest {
 
     @DisplayName("三次全失败抛UPSTREAM_UNAVAILABLE")
     @Test
-    void throwsUpstreamUnavailableAfterThreeFailures() {
+    void givenThreeFailures_whenKline_thenThrowsUpstreamUnavailable() {
         String url = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get";
         // 腾讯与东财/新浪一致：三次尝试均失败后包装为领域异常
         server.expect(requestTo(startsWith(url))).andRespond(withServerError());

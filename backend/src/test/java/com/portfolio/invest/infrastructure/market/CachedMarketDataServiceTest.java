@@ -52,7 +52,7 @@ class CachedMarketDataServiceTest {
 
     @DisplayName("search按trim后key缓存")
     @Test
-    void searchCachesByTrimmedKey() {
+    void whenSearchWithWhitespacePaddedKey_thenCachesByTrimmedKey() {
         StockHit h = new StockHit("600519", "贵州茅台", "SH", "沪A");
         when(delegate.search("茅台")).thenReturn(List.of(h));
         assertThat(service.search(" 茅台 ")).hasSize(1);
@@ -62,7 +62,7 @@ class CachedMarketDataServiceTest {
 
     @DisplayName("kline按归一化参数缓存")
     @Test
-    void klineCachesByNormalizedParameters() {
+    void givenNormalizedKlineParams_whenKlineTwice_thenCached() {
         when(delegate.kline("600519", "day", 60)).thenReturn(List.of());
         service.kline("600519", "day", 60);
         service.kline("600519", "day", 60);
@@ -71,7 +71,7 @@ class CachedMarketDataServiceTest {
 
     @DisplayName("news按夹取条数缓存")
     @Test
-    void newsCachesByClampedCount() {
+    void givenClampedNewsCount_whenNewsTwice_thenCached() {
         when(delegate.news("600519", 10)).thenReturn(List.of());
         service.news("600519", 10);
         service.news("600519", 0);   // 夹取到 10 → 同 key
@@ -83,7 +83,7 @@ class CachedMarketDataServiceTest {
 
     @DisplayName("financials按代码缓存")
     @Test
-    void financialsCachesByCode() {
+    void givenFinancialsCode_whenFinancialsTwice_thenCached() {
         Financials f = new Financials("600519", "贵州茅台", 21.35, 7.82, List.of());
         when(delegate.financials("600519")).thenReturn(f);
         assertThat(service.financials("600519")).isSameAs(f);
@@ -93,7 +93,7 @@ class CachedMarketDataServiceTest {
 
     @DisplayName("overview缓存")
     @Test
-    void overviewIsCached() {
+    void whenOverviewCalledTwice_thenCached() {
         MarketOverview o = new MarketOverview("2026-08-18 15:00",
                 List.of(new IndexQuote("sh000001", "上证指数", 3000.1, 10.2, 0.34)));
         when(delegate.overview()).thenReturn(o);
@@ -104,7 +104,7 @@ class CachedMarketDataServiceTest {
 
     @DisplayName("probe绕过缓存")
     @Test
-    void probeBypassesCache() {
+    void whenProbeQuoteLatencyMs_thenBypassesCache() {
         service.quote("600519");
         service.probeQuoteLatencyMs();
         verify(delegate).probeQuoteLatencyMs();

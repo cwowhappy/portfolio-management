@@ -65,7 +65,7 @@ class JournalApplicationServiceTest {
 
     @DisplayName("创建备忘关联交易时回查股票")
     @Test
-    void createEntryWithLinkedTradeFetchesStock() {
+    void givenEntryLinkedToTrade_whenCreateEntry_thenFetchStock() {
         when(portfolioRepo.findPortfolioByUserId(1L)).thenReturn(Optional.of(portfolio()));
         when(portfolioRepo.findTradeById(10L)).thenReturn(Optional.of(buyTrade()));
         when(portfolioRepo.findPositionByIdAndPortfolioId(100L, 1L)).thenReturn(Optional.of(pos()));
@@ -82,7 +82,7 @@ class JournalApplicationServiceTest {
 
     @DisplayName("关联非本人交易抛TRADE_NOT_FOUND")
     @Test
-    void linkedOthersTradeThrowsTradeNotFound() {
+    void givenLinkedOthersTrade_whenCreateEntry_thenThrowTradeNotFound() {
         when(portfolioRepo.findPortfolioByUserId(1L)).thenReturn(Optional.of(portfolio()));
         when(portfolioRepo.findTradeById(999L)).thenReturn(Optional.of(buyTrade()));
         when(portfolioRepo.findPositionByIdAndPortfolioId(100L, 1L)).thenReturn(Optional.empty());
@@ -95,7 +95,7 @@ class JournalApplicationServiceTest {
 
     @DisplayName("客户端股票代码与交易不一致抛INVALID_INPUT")
     @Test
-    void clientStockCodeMismatchThrowsInvalidInput() {
+    void givenClientStockCodeMismatch_whenCreateEntry_thenThrowInvalidInput() {
         when(portfolioRepo.findPortfolioByUserId(1L)).thenReturn(Optional.of(portfolio()));
         when(portfolioRepo.findTradeById(10L)).thenReturn(Optional.of(buyTrade()));
         when(portfolioRepo.findPositionByIdAndPortfolioId(100L, 1L)).thenReturn(Optional.of(pos()));
@@ -108,7 +108,7 @@ class JournalApplicationServiceTest {
 
     @DisplayName("非本人记录抛NOT_FOUND")
     @Test
-    void othersEntryThrowsNotFound() {
+    void givenOthersEntry_whenDeleteEntry_thenThrowNotFound() {
         when(repo.findByIdAndUserId(5L, 1L)).thenReturn(Optional.empty());
         assertThatThrownBy(() -> service.deleteEntry(1L, 5L))
                 .isInstanceOfSatisfying(JournalException.class,
@@ -117,7 +117,7 @@ class JournalApplicationServiceTest {
 
     @DisplayName("更新记录")
     @Test
-    void updateEntrySucceeds() {
+    void givenOwnedEntry_whenUpdateEntry_thenSucceed() {
         when(repo.findByIdAndUserId(7L, 1L)).thenReturn(Optional.of(entry(7L)));
         when(portfolioRepo.findPortfolioByUserId(1L)).thenReturn(Optional.of(portfolio()));
         when(portfolioRepo.findTradeById(10L)).thenReturn(Optional.of(buyTrade()));
@@ -134,7 +134,7 @@ class JournalApplicationServiceTest {
 
     @DisplayName("时间线合并journal与M08事件并按事件日倒序")
     @Test
-    void timelineMergesJournalAndM08EventsSortedByDateDesc() {
+    void givenJournalTradesAndDividends_whenTimeline_thenMergeAndSortByDateDesc() {
         when(repo.findByUserIdInDateRange(1L, null, null)).thenReturn(List.of(
                 entry(1L), // eventDate 2026-08-02
                 JournalEntry.reconstitute(2L, 1L, JournalEntryType.REVIEW, null, null, null,
@@ -163,7 +163,7 @@ class JournalApplicationServiceTest {
 
     @DisplayName("时间线日期范围过滤")
     @Test
-    void timelineFiltersByDateRange() {
+    void givenDateRange_whenTimeline_thenFilterByRange() {
         when(repo.findByUserIdInDateRange(1L, LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 1))).thenReturn(List.of());
         when(repo.findByUserIdInDateRange(1L, LocalDate.of(2026, 8, 2), null)).thenReturn(List.of(entry(1L)));
         when(portfolioRepo.findPortfolioByUserId(1L)).thenReturn(Optional.empty());
@@ -174,7 +174,7 @@ class JournalApplicationServiceTest {
 
     @DisplayName("时间线把日期范围下推给仓库查询")
     @Test
-    void timelineDelegatesDateRangeToRepository() {
+    void givenDateRange_whenTimeline_thenDelegateRangeToRepository() {
         LocalDate from = LocalDate.of(2026, 8, 1);
         LocalDate to = LocalDate.of(2026, 8, 31);
         when(repo.findByUserIdInDateRange(1L, from, to)).thenReturn(List.of(entry(1L)));
@@ -188,7 +188,7 @@ class JournalApplicationServiceTest {
 
     @DisplayName("删除记录")
     @Test
-    void deleteEntrySucceeds() {
+    void givenOwnedEntry_whenDeleteEntry_thenSucceed() {
         when(repo.findByIdAndUserId(7L, 1L)).thenReturn(Optional.of(entry(7L)));
         service.deleteEntry(1L, 7L);
         verify(repo).deleteById(7L);

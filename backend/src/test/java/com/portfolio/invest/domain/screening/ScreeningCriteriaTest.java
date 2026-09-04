@@ -11,7 +11,7 @@ class ScreeningCriteriaTest {
 
     @DisplayName("全空条件返回false")
     @Test
-    void allNullConditionsReturnFalse() {
+    void givenAllNullConditions_whenHasAnyCondition_thenReturnFalse() {
         var c = new ScreeningCriteria(null, null, null, null, null, null, null, null,
                 null, null, null, null, null, "pe_ttm", SortDirection.ASC, 200);
         assertThat(c.hasAnyCondition()).isFalse();
@@ -19,7 +19,7 @@ class ScreeningCriteriaTest {
 
     @DisplayName("任一条件非空返回true")
     @Test
-    void anyNonNullConditionReturnsTrue() {
+    void givenAnyNonNullCondition_whenHasAnyCondition_thenReturnTrue() {
         var c = new ScreeningCriteria(new BigDecimal("20"), null, null, null, null, null,
                 null, null, null, null, null, null, null, "pe_ttm", SortDirection.ASC, 200);
         assertThat(c.hasAnyCondition()).isTrue();
@@ -27,7 +27,7 @@ class ScreeningCriteriaTest {
 
     @DisplayName("行业条件单独也算有条件")
     @Test
-    void industryConditionAloneCountsAsCondition() {
+    void givenIndustryConditionOnly_whenHasAnyCondition_thenReturnTrue() {
         var c = new ScreeningCriteria(null, null, null, null, null, null, null, null,
                 null, null, null, null, "801780", "pe_ttm", SortDirection.ASC, 200);
         assertThat(c.hasAnyCondition()).isTrue();

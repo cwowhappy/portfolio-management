@@ -36,7 +36,7 @@ class PortfolioConcurrencyIntegrationTest extends ConcurrencyTestSupport {
 
     @DisplayName("并发首次访问组合只创建一行")
     @Test
-    void concurrentFirstAccessCreatesSinglePortfolioRow() throws Exception {
+    void whenConcurrentFirstAccess_thenSinglePortfolioRowCreated() throws Exception {
         // 任一并发请求抛异常（修复前为 DataIntegrityViolationException）都会在 race 的 future.get 暴露
         race(8, () -> {
             service.groups(USER_ID);

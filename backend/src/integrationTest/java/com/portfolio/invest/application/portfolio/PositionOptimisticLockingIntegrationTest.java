@@ -84,7 +84,7 @@ class PositionOptimisticLockingIntegrationTest extends ConcurrencyTestSupport {
 
     @DisplayName("并发买入同一持仓一个成功一个乐观锁冲突")
     @Test
-    void concurrentBuyOneSucceedsOneOptimisticLockConflict() throws Exception {
+    void givenTwoConcurrentBuys_whenExecute_thenOneSucceedsOneConflict() throws Exception {
         CountDownLatch loserRead = new CountDownLatch(1);
         CountDownLatch winnerDone = new CountDownLatch(1);
 

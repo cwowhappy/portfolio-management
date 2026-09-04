@@ -70,7 +70,7 @@ class AguiStreamIntegrationTest extends PostgresTestSupport {
 
     @DisplayName("认证用户发起对话返回完整AGUI事件流")
     @Test
-    void authenticatedUserConversationReturnsFullAguiEventStream() throws Exception {
+    void givenAuthenticatedUser_whenRunConversation_thenFullAguiEventStreamReturned() throws Exception {
         MockHttpSession session = registerApproveAndLogin("agui_alice");
 
         MvcResult result = mockMvc.perform(post("/agui/run")
@@ -99,7 +99,7 @@ class AguiStreamIntegrationTest extends PostgresTestSupport {
 
     @DisplayName("请求未注册Agent返回流内错误事件而非500")
     @Test
-    void unregisteredAgentReturnsInStreamErrorEventNot500() throws Exception {
+    void givenUnregisteredAgent_whenRunConversation_thenInStreamErrorNot500() throws Exception {
         MockHttpSession session = registerApproveAndLogin("agui_bob");
 
         // AguiMvcController 在异步线程内捕获 AgentNotFoundException，
@@ -123,7 +123,7 @@ class AguiStreamIntegrationTest extends PostgresTestSupport {
 
     @DisplayName("非法请求体返回结构化错误而非事件流")
     @Test
-    void invalidRequestBodyReturnsStructuredErrorNotEventStream() throws Exception {
+    void givenInvalidRequestBody_whenRunConversation_thenStructuredErrorNotEventStream() throws Exception {
         MockHttpSession session = registerApproveAndLogin("agui_carol");
 
         // JSON 解析在控制器入参绑定阶段失败，走不到 SSE：

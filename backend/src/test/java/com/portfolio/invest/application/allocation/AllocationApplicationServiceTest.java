@@ -51,14 +51,14 @@ class AllocationApplicationServiceTest {
 
     @DisplayName("模板列表返回四个")
     @Test
-    void templatesReturnFour() {
+    void whenTemplates_thenReturnFour() {
         assertThat(service.templates()).hasSize(4);
         assertThat(service.templates().get(0).name()).isEqualTo("60/40 股债平衡");
     }
 
     @DisplayName("创建方案保存并返回")
     @Test
-    void createPlanSavesAndReturns() {
+    void whenCreatePlan_thenSaveAndReturn() {
         when(repo.save(any())).thenAnswer(inv -> inv.getArgument(0));
         var view = service.createPlan(1L, new CreatePlanCommand("平衡", PlanSource.TEMPLATE, w60_40()));
         assertThat(view.name()).isEqualTo("平衡");
@@ -68,7 +68,7 @@ class AllocationApplicationServiceTest {
 
     @DisplayName("权重重复抛INVALID_INPUT")
     @Test
-    void duplicateWeightsThrowInvalidInput() {
+    void givenDuplicateWeights_whenCreatePlan_thenThrowInvalidInput() {
         var dup = List.of(new WeightInput(AssetClass.STOCK, new BigDecimal("60")),
                 new WeightInput(AssetClass.STOCK, new BigDecimal("40")));
         assertThatThrownBy(() -> service.createPlan(1L, new CreatePlanCommand("x", PlanSource.CUSTOM, dup)))
@@ -78,7 +78,7 @@ class AllocationApplicationServiceTest {
 
     @DisplayName("激活方案先清空其余生效")
     @Test
-    void activatePlanDeactivatesOthersFirst() {
+    void givenOwnedPlan_whenActivatePlan_thenDeactivateOthersFirst() {
         when(repo.findByIdAndUserId(10L, 1L)).thenReturn(Optional.of(activePlan()));
         when(repo.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
@@ -89,7 +89,7 @@ class AllocationApplicationServiceTest {
 
     @DisplayName("重复激活已生效方案仍返回激活态且保存的是激活")
     @Test
-    void reActivatingActivePlanReturnsActiveAndSavesActive() {
+    void givenAlreadyActivePlan_whenActivatePlanAgain_thenReturnActiveAndSaveActive() {
         when(repo.findByIdAndUserId(10L, 1L)).thenReturn(Optional.of(activePlan()));
         when(repo.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
@@ -102,7 +102,7 @@ class AllocationApplicationServiceTest {
 
     @DisplayName("更新方案改名与改权重")
     @Test
-    void updatePlanRenamesAndReweights() {
+    void givenOwnedPlan_whenUpdatePlan_thenRenameAndReweight() {
         when(repo.findByIdAndUserId(10L, 1L)).thenReturn(Optional.of(activePlan()));
         when(repo.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
@@ -117,7 +117,7 @@ class AllocationApplicationServiceTest {
 
     @DisplayName("删除方案")
     @Test
-    void deletePlanSucceeds() {
+    void givenOwnedPlan_whenDeletePlan_thenSucceed() {
         when(repo.findByIdAndUserId(10L, 1L)).thenReturn(Optional.of(activePlan()));
         service.deletePlan(1L, 10L);
         verify(repo).deleteById(10L);
@@ -125,7 +125,7 @@ class AllocationApplicationServiceTest {
 
     @DisplayName("非本人方案抛NOT_FOUND")
     @Test
-    void othersPlanThrowsNotFound() {
+    void givenOthersPlan_whenDeletePlan_thenThrowNotFound() {
         when(repo.findByIdAndUserId(99L, 1L)).thenReturn(Optional.empty());
         assertThatThrownBy(() -> service.deletePlan(1L, 99L))
                 .isInstanceOfSatisfying(AllocationException.class,
@@ -134,14 +134,14 @@ class AllocationApplicationServiceTest {
 
     @DisplayName("无生效方案偏离度为空")
     @Test
-    void deviationWithoutActivePlanIsEmpty() {
+    void givenNoActivePlan_whenDeviation_thenEmpty() {
         when(repo.findActiveByUserId(1L)).thenReturn(Optional.empty());
         assertThat(service.deviation(1L).slices()).isEmpty();
     }
 
     @DisplayName("偏离度映射权益现金并计算差值")
     @Test
-    void deviationMapsEquityCashAndComputesDiff() {
+    void givenActivePlanAndAllocation_whenDeviation_thenMapEquityCashAndComputeDiff() {
         when(repo.findActiveByUserId(1L)).thenReturn(Optional.of(activePlan()));
         when(portfolio.allocation(1L)).thenReturn(new AssetAllocationView(List.of(
                 new AssetAllocationView.Slice(AllocationSliceCategory.EQUITY, new BigDecimal("12000"), new BigDecimal("70.59")),

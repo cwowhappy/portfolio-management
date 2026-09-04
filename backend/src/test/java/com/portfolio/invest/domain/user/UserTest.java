@@ -14,7 +14,7 @@ class UserTest {
 
     @DisplayName("注册初始为PENDING_USER")
     @Test
-    void registrationStartsWithPendingUser() {
+    void whenRegister_thenStartAsPendingUser() {
         User u = newUser();
         assertThat(u.status()).isEqualTo(UserStatus.PENDING);
         assertThat(u.role()).isEqualTo(UserRole.USER);
@@ -24,13 +24,13 @@ class UserTest {
 
     @DisplayName("审核通过后可登录")
     @Test
-    void canLoginAfterApproval() {
+    void givenApprovedUser_whenCanLogin_thenTrue() {
         assertThat(newUser().approve().canLogin()).isTrue();
     }
 
     @DisplayName("被拒后重新注册恢复PENDING")
     @Test
-    void reRegisterAfterRejectResetsToPending() {
+    void givenRejectedUser_whenReRegister_thenResetToPending() {
         User rejected = newUser().reject();
         assertThat(rejected.status()).isEqualTo(UserStatus.REJECTED);
         User re = rejected.reRegister("newhash");
@@ -40,14 +40,14 @@ class UserTest {
 
     @DisplayName("停用后不可登录且再启用可恢复")
     @Test
-    void disabledCannotLoginThenReEnabledRecovers() {
+    void givenApprovedUser_whenDisableThenEnable_thenLoginAbilityRecovers() {
         assertThat(newUser().approve().disable().canLogin()).isFalse();
         assertThat(newUser().approve().disable().enable().canLogin()).isTrue();
     }
 
     @DisplayName("对非PENDING用户审核抛异常")
     @Test
-    void approveNonPendingUserThrows() {
+    void givenNonPendingUser_whenApprove_thenThrow() {
         assertThatThrownBy(() -> newUser().approve().approve())
                 .isInstanceOf(UserException.class).hasMessageContaining("状态");
     }

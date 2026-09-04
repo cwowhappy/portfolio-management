@@ -28,14 +28,14 @@ class WeightInputValidationTest {
 
     @DisplayName("超过四位小数的权重被拒")
     @Test
-    void weightWithMoreThanFourDecimalsRejected() {
+    void givenWeightWithMoreThanFourDecimals_whenValidate_thenRejected() {
         var w = new WeightInput(AssetClass.STOCK, new BigDecimal("33.33333"));
         assertThat(hasViolationOn(validator.validate(w), "weight")).isTrue();
     }
 
     @DisplayName("四位小数以内的权重合法")
     @Test
-    void weightWithinFourDecimalsValid() {
+    void givenWeightWithinFourDecimals_whenValidate_thenValid() {
         var w = new WeightInput(AssetClass.STOCK, new BigDecimal("33.3333"));
         assertThat(hasViolationOn(validator.validate(w), "weight")).isFalse();
     }

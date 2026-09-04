@@ -10,7 +10,7 @@ class MarketDataExceptionTest {
 
     @DisplayName("携带错误码与消息")
     @Test
-    void carriesErrorCodeAndMessage() {
+    void givenErrorCodeAndMessage_whenConstruct_thenCarryBoth() {
         MarketDataException e = new MarketDataException(MarketDataErrorCode.INVALID_CODE, "无效代码");
         assertThat(e.getCode()).isEqualTo(MarketDataErrorCode.INVALID_CODE);
         assertThat(e.getMessage()).isEqualTo("无效代码");
@@ -19,7 +19,7 @@ class MarketDataExceptionTest {
 
     @DisplayName("携带原因链")
     @Test
-    void carriesCauseChain() {
+    void givenCause_whenConstruct_thenCarryCauseChain() {
         Exception cause = new RuntimeException("root");
         MarketDataException e = new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "挂了", cause);
         assertThat(e.getCode()).isEqualTo(MarketDataErrorCode.UPSTREAM_UNAVAILABLE);

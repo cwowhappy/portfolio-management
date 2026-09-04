@@ -35,7 +35,7 @@ class MarketControllerTest {
 
     @DisplayName("quote绑定path参数并返回200")
     @Test
-    void quoteBindsPathParamAndReturns200() throws Exception {
+    void givenQuoteCodePathParam_whenGetQuote_thenReturn200() throws Exception {
         Quote q = new Quote("600519", "贵州茅台", 1415, 15, 1.07, 1410, 1428, 1405.5, 1400,
                 2345600, 3.3e9, 21.35, 7.82, "2026-08-18 15:00");
         when(market.quote("600519")).thenReturn(q);
@@ -47,7 +47,7 @@ class MarketControllerTest {
 
     @DisplayName("kline缺省period与limit")
     @Test
-    void klineDefaultsPeriodAndLimit() throws Exception {
+    void givenNoPeriodOrLimitParam_whenGetKline_thenDefaultToDayAnd120() throws Exception {
         when(market.kline(eq("600519"), eq("day"), eq(120))).thenReturn(List.of());
         mvc.perform(get("/api/market/kline/600519"))
                 .andExpect(status().isOk());
@@ -55,7 +55,7 @@ class MarketControllerTest {
 
     @DisplayName("kline非法period映射400")
     @Test
-    void klineInvalidPeriodMapsTo400() throws Exception {
+    void givenInvalidPeriodParam_whenGetKline_thenReturn400() throws Exception {
         when(market.kline(eq("600519"), eq("foo"), anyInt()))
                 .thenThrow(new MarketDataException(MarketDataErrorCode.INVALID_PERIOD, "period 仅支持 day/week/month"));
         mvc.perform(get("/api/market/kline/600519").param("period", "foo"))
@@ -65,7 +65,7 @@ class MarketControllerTest {
 
     @DisplayName("news缺省limit与overview透传")
     @Test
-    void newsDefaultsLimitAndPassesThroughOverview() throws Exception {
+    void givenNoLimitParam_whenGetNews_thenUseDefaultLimitAndPassThroughOverview() throws Exception {
         when(market.news(eq("600519"), eq(10))).thenReturn(List.of());
         mvc.perform(get("/api/market/news/600519"))
                 .andExpect(status().isOk());

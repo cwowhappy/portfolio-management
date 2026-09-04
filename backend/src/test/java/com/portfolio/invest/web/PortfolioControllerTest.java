@@ -57,7 +57,7 @@ class PortfolioControllerTest {
 
     @DisplayName("groups返回200")
     @Test
-    void groupsReturns200() throws Exception {
+    void whenGetGroups_thenReturn200() throws Exception {
         when(service.groups(1L)).thenReturn(List.of(
                 new GroupView(1L, "华泰", GroupType.ACCOUNT, 0, BigDecimal.ZERO)));
 
@@ -68,7 +68,7 @@ class PortfolioControllerTest {
 
     @DisplayName("创建分组返回201")
     @Test
-    void createGroupReturns201() throws Exception {
+    void whenCreateGroup_thenReturn201() throws Exception {
         when(service.createGroup(eq(1L), any(CreateGroupCommand.class)))
                 .thenReturn(new GroupView(5L, "华泰", GroupType.ACCOUNT, 0, BigDecimal.ZERO));
 
@@ -81,14 +81,14 @@ class PortfolioControllerTest {
 
     @DisplayName("删除分组返回204")
     @Test
-    void deleteGroupReturns204() throws Exception {
+    void whenDeleteGroup_thenReturn204() throws Exception {
         mvc.perform(delete("/api/portfolio/groups/7").principal(auth()))
                 .andExpect(status().isNoContent());
     }
 
     @DisplayName("买入返回201")
     @Test
-    void buyReturns201() throws Exception {
+    void givenValidBuyCommand_whenBuy_thenReturn201() throws Exception {
         when(service.buy(eq(1L), any(BuyCommand.class)))
                 .thenReturn(new PositionView(99L, 1L, "600519", "贵州茅台",
                         new BigDecimal("100"), new BigDecimal("1500.05"), new BigDecimal("1500"),
@@ -104,7 +104,7 @@ class PortfolioControllerTest {
 
     @DisplayName("改名分组返回200")
     @Test
-    void renameGroupReturns200() throws Exception {
+    void givenRenameGroupCommand_whenRenameGroup_thenReturn200() throws Exception {
         when(service.renameGroup(eq(1L), eq(7L), any(RenameGroupCommand.class)))
                 .thenReturn(new GroupView(7L, "东财", GroupType.ACCOUNT, 0, BigDecimal.ZERO));
 
@@ -117,7 +117,7 @@ class PortfolioControllerTest {
 
     @DisplayName("编辑买入交易返回200")
     @Test
-    void editBuyTradeReturns200() throws Exception {
+    void givenEditBuyTradeCommand_whenEditBuyTrade_thenReturn200() throws Exception {
         when(service.editTrade(eq(1L), eq(5L), eq(11L), any(EditTradeCommand.class)))
                 .thenReturn(new PositionView(5L, 1L, "600519", "贵州茅台",
                         new BigDecimal("60"), new BigDecimal("110"), new BigDecimal("120"),

@@ -73,7 +73,7 @@ class OrchestratingMarketDataServiceTest {
 
     @DisplayName("search空关键词抛INVALID_QUERY")
     @Test
-    void searchEmptyKeywordThrowsInvalidQuery() {
+    void givenEmptyKeyword_whenSearch_thenThrowInvalidQuery() {
         assertThatThrownBy(() -> service.search(null))
                 .isInstanceOf(MarketDataException.class).hasMessageContaining("搜索关键词不能为空");
         assertThatThrownBy(() -> service.search("   "))
@@ -82,7 +82,7 @@ class OrchestratingMarketDataServiceTest {
 
     @DisplayName("search解析结果")
     @Test
-    void searchParsesResults() throws IOException {
+    void givenSourceSearchResult_whenSearch_thenParseResults() throws IOException {
         when(source.search("茅台")).thenReturn(fixture("eastmoney-search.json"));
         List<StockHit> hits = service.search(" 茅台 ");
         assertThat(hits).isNotEmpty();
@@ -93,7 +93,7 @@ class OrchestratingMarketDataServiceTest {
 
     @DisplayName("quote主源成功")
     @Test
-    void quotePrimarySourceSucceeds() throws IOException {
+    void givenPrimaryQuote_whenQuote_thenReturnQuote() throws IOException {
         when(source.quote("1.600519")).thenReturn(fixture("eastmoney-quote.json"));
         Quote q = service.quote("600519");
         assertThat(q.name()).isEqualTo("贵州茅台");
@@ -104,7 +104,7 @@ class OrchestratingMarketDataServiceTest {
 
     @DisplayName("quote主源失败降级新浪")
     @Test
-    void quotePrimarySourceFailsFallbackToSina() throws IOException {
+    void givenPrimaryQuoteFails_whenQuote_thenFallbackToSina() throws IOException {
         when(source.quote("1.600519"))
                 .thenThrow(new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "东财挂了"));
         when(source.rawQuote("sh", "600519")).thenReturn(fixtureText("sina-quote.txt"));
@@ -118,7 +118,7 @@ class OrchestratingMarketDataServiceTest {
 
     @DisplayName("kline周期映射到东财klt")
     @Test
-    void klinePeriodMapsToEastmoneyKlt() throws IOException {
+    void givenKlinePeriods_whenKline_thenMapToEastmoneyKlt() throws IOException {
         when(source.kline(eq("1.600519"), anyInt(), anyInt())).thenReturn(fixture("eastmoney-kline.json"));
         service.kline("600519", "day", 60);
         service.kline("600519", "week", 60);
@@ -130,7 +130,7 @@ class OrchestratingMarketDataServiceTest {
 
     @DisplayName("kline周期缺省与非法规整")
     @Test
-    void klinePeriodDefaultAndInvalidNormalized() throws IOException {
+    void givenDefaultOrInvalidPeriodAndLimit_whenKline_thenNormalize() throws IOException {
         when(source.kline(eq("1.600519"), anyInt(), anyInt())).thenReturn(fixture("eastmoney-kline.json"));
         service.kline("600519", null, 60);
         verify(source).kline("1.600519", 101, 60);
@@ -145,7 +145,7 @@ class OrchestratingMarketDataServiceTest {
 
     @DisplayName("kline主源失败降级腾讯")
     @Test
-    void klinePrimarySourceFailsFallbackToTencent() throws IOException {
+    void givenPrimaryKlineFails_whenKline_thenFallbackToTencent() throws IOException {
         when(source.kline("1.600519", 101, 120))
                 .thenThrow(new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "东财K线挂了"));
         when(source.fallbackKline("sh600519", "day", 120)).thenReturn(fixture("tencent-kline.json"));
@@ -159,7 +159,7 @@ class OrchestratingMarketDataServiceTest {
 
     @DisplayName("financials直接使用行情估值")
     @Test
-    void financialsUsesQuoteValuationDirectly() throws IOException {
+    void givenQuoteHasValuation_whenFinancials_thenUseQuoteValuation() throws IOException {
         when(source.quote("1.600519")).thenReturn(fixture("eastmoney-quote.json"));
         when(source.financials("600519.SH")).thenReturn(fixture("eastmoney-financials.json"));
         Financials f = service.financials("600519");
@@ -170,7 +170,7 @@ class OrchestratingMarketDataServiceTest {
 
     @DisplayName("financials缺失估值时TTM回算")
     @Test
-    void financialsRecalculatesTtmWhenValuationMissing() throws IOException {
+    void givenValuationMissing_whenFinancials_thenRecalculateTtm() throws IOException {
         // latest=2026-06-30 eps2 bps10; annual=2025-12-31 eps4; same=2025-06-30 eps1
         when(source.quote("1.600519")).thenReturn(quoteWithoutValuation());
         when(source.financials("600519.SH")).thenReturn(json("""
@@ -188,7 +188,7 @@ class OrchestratingMarketDataServiceTest {
 
     @DisplayName("financials最新报告期为年报时直接除EPS")
     @Test
-    void financialsLatestAnnualReportDividesEpsDirectly() throws IOException {
+    void givenLatestReportIsAnnual_whenFinancials_thenDivideEpsDirectly() throws IOException {
         when(source.quote("1.600519")).thenReturn(quoteWithoutValuation());
         when(source.financials("600519.SH")).thenReturn(json("""
                 {"result":{"data":[
@@ -203,7 +203,7 @@ class OrchestratingMarketDataServiceTest {
 
     @DisplayName("financials年报EPS非正时PE为空")
     @Test
-    void financialsAnnualEpsNonPositivePeIsNull() throws IOException {
+    void givenAnnualEpsNonPositive_whenFinancials_thenPeNull() throws IOException {
         // eps=0 旧实现会输出 Infinity，与 TTM 口径对齐：eps<=0 → PE 为 null
         when(source.quote("1.600519")).thenReturn(quoteWithoutValuation());
         when(source.financials("600519.SH")).thenReturn(json("""
@@ -218,7 +218,7 @@ class OrchestratingMarketDataServiceTest {
 
     @DisplayName("financials无年报无同去年数据时估值为空")
     @Test
-    void financialsNoAnnualOrSamePeriodLastYearValuationIsNull() throws IOException {
+    void givenNoAnnualOrSamePeriodData_whenFinancials_thenValuationNull() throws IOException {
         when(source.quote("1.600519")).thenReturn(quoteWithoutValuation());
         when(source.financials("600519.SH")).thenReturn(json("""
                 {"result":{"data":[
@@ -232,7 +232,7 @@ class OrchestratingMarketDataServiceTest {
 
     @DisplayName("financials指标为空时保持null估值")
     @Test
-    void financialsEmptyIndicatorsKeepNullValuation() throws IOException {
+    void givenEmptyIndicators_whenFinancials_thenKeepNullValuation() throws IOException {
         when(source.quote("1.600519")).thenReturn(quoteWithoutValuation());
         when(source.financials("600519.SH")).thenReturn(json("""
                 {"result":{"data":[]}}
@@ -244,7 +244,7 @@ class OrchestratingMarketDataServiceTest {
 
     @DisplayName("financialsTTM为负时不算PE")
     @Test
-    void financialsNegativeTtmDoesNotComputePe() throws IOException {
+    void givenNegativeTtm_whenFinancials_thenNoPe() throws IOException {
         when(source.quote("1.600519")).thenReturn(quoteWithoutValuation());
         when(source.financials("600519.SH")).thenReturn(json("""
                 {"result":{"data":[
@@ -260,7 +260,7 @@ class OrchestratingMarketDataServiceTest {
 
     @DisplayName("financials缺失同去年数据时不算PE")
     @Test
-    void financialsMissingSamePeriodLastYearDoesNotComputePe() throws IOException {
+    void givenMissingSamePeriodLastYear_whenFinancials_thenNoPe() throws IOException {
         when(source.quote("1.600519")).thenReturn(quoteWithoutValuation());
         when(source.financials("600519.SH")).thenReturn(json("""
                 {"result":{"data":[
@@ -275,7 +275,7 @@ class OrchestratingMarketDataServiceTest {
 
     @DisplayName("financials畸形报告期不崩溃")
     @Test
-    void financialsMalformedReportPeriodDoesNotCrash() throws IOException {
+    void givenMalformedReportPeriod_whenFinancials_thenDoesNotCrash() throws IOException {
         // latest 报告期为空且存在年报条目：旧实现会 substring(0,4) 抛 StringIndexOutOfBoundsException
         when(source.quote("1.600519")).thenReturn(quoteWithoutValuation());
         when(source.financials("600519.SH")).thenReturn(json("""
@@ -291,7 +291,7 @@ class OrchestratingMarketDataServiceTest {
 
     @DisplayName("financials仅PB缺失时保留行情PE并回算PB")
     @Test
-    void financialsOnlyPbMissingKeepsQuotePeAndRecalculatesPb() throws IOException {
+    void givenOnlyPbMissing_whenFinancials_thenKeepQuotePeAndRecalcPb() throws IOException {
         ObjectNode root = (ObjectNode) fixture("eastmoney-quote.json");
         ((ObjectNode) root.get("data")).remove("f167"); // 仅缺 PB，PE=21.35 保留
         when(source.quote("1.600519")).thenReturn(root);
@@ -309,7 +309,7 @@ class OrchestratingMarketDataServiceTest {
 
     @DisplayName("financials仅PE缺失时保留行情PB并回算PE")
     @Test
-    void financialsOnlyPeMissingKeepsQuotePbAndRecalculatesPe() throws IOException {
+    void givenOnlyPeMissing_whenFinancials_thenKeepQuotePbAndRecalcPe() throws IOException {
         ObjectNode root = (ObjectNode) fixture("eastmoney-quote.json");
         ((ObjectNode) root.get("data")).remove("f162"); // 仅缺 PE，PB=7.82 保留
         when(source.quote("1.600519")).thenReturn(root);
@@ -327,7 +327,7 @@ class OrchestratingMarketDataServiceTest {
 
     @DisplayName("financials最新BPS非正时PB为null")
     @Test
-    void financialsLatestBpsNonPositivePbIsNull() throws IOException {
+    void givenLatestBpsNonPositive_whenFinancials_thenPbNull() throws IOException {
         when(source.quote("1.600519")).thenReturn(quoteWithoutValuation());
         when(source.financials("600519.SH")).thenReturn(json("""
                 {"result":{"data":[
@@ -343,7 +343,7 @@ class OrchestratingMarketDataServiceTest {
 
     @DisplayName("financials最新报告缺EPS时PE为null")
     @Test
-    void financialsLatestReportMissingEpsPeIsNull() throws IOException {
+    void givenLatestReportMissingEps_whenFinancials_thenPeNull() throws IOException {
         when(source.quote("1.600519")).thenReturn(quoteWithoutValuation());
         when(source.financials("600519.SH")).thenReturn(json("""
                 {"result":{"data":[
@@ -360,7 +360,7 @@ class OrchestratingMarketDataServiceTest {
 
     @DisplayName("financials年报缺EPS时不算PE")
     @Test
-    void financialsAnnualMissingEpsDoesNotComputePe() throws IOException {
+    void givenAnnualMissingEps_whenFinancials_thenNoPe() throws IOException {
         when(source.quote("1.600519")).thenReturn(quoteWithoutValuation());
         when(source.financials("600519.SH")).thenReturn(json("""
                 {"result":{"data":[
@@ -378,7 +378,7 @@ class OrchestratingMarketDataServiceTest {
 
     @DisplayName("financials报告期年份非数字时不算PE")
     @Test
-    void financialsReportYearNonNumericDoesNotComputePe() throws IOException {
+    void givenReportYearNonNumeric_whenFinancials_thenNoPe() throws IOException {
         // 上游脏数据：年份部分非数字，sameLastYearOf 无法推算去年同期 → 不算 PE
         when(source.quote("1.600519")).thenReturn(quoteWithoutValuation());
         when(source.financials("600519.SH")).thenReturn(json("""
@@ -398,7 +398,7 @@ class OrchestratingMarketDataServiceTest {
 
     @DisplayName("news股票名为空白时改用代码搜索")
     @Test
-    void newsBlankStockNameFallsBackToCodeSearch() throws IOException {
+    void givenBlankStockName_whenNews_thenFallbackToCodeSearch() throws IOException {
         ObjectNode root = (ObjectNode) fixture("eastmoney-quote.json");
         ((ObjectNode) root.get("data")).put("f58", "  "); // 名称为空白
         when(source.quote("1.600519")).thenReturn(root);
@@ -410,7 +410,7 @@ class OrchestratingMarketDataServiceTest {
 
     @DisplayName("news使用股票名称搜索并限制条数")
     @Test
-    void newsSearchesByStockNameAndLimitsCount() throws IOException {
+    void givenStockNameAndLimit_whenNews_thenSearchByNameAndLimitCount() throws IOException {
         when(source.quote("1.600519")).thenReturn(fixture("eastmoney-quote.json"));
         when(source.news("贵州茅台", 10)).thenReturn(fixture("eastmoney-news.json"));
         assertThat(service.news("600519", 10)).isNotEmpty();
@@ -423,7 +423,7 @@ class OrchestratingMarketDataServiceTest {
 
     @DisplayName("news名称获取失败改用代码搜索")
     @Test
-    void newsNameFetchFailsFallsBackToCodeSearch() throws IOException {
+    void givenNameFetchFails_whenNews_thenFallbackToCodeSearch() throws IOException {
         when(source.quote("1.600519"))
                 .thenThrow(new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "挂了"));
         when(source.rawQuote("sh", "600519"))
@@ -437,7 +437,7 @@ class OrchestratingMarketDataServiceTest {
 
     @DisplayName("overview主源成功")
     @Test
-    void overviewPrimarySourceSucceeds() throws IOException {
+    void givenPrimaryOverview_whenOverview_thenReturnIndices() throws IOException {
         when(source.overview()).thenReturn(fixture("eastmoney-overview.json"));
         MarketOverview o = service.overview();
         assertThat(o.indices()).isNotEmpty();
@@ -446,7 +446,7 @@ class OrchestratingMarketDataServiceTest {
 
     @DisplayName("overview主源失败降级新浪")
     @Test
-    void overviewPrimarySourceFailsFallbackToSina() throws IOException {
+    void givenPrimaryOverviewFails_whenOverview_thenFallbackToSina() throws IOException {
         when(source.overview()).thenThrow(new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "挂了"));
         when(source.rawIndices()).thenReturn(fixtureText("sina-indices.txt"));
         MarketOverview o = service.overview();
@@ -458,7 +458,7 @@ class OrchestratingMarketDataServiceTest {
 
     @DisplayName("probeQuoteLatencyMs直连上游")
     @Test
-    void probeQuoteLatencyMsHitsUpstreamDirectly() throws IOException {
+    void whenProbeQuoteLatencyMs_thenHitUpstreamDirectly() throws IOException {
         when(source.quote("1.600519")).thenReturn(fixture("eastmoney-quote.json"));
         assertThat(service.probeQuoteLatencyMs()).isGreaterThanOrEqualTo(0);
         verify(source).quote("1.600519");
@@ -466,7 +466,7 @@ class OrchestratingMarketDataServiceTest {
 
     @DisplayName("probeQuoteLatencyMs用注入时钟测量耗时")
     @Test
-    void probeQuoteLatencyMsUsesInjectedClockToMeasure() throws IOException {
+    void givenInjectedClock_whenProbeQuoteLatencyMs_thenMeasureWithClock() throws IOException {
         // A3：application 层禁调 System 时钟，探活耗时必须来自注入时钟（可确定性测试）
         AtomicLong now = new AtomicLong(1000);
         Clock fakeClock = new Clock() {
@@ -486,7 +486,7 @@ class OrchestratingMarketDataServiceTest {
 
     @DisplayName("quoteBatch返回成功标的并跳过失败标的")
     @Test
-    void quoteBatchReturnsSucceededAndSkipsFailed() throws IOException {
+    void givenSomeQuotesFail_whenQuoteBatch_thenReturnSucceededAndSkipFailed() throws IOException {
         when(source.quote("1.600519")).thenReturn(fixture("eastmoney-quote.json"));
         when(source.quote("0.000858"))
                 .thenThrow(new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "东财挂了"));
@@ -501,7 +501,7 @@ class OrchestratingMarketDataServiceTest {
 
     @DisplayName("quoteBatch单只失败记warn日志含code")
     @Test
-    void quoteBatchSingleFailureLogsWarnWithCode() {
+    void givenSingleQuoteFails_whenQuoteBatch_thenLogWarnWithCode() {
         ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(OrchestratingMarketDataService.class);
         ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender = new ch.qos.logback.core.read.ListAppender<>();
         appender.start();

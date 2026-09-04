@@ -72,7 +72,7 @@ class PortfolioRepositoryImplTest {
 
     @DisplayName("组合按用户保存与查询")
     @Test
-    void portfolioSavedAndQueriedByUser() {
+    void whenSavePortfolio_thenQueryableByUser() {
         Portfolio saved = savePortfolio(42L);
         assertThat(saved.id()).isNotNull();
         assertThat(repository.findPortfolioByUserId(42L)).isPresent();
@@ -80,7 +80,7 @@ class PortfolioRepositoryImplTest {
 
     @DisplayName("分组与持仓按组合查询")
     @Test
-    void groupsAndPositionsQueriedByPortfolio() {
+    void givenGroupAndPosition_whenQueryByPortfolio_thenReturned() {
         Portfolio p = savePortfolio(43L);
         HoldingGroup g = repository.saveGroup(HoldingGroup.create(p.id(), "华泰", GroupType.ACCOUNT, Instant.now()));
 
@@ -95,7 +95,7 @@ class PortfolioRepositoryImplTest {
 
     @DisplayName("删除分组前先清空持仓")
     @Test
-    void positionsClearedBeforeDeletingGroup() {
+    void givenGroupWithPosition_whenDeletePositionThenGroup_thenGroupDeleted() {
         Portfolio p = savePortfolio(44L);
         HoldingGroup g = repository.saveGroup(HoldingGroup.create(p.id(), "东财", GroupType.ACCOUNT, Instant.now()));
         Position savedPos = repository.savePosition(Position.create(p.id(), g.id(), "000858", "五粮液", Instant.now()));
@@ -110,7 +110,7 @@ class PortfolioRepositoryImplTest {
 
     @DisplayName("交易分红现金流水往返")
     @Test
-    void tradeDividendAndCashTransactionRoundTrip() {
+    void whenSaveTradeDividendAndCashTx_thenReadBack() {
         Portfolio p = savePortfolio(43L);
         HoldingGroup g = repository.saveGroup(HoldingGroup.create(p.id(), "华泰", GroupType.ACCOUNT, Instant.now()));
         Position savedPos = repository.savePosition(Position.create(p.id(), g.id(), "600519", "贵州茅台", Instant.now())

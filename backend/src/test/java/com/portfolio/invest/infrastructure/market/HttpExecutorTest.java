@@ -20,7 +20,7 @@ class HttpExecutorTest {
 
     @DisplayName("可重试错误重试至上限且每次尝试都取令牌")
     @Test
-    void retriesRetryableErrorsToLimitAcquiringTokenEachAttempt() {
+    void givenRetryableError_whenExecute_thenRetriesToLimitAcquiringTokenEachAttempt() {
         RateLimiter limiter = mock(RateLimiter.class);
         when(limiter.tryAcquire(anyLong())).thenReturn(true);
         HttpExecutor executor = new HttpExecutor(limiter, 3, 0, 2000, "上游");
@@ -34,7 +34,7 @@ class HttpExecutorTest {
 
     @DisplayName("领域错误不重试直接上抛")
     @Test
-    void domainErrorNotRetriedAndRethrown() {
+    void givenDomainError_whenExecute_thenRethrowsWithoutRetry() {
         RateLimiter limiter = mock(RateLimiter.class);
         when(limiter.tryAcquire(anyLong())).thenReturn(true);
         HttpExecutor executor = new HttpExecutor(limiter, 3, 0, 2000, "上游");
@@ -48,7 +48,7 @@ class HttpExecutorTest {
 
     @DisplayName("客户端4xx错误不重试")
     @Test
-    void client4xxErrorNotRetried() {
+    void givenClient4xxError_whenExecute_thenNotRetried() {
         RateLimiter limiter = mock(RateLimiter.class);
         when(limiter.tryAcquire(anyLong())).thenReturn(true);
         HttpExecutor executor = new HttpExecutor(limiter, 3, 0, 2000, "上游");
@@ -61,7 +61,7 @@ class HttpExecutorTest {
 
     @DisplayName("拿不到令牌抛RATE_LIMITED")
     @Test
-    void throwsRateLimitedWhenNoTokenAcquired() {
+    void givenNoTokenAcquired_whenExecute_thenThrowsRateLimited() {
         RateLimiter limiter = mock(RateLimiter.class);
         when(limiter.tryAcquire(anyLong())).thenReturn(false);
         HttpExecutor executor = new HttpExecutor(limiter, 3, 0, 2000, "上游");

@@ -33,7 +33,7 @@ class UserAdminControllerIntegrationTest extends PostgresTestSupport {
 
     @DisplayName("普通用户访问admin接口返回403")
     @Test
-    void regularUserAccessingAdminApiReturns403() throws Exception {
+    void givenRegularUser_whenAccessAdminApi_thenForbidden() throws Exception {
         register("adminit_user", "abc12345");
         approveDirect("adminit_user");
 
@@ -44,7 +44,7 @@ class UserAdminControllerIntegrationTest extends PostgresTestSupport {
 
     @DisplayName("管理员审核通过后用户可登录")
     @Test
-    void adminApprovalAllowsUserToLogin() throws Exception {
+    void givenPendingUser_whenAdminApproves_thenUserCanLogin() throws Exception {
         register("adminit_pending", "abc12345");
         seedAdmin("adminit_admin", "admin12345");
 
@@ -63,7 +63,7 @@ class UserAdminControllerIntegrationTest extends PostgresTestSupport {
 
     @DisplayName("管理员重置密码后该用户rememberMe令牌被吊销")
     @Test
-    void adminResetPasswordRevokesUserRememberMeToken() throws Exception {
+    void givenUserWithRememberMeToken_whenAdminResetsPassword_thenTokenRevoked() throws Exception {
         register("adminit_reset", "abc12345");
         approveDirect("adminit_reset");
         seedAdmin("adminit_admin2", "admin12345");
@@ -85,7 +85,7 @@ class UserAdminControllerIntegrationTest extends PostgresTestSupport {
 
     @DisplayName("重置密码空白返回400")
     @Test
-    void resetPasswordBlankReturns400() throws Exception {
+    void givenBlankNewPassword_whenAdminResetsPassword_thenBadRequest() throws Exception {
         register("adminit_reset2", "abc12345");
         seedAdmin("adminit_admin3", "admin12345");
         MockHttpSession adminSession = login("adminit_admin3", "admin12345");

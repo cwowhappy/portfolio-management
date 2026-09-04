@@ -33,7 +33,7 @@ class ActiveUserFilterTest {
 
     @DisplayName("公开路径豁免用户状态校验")
     @Test
-    void publicPathsExemptFromUserStatusCheck() {
+    void givenPublicPath_whenShouldNotFilter_thenExemptsFromStatusCheck() {
         String[] publicPaths = {
                 "/api/auth/login", "/api/auth/register",
                 "/api/market/quote", "/api/valuation/overview", "/api/agent/health",
@@ -50,7 +50,7 @@ class ActiveUserFilterTest {
 
     @DisplayName("无认证信息时直接放行且不查库")
     @Test
-    void passesThroughWithoutQueryingWhenNoAuthentication() throws Exception {
+    void givenNoAuthentication_whenDoFilterInternal_thenPassesThroughWithoutQuerying() throws Exception {
         SecurityContextHolder.clearContext();
 
         filter.doFilterInternal(request, response, chain);
@@ -61,7 +61,7 @@ class ActiveUserFilterTest {
 
     @DisplayName("认证未建立时直接放行且不查库")
     @Test
-    void passesThroughWithoutQueryingWhenAuthenticationNotEstablished() throws Exception {
+    void givenAuthenticationNotEstablished_whenDoFilterInternal_thenPassesThroughWithoutQuerying() throws Exception {
         // 无 authorities 的构造器 → isAuthenticated() = false
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken("alice", null));
@@ -74,7 +74,7 @@ class ActiveUserFilterTest {
 
     @DisplayName("认证主体非AuthenticatedUser时直接放行且不查库")
     @Test
-    void passesThroughWithoutQueryingWhenPrincipalNotAuthenticatedUser() throws Exception {
+    void givenPrincipalNotAuthenticatedUser_whenDoFilterInternal_thenPassesThroughWithoutQuerying() throws Exception {
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken("anonymous", null, List.of()));
 

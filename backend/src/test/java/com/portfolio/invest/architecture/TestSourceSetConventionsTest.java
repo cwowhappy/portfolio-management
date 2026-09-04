@@ -1,6 +1,7 @@
 package com.portfolio.invest.architecture;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.methods;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
 import com.tngtech.archunit.base.DescribedPredicate;
@@ -25,7 +26,7 @@ class TestSourceSetConventionsTest {
 
     @DisplayName("testSourceSet禁止依赖Testcontainers")
     @Test
-    void testSourceSetForbidsTestcontainersDependency() {
+    void whenAnalyzingTestSourceSet_thenForbidsTestcontainersDependency() {
         JavaClasses testClasses = new ClassFileImporter()
                 .importPath(Paths.get("build/classes/java/test"));
         ArchRule rule = noClasses()
@@ -41,7 +42,7 @@ class TestSourceSetConventionsTest {
      */
     @DisplayName("sliceTest必须是真切片")
     @Test
-    void sliceTestMustBeTrueSlice() {
+    void givenSliceTestNamedClasses_whenChecked_thenMustBeTrueSlice() {
         JavaClasses testClasses = new ClassFileImporter()
                 .importPath(Paths.get("build/classes/java/test"));
         DescribedPredicate<JavaAnnotation<?>> sliceAnnotation =
@@ -56,5 +57,31 @@ class TestSourceSetConventionsTest {
                 .should().beAnnotatedWith(sliceAnnotation)
                 .as("*SliceTest 必须是真切片（@WebMvcTest/@JsonTest），standalone 测试命名为 *Test");
         rule.check(testClasses);
+    }
+
+    /**
+     * 测试方法命名规范（G6）：@Test 方法名须以 given/when/then 开头（GWT 风格），
+     * 且必须带 @DisplayName 中文说明。覆盖 test 与 integrationTest 两个 source set
+     * （BDD 的 Cucumber 步骤定义不在 @Test 范畴，不适用本条）。
+     */
+    @DisplayName("测试方法须GWT开头且带@DisplayName")
+    @Test
+    void givenTestMethod_whenCheckNamingConvention_thenMustFollowGwtAndHaveDisplayName() {
+        JavaClasses testClasses = new ClassFileImporter()
+                .importPath(Paths.get("build/classes/java/test"));
+        JavaClasses integrationClasses = new ClassFileImporter()
+                .importPath(Paths.get("build/classes/java/integrationTest"));
+
+        ArchRule gwtName = methods().that().areAnnotatedWith(Test.class)
+                .should().haveNameMatching("^(given|when|then).*")
+                .as("测试方法名须以 given/when/then 开头（GWT 风格）");
+        ArchRule displayName = methods().that().areAnnotatedWith(Test.class)
+                .should().beAnnotatedWith(DisplayName.class)
+                .as("测试方法须带 @DisplayName 中文说明");
+
+        gwtName.check(testClasses);
+        gwtName.check(integrationClasses);
+        displayName.check(testClasses);
+        displayName.check(integrationClasses);
     }
 }

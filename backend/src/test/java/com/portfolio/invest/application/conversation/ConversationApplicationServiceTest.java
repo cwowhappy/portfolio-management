@@ -38,7 +38,7 @@ class ConversationApplicationServiceTest {
 
     @DisplayName("列表返回归属会话")
     @Test
-    void listReturnsOwnedConversations() {
+    void givenOwnedConversations_whenList_thenReturnOwned() {
         when(repo.findByUserId(1L)).thenReturn(List.of(owned("t-1")));
         assertThat(service.list(1L)).hasSize(1).first().satisfies(v -> {
             assertThat(v.id()).isEqualTo("t-1");
@@ -48,7 +48,7 @@ class ConversationApplicationServiceTest {
 
     @DisplayName("创建校验空id")
     @Test
-    void createRejectsEmptyId() {
+    void givenEmptyId_whenCreate_thenReject() {
         assertThatThrownBy(() -> service.create(1L, null))
                 .isInstanceOf(ConversationException.class).hasMessageContaining("不能为空");
         assertThatThrownBy(() -> service.create(1L, ""))
@@ -60,14 +60,14 @@ class ConversationApplicationServiceTest {
 
     @DisplayName("创建校验超长id")
     @Test
-    void createRejectsOversizedId() {
+    void givenOversizedId_whenCreate_thenReject() {
         assertThatThrownBy(() -> service.create(1L, "x".repeat(65)))
                 .isInstanceOf(ConversationException.class).hasMessageContaining("格式");
     }
 
     @DisplayName("创建接受前端非UUID回退id")
     @Test
-    void createAcceptsFrontendNonUuidFallbackId() {
+    void givenFrontendNonUuidId_whenCreate_thenAccept() {
         String tPrefixId = "t-" + System.currentTimeMillis();
         when(repo.findByIdAndUserId(tPrefixId, 1L)).thenReturn(Optional.empty());
         when(repo.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -77,7 +77,7 @@ class ConversationApplicationServiceTest {
 
     @DisplayName("本人重复创建同id幂等返回")
     @Test
-    void createSameIdForOwnerIsIdempotent() {
+    void givenSameIdOwnedByUser_whenCreate_thenIdempotentReturn() {
         when(repo.findByIdAndUserId("t-1", 1L)).thenReturn(Optional.of(owned("t-1")));
 
         var view = service.create(1L, "t-1");
@@ -89,7 +89,7 @@ class ConversationApplicationServiceTest {
 
     @DisplayName("创建时id已被他人占用抛NOT_FOUND且不save")
     @Test
-    void createIdTakenByOthersThrowsNotFoundAndDoesNotSave() {
+    void givenIdTakenByOthers_whenCreate_thenThrowNotFoundAndNotSave() {
         when(repo.findByIdAndUserId("t-1", 2L)).thenReturn(Optional.empty());
         when(repo.existsById("t-1")).thenReturn(true);
         assertThatThrownBy(() -> service.create(2L, "t-1"))
@@ -99,7 +99,7 @@ class ConversationApplicationServiceTest {
 
     @DisplayName("创建时id未被任何人占用则save")
     @Test
-    void createIdAvailableSaves() {
+    void givenIdAvailable_whenCreate_thenSave() {
         when(repo.findByIdAndUserId("t-new", 1L)).thenReturn(Optional.empty());
         when(repo.existsById("t-new")).thenReturn(false);
         when(repo.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -110,7 +110,7 @@ class ConversationApplicationServiceTest {
 
     @DisplayName("读取非本人会话抛NOT_FOUND")
     @Test
-    void readOthersConversationThrowsNotFound() {
+    void givenOthersConversation_whenReadMessages_thenThrowNotFound() {
         when(repo.findByIdAndUserId("t-1", 1L)).thenReturn(Optional.empty());
         assertThatThrownBy(() -> service.messages(1L, "t-1"))
                 .isInstanceOf(ConversationException.class).hasMessageContaining("不存在");
@@ -118,7 +118,7 @@ class ConversationApplicationServiceTest {
 
     @DisplayName("保存消息并生成标题")
     @Test
-    void saveMessagesGeneratesTitle() {
+    void givenOwnedConversation_whenSaveMessages_thenGenerateTitle() {
         Conversation conv = owned("t-1");
         when(repo.findByIdAndUserId("t-1", 1L)).thenReturn(Optional.of(conv));
         when(repo.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -132,7 +132,7 @@ class ConversationApplicationServiceTest {
 
     @DisplayName("非本人会话禁止保存")
     @Test
-    void saveToOthersConversationRejected() {
+    void givenOthersConversation_whenSaveMessages_thenReject() {
         when(repo.findByIdAndUserId("t-1", 2L)).thenReturn(Optional.empty());
         assertThatThrownBy(() -> service.saveMessages(2L, "t-1", List.of()))
                 .isInstanceOf(ConversationException.class).hasMessageContaining("不存在");
@@ -141,7 +141,7 @@ class ConversationApplicationServiceTest {
 
     @DisplayName("保存消息校验非法role")
     @Test
-    void saveMessagesRejectsInvalidRole() {
+    void givenInvalidRoleMessage_whenSaveMessages_thenReject() {
         when(repo.findByIdAndUserId("t-1", 1L)).thenReturn(Optional.of(owned("t-1")));
         assertThatThrownBy(() -> service.saveMessages(1L, "t-1", List.of(
                 new ChatMessageWire("m-1", "system", "hi", 1700000000000L))))
@@ -152,7 +152,7 @@ class ConversationApplicationServiceTest {
 
     @DisplayName("保存消息校验id为空或超长")
     @Test
-    void saveMessagesRejectsBlankOrOversizedId() {
+    void givenBlankOrOversizedMessageId_whenSaveMessages_thenReject() {
         when(repo.findByIdAndUserId("t-1", 1L)).thenReturn(Optional.of(owned("t-1")));
         assertThatThrownBy(() -> service.saveMessages(1L, "t-1", List.of(
                 new ChatMessageWire(null, "user", "hi", 1700000000000L))))
@@ -165,7 +165,7 @@ class ConversationApplicationServiceTest {
 
     @DisplayName("保存消息校验content为空或超长")
     @Test
-    void saveMessagesRejectsBlankOrOversizedContent() {
+    void givenBlankOrOversizedContent_whenSaveMessages_thenReject() {
         when(repo.findByIdAndUserId("t-1", 1L)).thenReturn(Optional.of(owned("t-1")));
         assertThatThrownBy(() -> service.saveMessages(1L, "t-1", List.of(
                 new ChatMessageWire("m-1", "user", "", 1700000000000L))))
@@ -178,7 +178,7 @@ class ConversationApplicationServiceTest {
 
     @DisplayName("保存消息条数超过500被拒")
     @Test
-    void saveMessagesOver500CountRejected() {
+    void givenOver500Messages_whenSaveMessages_thenReject() {
         when(repo.findByIdAndUserId("t-1", 1L)).thenReturn(Optional.of(owned("t-1")));
         var wires = java.util.stream.IntStream.range(0, 501)
                 .mapToObj(i -> new ChatMessageWire("m-" + i, "user", "hi", 1700000000000L))
@@ -191,7 +191,7 @@ class ConversationApplicationServiceTest {
 
     @DisplayName("删除非本人会话抛NOT_FOUND")
     @Test
-    void deleteOthersConversationThrowsNotFound() {
+    void givenOthersConversation_whenDelete_thenThrowNotFound() {
         when(repo.findByIdAndUserId("t-1", 2L)).thenReturn(Optional.empty());
         assertThatThrownBy(() -> service.delete(2L, "t-1"))
                 .isInstanceOf(ConversationException.class).hasMessageContaining("不存在");

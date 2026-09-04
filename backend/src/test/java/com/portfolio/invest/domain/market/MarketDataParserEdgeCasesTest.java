@@ -32,7 +32,7 @@ class MarketDataParserEdgeCasesTest {
 
     @DisplayName("parseQuote数据缺失抛BAD_RESPONSE")
     @Test
-    void parseQuoteMissingDataThrowsBadResponse() {
+    void givenQuoteDataMissing_whenParseQuote_thenThrowBadResponse() {
         assertThatThrownBy(() -> MarketDataParser.parseQuote(json("{}")))
                 .isInstanceOf(MarketDataException.class)
                 .hasMessageContaining("行情数据为空");
@@ -42,7 +42,7 @@ class MarketDataParserEdgeCasesTest {
 
     @DisplayName("parseQuote价格无效抛BAD_RESPONSE")
     @Test
-    void parseQuoteInvalidPriceThrowsBadResponse() {
+    void givenQuotePriceInvalid_whenParseQuote_thenThrowBadResponse() {
         assertThatThrownBy(() -> MarketDataParser.parseQuote(json("{\"data\":{\"f43\":0}}")))
                 .isInstanceOf(MarketDataException.class)
                 .hasMessageContaining("行情价格为空或无效");
@@ -50,7 +50,7 @@ class MarketDataParserEdgeCasesTest {
 
     @DisplayName("parseQuote无时间戳时time为空")
     @Test
-    void parseQuoteWithoutTimestampHasEmptyTime() {
+    void givenQuoteWithoutTimestamp_whenParseQuote_thenTimeEmpty() {
         Quote q = MarketDataParser.parseQuote(json(
                 "{\"data\":{\"f43\":10,\"f57\":\"600519\",\"f58\":\"贵州茅台\",\"f86\":0}}"));
         assertThat(q.time()).isEmpty();
@@ -60,7 +60,7 @@ class MarketDataParserEdgeCasesTest {
 
     @DisplayName("parseQuote异常值字符串视为空")
     @Test
-    void parseQuoteTreatsDashValueStringsAsEmpty() {
+    void givenQuoteDashValueStrings_whenParseQuote_thenTreatedAsEmpty() {
         Quote q = MarketDataParser.parseQuote(json(
                 "{\"data\":{\"f43\":10,\"f57\":\"600519\",\"f58\":\"贵州茅台\",\"f162\":\"-\",\"f167\":\"-\"}}"));
         assertThat(q.pe()).isNull();
@@ -71,7 +71,7 @@ class MarketDataParserEdgeCasesTest {
 
     @DisplayName("normalizeVolume零值直接返回")
     @Test
-    void normalizeVolumeZeroValuesReturnDirectly() {
+    void givenZeroFactor_whenNormalizeVolume_thenReturnDirectly() {
         assertThat(MarketDataParser.normalizeVolume(0, 100, 10)).isZero();
         assertThat(MarketDataParser.normalizeVolume(100, 0, 10)).isEqualTo(100);
         assertThat(MarketDataParser.normalizeVolume(100, 100, 0)).isEqualTo(100);
@@ -79,7 +79,7 @@ class MarketDataParserEdgeCasesTest {
 
     @DisplayName("normalizeVolume按手转股")
     @Test
-    void normalizeVolumeConvertsLotsToShares() {
+    void givenVolumeInLots_whenNormalizeVolume_thenConvertToShares() {
         // raw=100 手, amount/price=10000 股 → 转股
         assertThat(MarketDataParser.normalizeVolume(100, 100_000, 10)).isEqualTo(10_000);
     }
@@ -88,7 +88,7 @@ class MarketDataParserEdgeCasesTest {
 
     @DisplayName("parseSinaQuote只有一个引号视为格式异常")
     @Test
-    void parseSinaQuoteSingleQuoteIsFormatError() {
+    void givenSinaQuoteWithOnlyOpeningQuote_whenParseSinaQuote_thenFormatError() {
         // 有起始引号但无收尾引号：end <= start
         assertThatThrownBy(() -> MarketDataParser.parseSinaQuote(
                 "var hq=\"贵州茅台,1,2,3", "600519"))
@@ -98,7 +98,7 @@ class MarketDataParserEdgeCasesTest {
 
     @DisplayName("parseSinaQuote昨收为零时涨跌幅归零避免除零")
     @Test
-    void parseSinaQuoteZeroPrevCloseYieldsZeroPctAvoidingDivByZero() {
+    void givenPrevCloseZero_whenParseSinaQuote_thenChangePctZeroAvoidingDivByZero() {
         Quote q = MarketDataParser.parseSinaQuote(
                 "var hq=\"贵州茅台,10,0,10.5,11,10.8,10.2,10.5,12345,100000\";", "600519");
         assertThat(q.change()).isEqualTo(10.5);
@@ -107,7 +107,7 @@ class MarketDataParserEdgeCasesTest {
 
     @DisplayName("parseSinaQuote格式异常抛BAD_RESPONSE")
     @Test
-    void parseSinaQuoteFormatErrorThrowsBadResponse() {
+    void givenMalformedSinaQuote_whenParseSinaQuote_thenThrowBadResponse() {
         assertThatThrownBy(() -> MarketDataParser.parseSinaQuote("no quotes", "600519"))
                 .isInstanceOf(MarketDataException.class)
                 .hasMessageContaining("新浪行情响应格式异常");
@@ -119,7 +119,7 @@ class MarketDataParserEdgeCasesTest {
 
     @DisplayName("parseSinaQuote价格无效抛BAD_RESPONSE")
     @Test
-    void parseSinaQuoteInvalidPriceThrowsBadResponse() {
+    void givenSinaQuotePriceInvalid_whenParseSinaQuote_thenThrowBadResponse() {
         assertThatThrownBy(() -> MarketDataParser.parseSinaQuote(
                 "var hq=\"贵州茅台,1,2,0,0,0,0,0,0,0\";", "600519"))
                 .isInstanceOf(MarketDataException.class)
@@ -128,7 +128,7 @@ class MarketDataParserEdgeCasesTest {
 
     @DisplayName("parseSinaQuote十字段无时间")
     @Test
-    void parseSinaQuoteTenFieldsHaveNoTime() {
+    void givenSinaQuoteWithTenFields_whenParseSinaQuote_thenTimeEmpty() {
         // 10 个字段：有成交量、无时间（f.length<=31）
         Quote q = MarketDataParser.parseSinaQuote(
                 "var hq=\"贵州茅台,10,9,10.5,11,10.8,10.2,10.5,12345,100000\";", "600519");
@@ -141,7 +141,7 @@ class MarketDataParserEdgeCasesTest {
 
     @DisplayName("parseKline数据为null抛BAD_RESPONSE")
     @Test
-    void parseKlineNullDataThrowsBadResponse() {
+    void givenKlineDataNull_whenParseKline_thenThrowBadResponse() {
         assertThatThrownBy(() -> MarketDataParser.parseKline(json("{\"data\":{\"klines\":null}}")))
                 .isInstanceOf(MarketDataException.class)
                 .hasMessageContaining("K线数据为空");
@@ -149,7 +149,7 @@ class MarketDataParserEdgeCasesTest {
 
     @DisplayName("parseKline数据缺失抛BAD_RESPONSE")
     @Test
-    void parseKlineMissingDataThrowsBadResponse() {
+    void givenKlineDataMissing_whenParseKline_thenThrowBadResponse() {
         assertThatThrownBy(() -> MarketDataParser.parseKline(json("{}")))
                 .isInstanceOf(MarketDataException.class)
                 .hasMessageContaining("K线数据为空");
@@ -157,7 +157,7 @@ class MarketDataParserEdgeCasesTest {
 
     @DisplayName("parseKline行字段不足被跳过并整体为空时抛异常")
     @Test
-    void parseKlineSkipsShortRowsAndThrowsWhenAllEmpty() {
+    void givenKlineRowsAllShort_whenParseKline_thenThrowBadResponse() {
         assertThatThrownBy(() -> MarketDataParser.parseKline(json(
                 "{\"data\":{\"klines\":[\"2026-08-18,1,2,3\"]}}")))
                 .isInstanceOf(MarketDataException.class)
@@ -168,7 +168,7 @@ class MarketDataParserEdgeCasesTest {
 
     @DisplayName("parseTencentKlineqfq键非数组时回退裸周期键")
     @Test
-    void parseTencentKlineNonArrayQfqKeyFallsBackToBarePeriodKey() {
+    void givenQfqKeyNonArray_whenParseTencentKline_thenFallbackToBarePeriodKey() {
         List<com.portfolio.invest.domain.market.KlineBar> bars = MarketDataParser.parseTencentKline(
                 json("{\"data\":{\"sh600519\":{\"qfqday\":{\"unexpected\":true},\"day\":"
                         + "[[\"2026-08-18\",\"1\",\"2\",\"3\",\"1\",\"100\"]]}}}"),
@@ -179,7 +179,7 @@ class MarketDataParserEdgeCasesTest {
 
     @DisplayName("parseTencentKline非数组行跳过且全部无效时抛BAD_RESPONSE")
     @Test
-    void parseTencentKlineSkipsNonArrayRowsAndThrowsWhenAllInvalid() {
+    void givenAllTencentRowsNonArray_whenParseTencentKline_thenThrowBadResponse() {
         assertThatThrownBy(() -> MarketDataParser.parseTencentKline(
                 json("{\"data\":{\"sh600519\":{\"qfqday\":[\"not-an-array\"]}}}"), "sh600519", "day"))
                 .isInstanceOf(MarketDataException.class)
@@ -188,7 +188,7 @@ class MarketDataParserEdgeCasesTest {
 
     @DisplayName("parseTencentKline缺qfq前缀时回退裸周期键")
     @Test
-    void parseTencentKlineMissingQfqPrefixFallsBackToBarePeriodKey() {
+    void givenQfqPrefixMissing_whenParseTencentKline_thenFallbackToBarePeriodKey() {
         List<com.portfolio.invest.domain.market.KlineBar> bars = MarketDataParser.parseTencentKline(
                 json("{\"data\":{\"sh600519\":{\"day\":[[\"2026-08-18\",\"1\",\"2\",\"3\",\"1\",\"100\"]]}}}"),
                 "sh600519", "day");
@@ -198,7 +198,7 @@ class MarketDataParserEdgeCasesTest {
 
     @DisplayName("parseTencentKline数据为空抛BAD_RESPONSE")
     @Test
-    void parseTencentKlineEmptyDataThrowsBadResponse() {
+    void givenTencentDataEmpty_whenParseTencentKline_thenThrowBadResponse() {
         assertThatThrownBy(() -> MarketDataParser.parseTencentKline(
                 json("{\"data\":{\"sh600519\":{}}}"), "sh600519", "day"))
                 .isInstanceOf(MarketDataException.class)
@@ -207,7 +207,7 @@ class MarketDataParserEdgeCasesTest {
 
     @DisplayName("parseTencentKline短行跳过并按日期升序排序")
     @Test
-    void parseTencentKlineSkipsShortRowsAndSortsAscendingByDate() {
+    void givenShortAndValidRows_whenParseTencentKline_thenSkipShortsAndSortAscending() {
         List<com.portfolio.invest.domain.market.KlineBar> bars = MarketDataParser.parseTencentKline(
                 json("{\"data\":{\"sh600519\":{\"qfqday\":["
                         + "[\"2026-08-18\",\"1\",\"2\",\"3\",\"1\",\"100\"],"
@@ -225,7 +225,7 @@ class MarketDataParserEdgeCasesTest {
 
     @DisplayName("parseSearch北交所与9开头代码的市场识别")
     @Test
-    void parseSearchRecognizesBeijingExchangeAndNinePrefixMarkets() {
+    void givenBjAndNinePrefixCodes_whenParseSearch_thenRecognizeMarkets() {
         List<StockHit> hits = MarketDataParser.parseSearch(json(
                 "{\"QuotationCodeTable\":{\"Data\":["
                         + "{\"Code\":\"430047\",\"Name\":\"诺思兰德\",\"MktNum\":\"0\"},"
@@ -238,13 +238,13 @@ class MarketDataParserEdgeCasesTest {
 
     @DisplayName("parseSearch数据非数组返回空")
     @Test
-    void parseSearchNonArrayDataReturnsEmpty() {
+    void givenSearchDataNonArray_whenParseSearch_thenReturnEmpty() {
         assertThat(MarketDataParser.parseSearch(json("{\"QuotationCodeTable\":{}}"))).isEmpty();
     }
 
     @DisplayName("parseSearch过滤各类非A股条目")
     @Test
-    void parseSearchFiltersNonAShares() {
+    void givenNonAShareEntries_whenParseSearch_thenFilterThemOut() {
         String template = "{\"QuotationCodeTable\":{\"Data\":["
                 + "{\"Code\":\"000001\",\"Name\":\"平安银行\",\"MktNum\":\"0\"},"
                 + "{\"Code\":\"600519\",\"Name\":\"贵州茅台\",\"MktNum\":\"1\"},"
@@ -262,7 +262,7 @@ class MarketDataParserEdgeCasesTest {
 
     @DisplayName("parseSearch市场号1的非沪深代码按沪市")
     @Test
-    void parseSearchMktNum1NonSHorSZCodeMapsToShanghai() {
+    void givenMktNum1CodeBeyondShSz_whenParseSearch_thenMapToShanghai() {
         List<StockHit> hits = MarketDataParser.parseSearch(json(
                 "{\"QuotationCodeTable\":{\"Data\":[{\"Code\":\"700001\",\"Name\":\"X\",\"MktNum\":\"1\"}]}}"));
         assertThat(hits.get(0).marketName()).isEqualTo("沪市");
@@ -272,7 +272,7 @@ class MarketDataParserEdgeCasesTest {
 
     @DisplayName("parseFinancialIndicators数据为null或非数组抛BAD_RESPONSE")
     @Test
-    void parseFinancialIndicatorsNullOrNonArrayThrowsBadResponse() {
+    void givenFinancialDataNullOrNonArray_whenParseFinancialIndicators_thenThrowBadResponse() {
         assertThatThrownBy(() -> MarketDataParser.parseFinancialIndicators(json("{\"result\":{\"data\":null}}")))
                 .isInstanceOf(MarketDataException.class)
                 .hasMessageContaining("财务数据为空");
@@ -283,7 +283,7 @@ class MarketDataParserEdgeCasesTest {
 
     @DisplayName("parseNews长摘要截断为120字加省略号")
     @Test
-    void parseNewsLongSummaryTruncatesTo120CharsWithEllipsis() {
+    void givenLongNewsSummary_whenParseNews_thenTruncateTo120CharsWithEllipsis() {
         String longContent = "长".repeat(200);
         var list = MarketDataParser.parseNews(json(
                 "{\"result\":{\"cmsArticleWebOld\":[{\"title\":\"t\",\"content\":\"" + longContent
@@ -293,7 +293,7 @@ class MarketDataParserEdgeCasesTest {
 
     @DisplayName("parseFinancialIndicators数据缺失抛BAD_RESPONSE")
     @Test
-    void parseFinancialIndicatorsMissingDataThrowsBadResponse() {
+    void givenFinancialDataMissing_whenParseFinancialIndicators_thenThrowBadResponse() {
         assertThatThrownBy(() -> MarketDataParser.parseFinancialIndicators(json("{}")))
                 .isInstanceOf(MarketDataException.class)
                 .hasMessageContaining("财务数据为空");
@@ -301,19 +301,19 @@ class MarketDataParserEdgeCasesTest {
 
     @DisplayName("parseNews数据非数组返回空")
     @Test
-    void parseNewsNonArrayDataReturnsEmpty() {
+    void givenNewsDataNonArray_whenParseNews_thenReturnEmpty() {
         assertThat(MarketDataParser.parseNews(json("{\"result\":{}}"))).isEmpty();
     }
 
     @DisplayName("parseOverview数据非数组返回空")
     @Test
-    void parseOverviewNonArrayDataReturnsEmpty() {
+    void givenOverviewDataNonArray_whenParseOverview_thenReturnEmpty() {
         assertThat(MarketDataParser.parseOverview(json("{\"data\":{}}"))).isEmpty();
     }
 
     @DisplayName("buildOverview空数据抛BAD_RESPONSE")
     @Test
-    void buildOverviewEmptyDataThrowsBadResponse() {
+    void givenOverviewDataEmpty_whenBuildOverview_thenThrowBadResponse() {
         assertThatThrownBy(() -> MarketDataParser.buildOverview(json("{\"data\":{}}")))
                 .isInstanceOf(MarketDataException.class)
                 .hasMessageContaining("指数数据为空");
@@ -321,7 +321,7 @@ class MarketDataParserEdgeCasesTest {
 
     @DisplayName("buildSinaOverview单边引号与字段不足行被跳过")
     @Test
-    void buildSinaOverviewSkipsUnbalancedQuoteAndShortRows() {
+    void givenUnbalancedQuoteAndShortRows_whenBuildSinaOverview_thenSkipRows() {
         var o = MarketDataParser.buildSinaOverview(
                 "var hq_str_s_sh000001=\"上证指数,3990.30,7.65,0.19\";"
                         + "var hq_str_s_sz399006=\"创业板指,3200.00\";" // 字段不足 4 列 → 跳过
@@ -332,7 +332,7 @@ class MarketDataParserEdgeCasesTest {
 
     @DisplayName("buildSinaOverview变量名无等号或无下划线时代码退化提取")
     @Test
-    void buildSinaOverviewDegradesCodeExtractionWithoutEqualsOrUnderscore() {
+    void givenVarWithoutEqualsOrUnderscore_whenBuildSinaOverview_thenDegradeCodeExtraction() {
         var o = MarketDataParser.buildSinaOverview(
                 "\"1,2,3,4\";"                    // 无 '=' → 代码为空串
                         + "var x_12=\"A,1,2,3\";"        // 下划线后 id 仅 2 位 → 原样返回
@@ -345,7 +345,7 @@ class MarketDataParserEdgeCasesTest {
 
     @DisplayName("buildSinaOverview坏行跳过")
     @Test
-    void buildSinaOverviewSkipsBadRows() {
+    void givenBadRows_whenBuildSinaOverview_thenSkipThem() {
         var o = MarketDataParser.buildSinaOverview(
                 "broken;"
                         + "var hq_str_s_sh000001=\"上证指数,3990.30,7.65,0.19,1,2\";"
@@ -356,7 +356,7 @@ class MarketDataParserEdgeCasesTest {
 
     @DisplayName("buildSinaOverview全坏行抛BAD_RESPONSE")
     @Test
-    void buildSinaOverviewAllBadRowsThrowBadResponse() {
+    void givenAllBadRows_whenBuildSinaOverview_thenThrowBadResponse() {
         assertThatThrownBy(() -> MarketDataParser.buildSinaOverview("broken;also broken"))
                 .isInstanceOf(MarketDataException.class)
                 .hasMessageContaining("新浪指数数据为空");
@@ -364,7 +364,7 @@ class MarketDataParserEdgeCasesTest {
 
     @DisplayName("buildFinancials组装")
     @Test
-    void buildFinancialsAssembles() {
+    void givenFinancialRawJson_whenBuildFinancials_thenAssembleIndicators() {
         var f = MarketDataParser.buildFinancials("600519", "贵州茅台", 21.35, null, json(
                 "{\"result\":{\"data\":[{\"REPORT_DATE\":\"2026-06-30 00:00:00\",\"EPSJB\":2.0}]}}"));
         assertThat(f.code()).isEqualTo("600519");
@@ -377,7 +377,7 @@ class MarketDataParserEdgeCasesTest {
 
     @DisplayName("stockRef后缀与北交所前缀")
     @Test
-    void stockRefSuffixAndBeijingPrefix() {
+    void givenVariousCodes_whenStockRefFrom_thenInferSuffixAndBeijingPrefix() {
         assertThat(StockRef.from("600519.sh").secuCode()).isEqualTo("600519.SH");
         assertThat(StockRef.from("sz000001").market()).isEqualTo("0");
         assertThat(StockRef.from("bj430047").sinaPrefix()).isEqualTo("bj");
@@ -389,7 +389,7 @@ class MarketDataParserEdgeCasesTest {
 
     @DisplayName("stockRef深京后缀剥离")
     @Test
-    void stockRefStripsShenzhenBeijingSuffix() {
+    void givenSzBjSuffixedCode_whenStockRefFrom_thenStripSuffix() {
         assertThat(StockRef.from("000001.SZ").code()).isEqualTo("000001");
         assertThat(StockRef.from("430047.BJ").sinaPrefix()).isEqualTo("bj");
         assertThat(StockRef.from("430047.BJ").secuCode()).isEqualTo("430047.BJ");
@@ -397,14 +397,14 @@ class MarketDataParserEdgeCasesTest {
 
     @DisplayName("stockRef大小写与空格规范化")
     @Test
-    void stockRefNormalizesCaseAndWhitespace() {
+    void givenCodeWithCaseAndSpaces_whenStockRefFrom_thenNormalize() {
         assertThat(StockRef.from(" SH600519 ").code()).isEqualTo("600519");
         assertThat(StockRef.from("SZ000001").code()).isEqualTo("000001");
     }
 
     @DisplayName("stockRef非法输入抛INVALID_CODE")
     @Test
-    void stockRefInvalidInputThrowsInvalidCode() {
+    void givenInvalidStockCode_whenStockRefFrom_thenThrowInvalidCode() {
         assertThatThrownBy(() -> StockRef.from("abc"))
                 .isInstanceOf(MarketDataException.class)
                 .hasMessageContaining("无效的股票代码")

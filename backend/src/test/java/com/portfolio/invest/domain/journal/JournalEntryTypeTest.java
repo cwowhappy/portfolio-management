@@ -7,7 +7,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class JournalEntryTypeTest {
     @DisplayName("四种记录类型带中文标签")
     @Test
-    void fourRecordTypesCarryChineseLabels() {
+    void givenJournalEntryTypeEnum_whenReadLabels_thenFourCarryChineseLabels() {
         assertThat(JournalEntryType.values()).hasSize(4);
         assertThat(JournalEntryType.BUY_MEMO.label()).isEqualTo("买入备忘");
         assertThat(JournalEntryType.SELL_MEMO.label()).isEqualTo("卖出备忘");

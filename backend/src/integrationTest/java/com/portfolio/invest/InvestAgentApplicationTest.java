@@ -1,6 +1,7 @@
 package com.portfolio.invest;
 
 import com.portfolio.invest.support.PostgresTestSupport;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 
@@ -11,8 +12,9 @@ import org.springframework.boot.test.context.SpringBootTest;
 @SpringBootTest
 class InvestAgentApplicationTest extends PostgresTestSupport {
 
+    @DisplayName("Spring应用上下文装配成功")
     @Test
-    void contextLoads() {
+    void whenApplicationContextStarts_thenLoads() {
         // 上下文装配成功即通过
     }
 }

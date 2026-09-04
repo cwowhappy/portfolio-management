@@ -9,7 +9,7 @@ class ChatMessageTest {
 
     @DisplayName("构造与取值")
     @Test
-    void constructsAndExposesValues() {
+    void givenCreateArgs_whenCreateMessage_thenExposeValues() {
         ChatMessage m = ChatMessage.create(null, "m-1", ChatMessageRole.USER, "你好", null, 1700000000000L);
         assertThat(m.id()).isEqualTo("m-1");
         assertThat(m.role()).isEqualTo(ChatMessageRole.USER);

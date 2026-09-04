@@ -33,7 +33,7 @@ class ValuationControllerTest {
 
     @DisplayName("overview返回200")
     @Test
-    void overviewReturns200() throws Exception {
+    void whenGetOverview_thenReturn200() throws Exception {
         when(service.overview()).thenReturn(new ValuationOverviewView(
                 null, null, null, null, null, null, null, List.of(), true));
 
@@ -44,7 +44,7 @@ class ValuationControllerTest {
 
     @DisplayName("industries返回排序结果")
     @Test
-    void industriesReturnSortedResults() throws Exception {
+    void givenSortParam_whenGetIndustries_thenReturnSortedResults() throws Exception {
         when(service.industries("pe")).thenReturn(List.of(
                 new IndustryValuationView("801780", "银行", new BigDecimal("5.9"), new BigDecimal("0.65"), null, null)));
 
@@ -55,7 +55,7 @@ class ValuationControllerTest {
 
     @DisplayName("history返回200")
     @Test
-    void historyReturns200() throws Exception {
+    void whenGetHistory_thenReturn200() throws Exception {
         when(service.history()).thenReturn(new ValuationHistoryView(List.of(), List.of(), List.of()));
 
         mvc.perform(get("/api/valuation/history"))

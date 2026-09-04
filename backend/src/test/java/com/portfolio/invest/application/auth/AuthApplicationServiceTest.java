@@ -32,7 +32,7 @@ class AuthApplicationServiceTest {
 
     @DisplayName("注册创建PENDING用户并哈希密码")
     @Test
-    void registerCreatesPendingUserAndHashesPassword() {
+    void givenValidRegisterCommand_whenRegister_thenCreatePendingUserAndHashPassword() {
         when(encoder.encode("abc12345")).thenReturn("$2a$hash");
         when(repo.save(any())).thenAnswer(inv -> inv.getArgument(0));
         UserView v = service.register(new RegisterCommand("alice", "abc12345"));
@@ -43,7 +43,7 @@ class AuthApplicationServiceTest {
 
     @DisplayName("用户名为null或空白被拒")
     @Test
-    void registerRejectsNullOrBlankUsername() {
+    void givenNullOrBlankUsername_whenRegister_thenReject() {
         assertThatThrownBy(() -> service.register(new RegisterCommand(null, "abc12345")))
                 .isInstanceOf(UserException.class).hasMessageContaining("用户名不能为空");
         assertThatThrownBy(() -> service.register(new RegisterCommand("   ", "abc12345")))
@@ -52,21 +52,21 @@ class AuthApplicationServiceTest {
 
     @DisplayName("用户名超过64字符被拒")
     @Test
-    void registerRejectsUsernameOver64Chars() {
+    void givenUsernameOver64Chars_whenRegister_thenReject() {
         assertThatThrownBy(() -> service.register(new RegisterCommand("a".repeat(65), "abc12345")))
                 .isInstanceOf(UserException.class).hasMessageContaining("最长64个字符");
     }
 
     @DisplayName("弱密码被拒")
     @Test
-    void registerRejectsWeakPassword() {
+    void givenWeakPassword_whenRegister_thenReject() {
         assertThatThrownBy(() -> service.register(new RegisterCommand("alice", "short1")))
                 .isInstanceOf(UserException.class).hasMessageContaining("至少8位");
     }
 
     @DisplayName("用户名已存在且非REJECTED被拒")
     @Test
-    void registerRejectsExistingNonRejectedUsername() {
+    void givenExistingNonRejectedUsername_whenRegister_thenReject() {
         when(repo.findByUsername("alice")).thenReturn(Optional.of(User.register("alice", "h").approve()));
         assertThatThrownBy(() -> service.register(new RegisterCommand("alice", "abc12345")))
                 .isInstanceOf(UserException.class).hasMessageContaining("用户名已存在");
@@ -74,7 +74,7 @@ class AuthApplicationServiceTest {
 
     @DisplayName("被拒用户同名重新注册复用行")
     @Test
-    void rejectedUserReregistersSameNameReusesRow() {
+    void givenRejectedUserReregisters_whenRegister_thenReuseRow() {
         User rejected = User.register("alice", "h").reject();
         when(repo.findByUsername("alice")).thenReturn(Optional.of(rejected));
         when(encoder.encode("abc12345")).thenReturn("$2a$hash");
@@ -86,7 +86,7 @@ class AuthApplicationServiceTest {
 
     @DisplayName("并发注册触发唯一索引冲突映射为USERNAME_TAKEN")
     @Test
-    void concurrentRegisterUniqueConflictMapsToUsernameTaken() {
+    void givenUniqueConflict_whenRegister_thenMapToUsernameTaken() {
         when(repo.findByUsername("alice")).thenReturn(Optional.empty());
         when(encoder.encode("abc12345")).thenReturn("$2a$hash");
         when(repo.save(any())).thenThrow(new org.springframework.dao.DataIntegrityViolationException("duplicate key"));

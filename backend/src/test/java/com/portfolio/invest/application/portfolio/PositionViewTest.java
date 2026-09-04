@@ -13,7 +13,7 @@ class PositionViewTest {
 
     @DisplayName("零持仓数量时市值与浮动盈亏为null")
     @Test
-    void zeroQuantityMarketValueAndFloatingPnlNull() {
+    void givenZeroQuantityPosition_whenBuildView_thenMarketValueAndFloatingPnlNull() {
         // 新建未买入的持仓：数量 0，即使有行情也无市值（避免 0 成本除零与误导性 0% 盈亏）
         Position p = Position.create(10L, 1L, "600519", "贵州茅台", Instant.now());
         Quote q = new Quote("600519", "贵州茅台", 120, 0, 0, 0, 0, 0, 100, 0, 0, null, null, "");

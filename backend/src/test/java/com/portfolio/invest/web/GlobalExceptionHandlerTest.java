@@ -36,7 +36,7 @@ class GlobalExceptionHandlerTest {
 
     @DisplayName("参数类错误映射400")
     @Test
-    void parameterErrorsMapTo400() {
+    void givenParameterErrors_whenHandlingMarketException_thenReturn400() {
         assertStatus(new MarketDataException(MarketDataErrorCode.INVALID_CODE, "无效代码"), HttpStatus.BAD_REQUEST);
         assertStatus(new MarketDataException(MarketDataErrorCode.INVALID_PERIOD, "无效周期"), HttpStatus.BAD_REQUEST);
         assertStatus(new MarketDataException(MarketDataErrorCode.INVALID_QUERY, "无效关键词"), HttpStatus.BAD_REQUEST);
@@ -44,13 +44,13 @@ class GlobalExceptionHandlerTest {
 
     @DisplayName("限流映射429")
     @Test
-    void rateLimitedMapsTo429() {
+    void givenRateLimitedMarketException_whenHandlingMarketException_thenReturn429() {
         assertStatus(new MarketDataException(MarketDataErrorCode.RATE_LIMITED, "太频繁"), HttpStatus.TOO_MANY_REQUESTS);
     }
 
     @DisplayName("其他市场异常映射502")
     @Test
-    void otherMarketExceptionsMapTo502() {
+    void givenOtherMarketException_whenHandlingMarketException_thenReturn502() {
         ResponseEntity<ApiError> res = assertStatus(
                 new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "上游挂了"), HttpStatus.BAD_GATEWAY);
         assertThat(res.getBody()).isEqualTo(new ApiError(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "上游挂了"));
@@ -58,7 +58,7 @@ class GlobalExceptionHandlerTest {
 
     @DisplayName("用户异常FORBIDDEN映射403")
     @Test
-    void userForbiddenErrorMapsTo403() {
+    void givenUserForbiddenError_whenHandlingUserException_thenReturn403() {
         ResponseEntity<ApiError> res = handler.user(
                 new UserException(UserErrorCode.FORBIDDEN, "不能对管理员账号执行此操作"));
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
@@ -67,7 +67,7 @@ class GlobalExceptionHandlerTest {
 
     @DisplayName("用户异常USER_NOT_FOUND映射404")
     @Test
-    void userNotFoundErrorMapsTo404() {
+    void givenUserNotFoundError_whenHandlingUserException_thenReturn404() {
         ResponseEntity<ApiError> res = handler.user(new UserException(UserErrorCode.USER_NOT_FOUND, "用户不存在"));
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
         assertThat(res.getBody()).isEqualTo(new ApiError(UserErrorCode.USER_NOT_FOUND, "用户不存在"));
@@ -75,7 +75,7 @@ class GlobalExceptionHandlerTest {
 
     @DisplayName("估值异常NOT_FOUND映射404")
     @Test
-    void valuationNotFoundMapsTo404() {
+    void givenValuationNotFound_whenHandlingValuationException_thenReturn404() {
         ResponseEntity<ApiError> res = handler.valuation(
                 new ValuationException(ValuationErrorCode.NOT_FOUND, "无估值快照"));
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
@@ -84,7 +84,7 @@ class GlobalExceptionHandlerTest {
 
     @DisplayName("估值异常INVALID_INPUT映射400")
     @Test
-    void valuationInvalidInputMapsTo400() {
+    void givenValuationInvalidInput_whenHandlingValuationException_thenReturn400() {
         ResponseEntity<ApiError> res = handler.valuation(
                 new ValuationException(ValuationErrorCode.INVALID_INPUT, "非法周期"));
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
@@ -93,7 +93,7 @@ class GlobalExceptionHandlerTest {
 
     @DisplayName("会话异常INVALID_MESSAGE映射400")
     @Test
-    void conversationInvalidMessageMapsTo400() {
+    void givenConversationInvalidMessage_whenHandlingConversationException_thenReturn400() {
         ResponseEntity<ApiError> res = handler.conversation(
                 new com.portfolio.invest.domain.conversation.ConversationException(ConversationErrorCode.INVALID_MESSAGE, "消息内容超长（上限100KB）"));
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
@@ -102,7 +102,7 @@ class GlobalExceptionHandlerTest {
 
     @DisplayName("数据约束违例兜底映射400")
     @Test
-    void dataIntegrityViolationFallbackMapsTo400() {
+    void givenDataIntegrityViolation_whenHandlingDataIntegrityException_thenReturn400() {
         ResponseEntity<ApiError> res = handler.dataIntegrity(
                 new org.springframework.dao.DataIntegrityViolationException("duplicate key"));
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
@@ -111,7 +111,7 @@ class GlobalExceptionHandlerTest {
 
     @DisplayName("乐观锁冲突映射409")
     @Test
-    void optimisticLockConflictMapsTo409() {
+    void givenOptimisticLockConflict_whenHandlingOptimisticLockException_thenReturn409() {
         ResponseEntity<ApiError> res = handler.optimisticLock(
                 new org.springframework.dao.OptimisticLockingFailureException("conflict"));
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
@@ -120,7 +120,7 @@ class GlobalExceptionHandlerTest {
 
     @DisplayName("Object乐观锁异常同样映射409")
     @Test
-    void objectOptimisticLockExceptionAlsoMapsTo409() {
+    void givenObjectOptimisticLockFailure_whenHandlingOptimisticLockException_thenReturn409() {
         ResponseEntity<ApiError> res = handler.optimisticLock(
                 new org.springframework.orm.ObjectOptimisticLockingFailureException(String.class, "k"));
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
@@ -129,7 +129,7 @@ class GlobalExceptionHandlerTest {
 
     @DisplayName("agent未注册映射503与友好文案")
     @Test
-    void agentNotFoundMapsTo503WithFriendlyMessage() {
+    void givenAgentNotFound_whenHandlingAgentNotFoundException_thenReturn503WithFriendlyMessage() {
         ResponseEntity<ApiError> res = handler.agentNotFound(new AguiException.AgentNotFoundException("invest"));
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
         assertThat(res.getBody()).isEqualTo(new ApiError(
@@ -139,7 +139,7 @@ class GlobalExceptionHandlerTest {
 
     @DisplayName("agui异常映射400")
     @Test
-    void aguiExceptionMapsTo400() {
+    void givenAguiException_whenHandlingAguiException_thenReturn400() {
         ResponseEntity<ApiError> res = handler.agui(new AguiException("协议错误"));
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(res.getBody()).isEqualTo(new ApiError("AGUI_ERROR", "协议错误"));
@@ -147,7 +147,7 @@ class GlobalExceptionHandlerTest {
 
     @DisplayName("客户端断开被静默忽略")
     @Test
-    void clientDisconnectedIsSilentlyIgnored() {
+    void givenClientDisconnected_whenHandlingClientDisconnect_thenSilentlyIgnored() {
         handler.clientDisconnected(mock(AsyncRequestNotUsableException.class));
         ClientAbortException abort = mock(ClientAbortException.class);
         when(abort.getMessage()).thenReturn("broken pipe");
@@ -156,7 +156,7 @@ class GlobalExceptionHandlerTest {
 
     @DisplayName("未知异常映射500")
     @Test
-    void unknownExceptionMapsTo500() {
+    void givenUnknownException_whenHandlingGeneric_thenReturn500() {
         ResponseEntity<ApiError> res = handler.generic(new RuntimeException("boom"));
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
         assertThat(res.getBody()).isEqualTo(new ApiError("INTERNAL_ERROR", "服务器内部错误"));
@@ -164,7 +164,7 @@ class GlobalExceptionHandlerTest {
 
     @DisplayName("BeanValidation失败映射400并取首条字段错误消息")
     @Test
-    void beanValidationFailureMapsTo400WithFirstFieldError() {
+    void givenBeanValidationWithFieldErrors_whenHandlingValidation_thenReturn400WithFirstFieldError() {
         MethodArgumentNotValidException ex = mock(MethodArgumentNotValidException.class);
         BindingResult bindingResult = mock(BindingResult.class);
         when(ex.getBindingResult()).thenReturn(bindingResult);
@@ -178,7 +178,7 @@ class GlobalExceptionHandlerTest {
 
     @DisplayName("BeanValidation无字段错误时用兜底消息")
     @Test
-    void beanValidationWithoutFieldErrorsUsesFallbackMessage() {
+    void givenBeanValidationWithoutFieldErrors_whenHandlingValidation_thenUseFallbackMessage() {
         MethodArgumentNotValidException ex = mock(MethodArgumentNotValidException.class);
         BindingResult bindingResult = mock(BindingResult.class);
         when(ex.getBindingResult()).thenReturn(bindingResult);

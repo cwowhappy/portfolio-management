@@ -60,7 +60,7 @@ class ScreeningRepositoryImplTest {
     @DisplayName("按PE与ROE组合筛选")
     @Test
     @Transactional
-    void filterByPeAndRoeCombination() {
+    void givenStocksWithPeAndRoe_whenFilterByCriteria_thenMatchingStockReturned() {
         seedValuation("600519", "贵州茅台", "22.5", "0.35");
         seedValuation("601398", "工商银行", "5.6", "0.18");
         seedFinancial("600519", "24.5");
@@ -80,7 +80,7 @@ class ScreeningRepositoryImplTest {
     @DisplayName("按行业筛选")
     @Test
     @Transactional
-    void filterByIndustry() {
+    void givenStocksAcrossIndustries_whenFilterByIndustry_thenOnlyIndustryStockReturned() {
         seedValuation("600519", "贵州茅台", "22.5", "0.35");
         seedValuation("601398", "工商银行", "5.6", "0.18");
         seedMapping("600519", "贵州茅台", "801120", "食品饮料");
@@ -96,7 +96,7 @@ class ScreeningRepositoryImplTest {
     @DisplayName("排序与上限生效")
     @Test
     @Transactional
-    void sortingAndLimitTakeEffect() {
+    void givenMultipleStocks_whenSortWithLimit_thenOrderAndLimitApplied() {
         seedValuation("600519", "贵州茅台", "22.5", "0.35");
         seedValuation("601398", "工商银行", "5.6", "0.18");
         seedValuation("000858", "五粮液", "18.2", "0.62");

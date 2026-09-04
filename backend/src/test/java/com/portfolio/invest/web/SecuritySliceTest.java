@@ -76,7 +76,7 @@ class SecuritySliceTest {
 
     @DisplayName("已认证但用户已停用被拦截返回401")
     @Test
-    void authenticatedButDisabledUserBlockedReturns401() throws Exception {
+    void givenDisabledUser_whenAccessProtectedEndpoint_thenReturn401() throws Exception {
         when(userRepository.findByUsername("u")).thenReturn(Optional.of(user(false)));
 
         mvc.perform(get("/api/portfolio/overview").with(authentication(authOf(user(false)))))
@@ -86,7 +86,7 @@ class SecuritySliceTest {
 
     @DisplayName("已认证但用户已被删除返回401")
     @Test
-    void authenticatedButDeletedUserReturns401() throws Exception {
+    void givenDeletedUser_whenAccessProtectedEndpoint_thenReturn401() throws Exception {
         when(userRepository.findByUsername("u")).thenReturn(Optional.empty());
 
         mvc.perform(get("/api/portfolio/overview").with(authentication(authOf(user(true)))))
@@ -96,7 +96,7 @@ class SecuritySliceTest {
 
     @DisplayName("已认证且状态正常放行")
     @Test
-    void authenticatedWithValidStatusAllowed() throws Exception {
+    void givenActiveUser_whenAccessProtectedEndpoint_thenReturn200() throws Exception {
         when(userRepository.findByUsername("u")).thenReturn(Optional.of(user(true)));
 
         mvc.perform(get("/api/portfolio/overview").with(authentication(authOf(user(true)))))
@@ -105,7 +105,7 @@ class SecuritySliceTest {
 
     @DisplayName("rememberMe自动认证后放行")
     @Test
-    void rememberMeAutoAuthenticationAllowed() throws Exception {
+    void givenRememberMeAutoLogin_whenAccessProtectedEndpoint_thenReturn200() throws Exception {
         var user = user(true);
         when(rememberMeServices.autoLogin(any(), any())).thenReturn(authOf(user));
         when(userDetailsService.loadUserByUsername("u")).thenReturn(new AuthenticatedUser(user));
@@ -117,7 +117,7 @@ class SecuritySliceTest {
 
     @DisplayName("rememberMe自动认证但用户已停用仍被拦截")
     @Test
-    void rememberMeAutoAuthenticationStillBlockedWhenUserDisabled() throws Exception {
+    void givenRememberMeAutoLoginWithDisabledUser_whenAccessProtectedEndpoint_thenReturn401() throws Exception {
         var user = user(false);
         when(rememberMeServices.autoLogin(any(), any())).thenReturn(authOf(user));
         when(userDetailsService.loadUserByUsername("u")).thenReturn(new AuthenticatedUser(user));
@@ -130,7 +130,7 @@ class SecuritySliceTest {
 
     @DisplayName("登出返回200并清除会话与rememberMeCookie")
     @Test
-    void logoutReturns200AndClearsSessionAndRememberMeCookie() throws Exception {
+    void whenLogout_thenReturn200AndClearSessionAndRememberMeCookie() throws Exception {
         // logout 路径不在 ActiveUserFilter 排除清单内，需打桩用户有效才能走到 LogoutFilter
         when(userRepository.findByUsername("u")).thenReturn(Optional.of(user(true)));
 

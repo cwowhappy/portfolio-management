@@ -86,7 +86,7 @@ class AuthControllerSliceTest {
 
     @DisplayName("登录成功且rememberMe为true下发rememberMeCookie")
     @Test
-    void loginSuccessWithRememberMeIssuesCookie() throws Exception {
+    void givenRememberMeTrue_whenLogin_thenIssueRememberMeCookie() throws Exception {
         givenAuthenticationSucceeds(user(UserStatus.APPROVED, true));
         // RememberMeServices 打桩：loginSuccess 时模拟真实实现写入 remember-me cookie
         doAnswer(inv -> {
@@ -110,7 +110,7 @@ class AuthControllerSliceTest {
 
     @DisplayName("登录成功且rememberMe缺省不下发rememberMeCookie")
     @Test
-    void loginSuccessWithDefaultRememberMeDoesNotIssueCookie() throws Exception {
+    void givenRememberMeOmitted_whenLogin_thenNotIssueRememberMeCookie() throws Exception {
         givenAuthenticationSucceeds(user(UserStatus.APPROVED, true));
 
         mvc.perform(post("/api/auth/login")
@@ -124,7 +124,7 @@ class AuthControllerSliceTest {
 
     @DisplayName("待审核账号登录返回403")
     @Test
-    void pendingAccountLoginReturns403() throws Exception {
+    void givenPendingAccount_whenLogin_thenReturn403() throws Exception {
         givenAuthenticationSucceeds(user(UserStatus.PENDING, true));
 
         mvc.perform(post("/api/auth/login")
@@ -136,7 +136,7 @@ class AuthControllerSliceTest {
 
     @DisplayName("已拒绝账号登录返回403")
     @Test
-    void rejectedAccountLoginReturns403() throws Exception {
+    void givenRejectedAccount_whenLogin_thenReturn403() throws Exception {
         givenAuthenticationSucceeds(user(UserStatus.REJECTED, true));
 
         mvc.perform(post("/api/auth/login")
@@ -148,7 +148,7 @@ class AuthControllerSliceTest {
 
     @DisplayName("已停用账号登录返回403")
     @Test
-    void disabledAccountLoginReturns403() throws Exception {
+    void givenDisabledAccount_whenLogin_thenReturn403() throws Exception {
         givenAuthenticationSucceeds(user(UserStatus.APPROVED, false));
 
         mvc.perform(post("/api/auth/login")
@@ -160,7 +160,7 @@ class AuthControllerSliceTest {
 
     @DisplayName("密码错误返回401")
     @Test
-    void wrongPasswordReturns401() throws Exception {
+    void givenWrongPassword_whenLogin_thenReturn401() throws Exception {
         when(authenticationManager.authenticate(any()))
                 .thenThrow(new BadCredentialsException("bad credentials"));
 
@@ -173,7 +173,7 @@ class AuthControllerSliceTest {
 
     @DisplayName("登录用户名为空校验失败返回400")
     @Test
-    void loginWithEmptyUsernameValidationFailsReturns400() throws Exception {
+    void givenEmptyUsername_whenLogin_thenReturn400() throws Exception {
         mvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"username\":\"\",\"password\":\"p\"}"))
@@ -184,7 +184,7 @@ class AuthControllerSliceTest {
 
     @DisplayName("me已认证返回当前用户")
     @Test
-    void meAuthenticatedReturnsCurrentUser() throws Exception {
+    void givenAuthenticatedUser_whenGetMe_thenReturnCurrentUser() throws Exception {
         when(userRepository.findByUsername("u")).thenReturn(Optional.of(user(UserStatus.APPROVED, true)));
 
         mvc.perform(get("/api/auth/me").with(authentication(authOf(user(UserStatus.APPROVED, true)))))
@@ -195,14 +195,14 @@ class AuthControllerSliceTest {
 
     @DisplayName("me未认证返回401")
     @Test
-    void meUnauthenticatedReturns401() throws Exception {
+    void givenNoAuthentication_whenGetMe_thenReturn401() throws Exception {
         mvc.perform(get("/api/auth/me"))
                 .andExpect(status().isUnauthorized());
     }
 
     @DisplayName("me认证主体非AuthenticatedUser时返回401")
     @Test
-    void meAuthenticationPrincipalNotAuthenticatedUserReturns401() throws Exception {
+    void givenPrincipalNotAuthenticatedUser_whenGetMe_thenReturn401() throws Exception {
         // 认证已建立但主体不是本系统的 AuthenticatedUser（如匿名/其他机制）→ 未登录
         mvc.perform(get("/api/auth/me").with(authentication(
                         new UsernamePasswordAuthenticationToken("anonymous", null, java.util.List.of()))))
@@ -212,7 +212,7 @@ class AuthControllerSliceTest {
 
     @DisplayName("注册成功返回201")
     @Test
-    void registerSuccessReturns201() throws Exception {
+    void whenRegister_thenReturn201() throws Exception {
         when(authService.register(any(RegisterCommand.class))).thenReturn(UserView.from(
                 User.reconstitute(2L, "alice", "p", UserRole.USER, UserStatus.PENDING, true, NOW, NOW)));
 
@@ -226,7 +226,7 @@ class AuthControllerSliceTest {
 
     @DisplayName("注册用户名超长校验失败返回400")
     @Test
-    void registerUsernameTooLongValidationFailsReturns400() throws Exception {
+    void givenUsernameTooLong_whenRegister_thenReturn400() throws Exception {
         mvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"username\":\"" + "a".repeat(65) + "\",\"password\":\"secret-1\"}"))

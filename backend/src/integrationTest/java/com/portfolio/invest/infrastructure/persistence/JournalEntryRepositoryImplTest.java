@@ -55,7 +55,7 @@ class JournalEntryRepositoryImplTest extends PostgresTestSupport {
 
     @DisplayName("保存记录并回读全部字段")
     @Test
-    void saveEntryAndReadBackAllFields() {
+    void whenSaveEntryAndReadBack_thenAllFieldsPreserved() {
         JournalEntry saved = repository.save(buyMemo(51L));
 
         assertThat(saved.id()).isNotNull();
@@ -71,7 +71,7 @@ class JournalEntryRepositoryImplTest extends PostgresTestSupport {
 
     @DisplayName("按类型过滤")
     @Test
-    void filterByType() {
+    void givenEntriesOfDifferentTypes_whenFilterByType_thenMatchingOnly() {
         repository.save(buyMemo(51L));
         repository.save(JournalEntry.create(51L, JournalEntryType.REVIEW, null, null, null,
                 "Q3 复盘", "内容", null, null,
@@ -85,7 +85,7 @@ class JournalEntryRepositoryImplTest extends PostgresTestSupport {
 
     @DisplayName("用户隔离")
     @Test
-    void userIsolation() {
+    void givenEntryForOneUser_whenQueryAsAnother_thenNotVisible() {
         repository.save(buyMemo(51L));
         assertThat(repository.findByUserId(52L, null)).isEmpty();
         assertThat(repository.findByIdAndUserId(repository.findByUserId(51L, null).get(0).id(), 52L)).isEmpty();
@@ -93,7 +93,7 @@ class JournalEntryRepositoryImplTest extends PostgresTestSupport {
 
     @DisplayName("更新后替换原记录")
     @Test
-    void updateReplacesOriginalEntry() {
+    void givenSavedEntry_whenUpdate_thenOriginalReplaced() {
         JournalEntry saved = repository.save(buyMemo(51L));
         repository.save(saved.update("600519", "贵州茅台", 99L, "新标题", "新内容",
                 new BigDecimal("2000"), new BigDecimal("1600"), null, null, null,
@@ -108,7 +108,7 @@ class JournalEntryRepositoryImplTest extends PostgresTestSupport {
 
     @DisplayName("删除记录")
     @Test
-    void deleteEntry() {
+    void givenSavedEntry_whenDeleteById_thenNotFound() {
         JournalEntry saved = repository.save(buyMemo(51L));
         repository.deleteById(saved.id());
         assertThat(repository.findByIdAndUserId(saved.id(), 51L)).isEmpty();

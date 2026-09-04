@@ -38,7 +38,7 @@ class ScreeningApplicationServiceTest {
 
     @DisplayName("空条件抛出异常")
     @Test
-    void emptyConditionThrowsException() {
+    void givenEmptyCondition_whenScreen_thenThrowException() {
         ScreeningException ex = catchThrowableOfType(() -> service.screen(criteria(null)), ScreeningException.class);
         assertThat(ex).isNotNull().hasMessageContaining("至少需要一个筛选条件");
         assertThat(ex.code()).isEqualTo(ScreeningErrorCode.NO_CONDITION);
@@ -46,7 +46,7 @@ class ScreeningApplicationServiceTest {
 
     @DisplayName("非法排序字段抛出异常")
     @Test
-    void invalidSortFieldThrowsException() {
+    void givenInvalidSortField_whenScreen_thenThrowException() {
         var c = new ScreeningCriteria(new BigDecimal("20"), null, null, null, null, null,
                 null, null, null, null, null, null, null, "bogus", SortDirection.ASC, 200);
         ScreeningException ex = catchThrowableOfType(() -> service.screen(c), ScreeningException.class);
@@ -56,7 +56,7 @@ class ScreeningApplicationServiceTest {
 
     @DisplayName("上限越界抛出异常")
     @Test
-    void limitOutOfRangeThrowsException() {
+    void givenLimitOutOfRange_whenScreen_thenThrowException() {
         var c = new ScreeningCriteria(new BigDecimal("20"), null, null, null, null, null,
                 null, null, null, null, null, null, null, "pe_ttm", SortDirection.ASC, 500);
         ScreeningException ex = catchThrowableOfType(() -> service.screen(c), ScreeningException.class);
@@ -66,7 +66,7 @@ class ScreeningApplicationServiceTest {
 
     @DisplayName("合法条件委托仓库")
     @Test
-    void validConditionDelegatesToRepository() {
+    void givenValidCondition_whenScreen_thenDelegateToRepository() {
         var c = criteria(new BigDecimal("20"));
         when(repo.findStocks(c)).thenReturn(List.of(
                 new StockScreeningResult("601398", "工商银行", "801780", "银行",
@@ -79,7 +79,7 @@ class ScreeningApplicationServiceTest {
 
     @DisplayName("相同条件命中缓存不再查仓库")
     @Test
-    void sameConditionCacheHitSkipsRepository() {
+    void givenSameConditionCached_whenScreenTwice_thenSkipRepository() {
         var c = criteria(new BigDecimal("20"));
         var results = List.of(
                 new StockScreeningResult("601398", "工商银行", "801780", "银行",

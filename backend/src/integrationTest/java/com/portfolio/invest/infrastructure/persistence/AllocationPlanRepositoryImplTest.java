@@ -56,7 +56,7 @@ class AllocationPlanRepositoryImplTest {
 
     @DisplayName("保存方案并回读权重")
     @Test
-    void savePlanAndReadBackWeights() {
+    void whenSaveAndReadBack_thenWeightsPreserved() {
         AllocationPlan saved = repository.save(
                 AllocationPlan.create(42L, "平衡", PlanSource.CUSTOM, w60_40(), Instant.now()));
 
@@ -69,7 +69,7 @@ class AllocationPlanRepositoryImplTest {
 
     @DisplayName("改权重后替换旧权重")
     @Test
-    void updatedWeightsReplaceOldWeights() {
+    void givenSavedPlan_whenUpdateWeights_thenOldWeightsReplaced() {
         AllocationPlan saved = repository.save(
                 AllocationPlan.create(42L, "平衡", PlanSource.CUSTOM, w60_40(), Instant.now()));
         repository.save(saved.updateWeights(Map.of(
@@ -83,7 +83,7 @@ class AllocationPlanRepositoryImplTest {
 
     @DisplayName("激活唯一性由用例层维护本层仅查询")
     @Test
-    void activeUniquenessMaintainedByUseCaseLayerThisLayerOnlyQueries() {
+    void givenTwoSavedPlans_whenFindByUserId_thenBothReturned() {
         repository.save(AllocationPlan.create(42L, "A", PlanSource.CUSTOM, w60_40(), Instant.now()));
         repository.save(AllocationPlan.create(42L, "B", PlanSource.CUSTOM, w60_40(), Instant.now()));
         // 本层不做唯一性约束；deactivateAllByUserId + 再 save(activate) 的编排在应用层（P2）验证。
@@ -92,7 +92,7 @@ class AllocationPlanRepositoryImplTest {
 
     @DisplayName("删除方案级联删除权重")
     @Test
-    void deletePlanCascadesWeights() {
+    void givenSavedPlan_whenDeleteById_thenCascadesWeights() {
         AllocationPlan saved = repository.save(
                 AllocationPlan.create(42L, "平衡", PlanSource.CUSTOM, w60_40(), Instant.now()));
         repository.deleteById(saved.id());
@@ -110,7 +110,7 @@ class AllocationPlanRepositoryImplTest {
      */
     @DisplayName("重复激活已生效方案数据库仍唯一生效")
     @Test
-    void repeatedActivationOfActivePlanDbKeepsSingleActive() {
+    void givenPlanAlreadyActive_whenActivateAgain_thenDbKeepsSingleActive() {
         AllocationPlan saved = repository.save(
                 AllocationPlan.create(42L, "A", PlanSource.CUSTOM, w60_40(), Instant.now()));
         repository.save(saved.activate());

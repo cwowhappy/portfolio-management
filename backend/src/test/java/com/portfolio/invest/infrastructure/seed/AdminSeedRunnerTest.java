@@ -25,14 +25,14 @@ class AdminSeedRunnerTest {
 
     @DisplayName("未配置管理员账号时跳过")
     @Test
-    void skipWhenAdminAccountNotConfigured() {
+    void givenAdminAccountNotConfigured_whenRun_thenSkips() {
         runner.run(null);
         verify(repo, never()).save(any());
     }
 
     @DisplayName("仅配置用户名未配置密码时跳过")
     @Test
-    void skipWhenOnlyUsernameConfiguredWithoutPassword() {
+    void givenOnlyUsernameWithoutPassword_whenRun_thenSkips() {
         props.getAdmin().setUsername("admin");
 
         runner.run(null);
@@ -42,7 +42,7 @@ class AdminSeedRunnerTest {
 
     @DisplayName("用户名或密码为空白时跳过")
     @Test
-    void skipWhenUsernameOrPasswordBlank() {
+    void givenUsernameOrPasswordBlank_whenRun_thenSkips() {
         props.getAdmin().setUsername("   ");
         props.getAdmin().setPassword("admin123");
         runner.run(null);
@@ -56,7 +56,7 @@ class AdminSeedRunnerTest {
 
     @DisplayName("配置后创建内置管理员")
     @Test
-    void createBuiltInAdminWhenConfigured() {
+    void givenAdminConfigured_whenRun_thenCreatesBuiltInAdmin() {
         props.getAdmin().setUsername("admin");
         props.getAdmin().setPassword("admin123");
         when(encoder.encode("admin123")).thenReturn("$2a$hash");
@@ -70,7 +70,7 @@ class AdminSeedRunnerTest {
 
     @DisplayName("用户名已存在时幂等跳过")
     @Test
-    void skipIdempotentlyWhenUsernameExists() {
+    void givenUsernameAlreadyExists_whenRun_thenSkipsIdempotently() {
         props.getAdmin().setUsername("admin");
         props.getAdmin().setPassword("admin123");
         when(repo.findByUsername("admin")).thenReturn(Optional.of(

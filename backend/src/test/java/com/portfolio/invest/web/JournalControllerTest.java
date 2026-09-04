@@ -54,7 +54,7 @@ class JournalControllerTest {
 
     @DisplayName("创建备忘返回201")
     @Test
-    void createMemoReturns201() throws Exception {
+    void givenValidCreateMemoCommand_whenCreateMemo_thenReturn201() throws Exception {
         when(service.createEntry(eq(1L), any(CreateJournalEntryCommand.class)))
                 .thenReturn(new JournalEntryView(5L, JournalEntryType.BUY_MEMO, "600519", "贵州茅台", null,
                         "买入茅台", "理由", null, null, null, null, null,
@@ -69,7 +69,7 @@ class JournalControllerTest {
 
     @DisplayName("列表按类型过滤返回200")
     @Test
-    void listFilteredByTypeReturns200() throws Exception {
+    void givenTypeFilter_whenListEntries_thenReturn200() throws Exception {
         when(service.entries(1L, JournalEntryType.REVIEW)).thenReturn(List.of(
                 new JournalEntryView(5L, JournalEntryType.REVIEW, null, null, null, "复盘", "内容",
                         null, null, null, null, null, LocalDate.now(), Instant.now(), Instant.now())));
@@ -80,7 +80,7 @@ class JournalControllerTest {
 
     @DisplayName("时间线返回200")
     @Test
-    void timelineReturns200() throws Exception {
+    void whenGetTimeline_thenReturn200() throws Exception {
         when(service.timeline(1L, null, null)).thenReturn(List.of(
                 new TimelineEventView(TimelineEventType.BUY, LocalDate.of(2026, 8, 1), "贵州茅台",
                         "买入 100 股", "600519", "贵州茅台", 10L, "TRADE")));
@@ -92,7 +92,7 @@ class JournalControllerTest {
 
     @DisplayName("非本人记录映射404")
     @Test
-    void othersEntryMapsTo404() throws Exception {
+    void givenOthersEntry_whenGetEntry_thenReturn404() throws Exception {
         when(service.getEntry(1L, 99L)).thenThrow(new JournalException(JournalErrorCode.NOT_FOUND, "记录不存在"));
         mvc.perform(get("/api/journal/entries/99").principal(auth()))
                 .andExpect(status().isNotFound())
@@ -101,7 +101,7 @@ class JournalControllerTest {
 
     @DisplayName("关联交易不存在映射404")
     @Test
-    void linkedTradeNotFoundMapsTo404() throws Exception {
+    void givenLinkedTradeNotExist_whenCreateMemo_thenReturn404() throws Exception {
         when(service.createEntry(eq(1L), any(CreateJournalEntryCommand.class)))
                 .thenThrow(new JournalException(JournalErrorCode.TRADE_NOT_FOUND, "关联交易不存在"));
         mvc.perform(post("/api/journal/entries").principal(auth())

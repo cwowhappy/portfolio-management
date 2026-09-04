@@ -42,7 +42,7 @@ class EastmoneyClientTest {
 
     @DisplayName("quote返回原始JSON")
     @Test
-    void quoteReturnsRawJson() throws IOException {
+    void whenQuote_thenReturnsRawJson() throws IOException {
         server.expect(requestTo(startsWith("https://push2.eastmoney.com/api/qt/stock/get")))
                 .andRespond(withSuccess(fixture("eastmoney-quote.json"), MediaType.APPLICATION_JSON));
         JsonNode node = client.quote("1.600519");
@@ -52,7 +52,7 @@ class EastmoneyClientTest {
 
     @DisplayName("kline返回原始JSON")
     @Test
-    void klineReturnsRawJson() throws IOException {
+    void whenKline_thenReturnsRawJson() throws IOException {
         server.expect(requestTo(startsWith("https://push2his.eastmoney.com/api/qt/stock/kline/get")))
                 .andRespond(withSuccess(fixture("eastmoney-kline.json"), MediaType.APPLICATION_JSON));
         assertThat(client.kline("1.600519", 101, 120).path("data").path("klines")).isNotEmpty();
@@ -61,7 +61,7 @@ class EastmoneyClientTest {
 
     @DisplayName("search编码关键词")
     @Test
-    void searchEncodesKeyword() throws IOException {
+    void whenSearch_thenEncodesKeyword() throws IOException {
         server.expect(requestTo(startsWith("https://searchapi.eastmoney.com/api/suggest/get")))
                 .andRespond(withSuccess(fixture("eastmoney-search.json"), MediaType.APPLICATION_JSON));
         JsonNode node = client.search("茅台");
@@ -71,7 +71,7 @@ class EastmoneyClientTest {
 
     @DisplayName("financials与overview返回原始JSON")
     @Test
-    void financialsAndOverviewReturnRawJson() throws IOException {
+    void whenFinancialsAndOverview_thenReturnRawJson() throws IOException {
         server.expect(requestTo(startsWith("https://datacenter.eastmoney.com/securities/api/data/v1/get")))
                 .andRespond(withSuccess(fixture("eastmoney-financials.json"), MediaType.APPLICATION_JSON));
         server.expect(requestTo(startsWith("https://push2.eastmoney.com/api/qt/ulist.np/get")))
@@ -83,7 +83,7 @@ class EastmoneyClientTest {
 
     @DisplayName("news解包JSONP响应")
     @Test
-    void newsUnwrapsJsonpResponse() throws IOException {
+    void whenNews_thenUnwrapsJsonpResponse() throws IOException {
         server.expect(requestTo(startsWith("https://search-api-web.eastmoney.com/search/jsonp")))
                 .andRespond(withSuccess("cb(" + fixture("eastmoney-news.json") + ")", MediaType.APPLICATION_JSON));
         JsonNode node = client.news("贵州茅台", 10);
@@ -93,7 +93,7 @@ class EastmoneyClientTest {
 
     @DisplayName("news响应缺少括号时报BAD_RESPONSE")
     @Test
-    void newsResponseMissingParenThrowsBadResponse() {
+    void givenNewsResponseMissingOpenParen_whenNews_thenThrowsBadResponse() {
         server.expect(requestTo(startsWith("https://search-api-web.eastmoney.com/search/jsonp")))
                 .andRespond(withSuccess("oops-no-parens", MediaType.APPLICATION_JSON));
         assertThatThrownBy(() -> client.news("贵州茅台", 10))
@@ -104,7 +104,7 @@ class EastmoneyClientTest {
 
     @DisplayName("news响应缺少收尾括号时报BAD_RESPONSE")
     @Test
-    void newsResponseMissingClosingParenThrowsBadResponse() {
+    void givenNewsResponseMissingClosingParen_whenNews_thenThrowsBadResponse() {
         // 有 '(' 无 ')'：end <= start → JSONP 解包失败
         server.expect(requestTo(startsWith("https://search-api-web.eastmoney.com/search/jsonp")))
                 .andRespond(withSuccess("cb({\"a\":1}", MediaType.APPLICATION_JSON));
@@ -116,7 +116,7 @@ class EastmoneyClientTest {
 
     @DisplayName("响应非JSON时报BAD_RESPONSE")
     @Test
-    void nonJsonResponseThrowsBadResponse() {
+    void givenNonJsonResponse_whenQuote_thenThrowsBadResponse() {
         server.expect(requestTo(startsWith("https://push2.eastmoney.com/api/qt/stock/get")))
                 .andRespond(withSuccess("<html>not json</html>", MediaType.TEXT_HTML));
         assertThatThrownBy(() -> client.quote("1.600519"))
@@ -127,7 +127,7 @@ class EastmoneyClientTest {
 
     @DisplayName("前两次失败第三次成功")
     @Test
-    void succeedsOnThirdAttemptAfterTwoFailures() throws IOException {
+    void givenTwoFailures_whenQuote_thenSucceedsOnThird() throws IOException {
         String url = "https://push2.eastmoney.com/api/qt/stock/get";
         server.expect(requestTo(startsWith(url))).andRespond(withServerError());
         server.expect(requestTo(startsWith(url))).andRespond(withServerError());
@@ -140,7 +140,7 @@ class EastmoneyClientTest {
 
     @DisplayName("三次全失败抛UPSTREAM_UNAVAILABLE")
     @Test
-    void throwsUpstreamUnavailableAfterThreeFailures() {
+    void givenThreeFailures_whenQuote_thenThrowsUpstreamUnavailable() {
         String url = "https://push2.eastmoney.com/api/qt/stock/get";
         server.expect(requestTo(startsWith(url))).andRespond(withServerError());
         server.expect(requestTo(startsWith(url))).andRespond(withServerError());

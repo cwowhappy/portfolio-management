@@ -49,7 +49,7 @@ class ConversationControllerSliceTest {
 
     @DisplayName("保存合法消息返回204")
     @Test
-    void saveValidMessagesReturns204() throws Exception {
+    void givenValidMessage_whenSaveMessages_thenReturn204() throws Exception {
         mvc.perform(put("/api/conversations/t-1/messages").with(authentication(auth())).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(message("m-1", "user")))
@@ -59,7 +59,7 @@ class ConversationControllerSliceTest {
 
     @DisplayName("保存非法role消息返回400")
     @Test
-    void saveInvalidRoleMessageReturns400() throws Exception {
+    void givenInvalidRoleMessage_whenSaveMessages_thenReturn400() throws Exception {
         mvc.perform(put("/api/conversations/t-1/messages").with(authentication(auth())).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(message("m-1", "system")))
@@ -69,7 +69,7 @@ class ConversationControllerSliceTest {
 
     @DisplayName("保存空id消息返回400")
     @Test
-    void saveMessageWithNullIdReturns400() throws Exception {
+    void givenMessageWithNullId_whenSaveMessages_thenReturn400() throws Exception {
         mvc.perform(put("/api/conversations/t-1/messages").with(authentication(auth())).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(message(null, "user")))

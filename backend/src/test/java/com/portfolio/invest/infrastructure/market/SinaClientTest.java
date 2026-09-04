@@ -34,7 +34,7 @@ class SinaClientTest {
 
     @DisplayName("rawQuote按GBK解码返回原始行")
     @Test
-    void rawQuoteDecodesGbkAndReturnsRawLine() {
+    void givenGbkResponse_whenRawQuote_thenDecodesAndReturnsRawLine() {
         String line = "var hq_str_sh600519=\"贵州茅台,1410.000,...\";";
         server.expect(requestTo(startsWith("https://hq.sinajs.cn/list=sh600519")))
                 .andRespond(withSuccess(line.getBytes(GBK), MediaType.TEXT_PLAIN));
@@ -44,7 +44,7 @@ class SinaClientTest {
 
     @DisplayName("rawIndices返回原始多行")
     @Test
-    void rawIndicesReturnsRawLines() {
+    void whenRawIndices_thenReturnsRawLines() {
         server.expect(requestTo(startsWith("https://hq.sinajs.cn/list=s_sh000001")))
                 .andRespond(withSuccess("a;b;c".getBytes(GBK), MediaType.TEXT_PLAIN));
         assertThat(client.rawIndices()).isEqualTo("a;b;c");
@@ -53,7 +53,7 @@ class SinaClientTest {
 
     @DisplayName("空响应抛UPSTREAM_UNAVAILABLE且不重试")
     @Test
-    void emptyResponseThrowsUpstreamUnavailableWithoutRetry() {
+    void givenEmptyResponse_whenRawQuote_thenThrowsUpstreamUnavailableWithoutRetry() {
         String url = "https://hq.sinajs.cn/list=sh600519";
         server.expect(requestTo(startsWith(url)))
                 .andRespond(withSuccess(new byte[0], MediaType.TEXT_PLAIN));
@@ -65,7 +65,7 @@ class SinaClientTest {
 
     @DisplayName("无内容响应视为空响应抛UPSTREAM_UNAVAILABLE")
     @Test
-    void noContentResponseThrowsUpstreamUnavailable() {
+    void givenNoContentResponse_whenRawQuote_thenThrowsUpstreamUnavailable() {
         // 204 No Content → body(byte[].class) 为 null，与空字节数组同等处理
         server.expect(requestTo(startsWith("https://hq.sinajs.cn/list=sh600519")))
                 .andRespond(withNoContent());
@@ -77,7 +77,7 @@ class SinaClientTest {
 
     @DisplayName("前两次失败第三次成功")
     @Test
-    void succeedsOnThirdAttemptAfterTwoFailures() {
+    void givenTwoFailures_whenRawQuote_thenSucceedsOnThird() {
         String url = "https://hq.sinajs.cn/list=sh600519";
         server.expect(requestTo(startsWith(url))).andRespond(withServerError());
         server.expect(requestTo(startsWith(url))).andRespond(withServerError());
@@ -89,7 +89,7 @@ class SinaClientTest {
 
     @DisplayName("三次全失败抛UPSTREAM_UNAVAILABLE")
     @Test
-    void throwsUpstreamUnavailableAfterThreeFailures() {
+    void givenThreeFailures_whenRawQuote_thenThrowsUpstreamUnavailable() {
         String url = "https://hq.sinajs.cn/list=sh600519";
         server.expect(requestTo(startsWith(url))).andRespond(withServerError());
         server.expect(requestTo(startsWith(url))).andRespond(withServerError());

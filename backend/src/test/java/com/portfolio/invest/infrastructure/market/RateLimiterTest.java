@@ -17,7 +17,7 @@ class RateLimiterTest {
 
     @DisplayName("非正速率参数抛异常")
     @Test
-    void throwsOnNonPositiveRate() {
+    void givenNonPositiveRate_whenCreateRateLimiter_thenThrows() {
         assertThatThrownBy(() -> new RateLimiter(0))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("permitsPerSecond");
@@ -27,7 +27,7 @@ class RateLimiterTest {
 
     @DisplayName("充足令牌下立即获取成功")
     @Test
-    void acquiresImmediatelyWithSufficientTokens() {
+    void givenSufficientTokens_whenTryAcquire_thenSucceedsImmediately() {
         RateLimiter limiter = new RateLimiter(100);
         for (int i = 0; i < 5; i++) {
             assertThat(limiter.tryAcquire(0)).isTrue();
@@ -36,7 +36,7 @@ class RateLimiterTest {
 
     @DisplayName("等待后补充到令牌时成功获取")
     @Test
-    void acquiresAfterWaitingForTokenRefill() {
+    void givenTokensDepleted_whenTryAcquire_thenWaitsForRefillAndSucceeds() {
         AtomicLong now = new AtomicLong(0);
         RateLimiter limiter = limiter(5, now);
         for (int i = 0; i < 5; i++) {
@@ -49,7 +49,7 @@ class RateLimiterTest {
 
     @DisplayName("距下一令牌不足一纳秒时按一纳秒等待")
     @Test
-    void waitsAtLeastOneNanosecondWhenShortOfNextToken() {
+    void givenNextTokenOneNanosecondAway_whenTryAcquire_thenFails() {
         AtomicLong now = new AtomicLong(0);
         RateLimiter limiter = limiter(5, now);
         for (int i = 0; i < 5; i++) {
@@ -63,7 +63,7 @@ class RateLimiterTest {
 
     @DisplayName("等待期间线程被中断时返回false")
     @Test
-    void returnsFalseWhenInterruptedWhileWaiting() {
+    void givenInterruptedWhileWaiting_whenTryAcquire_thenReturnsFalse() {
         AtomicLong now = new AtomicLong(0);
         // sleep 时中断当前线程：限流器应检测到中断标记并放弃等待
         RateLimiter limiter = new RateLimiter(5, now::get, ms -> Thread.currentThread().interrupt());
@@ -79,7 +79,7 @@ class RateLimiterTest {
 
     @DisplayName("令牌耗尽且等待时间不足时失败")
     @Test
-    void failsWhenTokensExhaustedAndWaitTimeInsufficient() {
+    void givenTokensExhaustedAndWaitTooShort_whenTryAcquire_thenFails() {
         AtomicLong now = new AtomicLong(0);
         RateLimiter limiter = limiter(5, now);
         for (int i = 0; i < 5; i++) {
@@ -91,7 +91,7 @@ class RateLimiterTest {
 
     @DisplayName("等待足够时间后补充令牌成功")
     @Test
-    void acquiresAfterWaitingEnoughForTokenRefill() {
+    void givenEnoughTimeForRefill_whenTryAcquire_thenSucceeds() {
         AtomicLong now = new AtomicLong(0);
         RateLimiter limiter = limiter(5, now);
         for (int i = 0; i < 5; i++) {

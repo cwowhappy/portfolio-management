@@ -23,7 +23,7 @@ class ChatMessageWireTest {
 
     @DisplayName("合法消息转换为domain")
     @Test
-    void validMessageConvertsToDomain() {
+    void givenValidWire_whenToDomain_thenConvert() {
         var m = new ChatMessageWire("m-1", "assistant", "你好", 1700000000000L).toDomain();
 
         assertThat(m.id()).isEqualTo("m-1");
@@ -34,26 +34,26 @@ class ChatMessageWireTest {
 
     @DisplayName("wire空id被BeanValidation拦截")
     @Test
-    void wireBlankIdBlockedByBeanValidation() {
+    void givenWireBlankId_whenValidate_thenBlockedByBeanValidation() {
         assertThat(hasViolationOn(VALIDATOR.validate(new ChatMessageWire(null, "user", "hi", 1L)), "id")).isTrue();
         assertThat(hasViolationOn(VALIDATOR.validate(new ChatMessageWire("  ", "user", "hi", 1L)), "id")).isTrue();
     }
 
     @DisplayName("wire非法role被BeanValidation拦截")
     @Test
-    void wireInvalidRoleBlockedByBeanValidation() {
+    void givenWireInvalidRole_whenValidate_thenBlockedByBeanValidation() {
         assertThat(hasViolationOn(VALIDATOR.validate(new ChatMessageWire("m-1", "system", "hi", 1L)), "role")).isTrue();
     }
 
     @DisplayName("wire空content被BeanValidation拦截")
     @Test
-    void wireBlankContentBlockedByBeanValidation() {
+    void givenWireBlankContent_whenValidate_thenBlockedByBeanValidation() {
         assertThat(hasViolationOn(VALIDATOR.validate(new ChatMessageWire("m-1", "user", "", 1L)), "content")).isTrue();
     }
 
     @DisplayName("id为空白被拒")
     @Test
-    void blankIdRejectedOnToDomain() {
+    void givenBlankId_whenToDomain_thenReject() {
         assertThatThrownBy(() -> new ChatMessageWire("   ", "user", "hi", 1L).toDomain())
                 .isInstanceOf(ConversationException.class)
                 .hasMessageContaining("id");
@@ -61,7 +61,7 @@ class ChatMessageWireTest {
 
     @DisplayName("content为null被拒")
     @Test
-    void nullContentRejectedOnToDomain() {
+    void givenNullContent_whenToDomain_thenReject() {
         assertThatThrownBy(() -> new ChatMessageWire("m-1", "user", null, 1L).toDomain())
                 .isInstanceOf(ConversationException.class)
                 .hasMessageContaining("不能为空");

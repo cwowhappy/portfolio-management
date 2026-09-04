@@ -21,14 +21,14 @@ class SecurityConfigTest extends PostgresTestSupport {
 
     @DisplayName("匿名访问行情公开")
     @Test
-    void anonymousMarketDataAccessIsPublic() throws Exception {
+    void givenAnonymousUser_whenGetMarketOverview_thenPublic() throws Exception {
         mockMvc.perform(get("/api/market/overview"))
                 .andExpect(status().is(200));
     }
 
     @DisplayName("匿名访问agui返回401")
     @Test
-    void anonymousAguiAccessReturns401() throws Exception {
+    void givenAnonymousUser_whenPostAguiRun_thenUnauthorized() throws Exception {
         mockMvc.perform(post("/agui/run").contentType("application/json")
                         .content("{\"messages\":[]}"))
                 .andExpect(status().isUnauthorized());
