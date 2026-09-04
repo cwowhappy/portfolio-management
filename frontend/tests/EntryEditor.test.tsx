@@ -53,13 +53,15 @@ describe("EntryEditor 表单校验", () => {
     expect(input.tradeId).toBe(7);
   });
 
-  it("RESEARCH_NOTE 无 stockCode 时报错", async () => {
+  it("RESEARCH_NOTE 无 stockCode 可创建（行业级笔记不绑定个股）", async () => {
     render(<EntryEditor editing={null} onSaved={() => {}} onCancel={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: "研究笔记" }));
     await fillBase();
     await clickSave();
-    expect(await screen.findByText(/请填写股票代码/)).toBeTruthy();
-    expect(api.createEntry).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(api.createEntry).toHaveBeenCalled());
+    const input = api.createEntry.mock.calls[0][0] as { type: string; stockCode: string | null };
+    expect(input.type).toBe("RESEARCH_NOTE");
+    expect(input.stockCode).toBeNull();
   });
 
   it("BUY_MEMO 目标价/止损价需大于 0", async () => {
