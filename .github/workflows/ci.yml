@@ -115,6 +115,8 @@ jobs:
       ADMIN_PASSWORD: CiPassw0rd123
       # 已配置的 secret：chat.spec 的 AI 真实对话用例用它真实打 LLM
       DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+      # B-22：remember-me 签名 key 必填（bootRun 启动强校验，缺失即失败）；CI 临时实例用固定值
+      REMEMBER_ME_KEY: ci-remember-me-key
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
