@@ -9,6 +9,7 @@ import com.portfolio.invest.domain.user.UserException;
 import com.portfolio.invest.support.ConcurrencyTestSupport;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -32,8 +33,9 @@ class RegistrationConcurrencyIntegrationTest extends ConcurrencyTestSupport {
         jdbcTemplate.update("DELETE FROM app_user WHERE username = ?", USERNAME);
     }
 
+    @DisplayName("并发注册同一用户名仅一个成功其余得到业务异常")
     @Test
-    void 并发注册同一用户名仅一个成功其余得到业务异常() throws Exception {
+    void concurrentRegisterSameUsernameOneSucceedsOthersGetBusinessException() throws Exception {
         int threads = 8;
         AtomicInteger success = new AtomicInteger();
         AtomicInteger usernameTaken = new AtomicInteger();

@@ -12,6 +12,7 @@ import com.portfolio.invest.domain.user.UserStatus;
 import com.portfolio.invest.web.ApiError;
 import java.math.BigDecimal;
 import java.time.Instant;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.json.JsonTest;
@@ -27,8 +28,9 @@ class DtoJsonContractTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @DisplayName("登录响应序列化字段名与枚举名称")
     @Test
-    void 登录响应序列化字段名与枚举名称() throws Exception {
+    void loginResponseSerializesFieldNamesAndEnumNames() throws Exception {
         var view = new UserView(1L, "alice", UserRole.USER, UserStatus.APPROVED, true,
                 Instant.parse("2026-08-01T02:03:04Z"));
 
@@ -39,8 +41,9 @@ class DtoJsonContractTest {
                  "enabled":true,"createdAt":"2026-08-01T02:03:04Z"}"""));
     }
 
+    @DisplayName("错误体仅含code与message")
     @Test
-    void 错误体仅含code与message() throws Exception {
+    void errorBodyContainsOnlyCodeAndMessage() throws Exception {
         JsonNode content = objectMapper.readTree(
                 objectMapper.writeValueAsString(new ApiError("INVALID_REQUEST", "用户名不能为空")));
 
@@ -48,8 +51,9 @@ class DtoJsonContractTest {
                 "{\"code\":\"INVALID_REQUEST\",\"message\":\"用户名不能为空\"}"));
     }
 
+    @DisplayName("持仓视图空值字段序列化为null且保留字段名")
     @Test
-    void 持仓视图空值字段序列化为null且保留字段名() throws Exception {
+    void positionViewNullFieldsSerializeAsNullKeepingFieldNames() throws Exception {
         var view = new PositionView(5L, 1L, "600519", "贵州茅台",
                 new BigDecimal("100"), new BigDecimal("1500.05"), null,
                 null, null, null,
@@ -67,8 +71,9 @@ class DtoJsonContractTest {
         assertThat(content.get("quantity").asInt()).isEqualTo(100);
     }
 
+    @DisplayName("用户管理视图角色与状态序列化为字符串")
     @Test
-    void 用户管理视图角色与状态序列化为字符串() throws Exception {
+    void userAdminViewSerializesRoleAndStatusAsStrings() throws Exception {
         JsonNode content = objectMapper.readTree(objectMapper.writeValueAsString(
                 new UserAdminView(2L, "bob", "USER", "PENDING", true)));
 
@@ -76,16 +81,18 @@ class DtoJsonContractTest {
                 {"id":2,"username":"bob","role":"USER","status":"PENDING","enabled":true}"""));
     }
 
+    @DisplayName("登录请求缺省rememberMe反序列化为false")
     @Test
-    void 登录请求缺省rememberMe反序列化为false() throws Exception {
+    void loginRequestDefaultRememberMeDeserializesToFalse() throws Exception {
         LoginRequest req = objectMapper.readValue(
                 "{\"username\":\"u\",\"password\":\"p\"}", LoginRequest.class);
 
         assertThat(req.rememberMe()).isFalse();
     }
 
+    @DisplayName("登录请求rememberMe为true时生效")
     @Test
-    void 登录请求rememberMe为true时生效() throws Exception {
+    void loginRequestRememberMeTrueTakesEffect() throws Exception {
         LoginRequest req = objectMapper.readValue(
                 "{\"username\":\"u\",\"password\":\"p\",\"rememberMe\":true}", LoginRequest.class);
 

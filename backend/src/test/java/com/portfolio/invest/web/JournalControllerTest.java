@@ -13,6 +13,7 @@ import com.portfolio.invest.domain.user.UserRole;
 import com.portfolio.invest.domain.user.UserStatus;
 import com.portfolio.invest.infrastructure.security.AuthenticatedUser;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -51,8 +52,9 @@ class JournalControllerTest {
                 principal, null, principal.getAuthorities());
     }
 
+    @DisplayName("创建备忘返回201")
     @Test
-    void 创建备忘返回201() throws Exception {
+    void createMemoReturns201() throws Exception {
         when(service.createEntry(eq(1L), any(CreateJournalEntryCommand.class)))
                 .thenReturn(new JournalEntryView(5L, JournalEntryType.BUY_MEMO, "600519", "贵州茅台", null,
                         "买入茅台", "理由", null, null, null, null, null,
@@ -65,8 +67,9 @@ class JournalControllerTest {
                 .andExpect(jsonPath("$.stockCode").value("600519"));
     }
 
+    @DisplayName("列表按类型过滤返回200")
     @Test
-    void 列表按类型过滤返回200() throws Exception {
+    void listFilteredByTypeReturns200() throws Exception {
         when(service.entries(1L, JournalEntryType.REVIEW)).thenReturn(List.of(
                 new JournalEntryView(5L, JournalEntryType.REVIEW, null, null, null, "复盘", "内容",
                         null, null, null, null, null, LocalDate.now(), Instant.now(), Instant.now())));
@@ -75,8 +78,9 @@ class JournalControllerTest {
                 .andExpect(jsonPath("$[0].type").value("REVIEW"));
     }
 
+    @DisplayName("时间线返回200")
     @Test
-    void 时间线返回200() throws Exception {
+    void timelineReturns200() throws Exception {
         when(service.timeline(1L, null, null)).thenReturn(List.of(
                 new TimelineEventView(TimelineEventType.BUY, LocalDate.of(2026, 8, 1), "贵州茅台",
                         "买入 100 股", "600519", "贵州茅台", 10L, "TRADE")));
@@ -86,16 +90,18 @@ class JournalControllerTest {
                 .andExpect(jsonPath("$[0].stockCode").value("600519"));
     }
 
+    @DisplayName("非本人记录映射404")
     @Test
-    void 非本人记录映射404() throws Exception {
+    void othersEntryMapsTo404() throws Exception {
         when(service.getEntry(1L, 99L)).thenThrow(new JournalException(JournalErrorCode.NOT_FOUND, "记录不存在"));
         mvc.perform(get("/api/journal/entries/99").principal(auth()))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("NOT_FOUND"));
     }
 
+    @DisplayName("关联交易不存在映射404")
     @Test
-    void 关联交易不存在映射404() throws Exception {
+    void linkedTradeNotFoundMapsTo404() throws Exception {
         when(service.createEntry(eq(1L), any(CreateJournalEntryCommand.class)))
                 .thenThrow(new JournalException(JournalErrorCode.TRADE_NOT_FOUND, "关联交易不存在"));
         mvc.perform(post("/api/journal/entries").principal(auth())

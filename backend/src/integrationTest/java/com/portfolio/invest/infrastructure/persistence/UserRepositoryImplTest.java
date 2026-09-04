@@ -7,6 +7,7 @@ import com.portfolio.invest.domain.user.User;
 import com.portfolio.invest.domain.user.UserRepository;
 import com.portfolio.invest.domain.user.UserStatus;
 import com.portfolio.invest.support.PostgresTestSupport;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
@@ -33,8 +34,9 @@ class UserRepositoryImplTest {
     @Autowired
     UserRepository userRepository;
 
+    @DisplayName("保存后按用户名与id可查回")
     @Test
-    void 保存后按用户名与id可查回() {
+    void savedUserFindableByUsernameAndId() {
         User saved = userRepository.save(User.register("bob", "hash"));
         assertThat(saved.id()).isNotNull();
         assertThat(userRepository.findByUsername("bob")).isPresent();
@@ -44,15 +46,17 @@ class UserRepositoryImplTest {
         });
     }
 
+    @DisplayName("username唯一约束生效")
     @Test
-    void username唯一约束生效() {
+    void usernameUniqueConstraintEnforced() {
         userRepository.save(User.register("carol", "h1"));
         assertThatThrownBy(() -> userRepository.save(User.register("carol", "h2")))
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
+    @DisplayName("findAll返回全部")
     @Test
-    void findAll返回全部() {
+    void findAllReturnsAll() {
         userRepository.save(User.register("dave", "h"));
         assertThat(userRepository.findAll()).isNotEmpty();
     }

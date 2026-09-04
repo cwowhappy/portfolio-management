@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.portfolio.invest.support.ConcurrencyTestSupport;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -33,8 +34,9 @@ class PortfolioConcurrencyIntegrationTest extends ConcurrencyTestSupport {
         jdbcTemplate.update("DELETE FROM app_user WHERE id = ?", USER_ID);
     }
 
+    @DisplayName("并发首次访问组合只创建一行")
     @Test
-    void 并发首次访问组合只创建一行() throws Exception {
+    void concurrentFirstAccessCreatesSinglePortfolioRow() throws Exception {
         // 任一并发请求抛异常（修复前为 DataIntegrityViolationException）都会在 race 的 future.get 暴露
         race(8, () -> {
             service.groups(USER_ID);

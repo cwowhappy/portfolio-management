@@ -9,6 +9,7 @@ import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
 import java.util.Set;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /** 消息 wire → domain 边界校验（逐条拦截超长/非法字段）。 */
@@ -20,8 +21,9 @@ class ChatMessageWireTest {
         return violations.stream().anyMatch(v -> v.getPropertyPath().toString().equals(path));
     }
 
+    @DisplayName("合法消息转换为domain")
     @Test
-    void 合法消息转换为domain() {
+    void validMessageConvertsToDomain() {
         var m = new ChatMessageWire("m-1", "assistant", "你好", 1700000000000L).toDomain();
 
         assertThat(m.id()).isEqualTo("m-1");
@@ -30,31 +32,36 @@ class ChatMessageWireTest {
         assertThat(m.createdAtMs()).isEqualTo(1700000000000L);
     }
 
+    @DisplayName("wire空id被BeanValidation拦截")
     @Test
-    void wire空id被BeanValidation拦截() {
+    void wireBlankIdBlockedByBeanValidation() {
         assertThat(hasViolationOn(VALIDATOR.validate(new ChatMessageWire(null, "user", "hi", 1L)), "id")).isTrue();
         assertThat(hasViolationOn(VALIDATOR.validate(new ChatMessageWire("  ", "user", "hi", 1L)), "id")).isTrue();
     }
 
+    @DisplayName("wire非法role被BeanValidation拦截")
     @Test
-    void wire非法role被BeanValidation拦截() {
+    void wireInvalidRoleBlockedByBeanValidation() {
         assertThat(hasViolationOn(VALIDATOR.validate(new ChatMessageWire("m-1", "system", "hi", 1L)), "role")).isTrue();
     }
 
+    @DisplayName("wire空content被BeanValidation拦截")
     @Test
-    void wire空content被BeanValidation拦截() {
+    void wireBlankContentBlockedByBeanValidation() {
         assertThat(hasViolationOn(VALIDATOR.validate(new ChatMessageWire("m-1", "user", "", 1L)), "content")).isTrue();
     }
 
+    @DisplayName("id为空白被拒")
     @Test
-    void id为空白被拒() {
+    void blankIdRejectedOnToDomain() {
         assertThatThrownBy(() -> new ChatMessageWire("   ", "user", "hi", 1L).toDomain())
                 .isInstanceOf(ConversationException.class)
                 .hasMessageContaining("id");
     }
 
+    @DisplayName("content为null被拒")
     @Test
-    void content为null被拒() {
+    void nullContentRejectedOnToDomain() {
         assertThatThrownBy(() -> new ChatMessageWire("m-1", "user", null, 1L).toDomain())
                 .isInstanceOf(ConversationException.class)
                 .hasMessageContaining("不能为空");

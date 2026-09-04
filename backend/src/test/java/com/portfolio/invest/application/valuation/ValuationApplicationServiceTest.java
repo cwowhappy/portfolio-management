@@ -7,6 +7,7 @@ import com.portfolio.invest.domain.valuation.TreasuryYield;
 import com.portfolio.invest.domain.valuation.IndexValuation;
 import com.portfolio.invest.domain.valuation.IndustryValuation;
 import com.portfolio.invest.domain.valuation.Percentile;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -24,8 +25,9 @@ class ValuationApplicationServiceTest {
     private final ValuationRepository repo = mock(ValuationRepository.class);
     private final ValuationApplicationService service = new ValuationApplicationService(repo, new TtlCache(100));
 
+    @DisplayName("overview在无快照时返回空数据状态")
     @Test
-    void overview在无快照时返回空数据状态() {
+    void overviewReturnsEmptyDataStateWhenNoSnapshot() {
         when(repo.findLatestSnapshot()).thenReturn(null);
         when(repo.findAllSnapshots()).thenReturn(List.of());
         when(repo.findAllTreasuryYields()).thenReturn(List.of());
@@ -36,8 +38,9 @@ class ValuationApplicationServiceTest {
         assertThat(view.dataAccumulating()).isTrue();
     }
 
+    @DisplayName("overview计算全A中位数分位")
     @Test
-    void overview计算全A中位数分位() {
+    void overviewComputesMarketMedianPercentile() {
         when(repo.findLatestSnapshot()).thenReturn(new ValuationSnapshot(
                 LocalDate.of(2026, 8, 27), new BigDecimal("19.14"), new BigDecimal("1.68"), 220, new BigDecimal("0.0410")));
         when(repo.findAllSnapshots()).thenReturn(List.of(
@@ -53,8 +56,9 @@ class ValuationApplicationServiceTest {
         assertThat(view.pePercentile()).isEqualByComparingTo("100.00");
     }
 
+    @DisplayName("overview计算ERP")
     @Test
-    void overview计算ERP() {
+    void overviewComputesErp() {
         when(repo.findLatestSnapshot()).thenReturn(null);
         when(repo.findAllSnapshots()).thenReturn(List.of());
         when(repo.findAllTreasuryYields()).thenReturn(List.of(new TreasuryYield(LocalDate.of(2026, 8, 27), new BigDecimal("2.21"))));
@@ -67,8 +71,9 @@ class ValuationApplicationServiceTest {
         assertThat(view.erp()).isEqualByComparingTo("0.14");
     }
 
+    @DisplayName("overview满数据时计算温度计且非积累期")
     @Test
-    void overview满数据时计算温度计且非积累期() {
+    void overviewWithFullDataComputesThermometerAndNotAccumulating() {
         List<ValuationSnapshot> snapshots = List.of(
                 new ValuationSnapshot(LocalDate.of(2026, 8, 21), new BigDecimal("18.00"), new BigDecimal("1.50"), 200, new BigDecimal("0.0300")),
                 new ValuationSnapshot(LocalDate.of(2026, 8, 24), new BigDecimal("18.50"), new BigDecimal("1.55"), 210, new BigDecimal("0.0350")),
@@ -97,8 +102,9 @@ class ValuationApplicationServiceTest {
         assertThat(view.indices().get(1).indexCode()).isEqualTo("000300");
     }
 
+    @DisplayName("overview历史含空值时过滤且不抛NPE")
     @Test
-    void overview历史含空值时过滤且不抛NPE() {
+    void overviewFiltersNullHistoryWithoutNpe() {
         when(repo.findLatestSnapshot()).thenReturn(new ValuationSnapshot(
                 LocalDate.of(2026, 8, 27), new BigDecimal("19.14"), new BigDecimal("1.68"), 220, new BigDecimal("0.0410")));
         when(repo.findAllSnapshots()).thenReturn(List.of(
@@ -128,8 +134,9 @@ class ValuationApplicationServiceTest {
         assertThat(view.indices().get(1).pePercentile()).isEqualByComparingTo("66.67"); // 000300
     }
 
+    @DisplayName("erp分位用真实ERP历史而非股息率分位近似")
     @Test
-    void erp分位用真实ERP历史而非股息率分位近似() {
+    void erpPercentileUsesRealErpHistoryNotDividendApprox() {
         // 一组能区分「股息率分位」与「真实 ERP 分位」的数据：
         // 高股息率的某日若国债收益率也高，其 ERP 反而低——ERP 与股息率并不同向。
         when(repo.findLatestSnapshot()).thenReturn(null);
@@ -158,8 +165,9 @@ class ValuationApplicationServiceTest {
         assertThat(view.erpPercentile()).isNotEqualByComparingTo(naiveDividendPercentile);
     }
 
+    @DisplayName("overview有股息率但无国债时ERP与温度计为null")
     @Test
-    void overview有股息率但无国债时ERP与温度计为null() {
+    void overviewWithDividendButNoTreasuryErpAndThermometerNull() {
         when(repo.findLatestSnapshot()).thenReturn(new ValuationSnapshot(
                 LocalDate.of(2026, 8, 27), new BigDecimal("19.14"), new BigDecimal("1.68"), 220, new BigDecimal("0.0410")));
         when(repo.findAllSnapshots()).thenReturn(List.of(
@@ -177,8 +185,9 @@ class ValuationApplicationServiceTest {
         assertThat(view.thermometer()).isNull();
     }
 
+    @DisplayName("overview破净占比缺失时温度计为null")
     @Test
-    void overview破净占比缺失时温度计为null() {
+    void overviewWhenNetBreakerRatioMissingThermometerNull() {
         // 快照有 PE/PB 但 netBreakerRatio 为 null（数据部分缺失）→ 温度计不产出
         when(repo.findLatestSnapshot()).thenReturn(new ValuationSnapshot(
                 LocalDate.of(2026, 8, 27), new BigDecimal("19.14"), new BigDecimal("1.68"), 220, null));
@@ -197,8 +206,9 @@ class ValuationApplicationServiceTest {
         assertThat(view.thermometer()).isNull();
     }
 
+    @DisplayName("industries缺省sort按pe排序")
     @Test
-    void industries缺省sort按pe排序() {
+    void industriesDefaultSortByPe() {
         LocalDate day = LocalDate.of(2026, 8, 27);
         when(repo.findLatestSnapshot()).thenReturn(new ValuationSnapshot(
                 day, new BigDecimal("19.14"), new BigDecimal("1.68"), 220, new BigDecimal("0.0410")));
@@ -212,16 +222,18 @@ class ValuationApplicationServiceTest {
                 .containsExactly("801030", "801010");
     }
 
+    @DisplayName("industries空仓库返回空列表")
     @Test
-    void industries空仓库返回空列表() {
+    void industriesEmptyRepositoryReturnsEmpty() {
         when(repo.findLatestSnapshot()).thenReturn(null);
 
         assertThat(service.industries("pe")).isEmpty();
         assertThat(service.industries(null)).isEmpty();
     }
 
+    @DisplayName("industries按指标排序且空值排最后")
     @Test
-    void industries按指标排序且空值排最后() {
+    void industriesSortByMetricWithNullsLast() {
         LocalDate day = LocalDate.of(2026, 8, 27);
         when(repo.findLatestSnapshot()).thenReturn(new ValuationSnapshot(
                 day, new BigDecimal("19.14"), new BigDecimal("1.68"), 220, new BigDecimal("0.0410")));
@@ -249,8 +261,9 @@ class ValuationApplicationServiceTest {
         assertThat(byDividend.get(2).industryCode()).isEqualTo("801120");
     }
 
+    @DisplayName("industries同日内同sort命中缓存仅查一次")
     @Test
-    void industries同日内同sort命中缓存仅查一次() {
+    void industriesSameDaySameSortCacheHitsQueryOnce() {
         LocalDate day = LocalDate.of(2026, 8, 27);
         when(repo.findLatestSnapshot()).thenReturn(new ValuationSnapshot(
                 day, new BigDecimal("19.14"), new BigDecimal("1.68"), 220, new BigDecimal("0.0410")));
@@ -264,8 +277,9 @@ class ValuationApplicationServiceTest {
         verify(repo, times(1)).findIndustryValuationsByDay(day);
     }
 
+    @DisplayName("history返回各序列")
     @Test
-    void history返回各序列() {
+    void historyReturnsSeries() {
         List<ValuationSnapshot> snapshots = List.of(new ValuationSnapshot(
                 LocalDate.of(2026, 8, 27), new BigDecimal("19.14"), new BigDecimal("1.68"), 220, new BigDecimal("0.0410")));
         List<TreasuryYield> yields = List.of(new TreasuryYield(LocalDate.of(2026, 8, 27), new BigDecimal("2.21")));
@@ -282,8 +296,9 @@ class ValuationApplicationServiceTest {
         assertThat(view.indexValuations()).containsExactlyElementsOf(indices);
     }
 
+    @DisplayName("history返回全部五个指数的估值序列")
     @Test
-    void history返回全部五个指数的估值序列() {
+    void historyReturnsAllFiveIndexSeries() {
         when(repo.findAllSnapshots()).thenReturn(List.of());
         when(repo.findAllTreasuryYields()).thenReturn(List.of());
         when(repo.findIndexValuations("000016")).thenReturn(List.of(new IndexValuation(
@@ -305,8 +320,9 @@ class ValuationApplicationServiceTest {
                 .containsExactlyInAnyOrder("000016", "000300", "000905", "399006", "000688");
     }
 
+    @DisplayName("同交易日内多次overview命中缓存仅查询一次快照表")
     @Test
-    void 同交易日内多次overview命中缓存仅查询一次快照表() {
+    void overviewSameDayCachedQueriesSnapshotTableOnce() {
         when(repo.findLatestSnapshot()).thenReturn(null);
         when(repo.findAllSnapshots()).thenReturn(List.of());
         when(repo.findAllTreasuryYields()).thenReturn(List.of());
@@ -319,8 +335,9 @@ class ValuationApplicationServiceTest {
         verify(repo, times(1)).findLatestSnapshot();
     }
 
+    @DisplayName("同交易日内多次history命中缓存仅查询一次")
     @Test
-    void 同交易日内多次history命中缓存仅查询一次() {
+    void historySameDayCachedQueriesOnce() {
         when(repo.findAllSnapshots()).thenReturn(List.of());
         when(repo.findAllTreasuryYields()).thenReturn(List.of());
         when(repo.findIndexValuations("000300")).thenReturn(List.of());
@@ -331,8 +348,9 @@ class ValuationApplicationServiceTest {
         verify(repo, times(1)).findAllSnapshots();
     }
 
+    @DisplayName("缓存过期后重新查询")
     @Test
-    void 缓存过期后重新查询() {
+    void queryReexecutedAfterCacheExpiry() {
         java.util.concurrent.atomic.AtomicLong now = new java.util.concurrent.atomic.AtomicLong(0);
         ValuationApplicationService clocked = new ValuationApplicationService(repo, new TtlCache(100, now::get));
         when(repo.findLatestSnapshot()).thenReturn(null);

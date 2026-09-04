@@ -24,6 +24,7 @@ import com.portfolio.invest.domain.portfolio.TradeType;
 import com.portfolio.invest.domain.valuation.ShenwanIndustryMapping;
 import com.portfolio.invest.domain.valuation.ValuationRepository;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -71,8 +72,9 @@ class PortfolioApplicationServiceTest {
         });
     }
 
+    @DisplayName("分组列表按组合返回")
     @Test
-    void 分组列表按组合返回() {
+    void listGroupsReturnsPortfolioGroups() {
         when(repo.findGroupsByPortfolioId(10L)).thenReturn(List.of(
                 HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now())));
 
@@ -82,8 +84,9 @@ class PortfolioApplicationServiceTest {
         assertThat(groups.get(0).name()).isEqualTo("华泰");
     }
 
+    @DisplayName("删除非空分组抛异常")
     @Test
-    void 删除非空分组抛异常() {
+    void deleteNonEmptyGroupThrowsException() {
         when(repo.findGroupByIdAndPortfolioId(1L, 10L))
                 .thenReturn(Optional.of(HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now())));
         when(repo.findPositionsByGroupId(1L)).thenReturn(List.of(
@@ -94,8 +97,9 @@ class PortfolioApplicationServiceTest {
                 .hasMessageContaining("先清空");
     }
 
+    @DisplayName("删除含现金流水分组被拒")
     @Test
-    void 删除含现金流水分组被拒() {
+    void deleteGroupWithCashFlowRejected() {
         when(repo.findGroupByIdAndPortfolioId(1L, 10L))
                 .thenReturn(Optional.of(HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now())));
         when(repo.findPositionsByGroupId(1L)).thenReturn(List.of());
@@ -108,15 +112,17 @@ class PortfolioApplicationServiceTest {
                         e -> assertThat(e.code()).isEqualTo(PortfolioErrorCode.GROUP_HAS_CASH_FLOW));
     }
 
+    @DisplayName("创建分组成功")
     @Test
-    void 创建分组成功() {
+    void createGroupSucceeds() {
         when(repo.saveGroup(any())).thenAnswer(inv -> inv.getArgument(0));
         var view = service.createGroup(1L, new CreateGroupCommand("华泰", GroupType.ACCOUNT));
         assertThat(view.name()).isEqualTo("华泰");
     }
 
+    @DisplayName("访问非本人分组抛NOT_FOUND")
     @Test
-    void 访问非本人分组抛NOT_FOUND() {
+    void accessOthersGroupThrowsNotFound() {
         when(repo.findGroupByIdAndPortfolioId(1L, 10L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.deleteGroup(1L, 1L))
@@ -124,8 +130,9 @@ class PortfolioApplicationServiceTest {
                         e -> assertThat(e.code()).isEqualTo(PortfolioErrorCode.NOT_FOUND));
     }
 
+    @DisplayName("买入不存在持仓时新建")
     @Test
-    void 买入不存在持仓时新建() {
+    void buyCreatesNewPositionWhenNoneExists() {
         when(repo.findPositionByPortfolioIdAndGroupIdAndStockCode(10L, 1L, "600519")).thenReturn(Optional.empty());
         when(repo.findGroupByIdAndPortfolioId(1L, 10L))
                 .thenReturn(Optional.of(HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now())));
@@ -152,8 +159,9 @@ class PortfolioApplicationServiceTest {
         assertThat(captor.getValue().positionId()).isEqualTo(99L);
     }
 
+    @DisplayName("卖出调用引擎并保存")
     @Test
-    void 卖出调用引擎并保存() {
+    void sellInvokesEngineAndSaves() {
         Position pos = Position.create(10L, 1L, "600519", "贵州茅台", Instant.now())
                 .applyBuy(new BigDecimal("100"), new BigDecimal("100"), new BigDecimal("0"));
         when(repo.findPositionByIdAndPortfolioId(5L, 10L)).thenReturn(Optional.of(pos));
@@ -167,8 +175,9 @@ class PortfolioApplicationServiceTest {
         assertThat(view.realizedPnl()).isEqualByComparingTo("800");
     }
 
+    @DisplayName("编辑买入交易后重放全部交易重算成本与已实现收益")
     @Test
-    void 编辑买入交易后重放全部交易重算成本与已实现收益() {
+    void editBuyTradeReplaysAllTradesRecalcCostAndRealizedPnl() {
         when(repo.findPositionByIdAndPortfolioId(5L, 10L)).thenReturn(Optional.of(positionWithId(5)));
         when(repo.findTradeById(11L)).thenReturn(Optional.of(
                 new Trade(11L, 5L, TradeType.BUY, LocalDate.of(2026, 8, 27),
@@ -192,8 +201,9 @@ class PortfolioApplicationServiceTest {
         assertThat(view.quantity()).isEqualByComparingTo("60");
     }
 
+    @DisplayName("编辑买入交易可改所属分组")
     @Test
-    void 编辑买入交易可改所属分组() {
+    void editBuyTradeCanChangeGroup() {
         when(repo.findPositionByIdAndPortfolioId(5L, 10L)).thenReturn(Optional.of(positionWithId(5)));
         when(repo.findGroupByIdAndPortfolioId(2L, 10L))
                 .thenReturn(Optional.of(HoldingGroup.reconstitute(2L, 10L, "东财", GroupType.ACCOUNT, Instant.now())));
@@ -218,8 +228,9 @@ class PortfolioApplicationServiceTest {
         assertThat(view.groupId()).isEqualTo(2L);
     }
 
+    @DisplayName("编辑买入交易移到已有同代码持仓的分组被拒")
     @Test
-    void 编辑买入交易移到已有同代码持仓的分组被拒() {
+    void editBuyTradeMoveToGroupWithExistingPositionRejected() {
         when(repo.findPositionByIdAndPortfolioId(5L, 10L)).thenReturn(Optional.of(positionWithId(5)));
         when(repo.findGroupByIdAndPortfolioId(2L, 10L))
                 .thenReturn(Optional.of(HoldingGroup.reconstitute(2L, 10L, "东财", GroupType.ACCOUNT, Instant.now())));
@@ -236,8 +247,9 @@ class PortfolioApplicationServiceTest {
                         e -> assertThat(e.code()).isEqualTo(PortfolioErrorCode.INVALID_INPUT));
     }
 
+    @DisplayName("编辑卖出交易被拒绝")
     @Test
-    void 编辑卖出交易被拒绝() {
+    void editSellTradeRejected() {
         when(repo.findPositionByIdAndPortfolioId(5L, 10L)).thenReturn(Optional.of(positionWithId(5)));
         when(repo.findTradeById(12L)).thenReturn(Optional.of(
                 new Trade(12L, 5L, TradeType.SELL, LocalDate.of(2026, 8, 28),
@@ -250,8 +262,9 @@ class PortfolioApplicationServiceTest {
                         e -> assertThat(e.code()).isEqualTo(PortfolioErrorCode.NOT_FOUND));
     }
 
+    @DisplayName("总览计算总资产与总盈亏")
     @Test
-    void 总览计算总资产与总盈亏() {
+    void overviewCalculatesTotalAssetsAndTotalPnl() {
         Position pos = Position.create(10L, 1L, "600519", "贵州茅台", Instant.now())
                 .applyBuy(new BigDecimal("100"), new BigDecimal("100"), new BigDecimal("0"));
         when(repo.findPositionsByPortfolioId(10L)).thenReturn(List.of(pos));
@@ -267,8 +280,9 @@ class PortfolioApplicationServiceTest {
         assertThat(view.totalPnl()).isEqualByComparingTo("2000");     // 浮动 (120-100)*100 + 已实现 0
     }
 
+    @DisplayName("按非本人分组查持仓抛NOT_FOUND")
     @Test
-    void 按非本人分组查持仓抛NOT_FOUND() {
+    void positionsInOthersGroupThrowNotFound() {
         when(repo.findGroupByIdAndPortfolioId(1L, 10L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.positions(1L, 1L))
@@ -276,8 +290,9 @@ class PortfolioApplicationServiceTest {
                         e -> assertThat(e.code()).isEqualTo(PortfolioErrorCode.NOT_FOUND));
     }
 
+    @DisplayName("编辑其他持仓名下的交易被拒绝")
     @Test
-    void 编辑其他持仓名下的交易被拒绝() {
+    void editTradeOfAnotherPositionRejected() {
         when(repo.findPositionByIdAndPortfolioId(5L, 10L)).thenReturn(Optional.of(positionWithId(5)));
         // 交易属于持仓 6，不属于持仓 5：不泄露存在性，一律 NOT_FOUND
         when(repo.findTradeById(11L)).thenReturn(Optional.of(
@@ -291,8 +306,9 @@ class PortfolioApplicationServiceTest {
                         e -> assertThat(e.code()).isEqualTo(PortfolioErrorCode.NOT_FOUND));
     }
 
+    @DisplayName("编辑交易后重放含现金分红按除息日顺序重算")
     @Test
-    void 编辑交易后重放含现金分红按除息日顺序重算() {
+    void editTradeReplaysCashDividendByExDateOrder() {
         when(repo.findPositionByIdAndPortfolioId(5L, 10L)).thenReturn(Optional.of(positionWithId(5)));
         when(repo.findTradeById(11L)).thenReturn(Optional.of(
                 new Trade(11L, 5L, TradeType.BUY, LocalDate.of(2026, 8, 27),
@@ -316,8 +332,9 @@ class PortfolioApplicationServiceTest {
         assertThat(view.cumulativeCashDividend()).isEqualByComparingTo("150");
     }
 
+    @DisplayName("编辑交易后重放含送股且除息日早于后续交易时先分红")
     @Test
-    void 编辑交易后重放含送股且除息日早于后续交易时先分红() {
+    void editTradeReplaysStockDividendAppliesBeforeLaterTradeWhenExDateEarlier() {
         when(repo.findPositionByIdAndPortfolioId(5L, 10L)).thenReturn(Optional.of(positionWithId(5)));
         when(repo.findTradeById(11L)).thenReturn(Optional.of(
                 new Trade(11L, 5L, TradeType.BUY, LocalDate.of(2026, 8, 25),
@@ -343,8 +360,9 @@ class PortfolioApplicationServiceTest {
         assertThat(view.avgCost()).isEqualByComparingTo("80");
     }
 
+    @DisplayName("配置中行情缺失时忽略该持仓权益")
     @Test
-    void 配置中行情缺失时忽略该持仓权益() {
+    void allocationIgnoresPositionWhenQuoteMissing() {
         when(repo.findPositionsByPortfolioId(10L)).thenReturn(List.of(positionWithId(1)));
         when(repo.findGroupsByPortfolioId(10L)).thenReturn(List.of());
         when(market.quote("600519")).thenThrow(new RuntimeException("无行情"));
@@ -374,8 +392,9 @@ class PortfolioApplicationServiceTest {
                 base.realizedPnl(), base.netCashFlow(), base.createdAt(), base.updatedAt());
     }
 
+    @DisplayName("缺省时自动创建组合")
     @Test
-    void 缺省时自动创建组合() {
+    void autoCreatesPortfolioWhenAbsent() {
         Portfolio created = Portfolio.reconstitute(20L, 2L, CostMethod.WEIGHTED_AVG,
                 Instant.now(), Instant.now());
         when(repo.findPortfolioByUserId(2L)).thenReturn(Optional.empty(), Optional.of(created));
@@ -387,8 +406,9 @@ class PortfolioApplicationServiceTest {
         verify(repo).insertPortfolioIfAbsent(2L);
     }
 
+    @DisplayName("删除空分组成功")
     @Test
-    void 删除空分组成功() {
+    void deleteEmptyGroupSucceeds() {
         when(repo.findGroupByIdAndPortfolioId(1L, 10L))
                 .thenReturn(Optional.of(HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now())));
         when(repo.findPositionsByGroupId(1L)).thenReturn(List.of());
@@ -398,8 +418,9 @@ class PortfolioApplicationServiceTest {
         verify(repo).deleteGroup(1L);
     }
 
+    @DisplayName("改名分组成功")
     @Test
-    void 改名分组成功() {
+    void renameGroupSucceeds() {
         when(repo.findGroupByIdAndPortfolioId(1L, 10L))
                 .thenReturn(Optional.of(HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now())));
         when(repo.saveGroup(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -417,8 +438,9 @@ class PortfolioApplicationServiceTest {
         assertThat(captor.getValue().type()).isEqualTo(GroupType.ACCOUNT);
     }
 
+    @DisplayName("改名非本人分组抛NOT_FOUND")
     @Test
-    void 改名非本人分组抛NOT_FOUND() {
+    void renameOthersGroupThrowsNotFound() {
         when(repo.findGroupByIdAndPortfolioId(99L, 10L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.renameGroup(1L, 99L, new RenameGroupCommand("东财")))
@@ -426,8 +448,9 @@ class PortfolioApplicationServiceTest {
                         e -> assertThat(e.code()).isEqualTo(PortfolioErrorCode.NOT_FOUND));
     }
 
+    @DisplayName("买入已有持仓累加")
     @Test
-    void 买入已有持仓累加() {
+    void buyAccumulatesExistingPosition() {
         when(repo.findGroupByIdAndPortfolioId(1L, 10L))
                 .thenReturn(Optional.of(HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now())));
         when(repo.findPositionByPortfolioIdAndGroupIdAndStockCode(10L, 1L, "600519"))
@@ -442,8 +465,9 @@ class PortfolioApplicationServiceTest {
         assertThat(view.quantity()).isEqualByComparingTo("150");
     }
 
+    @DisplayName("现金转入转出与分组列表现金余额")
     @Test
-    void 现金转入转出与分组列表现金余额() {
+    void cashDepositWithdrawReflectedInGroupCashBalance() {
         when(repo.findGroupsByPortfolioId(10L)).thenReturn(List.of(
                 HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now())));
         when(repo.findPositionsByGroupId(1L)).thenReturn(List.of(positionWithId(5)));
@@ -460,8 +484,9 @@ class PortfolioApplicationServiceTest {
         assertThat(groups.get(0).cashBalance()).isEqualByComparingTo("5000");
     }
 
+    @DisplayName("现金转入保存并查询")
     @Test
-    void 现金转入保存并查询() {
+    void cashDepositSavedAndQueryable() {
         when(repo.findGroupByIdAndPortfolioId(1L, 10L))
                 .thenReturn(Optional.of(HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now())));
         when(repo.saveCashTransaction(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -477,8 +502,9 @@ class PortfolioApplicationServiceTest {
         assertThat(service.cashTransactions(1L, 1L)).hasSize(1);
     }
 
+    @DisplayName("现金转出保存")
     @Test
-    void 现金转出保存() {
+    void cashWithdrawSaved() {
         when(repo.findGroupByIdAndPortfolioId(1L, 10L))
                 .thenReturn(Optional.of(HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now())));
         when(repo.saveCashTransaction(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -489,8 +515,9 @@ class PortfolioApplicationServiceTest {
         assertThat(view.type()).isEqualTo(CashTransactionType.WITHDRAW);
     }
 
+    @DisplayName("现金分红更新持仓并保存")
     @Test
-    void 现金分红更新持仓并保存() {
+    void cashDividendUpdatesPositionAndSaves() {
         when(repo.findPositionByIdAndPortfolioId(5L, 10L)).thenReturn(Optional.of(positionWithId(5)));
         when(repo.savePosition(any())).thenAnswer(inv -> inv.getArgument(0));
         when(repo.saveDividend(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -514,8 +541,9 @@ class PortfolioApplicationServiceTest {
         assertThat(captor.getValue().positionId()).isEqualTo(5L);
     }
 
+    @DisplayName("送股更新持仓并保存")
     @Test
-    void 送股更新持仓并保存() {
+    void stockDividendUpdatesPositionAndSaves() {
         when(repo.findPositionByIdAndPortfolioId(5L, 10L)).thenReturn(Optional.of(positionWithId(5)));
         when(repo.savePosition(any())).thenAnswer(inv -> inv.getArgument(0));
         when(repo.saveDividend(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -537,8 +565,9 @@ class PortfolioApplicationServiceTest {
         assertThat(captor.getValue().type()).isEqualTo(DividendType.STOCK);
     }
 
+    @DisplayName("补录历史现金分红按除息日当时数量且editTrade重放确定性一致")
     @Test
-    void 补录历史现金分红按除息日当时数量且editTrade重放确定性一致() {
+    void backfillHistoricalCashDividendUsesQtyAtExDateAndEditTradeReplayConsistent() {
         // 持仓已含两笔买入：08-27 买 100@100、08-29 买 50@100；补录 08-28（两笔买入之间）除息的现金分红。
         Position pos = Position.reconstitute(5L, 10L, 1L, "600519", "贵州茅台",
                 new BigDecimal("150"), new BigDecimal("15000"), new BigDecimal("15000"),
@@ -576,8 +605,9 @@ class PortfolioApplicationServiceTest {
         assertThat(replayed.quantity()).isEqualByComparingTo("150");
     }
 
+    @DisplayName("删除持仓")
     @Test
-    void 删除持仓() {
+    void deletePositionSucceeds() {
         when(repo.findPositionByIdAndPortfolioId(5L, 10L)).thenReturn(Optional.of(positionWithId(5)));
 
         service.deletePosition(1L, 5L);
@@ -585,8 +615,9 @@ class PortfolioApplicationServiceTest {
         verify(repo).deletePosition(5L);
     }
 
+    @DisplayName("查询交易流水")
     @Test
-    void 查询交易流水() {
+    void queryTradeHistory() {
         when(repo.findPositionByIdAndPortfolioId(5L, 10L)).thenReturn(Optional.of(positionWithId(5)));
         when(repo.findTradesByPositionId(5L)).thenReturn(List.of(
                 new Trade(1L, 5L, TradeType.BUY, LocalDate.of(2026, 8, 27),
@@ -599,8 +630,9 @@ class PortfolioApplicationServiceTest {
         assertThat(trades.get(0).price()).isEqualByComparingTo("1500");
     }
 
+    @DisplayName("查询分红流水")
     @Test
-    void 查询分红流水() {
+    void queryDividendHistory() {
         when(repo.findPositionByIdAndPortfolioId(5L, 10L)).thenReturn(Optional.of(positionWithId(5)));
         when(repo.findDividendsByPositionId(5L)).thenReturn(List.of(
                 new Dividend(1L, 5L, DividendType.CASH, LocalDate.of(2026, 8, 28),
@@ -612,8 +644,9 @@ class PortfolioApplicationServiceTest {
         assertThat(dividends.get(0).type()).isEqualTo(DividendType.CASH);
     }
 
+    @DisplayName("查不存在的持仓抛NOT_FOUND")
     @Test
-    void 查不存在的持仓抛NOT_FOUND() {
+    void queryNonexistentPositionThrowsNotFound() {
         when(repo.findPositionByIdAndPortfolioId(999L, 10L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.trades(1L, 999L))
@@ -621,8 +654,9 @@ class PortfolioApplicationServiceTest {
                         e -> assertThat(e.code()).isEqualTo(PortfolioErrorCode.NOT_FOUND));
     }
 
+    @DisplayName("按null组查全部持仓")
     @Test
-    void 按null组查全部持仓() {
+    void positionsWithNullGroupReturnsAll() {
         when(repo.findPositionsByPortfolioId(10L)).thenReturn(List.of(positionWithId(5)));
         when(market.quote("600519")).thenReturn(new Quote(
                 "600519", "贵州茅台", 120, 0, 0, 0, 0, 0, 100, 0, 0, null, null, ""));
@@ -634,8 +668,9 @@ class PortfolioApplicationServiceTest {
         assertThat(positions.get(0).marketValue()).isEqualByComparingTo("12000");
     }
 
+    @DisplayName("按本人组查持仓")
     @Test
-    void 按本人组查持仓() {
+    void positionsInOwnGroupReturned() {
         when(repo.findGroupByIdAndPortfolioId(1L, 10L))
                 .thenReturn(Optional.of(HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now())));
         when(repo.findPositionsByGroupId(1L)).thenReturn(List.of(positionWithId(5)));
@@ -648,8 +683,9 @@ class PortfolioApplicationServiceTest {
         assertThat(positions.get(0).groupId()).isEqualTo(1L);
     }
 
+    @DisplayName("总览现价缺失仅计入已实现盈亏")
     @Test
-    void 总览现价缺失仅计入已实现盈亏() {
+    void overviewWhenQuoteMissingCountsOnlyRealizedPnl() {
         Position pos = Position.reconstitute(1L, 10L, 1L, "600519", "贵州茅台",
                 new BigDecimal("100"), new BigDecimal("10000"), new BigDecimal("10000"),
                 BigDecimal.ZERO, new BigDecimal("500"), new BigDecimal("-10000"),
@@ -666,8 +702,9 @@ class PortfolioApplicationServiceTest {
         assertThat(view.todayPnl()).isEqualByComparingTo("0");
     }
 
+    @DisplayName("总览累计现金分红")
     @Test
-    void 总览累计现金分红() {
+    void overviewIncludesCumulativeCashDividend() {
         Position pos = Position.reconstitute(1L, 10L, 1L, "600519", "贵州茅台",
                 new BigDecimal("100"), new BigDecimal("9850"), new BigDecimal("10000"),
                 new BigDecimal("150"), BigDecimal.ZERO, new BigDecimal("-10000"),
@@ -682,8 +719,9 @@ class PortfolioApplicationServiceTest {
         assertThat(view.totalCashDividend()).isEqualByComparingTo("150");
     }
 
+    @DisplayName("总览忽略非账户分组")
     @Test
-    void 总览忽略非账户分组() {
+    void overviewIgnoresNonAccountGroups() {
         Position pos = Position.reconstitute(1L, 10L, 1L, "600519", "贵州茅台",
                 new BigDecimal("100"), new BigDecimal("10000"), new BigDecimal("10000"),
                 BigDecimal.ZERO, BigDecimal.ZERO, new BigDecimal("-10000"),
@@ -701,8 +739,9 @@ class PortfolioApplicationServiceTest {
         assertThat(view.groupCount()).isEqualTo(1);
     }
 
+    @DisplayName("配置权益与现金占比")
     @Test
-    void 配置权益与现金占比() {
+    void allocationComputesEquityAndCashRatios() {
         when(repo.findPositionsByPortfolioId(10L)).thenReturn(List.of(positionWithId(1)));
         when(repo.findGroupsByPortfolioId(10L)).thenReturn(List.of(
                 HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now()),
@@ -724,8 +763,9 @@ class PortfolioApplicationServiceTest {
         assertThat(view.slices().get(1).ratio()).isEqualByComparingTo("29.41");
     }
 
+    @DisplayName("空组合配置占比为零")
     @Test
-    void 空组合配置占比为零() {
+    void allocationEmptyPortfolioRatiosZero() {
         when(repo.findPositionsByPortfolioId(10L)).thenReturn(List.of());
         when(repo.findGroupsByPortfolioId(10L)).thenReturn(List.of());
 
@@ -736,8 +776,9 @@ class PortfolioApplicationServiceTest {
         assertThat(view.slices().get(1).ratio()).isEqualByComparingTo("0");
     }
 
+    @DisplayName("行业分布聚合并排除无映射与无行情")
     @Test
-    void 行业分布聚合并排除无映射与无行情() {
+    void industryDistributionAggregatesExcludingUnmappedAndNoQuote() {
         when(repo.findPositionsByPortfolioId(10L)).thenReturn(List.of(
                 Position.reconstitute(1L, 10L, 1L, "600519", "贵州茅台",
                         new BigDecimal("100"), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
@@ -763,8 +804,9 @@ class PortfolioApplicationServiceTest {
         assertThat(view.slices().get(0).ratio()).isEqualByComparingTo("100");
     }
 
+    @DisplayName("集中度前五与占比")
     @Test
-    void 集中度前五与占比() {
+    void concentrationTopFiveAndRatios() {
         when(repo.findPositionsByPortfolioId(10L)).thenReturn(List.of(
                 Position.reconstitute(1L, 10L, 1L, "600519", "贵州茅台",
                         new BigDecimal("100"), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
@@ -791,8 +833,9 @@ class PortfolioApplicationServiceTest {
         assertThat(view.top5Ratio()).isEqualByComparingTo("100");
     }
 
+    @DisplayName("批量行情单只失败时跳过该标的不崩页面")
     @Test
-    void 批量行情单只失败时跳过该标的不崩页面() {
+    void quoteBatchSkipsFailedStockWithoutCrashing() {
         when(repo.findPositionsByPortfolioId(10L)).thenReturn(List.of(
                 Position.reconstitute(1L, 10L, 1L, "600519", "贵州茅台",
                         new BigDecimal("100"), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
@@ -812,8 +855,9 @@ class PortfolioApplicationServiceTest {
         assertThat(view.holdings().get(0).stockCode()).isEqualTo("000858");
     }
 
+    @DisplayName("全卖出后持仓列表不含已清仓行但buy可重开")
     @Test
-    void 全卖出后持仓列表不含已清仓行但buy可重开() {
+    void positionsHideClearedRowAfterFullSellButBuyCanReopen() {
         when(repo.findPositionsByPortfolioId(10L)).thenReturn(List.of(clearedPosition(5L)));
 
         assertThat(service.positions(1L, null)).isEmpty();
@@ -838,8 +882,9 @@ class PortfolioApplicationServiceTest {
         assertThat(reopened.quantity()).isEqualByComparingTo("100");
     }
 
+    @DisplayName("按组查持仓列表也过滤已清仓行")
     @Test
-    void 按组查持仓列表也过滤已清仓行() {
+    void positionsByGroupAlsoFiltersClearedRows() {
         when(repo.findGroupByIdAndPortfolioId(1L, 10L))
                 .thenReturn(Optional.of(HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now())));
         when(repo.findPositionsByGroupId(1L)).thenReturn(List.of(clearedPosition(5L)));
@@ -847,8 +892,9 @@ class PortfolioApplicationServiceTest {
         assertThat(service.positions(1L, 1L)).isEmpty();
     }
 
+    @DisplayName("分组持仓数不计已清仓行但现金余额保留其现金流")
     @Test
-    void 分组持仓数不计已清仓行但现金余额保留其现金流() {
+    void groupPositionCountExcludesClearedButCashBalanceKeepsCashFlow() {
         when(repo.findGroupsByPortfolioId(10L)).thenReturn(List.of(
                 HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now())));
         when(repo.findPositionsByGroupId(1L)).thenReturn(List.of(clearedPosition(5L)));
@@ -861,8 +907,9 @@ class PortfolioApplicationServiceTest {
         assertThat(groups.get(0).cashBalance()).isEqualByComparingTo("2000");
     }
 
+    @DisplayName("总览持仓数不计已清仓行但总盈亏保留已实现盈亏")
     @Test
-    void 总览持仓数不计已清仓行但总盈亏保留已实现盈亏() {
+    void overviewPositionCountExcludesClearedButPnlKeepsRealized() {
         when(repo.findPositionsByPortfolioId(10L)).thenReturn(List.of(clearedPosition(5L)));
         when(repo.findGroupsByPortfolioId(10L)).thenReturn(List.of());
 
@@ -872,8 +919,9 @@ class PortfolioApplicationServiceTest {
         assertThat(view.totalPnl()).isEqualByComparingTo("2000");
     }
 
+    @DisplayName("行业分布忽略已清仓行不产生零值分片")
     @Test
-    void 行业分布忽略已清仓行不产生零值分片() {
+    void industryDistributionIgnoresClearedRowsWithoutZeroSlices() {
         when(repo.findPositionsByPortfolioId(10L)).thenReturn(List.of(clearedPosition(5L)));
         when(valuation.findAllIndustryMappings()).thenReturn(List.of(
                 new ShenwanIndustryMapping("600519", "贵州茅台", "801120", "食品饮料")));

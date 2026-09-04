@@ -5,6 +5,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.portfolio.invest.support.PostgresTestSupport;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -18,14 +19,16 @@ class SecurityConfigTest extends PostgresTestSupport {
     @Autowired
     MockMvc mockMvc;
 
+    @DisplayName("匿名访问行情公开")
     @Test
-    void 匿名访问行情公开() throws Exception {
+    void anonymousMarketDataAccessIsPublic() throws Exception {
         mockMvc.perform(get("/api/market/overview"))
                 .andExpect(status().is(200));
     }
 
+    @DisplayName("匿名访问agui返回401")
     @Test
-    void 匿名访问agui返回401() throws Exception {
+    void anonymousAguiAccessReturns401() throws Exception {
         mockMvc.perform(post("/agui/run").contentType("application/json")
                         .content("{\"messages\":[]}"))
                 .andExpect(status().isUnauthorized());

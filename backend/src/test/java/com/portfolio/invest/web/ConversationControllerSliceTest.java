@@ -15,6 +15,7 @@ import com.portfolio.invest.domain.user.UserRole;
 import com.portfolio.invest.domain.user.UserStatus;
 import com.portfolio.invest.infrastructure.security.AuthenticatedUser;
 import java.time.Instant;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -46,8 +47,9 @@ class ConversationControllerSliceTest {
                 + ",\"role\":\"" + role + "\",\"content\":\"hi\",\"createdAt\":1}]";
     }
 
+    @DisplayName("保存合法消息返回204")
     @Test
-    void 保存合法消息返回204() throws Exception {
+    void saveValidMessagesReturns204() throws Exception {
         mvc.perform(put("/api/conversations/t-1/messages").with(authentication(auth())).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(message("m-1", "user")))
@@ -55,8 +57,9 @@ class ConversationControllerSliceTest {
         verify(service).saveMessages(eq(1L), eq("t-1"), any());
     }
 
+    @DisplayName("保存非法role消息返回400")
     @Test
-    void 保存非法role消息返回400() throws Exception {
+    void saveInvalidRoleMessageReturns400() throws Exception {
         mvc.perform(put("/api/conversations/t-1/messages").with(authentication(auth())).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(message("m-1", "system")))
@@ -64,8 +67,9 @@ class ConversationControllerSliceTest {
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
     }
 
+    @DisplayName("保存空id消息返回400")
     @Test
-    void 保存空id消息返回400() throws Exception {
+    void saveMessageWithNullIdReturns400() throws Exception {
         mvc.perform(put("/api/conversations/t-1/messages").with(authentication(auth())).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(message(null, "user")))

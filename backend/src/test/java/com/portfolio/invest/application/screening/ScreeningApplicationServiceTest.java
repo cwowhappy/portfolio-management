@@ -7,6 +7,7 @@ import com.portfolio.invest.domain.screening.ScreeningException;
 import com.portfolio.invest.domain.screening.ScreeningRepository;
 import com.portfolio.invest.domain.screening.SortDirection;
 import com.portfolio.invest.domain.screening.StockScreeningResult;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -35,15 +36,17 @@ class ScreeningApplicationServiceTest {
                 null, null, null, null, null, "pe_ttm", SortDirection.ASC, 200);
     }
 
+    @DisplayName("空条件抛出异常")
     @Test
-    void 空条件抛出异常() {
+    void emptyConditionThrowsException() {
         ScreeningException ex = catchThrowableOfType(() -> service.screen(criteria(null)), ScreeningException.class);
         assertThat(ex).isNotNull().hasMessageContaining("至少需要一个筛选条件");
         assertThat(ex.code()).isEqualTo(ScreeningErrorCode.NO_CONDITION);
     }
 
+    @DisplayName("非法排序字段抛出异常")
     @Test
-    void 非法排序字段抛出异常() {
+    void invalidSortFieldThrowsException() {
         var c = new ScreeningCriteria(new BigDecimal("20"), null, null, null, null, null,
                 null, null, null, null, null, null, null, "bogus", SortDirection.ASC, 200);
         ScreeningException ex = catchThrowableOfType(() -> service.screen(c), ScreeningException.class);
@@ -51,8 +54,9 @@ class ScreeningApplicationServiceTest {
         assertThat(ex.code()).isEqualTo(ScreeningErrorCode.INVALID_SORT);
     }
 
+    @DisplayName("上限越界抛出异常")
     @Test
-    void 上限越界抛出异常() {
+    void limitOutOfRangeThrowsException() {
         var c = new ScreeningCriteria(new BigDecimal("20"), null, null, null, null, null,
                 null, null, null, null, null, null, null, "pe_ttm", SortDirection.ASC, 500);
         ScreeningException ex = catchThrowableOfType(() -> service.screen(c), ScreeningException.class);
@@ -60,8 +64,9 @@ class ScreeningApplicationServiceTest {
         assertThat(ex.code()).isEqualTo(ScreeningErrorCode.INVALID_LIMIT);
     }
 
+    @DisplayName("合法条件委托仓库")
     @Test
-    void 合法条件委托仓库() {
+    void validConditionDelegatesToRepository() {
         var c = criteria(new BigDecimal("20"));
         when(repo.findStocks(c)).thenReturn(List.of(
                 new StockScreeningResult("601398", "工商银行", "801780", "银行",
@@ -72,8 +77,9 @@ class ScreeningApplicationServiceTest {
         verify(repo).findStocks(c);
     }
 
+    @DisplayName("相同条件命中缓存不再查仓库")
     @Test
-    void 相同条件命中缓存不再查仓库() {
+    void sameConditionCacheHitSkipsRepository() {
         var c = criteria(new BigDecimal("20"));
         var results = List.of(
                 new StockScreeningResult("601398", "工商银行", "801780", "银行",

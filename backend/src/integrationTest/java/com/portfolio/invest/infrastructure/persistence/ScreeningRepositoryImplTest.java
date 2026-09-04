@@ -5,6 +5,7 @@ import com.portfolio.invest.domain.screening.ScreeningRepository;
 import com.portfolio.invest.domain.screening.SortDirection;
 import com.portfolio.invest.domain.screening.StockScreeningResult;
 import com.portfolio.invest.support.PostgresTestSupport;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
@@ -56,9 +57,10 @@ class ScreeningRepositoryImplTest {
                 code, name, industryCode, industryName);
     }
 
+    @DisplayName("按PE与ROE组合筛选")
     @Test
     @Transactional
-    void 按PE与ROE组合筛选() {
+    void filterByPeAndRoeCombination() {
         seedValuation("600519", "贵州茅台", "22.5", "0.35");
         seedValuation("601398", "工商银行", "5.6", "0.18");
         seedFinancial("600519", "24.5");
@@ -75,9 +77,10 @@ class ScreeningRepositoryImplTest {
         assertThat(results.get(0).industryName()).isEqualTo("银行");
     }
 
+    @DisplayName("按行业筛选")
     @Test
     @Transactional
-    void 按行业筛选() {
+    void filterByIndustry() {
         seedValuation("600519", "贵州茅台", "22.5", "0.35");
         seedValuation("601398", "工商银行", "5.6", "0.18");
         seedMapping("600519", "贵州茅台", "801120", "食品饮料");
@@ -90,9 +93,10 @@ class ScreeningRepositoryImplTest {
         assertThat(results).extracting(StockScreeningResult::stockCode).containsExactly("601398");
     }
 
+    @DisplayName("排序与上限生效")
     @Test
     @Transactional
-    void 排序与上限生效() {
+    void sortingAndLimitTakeEffect() {
         seedValuation("600519", "贵州茅台", "22.5", "0.35");
         seedValuation("601398", "工商银行", "5.6", "0.18");
         seedValuation("000858", "五粮液", "18.2", "0.62");

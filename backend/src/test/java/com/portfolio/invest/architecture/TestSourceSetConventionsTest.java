@@ -9,6 +9,7 @@ import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.lang.ArchRule;
 import java.nio.file.Paths;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -22,8 +23,9 @@ import org.junit.jupiter.api.Test;
  */
 class TestSourceSetConventionsTest {
 
+    @DisplayName("testSourceSet禁止依赖Testcontainers")
     @Test
-    void testSourceSet禁止依赖Testcontainers() {
+    void testSourceSetForbidsTestcontainersDependency() {
         JavaClasses testClasses = new ClassFileImporter()
                 .importPath(Paths.get("build/classes/java/test"));
         ArchRule rule = noClasses()
@@ -37,8 +39,9 @@ class TestSourceSetConventionsTest {
      * standalone 单元测试命名为 {@code *Test}。按注解简单名判断，不锁定具体包路径
      * （Spring Boot 4 已把 WebMvcTest 移到 org.springframework.boot.webmvc 下）。
      */
+    @DisplayName("sliceTest必须是真切片")
     @Test
-    void sliceTest必须是真切片() {
+    void sliceTestMustBeTrueSlice() {
         JavaClasses testClasses = new ClassFileImporter()
                 .importPath(Paths.get("build/classes/java/test"));
         DescribedPredicate<JavaAnnotation<?>> sliceAnnotation =

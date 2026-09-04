@@ -13,6 +13,7 @@ import com.portfolio.invest.domain.market.Quote;
 import com.portfolio.invest.application.market.MarketDataService;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -32,8 +33,9 @@ class MarketControllerTest {
                 .build();
     }
 
+    @DisplayName("quote绑定path参数并返回200")
     @Test
-    void quote绑定path参数并返回200() throws Exception {
+    void quoteBindsPathParamAndReturns200() throws Exception {
         Quote q = new Quote("600519", "贵州茅台", 1415, 15, 1.07, 1410, 1428, 1405.5, 1400,
                 2345600, 3.3e9, 21.35, 7.82, "2026-08-18 15:00");
         when(market.quote("600519")).thenReturn(q);
@@ -43,15 +45,17 @@ class MarketControllerTest {
                 .andExpect(jsonPath("$.name").value("贵州茅台"));
     }
 
+    @DisplayName("kline缺省period与limit")
     @Test
-    void kline缺省period与limit() throws Exception {
+    void klineDefaultsPeriodAndLimit() throws Exception {
         when(market.kline(eq("600519"), eq("day"), eq(120))).thenReturn(List.of());
         mvc.perform(get("/api/market/kline/600519"))
                 .andExpect(status().isOk());
     }
 
+    @DisplayName("kline非法period映射400")
     @Test
-    void kline非法period映射400() throws Exception {
+    void klineInvalidPeriodMapsTo400() throws Exception {
         when(market.kline(eq("600519"), eq("foo"), anyInt()))
                 .thenThrow(new MarketDataException(MarketDataErrorCode.INVALID_PERIOD, "period 仅支持 day/week/month"));
         mvc.perform(get("/api/market/kline/600519").param("period", "foo"))
@@ -59,8 +63,9 @@ class MarketControllerTest {
                 .andExpect(jsonPath("$.code").value(MarketDataErrorCode.INVALID_PERIOD));
     }
 
+    @DisplayName("news缺省limit与overview透传")
     @Test
-    void news缺省limit与overview透传() throws Exception {
+    void newsDefaultsLimitAndPassesThroughOverview() throws Exception {
         when(market.news(eq("600519"), eq(10))).thenReturn(List.of());
         mvc.perform(get("/api/market/news/600519"))
                 .andExpect(status().isOk());

@@ -13,6 +13,7 @@ import com.portfolio.invest.domain.user.User;
 import com.portfolio.invest.domain.user.UserRole;
 import com.portfolio.invest.domain.user.UserStatus;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -54,8 +55,9 @@ class PortfolioControllerTest {
                 principal, null, principal.getAuthorities());
     }
 
+    @DisplayName("groups返回200")
     @Test
-    void groups返回200() throws Exception {
+    void groupsReturns200() throws Exception {
         when(service.groups(1L)).thenReturn(List.of(
                 new GroupView(1L, "华泰", GroupType.ACCOUNT, 0, BigDecimal.ZERO)));
 
@@ -64,8 +66,9 @@ class PortfolioControllerTest {
                 .andExpect(jsonPath("$[0].name").value("华泰"));
     }
 
+    @DisplayName("创建分组返回201")
     @Test
-    void 创建分组返回201() throws Exception {
+    void createGroupReturns201() throws Exception {
         when(service.createGroup(eq(1L), any(CreateGroupCommand.class)))
                 .thenReturn(new GroupView(5L, "华泰", GroupType.ACCOUNT, 0, BigDecimal.ZERO));
 
@@ -76,14 +79,16 @@ class PortfolioControllerTest {
                 .andExpect(jsonPath("$.name").value("华泰"));
     }
 
+    @DisplayName("删除分组返回204")
     @Test
-    void 删除分组返回204() throws Exception {
+    void deleteGroupReturns204() throws Exception {
         mvc.perform(delete("/api/portfolio/groups/7").principal(auth()))
                 .andExpect(status().isNoContent());
     }
 
+    @DisplayName("买入返回201")
     @Test
-    void 买入返回201() throws Exception {
+    void buyReturns201() throws Exception {
         when(service.buy(eq(1L), any(BuyCommand.class)))
                 .thenReturn(new PositionView(99L, 1L, "600519", "贵州茅台",
                         new BigDecimal("100"), new BigDecimal("1500.05"), new BigDecimal("1500"),
@@ -97,8 +102,9 @@ class PortfolioControllerTest {
                 .andExpect(jsonPath("$.stockCode").value("600519"));
     }
 
+    @DisplayName("改名分组返回200")
     @Test
-    void 改名分组返回200() throws Exception {
+    void renameGroupReturns200() throws Exception {
         when(service.renameGroup(eq(1L), eq(7L), any(RenameGroupCommand.class)))
                 .thenReturn(new GroupView(7L, "东财", GroupType.ACCOUNT, 0, BigDecimal.ZERO));
 
@@ -109,8 +115,9 @@ class PortfolioControllerTest {
                 .andExpect(jsonPath("$.name").value("东财"));
     }
 
+    @DisplayName("编辑买入交易返回200")
     @Test
-    void 编辑买入交易返回200() throws Exception {
+    void editBuyTradeReturns200() throws Exception {
         when(service.editTrade(eq(1L), eq(5L), eq(11L), any(EditTradeCommand.class)))
                 .thenReturn(new PositionView(5L, 1L, "600519", "贵州茅台",
                         new BigDecimal("60"), new BigDecimal("110"), new BigDecimal("120"),

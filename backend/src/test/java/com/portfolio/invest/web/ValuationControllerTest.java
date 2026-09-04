@@ -13,6 +13,7 @@ import com.portfolio.invest.application.valuation.ValuationOverviewView;
 import java.math.BigDecimal;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -30,8 +31,9 @@ class ValuationControllerTest {
                 .build();
     }
 
+    @DisplayName("overview返回200")
     @Test
-    void overview返回200() throws Exception {
+    void overviewReturns200() throws Exception {
         when(service.overview()).thenReturn(new ValuationOverviewView(
                 null, null, null, null, null, null, null, List.of(), true));
 
@@ -40,8 +42,9 @@ class ValuationControllerTest {
                 .andExpect(jsonPath("$.dataAccumulating").value(true));
     }
 
+    @DisplayName("industries返回排序结果")
     @Test
-    void industries返回排序结果() throws Exception {
+    void industriesReturnSortedResults() throws Exception {
         when(service.industries("pe")).thenReturn(List.of(
                 new IndustryValuationView("801780", "银行", new BigDecimal("5.9"), new BigDecimal("0.65"), null, null)));
 
@@ -50,8 +53,9 @@ class ValuationControllerTest {
                 .andExpect(jsonPath("$[0].industryName").value("银行"));
     }
 
+    @DisplayName("history返回200")
     @Test
-    void history返回200() throws Exception {
+    void historyReturns200() throws Exception {
         when(service.history()).thenReturn(new ValuationHistoryView(List.of(), List.of(), List.of()));
 
         mvc.perform(get("/api/valuation/history"))

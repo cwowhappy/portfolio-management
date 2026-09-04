@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.concurrent.atomic.AtomicLong;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /** 令牌桶限流器（时钟与 sleep 可注入，避免真实墙钟等待）。 */
@@ -14,8 +15,9 @@ class RateLimiterTest {
         return new RateLimiter(rate, now::get, ms -> now.addAndGet(ms * 1_000_000L));
     }
 
+    @DisplayName("非正速率参数抛异常")
     @Test
-    void 非正速率参数抛异常() {
+    void throwsOnNonPositiveRate() {
         assertThatThrownBy(() -> new RateLimiter(0))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("permitsPerSecond");
@@ -23,16 +25,18 @@ class RateLimiterTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
+    @DisplayName("充足令牌下立即获取成功")
     @Test
-    void 充足令牌下立即获取成功() {
+    void acquiresImmediatelyWithSufficientTokens() {
         RateLimiter limiter = new RateLimiter(100);
         for (int i = 0; i < 5; i++) {
             assertThat(limiter.tryAcquire(0)).isTrue();
         }
     }
 
+    @DisplayName("等待后补充到令牌时成功获取")
     @Test
-    void 等待后补充到令牌时成功获取() {
+    void acquiresAfterWaitingForTokenRefill() {
         AtomicLong now = new AtomicLong(0);
         RateLimiter limiter = limiter(5, now);
         for (int i = 0; i < 5; i++) {
@@ -43,8 +47,9 @@ class RateLimiterTest {
         assertThat(limiter.tryAcquire(1500)).isTrue();
     }
 
+    @DisplayName("距下一令牌不足一纳秒时按一纳秒等待")
     @Test
-    void 距下一令牌不足一纳秒时按一纳秒等待() {
+    void waitsAtLeastOneNanosecondWhenShortOfNextToken() {
         AtomicLong now = new AtomicLong(0);
         RateLimiter limiter = limiter(5, now);
         for (int i = 0; i < 5; i++) {
@@ -56,8 +61,9 @@ class RateLimiterTest {
         assertThat(limiter.tryAcquire(0)).isFalse();
     }
 
+    @DisplayName("等待期间线程被中断时返回false")
     @Test
-    void 等待期间线程被中断时返回false() {
+    void returnsFalseWhenInterruptedWhileWaiting() {
         AtomicLong now = new AtomicLong(0);
         // sleep 时中断当前线程：限流器应检测到中断标记并放弃等待
         RateLimiter limiter = new RateLimiter(5, now::get, ms -> Thread.currentThread().interrupt());
@@ -71,8 +77,9 @@ class RateLimiterTest {
         }
     }
 
+    @DisplayName("令牌耗尽且等待时间不足时失败")
     @Test
-    void 令牌耗尽且等待时间不足时失败() {
+    void failsWhenTokensExhaustedAndWaitTimeInsufficient() {
         AtomicLong now = new AtomicLong(0);
         RateLimiter limiter = limiter(5, now);
         for (int i = 0; i < 5; i++) {
@@ -82,8 +89,9 @@ class RateLimiterTest {
         assertThat(limiter.tryAcquire(50)).isFalse();
     }
 
+    @DisplayName("等待足够时间后补充令牌成功")
     @Test
-    void 等待足够时间后补充令牌成功() {
+    void acquiresAfterWaitingEnoughForTokenRefill() {
         AtomicLong now = new AtomicLong(0);
         RateLimiter limiter = limiter(5, now);
         for (int i = 0; i < 5; i++) {

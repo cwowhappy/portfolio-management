@@ -4,6 +4,7 @@ import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -30,35 +31,40 @@ class TradeCommandValidationTest {
         return violations.stream().anyMatch(v -> v.getPropertyPath().toString().equals(path));
     }
 
+    @DisplayName("买入负手续费被拒")
     @Test
-    void 买入负手续费被拒() {
+    void buyNegativeFeeRejected() {
         var cmd = new BuyCommand(1L, "600519", "贵州茅台", day(),
                 new BigDecimal("1500"), new BigDecimal("100"), new BigDecimal("-5"));
         assertThat(hasViolationOn(validator.validate(cmd), "fee")).isTrue();
     }
 
+    @DisplayName("买入超长股票代码被拒")
     @Test
-    void 买入超长股票代码被拒() {
+    void buyOversizedStockCodeRejected() {
         var cmd = new BuyCommand(1L, "60051900000000000", "贵州茅台", day(),
                 new BigDecimal("1500"), new BigDecimal("100"), new BigDecimal("0"));
         assertThat(hasViolationOn(validator.validate(cmd), "stockCode")).isTrue();
     }
 
+    @DisplayName("买入超长股票名称被拒")
     @Test
-    void 买入超长股票名称被拒() {
+    void buyOversizedStockNameRejected() {
         var cmd = new BuyCommand(1L, "600519", "贵".repeat(65), day(),
                 new BigDecimal("1500"), new BigDecimal("100"), new BigDecimal("0"));
         assertThat(hasViolationOn(validator.validate(cmd), "stockName")).isTrue();
     }
 
+    @DisplayName("卖出负手续费被拒")
     @Test
-    void 卖出负手续费被拒() {
+    void sellNegativeFeeRejected() {
         var cmd = new SellCommand(1L, day(), new BigDecimal("120"), new BigDecimal("10"), new BigDecimal("-1"));
         assertThat(hasViolationOn(validator.validate(cmd), "fee")).isTrue();
     }
 
+    @DisplayName("编辑交易负手续费被拒")
     @Test
-    void 编辑交易负手续费被拒() {
+    void editTradeNegativeFeeRejected() {
         var cmd = new EditTradeCommand(day(), new BigDecimal("120"), new BigDecimal("10"), new BigDecimal("-1"), 1L);
         assertThat(hasViolationOn(validator.validate(cmd), "fee")).isTrue();
     }

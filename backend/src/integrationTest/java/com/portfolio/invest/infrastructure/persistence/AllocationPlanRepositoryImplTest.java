@@ -6,6 +6,7 @@ import com.portfolio.invest.domain.allocation.AssetClass;
 import com.portfolio.invest.domain.allocation.PlanSource;
 import com.portfolio.invest.support.PostgresTestSupport;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
@@ -53,8 +54,9 @@ class AllocationPlanRepositoryImplTest {
         return Map.of(AssetClass.STOCK, new BigDecimal("60"), AssetClass.BOND, new BigDecimal("40"));
     }
 
+    @DisplayName("保存方案并回读权重")
     @Test
-    void 保存方案并回读权重() {
+    void savePlanAndReadBackWeights() {
         AllocationPlan saved = repository.save(
                 AllocationPlan.create(42L, "平衡", PlanSource.CUSTOM, w60_40(), Instant.now()));
 
@@ -65,8 +67,9 @@ class AllocationPlanRepositoryImplTest {
         assertThat(found.weights().get(AssetClass.BOND)).isEqualByComparingTo("40");
     }
 
+    @DisplayName("改权重后替换旧权重")
     @Test
-    void 改权重后替换旧权重() {
+    void updatedWeightsReplaceOldWeights() {
         AllocationPlan saved = repository.save(
                 AllocationPlan.create(42L, "平衡", PlanSource.CUSTOM, w60_40(), Instant.now()));
         repository.save(saved.updateWeights(Map.of(
@@ -78,16 +81,18 @@ class AllocationPlanRepositoryImplTest {
         assertThat(found.weights()).hasSize(2);
     }
 
+    @DisplayName("激活唯一性由用例层维护本层仅查询")
     @Test
-    void 激活唯一性由用例层维护本层仅查询() {
+    void activeUniquenessMaintainedByUseCaseLayerThisLayerOnlyQueries() {
         repository.save(AllocationPlan.create(42L, "A", PlanSource.CUSTOM, w60_40(), Instant.now()));
         repository.save(AllocationPlan.create(42L, "B", PlanSource.CUSTOM, w60_40(), Instant.now()));
         // 本层不做唯一性约束；deactivateAllByUserId + 再 save(activate) 的编排在应用层（P2）验证。
         assertThat(repository.findByUserId(42L)).hasSize(2);
     }
 
+    @DisplayName("删除方案级联删除权重")
     @Test
-    void 删除方案级联删除权重() {
+    void deletePlanCascadesWeights() {
         AllocationPlan saved = repository.save(
                 AllocationPlan.create(42L, "平衡", PlanSource.CUSTOM, w60_40(), Instant.now()));
         repository.deleteById(saved.id());
@@ -103,8 +108,9 @@ class AllocationPlanRepositoryImplTest {
      * 无生效方案。注意域方法 activate() 会顺带改 updatedAt 掩盖此缺陷，故这里直接
      * save 载入的原样快照以隔离「批量更新后上下文陈旧」这一根因。
      */
+    @DisplayName("重复激活已生效方案数据库仍唯一生效")
     @Test
-    void 重复激活已生效方案数据库仍唯一生效() {
+    void repeatedActivationOfActivePlanDbKeepsSingleActive() {
         AllocationPlan saved = repository.save(
                 AllocationPlan.create(42L, "A", PlanSource.CUSTOM, w60_40(), Instant.now()));
         repository.save(saved.activate());

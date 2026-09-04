@@ -3,6 +3,7 @@ package com.portfolio.invest.domain.market;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 class StockRefTest {
@@ -37,8 +38,9 @@ class StockRefTest {
                 .hasMessageContaining("无效的股票代码");
     }
 
+    @DisplayName("exchange分类统一规则")
     @Test
-    void exchange分类统一规则() {
+    void exchangeClassificationFollowsUnifiedRules() {
         assertThat(StockRef.Exchange.of("600519", null)).isEqualTo(StockRef.Exchange.SH);
         assertThat(StockRef.Exchange.of("900901", null)).isEqualTo(StockRef.Exchange.SH); // 沪B
         assertThat(StockRef.Exchange.of("000858", null)).isEqualTo(StockRef.Exchange.SZ);

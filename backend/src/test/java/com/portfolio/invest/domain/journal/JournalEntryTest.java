@@ -1,5 +1,6 @@
 package com.portfolio.invest.domain.journal;
 
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -17,8 +18,9 @@ class JournalEntryTest {
                 null, null, null, LocalDate.of(2026, 9, 2), NOW);
     }
 
+    @DisplayName("创建买入备忘带目标价止损价")
     @Test
-    void 创建买入备忘带目标价止损价() {
+    void createBuyMemoCarriesTargetAndStopLoss() {
         var e = buyMemo();
         assertThat(e.type()).isEqualTo(JournalEntryType.BUY_MEMO);
         assertThat(e.stockCode()).isEqualTo("600519");
@@ -27,40 +29,45 @@ class JournalEntryTest {
         assertThat(e.eventDate()).isEqualTo(LocalDate.of(2026, 9, 2));
     }
 
+    @DisplayName("标题为空抛INVALID_INPUT")
     @Test
-    void 标题为空抛INVALID_INPUT() {
+    void blankTitleThrowsInvalidInput() {
         assertThatThrownBy(() -> JournalEntry.create(1L, JournalEntryType.RESEARCH_NOTE, null, null, null,
                 "  ", "内容", null, null, null, null, null, LocalDate.now(), NOW))
                 .isInstanceOfSatisfying(JournalException.class,
                         e -> assertThat(e.code()).isEqualTo(JournalErrorCode.INVALID_INPUT));
     }
 
+    @DisplayName("买入备忘缺股票代码抛INVALID_INPUT")
     @Test
-    void 买入备忘缺股票代码抛INVALID_INPUT() {
+    void buyMemoMissingStockCodeThrowsInvalidInput() {
         assertThatThrownBy(() -> JournalEntry.create(1L, JournalEntryType.BUY_MEMO, null, null, null,
                 "标题", "内容", null, null, null, null, null, LocalDate.now(), NOW))
                 .isInstanceOfSatisfying(JournalException.class,
                         e -> assertThat(e.code()).isEqualTo(JournalErrorCode.INVALID_INPUT));
     }
 
+    @DisplayName("目标价为负抛INVALID_INPUT")
     @Test
-    void 目标价为负抛INVALID_INPUT() {
+    void negativeTargetPriceThrowsInvalidInput() {
         assertThatThrownBy(() -> JournalEntry.create(1L, JournalEntryType.BUY_MEMO, "600519", "贵州茅台", null,
                 "标题", "内容", new BigDecimal("-1"), null, null, null, null, LocalDate.now(), NOW))
                 .isInstanceOfSatisfying(JournalException.class,
                         e -> assertThat(e.code()).isEqualTo(JournalErrorCode.INVALID_INPUT));
     }
 
+    @DisplayName("复盘缺期间字段抛INVALID_INPUT")
     @Test
-    void 复盘缺期间字段抛INVALID_INPUT() {
+    void reviewMissingPeriodFieldThrowsInvalidInput() {
         assertThatThrownBy(() -> JournalEntry.create(1L, JournalEntryType.REVIEW, null, null, null,
                 "复盘", "内容", null, null, null, null, null, LocalDate.now(), NOW))
                 .isInstanceOfSatisfying(JournalException.class,
                         e -> assertThat(e.code()).isEqualTo(JournalErrorCode.INVALID_INPUT));
     }
 
+    @DisplayName("复盘起始日晚于结束日抛INVALID_INPUT")
     @Test
-    void 复盘起始日晚于结束日抛INVALID_INPUT() {
+    void reviewStartAfterEndThrowsInvalidInput() {
         assertThatThrownBy(() -> JournalEntry.create(1L, JournalEntryType.REVIEW, null, null, null,
                 "复盘", "内容", null, null, PeriodType.QUARTERLY,
                 LocalDate.of(2026, 9, 30), LocalDate.of(2026, 7, 1), LocalDate.now(), NOW))
@@ -68,8 +75,9 @@ class JournalEntryTest {
                         e -> assertThat(e.code()).isEqualTo(JournalErrorCode.INVALID_INPUT));
     }
 
+    @DisplayName("复盘绑定个股抛INVALID_INPUT")
     @Test
-    void 复盘绑定个股抛INVALID_INPUT() {
+    void reviewWithStockThrowsInvalidInput() {
         assertThatThrownBy(() -> JournalEntry.create(1L, JournalEntryType.REVIEW, "600519", "贵州茅台", null,
                 "复盘", "内容", null, null, PeriodType.QUARTERLY,
                 LocalDate.of(2026, 7, 1), LocalDate.of(2026, 9, 30), LocalDate.now(), NOW))
@@ -77,8 +85,9 @@ class JournalEntryTest {
                         e -> assertThat(e.code()).isEqualTo(JournalErrorCode.INVALID_INPUT));
     }
 
+    @DisplayName("复盘绑定交易抛INVALID_INPUT")
     @Test
-    void 复盘绑定交易抛INVALID_INPUT() {
+    void reviewWithTradeThrowsInvalidInput() {
         assertThatThrownBy(() -> JournalEntry.create(1L, JournalEntryType.REVIEW, null, null, 10L,
                 "复盘", "内容", null, null, PeriodType.QUARTERLY,
                 LocalDate.of(2026, 7, 1), LocalDate.of(2026, 9, 30), LocalDate.now(), NOW))
@@ -86,15 +95,17 @@ class JournalEntryTest {
                         e -> assertThat(e.code()).isEqualTo(JournalErrorCode.INVALID_INPUT));
     }
 
+    @DisplayName("研究笔记可不关联股票")
     @Test
-    void 研究笔记可不关联股票() {
+    void researchNoteMayHaveNoStock() {
         var e = JournalEntry.create(1L, JournalEntryType.RESEARCH_NOTE, null, null, null,
                 "白酒行业研究", "Markdown 内容", null, null, null, null, null, LocalDate.now(), NOW);
         assertThat(e.stockCode()).isNull();
     }
 
+    @DisplayName("更新返回新实例且原实例不变")
     @Test
-    void 更新返回新实例且原实例不变() {
+    void updateReturnsNewInstanceAndKeepsOriginal() {
         var e = buyMemo();
         var updated = e.update("600519", "贵州茅台", 11L, "新标题", "新内容",
                 new BigDecimal("2000"), new BigDecimal("1600"), null, null, null,

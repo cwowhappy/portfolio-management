@@ -14,6 +14,7 @@ import com.portfolio.invest.domain.user.UserRepository;
 import com.portfolio.invest.domain.user.UserStatus;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import com.portfolio.invest.domain.user.UserErrorCode;
@@ -29,8 +30,9 @@ class AuthApplicationServiceTest {
         service = new AuthApplicationService(repo, encoder);
     }
 
+    @DisplayName("注册创建PENDING用户并哈希密码")
     @Test
-    void 注册创建PENDING用户并哈希密码() {
+    void registerCreatesPendingUserAndHashesPassword() {
         when(encoder.encode("abc12345")).thenReturn("$2a$hash");
         when(repo.save(any())).thenAnswer(inv -> inv.getArgument(0));
         UserView v = service.register(new RegisterCommand("alice", "abc12345"));
@@ -39,35 +41,40 @@ class AuthApplicationServiceTest {
         verify(encoder).encode("abc12345");
     }
 
+    @DisplayName("用户名为null或空白被拒")
     @Test
-    void 用户名为null或空白被拒() {
+    void registerRejectsNullOrBlankUsername() {
         assertThatThrownBy(() -> service.register(new RegisterCommand(null, "abc12345")))
                 .isInstanceOf(UserException.class).hasMessageContaining("用户名不能为空");
         assertThatThrownBy(() -> service.register(new RegisterCommand("   ", "abc12345")))
                 .isInstanceOf(UserException.class).hasMessageContaining("用户名不能为空");
     }
 
+    @DisplayName("用户名超过64字符被拒")
     @Test
-    void 用户名超过64字符被拒() {
+    void registerRejectsUsernameOver64Chars() {
         assertThatThrownBy(() -> service.register(new RegisterCommand("a".repeat(65), "abc12345")))
                 .isInstanceOf(UserException.class).hasMessageContaining("最长64个字符");
     }
 
+    @DisplayName("弱密码被拒")
     @Test
-    void 弱密码被拒() {
+    void registerRejectsWeakPassword() {
         assertThatThrownBy(() -> service.register(new RegisterCommand("alice", "short1")))
                 .isInstanceOf(UserException.class).hasMessageContaining("至少8位");
     }
 
+    @DisplayName("用户名已存在且非REJECTED被拒")
     @Test
-    void 用户名已存在且非REJECTED被拒() {
+    void registerRejectsExistingNonRejectedUsername() {
         when(repo.findByUsername("alice")).thenReturn(Optional.of(User.register("alice", "h").approve()));
         assertThatThrownBy(() -> service.register(new RegisterCommand("alice", "abc12345")))
                 .isInstanceOf(UserException.class).hasMessageContaining("用户名已存在");
     }
 
+    @DisplayName("被拒用户同名重新注册复用行")
     @Test
-    void 被拒用户同名重新注册复用行() {
+    void rejectedUserReregistersSameNameReusesRow() {
         User rejected = User.register("alice", "h").reject();
         when(repo.findByUsername("alice")).thenReturn(Optional.of(rejected));
         when(encoder.encode("abc12345")).thenReturn("$2a$hash");
@@ -77,8 +84,9 @@ class AuthApplicationServiceTest {
         verify(repo).save(argThat(u -> u.passwordHash().equals("$2a$hash")));
     }
 
+    @DisplayName("并发注册触发唯一索引冲突映射为USERNAME_TAKEN")
     @Test
-    void 并发注册触发唯一索引冲突映射为USERNAME_TAKEN() {
+    void concurrentRegisterUniqueConflictMapsToUsernameTaken() {
         when(repo.findByUsername("alice")).thenReturn(Optional.empty());
         when(encoder.encode("abc12345")).thenReturn("$2a$hash");
         when(repo.save(any())).thenThrow(new org.springframework.dao.DataIntegrityViolationException("duplicate key"));

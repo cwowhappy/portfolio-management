@@ -15,6 +15,7 @@ import com.portfolio.invest.infrastructure.cache.TtlCache;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.env.Environment;
 
@@ -38,8 +39,9 @@ class HealthControllerTest {
 
     // ———— /health：纯 liveness ————
 
+    @DisplayName("health只报llm配置不外呼行情")
     @Test
-    void health只报llm配置不外呼行情() {
+    void healthOnlyReportsLlmConfigWithoutCallingMarket() {
         when(env.getProperty("DEEPSEEK_API_KEY")).thenReturn("sk-xxx");
         Map<String, Object> body = controller.health();
         assertThat(body.get("status")).isEqualTo("up");
@@ -52,8 +54,9 @@ class HealthControllerTest {
         verifyNoInteractions(market);
     }
 
+    @DisplayName("health在key未配置时状态degraded")
     @Test
-    void health在key未配置时状态degraded() {
+    void healthIsDegradedWhenKeyNotConfigured() {
         when(env.getProperty("DEEPSEEK_API_KEY")).thenReturn(null);
         Map<String, Object> body = controller.health();
         assertThat(body.get("status")).isEqualTo("degraded");
@@ -62,8 +65,9 @@ class HealthControllerTest {
         verifyNoInteractions(market);
     }
 
+    @DisplayName("health在key为空白字符串时视为未配置")
     @Test
-    void health在key为空白字符串时视为未配置() {
+    void healthTreatsBlankKeyAsNotConfigured() {
         when(env.getProperty("DEEPSEEK_API_KEY")).thenReturn("   ");
         Map<?, ?> llm = (Map<?, ?>) controller.health().get("llm");
         assertThat(llm.get("keyConfigured")).isEqualTo(false);
@@ -71,8 +75,9 @@ class HealthControllerTest {
 
     // ———— /status：完整结构 + 探活缓存 ————
 
+    @DisplayName("status在key已配置且行情可用时状态up")
     @Test
-    void status在key已配置且行情可用时状态up() {
+    void statusIsUpWhenKeyConfiguredAndMarketAvailable() {
         when(env.getProperty("DEEPSEEK_API_KEY")).thenReturn("sk-xxx");
         when(market.probeQuoteLatencyMs()).thenReturn(42L);
         Map<String, Object> body = controller.status();
@@ -82,8 +87,9 @@ class HealthControllerTest {
         assertThat(m.get("latencyMs")).isEqualTo(42L);
     }
 
+    @DisplayName("status在key未配置时即使行情可用仍degraded")
     @Test
-    void status在key未配置时即使行情可用仍degraded() {
+    void statusStillDegradedWhenKeyNotConfiguredEvenIfMarketAvailable() {
         when(env.getProperty("DEEPSEEK_API_KEY")).thenReturn(null);
         when(market.probeQuoteLatencyMs()).thenReturn(42L);
 
@@ -94,8 +100,9 @@ class HealthControllerTest {
         assertThat(m.get("ok")).isEqualTo(true);
     }
 
+    @DisplayName("status在行情探活失败时标记不可用并附消息")
     @Test
-    void status在行情探活失败时标记不可用并附消息() {
+    void statusMarksUnavailableWithMessageWhenMarketProbeFails() {
         when(env.getProperty("DEEPSEEK_API_KEY")).thenReturn("sk-xxx");
         when(market.probeQuoteLatencyMs())
                 .thenThrow(new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "行情源挂了"));
@@ -106,8 +113,9 @@ class HealthControllerTest {
         assertThat(m.get("message")).isEqualTo("行情源挂了");
     }
 
+    @DisplayName("status连续调用时探活结果命中缓存只外呼一次")
     @Test
-    void status连续调用时探活结果命中缓存只外呼一次() {
+    void statusRepeatedCallsHitCacheAndCallProbeOnlyOnce() {
         when(env.getProperty("DEEPSEEK_API_KEY")).thenReturn("sk-xxx");
         when(market.probeQuoteLatencyMs()).thenReturn(42L);
         controller.status();
@@ -115,8 +123,9 @@ class HealthControllerTest {
         verify(market, times(1)).probeQuoteLatencyMs();
     }
 
+    @DisplayName("status探活缓存过期后重新外呼")
     @Test
-    void status探活缓存过期后重新外呼() {
+    void statusProbeCacheExpiryTriggersReProbe() {
         when(env.getProperty("DEEPSEEK_API_KEY")).thenReturn("sk-xxx");
         when(market.probeQuoteLatencyMs()).thenReturn(42L);
         controller.status();
@@ -125,8 +134,9 @@ class HealthControllerTest {
         verify(market, times(2)).probeQuoteLatencyMs();
     }
 
+    @DisplayName("status探活失败结果同样被缓存")
     @Test
-    void status探活失败结果同样被缓存() {
+    void statusFailedProbeResultIsCachedToo() {
         when(env.getProperty("DEEPSEEK_API_KEY")).thenReturn("sk-xxx");
         when(market.probeQuoteLatencyMs())
                 .thenThrow(new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "行情源挂了"));

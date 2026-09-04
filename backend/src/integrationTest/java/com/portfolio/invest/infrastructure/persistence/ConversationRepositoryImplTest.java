@@ -12,6 +12,7 @@ import com.portfolio.invest.support.PostgresTestSupport;
 import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
@@ -45,16 +46,18 @@ class ConversationRepositoryImplTest {
         userId = users.save(User.register("conv-owner", "h")).id();
     }
 
+    @DisplayName("按归属保存与查询")
     @Test
-    void 按归属保存与查询() {
+    void saveAndQueryByOwnership() {
         Conversation c = conversations.save(Conversation.create("t-1", userId, Instant.now()));
         assertThat(conversations.findByIdAndUserId("t-1", userId)).isPresent();
         assertThat(conversations.findByIdAndUserId("t-1", userId + 1)).isEmpty(); // 归属过滤
         assertThat(conversations.findByUserId(userId)).hasSize(1);
     }
 
+    @DisplayName("消息替换与读取")
     @Test
-    void 消息替换与读取() {
+    void replaceMessagesAndReadBack() {
         conversations.save(Conversation.create("t-2", userId, Instant.now()));
         ChatMessage m = ChatMessage.create(null, "m-1", ChatMessageRole.USER, "你好", null, 1700000000000L);
         conversations.replaceMessages("t-2", List.of(m));
@@ -66,8 +69,9 @@ class ConversationRepositoryImplTest {
                 .first().satisfies(x -> assertThat(x.content()).isEqualTo("第二版"));
     }
 
+    @DisplayName("删除会话连带消息")
     @Test
-    void 删除会话连带消息() {
+    void deleteConversationCascadesMessages() {
         conversations.save(Conversation.create("t-3", userId, Instant.now()));
         conversations.replaceMessages("t-3", List.of(ChatMessage.create(null, "m-1", ChatMessageRole.USER, "x", null, 0L)));
         conversations.delete("t-3");

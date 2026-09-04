@@ -19,6 +19,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -81,8 +82,9 @@ class PositionOptimisticLockingIntegrationTest extends ConcurrencyTestSupport {
         jdbcTemplate.update("DELETE FROM app_user WHERE id = ?", USER_ID);
     }
 
+    @DisplayName("并发买入同一持仓一个成功一个乐观锁冲突")
     @Test
-    void 并发买入同一持仓一个成功一个乐观锁冲突() throws Exception {
+    void concurrentBuyOneSucceedsOneOptimisticLockConflict() throws Exception {
         CountDownLatch loserRead = new CountDownLatch(1);
         CountDownLatch winnerDone = new CountDownLatch(1);
 

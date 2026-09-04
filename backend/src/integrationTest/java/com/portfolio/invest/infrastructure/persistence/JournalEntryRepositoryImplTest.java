@@ -5,6 +5,7 @@ import com.portfolio.invest.domain.journal.JournalEntryType;
 import com.portfolio.invest.domain.journal.PeriodType;
 import com.portfolio.invest.support.PostgresTestSupport;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
@@ -52,8 +53,9 @@ class JournalEntryRepositoryImplTest extends PostgresTestSupport {
                 null, null, null, LocalDate.of(2026, 9, 2), Instant.now());
     }
 
+    @DisplayName("保存记录并回读全部字段")
     @Test
-    void 保存记录并回读全部字段() {
+    void saveEntryAndReadBackAllFields() {
         JournalEntry saved = repository.save(buyMemo(51L));
 
         assertThat(saved.id()).isNotNull();
@@ -67,8 +69,9 @@ class JournalEntryRepositoryImplTest extends PostgresTestSupport {
         assertThat(found.eventDate()).isEqualTo(LocalDate.of(2026, 9, 2));
     }
 
+    @DisplayName("按类型过滤")
     @Test
-    void 按类型过滤() {
+    void filterByType() {
         repository.save(buyMemo(51L));
         repository.save(JournalEntry.create(51L, JournalEntryType.REVIEW, null, null, null,
                 "Q3 复盘", "内容", null, null,
@@ -80,15 +83,17 @@ class JournalEntryRepositoryImplTest extends PostgresTestSupport {
         assertThat(repository.findByUserId(51L, null)).hasSize(2);
     }
 
+    @DisplayName("用户隔离")
     @Test
-    void 用户隔离() {
+    void userIsolation() {
         repository.save(buyMemo(51L));
         assertThat(repository.findByUserId(52L, null)).isEmpty();
         assertThat(repository.findByIdAndUserId(repository.findByUserId(51L, null).get(0).id(), 52L)).isEmpty();
     }
 
+    @DisplayName("更新后替换原记录")
     @Test
-    void 更新后替换原记录() {
+    void updateReplacesOriginalEntry() {
         JournalEntry saved = repository.save(buyMemo(51L));
         repository.save(saved.update("600519", "贵州茅台", 99L, "新标题", "新内容",
                 new BigDecimal("2000"), new BigDecimal("1600"), null, null, null,
@@ -101,8 +106,9 @@ class JournalEntryRepositoryImplTest extends PostgresTestSupport {
         assertThat(found.eventDate()).isEqualTo(LocalDate.of(2026, 9, 3));
     }
 
+    @DisplayName("删除记录")
     @Test
-    void 删除记录() {
+    void deleteEntry() {
         JournalEntry saved = repository.save(buyMemo(51L));
         repository.deleteById(saved.id());
         assertThat(repository.findByIdAndUserId(saved.id(), 51L)).isEmpty();
