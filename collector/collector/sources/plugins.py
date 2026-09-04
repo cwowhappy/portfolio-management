@@ -8,9 +8,9 @@ import pandas as pd
 from collector.sources.base import Source, SourceError
 from collector.sources.ratelimit import RateLimiter
 
-# StockFinancialSource 并发拉取各报告期前的最小调用间隔（秒）：4 worker 并发 12 期时，
-# 由全局限速器把请求起始时刻错开，避免突发并发触发上游限流。
-FINANCIAL_MIN_INTERVAL = 0.1
+# StockFinancialSource 逐股拉取 fina_indicator 前的最小调用间隔（秒）。
+# fina_indicator 上游限 200 次/分钟，取 0.35s（≈171 次/分钟）留安全余量，避免逐股并发触发限流。
+FINANCIAL_MIN_INTERVAL = 0.35
 
 INDEX_CODES = {"000016": "上证50", "000300": "沪深300", "000905": "中证500", "399006": "创业板指", "000688": "科创50"}
 
@@ -288,18 +288,20 @@ class StockFinancialSource(Source):
 
     def fetch(self, params):
         pro = self.pro_factory()
-        periods = _last_n_periods(self.periods)
-        # 一次取全 A 有效池（剔除 ST/退市/北交所），各期结果按池内股票过滤，与全 A 口径一致。
-        valid = _valid_universe_ts_codes(pro)
+        # 最近 N 个季报期末日（升序）的最早一个作截断：逐股拉取后按 end_date 过滤，保留近 N 季。
+        cutoff = min(_last_n_periods(self.periods))
+        # 一次取全 A 有效池（剔除 ST/退市/北交所），逐股请求，与全 A 口径一致。
+        valid = sorted(_valid_universe_ts_codes(pro))
 
-        def _fetch_period(period):
+        def _fetch_stock(ts_code):
             self.limiter.wait()
-            df = pro.fina_indicator(period=period)
+            # fina_indicator 是逐股接口（必填 ts_code），缺省返回该股全部报告期，再按截断过滤近 N 季。
+            df = pro.fina_indicator(ts_code=ts_code)
             if df is None or df.empty:
                 return None
-            df = df[df["ts_code"].str.endswith((".SH", ".SZ"))]
-            if valid:
-                df = df[df["ts_code"].isin(valid)]
+            df = df[df["end_date"] >= cutoff]
+            if df.empty:
+                return None
             return df[
                 [
                     "ts_code",
@@ -314,9 +316,9 @@ class StockFinancialSource(Source):
                 ]
             ]
 
-        # 12 期报告并行拉取：executor.map 保持输入顺序，结果拼接顺序与串行版一致
+        # 全 A 个股并行拉取：executor.map 保持输入顺序，结果拼接顺序与串行版一致
         with ThreadPoolExecutor(max_workers=4) as executor:
-            frames = [frame for frame in executor.map(_fetch_period, periods) if frame is not None]
+            frames = [frame for frame in executor.map(_fetch_stock, valid) if frame is not None]
 
         if not frames:
             return pd.DataFrame(
