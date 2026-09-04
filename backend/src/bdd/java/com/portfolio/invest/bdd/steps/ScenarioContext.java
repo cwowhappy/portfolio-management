@@ -4,6 +4,7 @@ import com.portfolio.invest.application.portfolio.PortfolioOverviewView;
 import com.portfolio.invest.domain.screening.ScreeningException;
 import com.portfolio.invest.domain.screening.StockScreeningResult;
 import io.cucumber.spring.ScenarioScope;
+import jakarta.servlet.http.Cookie;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.mock.web.MockHttpSession;
@@ -35,6 +36,9 @@ public class ScenarioContext {
     private Long journalEntryId;
     private Long tradeId;
     private String journalErrorCode;
+    private String conversationId;
+    private MockHttpSession otherUserSession;
+    private Cookie rememberMeCookie;
     private final List<PortfolioOverviewView> overviews = new ArrayList<>();
     private List<StockScreeningResult> screeningResults;
     private ScreeningException screeningError;
@@ -149,6 +153,30 @@ public class ScenarioContext {
 
     public void setJournalErrorCode(String journalErrorCode) {
         this.journalErrorCode = journalErrorCode;
+    }
+
+    public String getConversationId() {
+        return conversationId;
+    }
+
+    public void setConversationId(String conversationId) {
+        this.conversationId = conversationId;
+    }
+
+    public MockHttpSession getOtherUserSession() {
+        return otherUserSession;
+    }
+
+    public void setOtherUserSession(MockHttpSession otherUserSession) {
+        this.otherUserSession = otherUserSession;
+    }
+
+    public Cookie getRememberMeCookie() {
+        return rememberMeCookie;
+    }
+
+    public void setRememberMeCookie(Cookie rememberMeCookie) {
+        this.rememberMeCookie = rememberMeCookie;
     }
 
     public List<PortfolioOverviewView> getOverviews() {

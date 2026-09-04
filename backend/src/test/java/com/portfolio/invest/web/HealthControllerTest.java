@@ -11,7 +11,7 @@ import com.portfolio.invest.config.InvestProperties;
 import com.portfolio.invest.domain.market.MarketDataErrorCode;
 import com.portfolio.invest.domain.market.MarketDataException;
 import com.portfolio.invest.application.market.MarketDataService;
-import com.portfolio.invest.infrastructure.cache.TtlApplicationCache;
+import com.portfolio.invest.infrastructure.cache.TtlCache;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.BeforeEach;
@@ -33,7 +33,7 @@ class HealthControllerTest {
         props = new InvestProperties();
         env = mock(Environment.class);
         now = new AtomicLong(0);
-        controller = new HealthController(market, props, env, new TtlApplicationCache(100, now::get));
+        controller = new HealthController(market, props, env, new TtlCache(100, now::get));
     }
 
     // ———— /health：纯 liveness ————

@@ -146,7 +146,7 @@ backend/    Spring Boot 4 + Spring Security 7 + Spring Data JPA（DDD 洋葱分�
     infrastructure/   基础设施：persistence(JPA+Flyway) / security / seed / market(客户端+缓存)
     agent/            独立能力域：AgentConfig / InvestTools / InvestSystemPrompt
     config/           配置属性：InvestProperties
-  src/main/resources/ application.yml / application-prod.yml / db/migration/(V1~V7)
+  src/main/resources/ application.yml / application-prod.yml / db/migration/(V1~V9)
 
 collector/  Python 3.12 采集服务（akshare/tushare → PostgreSQL，APScheduler 调度）：市场估值快照 / 指数估值 / 国债曲线 / 申万映射 / 指数成分股 / 个股基本面
 frontend/   Next.js 15（聊天 UI / 行情台 / 估值 / 持仓 / 配置 / 筛选 / 行业 / 登录注册 / 管理页 / API 反代）

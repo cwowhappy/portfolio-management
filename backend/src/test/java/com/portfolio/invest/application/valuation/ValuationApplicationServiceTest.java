@@ -1,7 +1,7 @@
 package com.portfolio.invest.application.valuation;
 
 import com.portfolio.invest.domain.valuation.ValuationRepository;
-import com.portfolio.invest.infrastructure.cache.TtlApplicationCache;
+import com.portfolio.invest.infrastructure.cache.TtlCache;
 import com.portfolio.invest.domain.valuation.ValuationSnapshot;
 import com.portfolio.invest.domain.valuation.TreasuryYield;
 import com.portfolio.invest.domain.valuation.IndexValuation;
@@ -22,7 +22,7 @@ import static org.mockito.Mockito.when;
 class ValuationApplicationServiceTest {
 
     private final ValuationRepository repo = mock(ValuationRepository.class);
-    private final ValuationApplicationService service = new ValuationApplicationService(repo, new TtlApplicationCache(100));
+    private final ValuationApplicationService service = new ValuationApplicationService(repo, new TtlCache(100));
 
     @Test
     void overview在无快照时返回空数据状态() {
@@ -334,7 +334,7 @@ class ValuationApplicationServiceTest {
     @Test
     void 缓存过期后重新查询() {
         java.util.concurrent.atomic.AtomicLong now = new java.util.concurrent.atomic.AtomicLong(0);
-        ValuationApplicationService clocked = new ValuationApplicationService(repo, new TtlApplicationCache(100, now::get));
+        ValuationApplicationService clocked = new ValuationApplicationService(repo, new TtlCache(100, now::get));
         when(repo.findLatestSnapshot()).thenReturn(null);
         when(repo.findAllSnapshots()).thenReturn(List.of());
         when(repo.findAllTreasuryYields()).thenReturn(List.of());

@@ -205,3 +205,18 @@
 - `make smoke`（真实行情 + AI 对话）仍未跑，合并本分支前建议补一次端到端冒烟。
 - ERP 真实序列依赖 collector 端指数股息率（`make_index_dividend_fetch`）上线后的真实数据，观察 dividend_yield 是否如期非 None。
 - 本分支 `chore/code-review-2026-09-03` 提交后需开 PR 走 review + CI。
+
+---
+
+## 2026-09-04 轮（后端测试体系盘点与优化）
+
+### 本轮做了什么
+
+- 全量盘点后端四层测试（62 test / 18 integrationTest / 10 feature 13 BDD 场景），落地优化计划 `features/plans/2026-09-04-后端测试体系优化.md`：补 BDD 旅程缺口（会话管理、重置密码吊销 remember-me）、合并双 TTL 缓存、抽 `ConcurrencyTestSupport`、ArchUnit 第 20 条（切片命名强制）、接入 PIT（核心域 kill 率 84%）、smoke 加 fixture 新鲜度检查。
+- 顺带确认并修复一个真实生产 bug：remember-me 静默不生效（见下）。
+
+### 反复出现的问题模式（新增审查清单）
+
+- **框架隐含契约静默吞掉业务意图**：`AbstractRememberMeServices.loginSuccess` 内部二次校验 `remember-me` **表单参数**，而 JSON API 登录只有 body 字段——`AuthController` 判断了 `rememberMe` 并调用了 `loginSuccess`，框架却静默不下发 cookie，无任何报错/日志。mock RememberMeServices 的切片测试全绿掩盖了它，只有「真实装配 + 真实链路」的测试才能抓到。→ **凡「控制器判断 + 委托框架组件」的两段式调用，问一句：框架内部还有没有自己的第二道判定？**这类「双方都觉得自己尽责」的接缝要用真实装配测试锁。审查技巧：对安全/会话类关键路径，mock 切片之外至少保留一条真实 bean 链路的集成/BDD 断言。
+- **编写 BDD 旅程时的「绕行参数」是 bug 信号而非测试技巧**。实施者为跑通场景加 `.param("remember-me","true")` 并注释说明——这个注释其实就是缺陷报告。→ 测试里凡出现「真实用户不会这么做」的妥协，先停下来确认是不是生产 bug。
+- **测试双实现/双轨并存会漂移**：两个 TTL 缓存（薄适配器与引擎分立）、standalone 与 @WebMvcTest 双轨靠注释区分。→ 周期性盘点测试资产本身：合并语义重复的实现，把「选型约定」升级为 ArchUnit 规则。

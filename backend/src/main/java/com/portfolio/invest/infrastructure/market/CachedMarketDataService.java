@@ -11,6 +11,7 @@ import com.portfolio.invest.domain.market.NewsItem;
 import com.portfolio.invest.domain.market.Quote;
 import com.portfolio.invest.domain.market.StockHit;
 import com.portfolio.invest.domain.market.StockRef;
+import com.portfolio.invest.infrastructure.cache.TtlCache;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;

@@ -4,11 +4,29 @@ plugins {
     id 'jacoco'
     id 'org.springframework.boot' version '4.0.3'
     id 'io.spring.dependency-management' version '1.1.7'
+    // PIT 变异测试（手动诊断，不挂 check、无门槛，入口 `make test-backend-mutation`）
+    id 'info.solidsoft.pitest' version '1.19.0'
 }
 
 jacoco {
     // 0.8.13 完整支持 Java 21 字节码（record / switch 表达式）
     toolVersion = '0.8.13'
+}
+
+// Boot 4 的依赖管理规则把 junit-platform-launcher 压在 1.14.4（与 JUnit 6 engine 6.0.3 混代），
+// 其 "Selected by rule" 优先级高于显式声明与常规 force；afterEvaluate 中注册的 eachDependency
+// 规则执行顺序在 dependency-management 插件之后，可最终生效。launcher 对齐 6.0.3 是 PIT minion
+// 跑通的前提（混代下 launcher 1.14.4 驱动 engine 6.0.3 抛 NoSuchMethodError，pitest-junit5-plugin#113）
+afterEvaluate {
+    configurations.named('testRuntimeClasspath') {
+        resolutionStrategy.eachDependency { details ->
+            if (details.requested.group == 'org.junit.platform'
+                    && details.requested.name == 'junit-platform-launcher') {
+                details.useVersion('6.0.3')
+                details.because('与 JUnit 6 engine 对齐（PIT minion 需要）')
+            }
+        }
+    }
 }
 
 // Boot BOM 不管理 Cucumber，版本单独声明（与 JUnit 5 / junit-platform 兼容的 7.x 稳定版）
@@ -69,12 +87,18 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-starter-security-test'
     // 架构守护：分包规范（依赖方向/无环/落位规则）由 ArchUnit 测试强制
     testImplementation 'com.tngtech.archunit:archunit-junit5:1.5.0'
+    // 注意：保持无版本声明（由 Boot 依赖管理供给）。显式钉版本会经 extendsFrom 传导到
+    // integrationTest/bdd 配置并触发不同的解析规则，把 launcher 压回 1.14.4 导致引擎初始化失败；
+    // PIT 需要的 launcher 对齐只在 testRuntimeClasspath 上做（见文件上方的 afterEvaluate 规则）
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 
     // testFixtures：共享测试基座（PostgresTestSupport，JVM 单例 Testcontainers PG）
     // PostgreSQLContainer 出现在基座公开方法签名上，用 testFixturesApi 暴露给消费方编译类路径
     testFixturesApi 'org.testcontainers:testcontainers-postgresql'
     testFixturesImplementation 'org.springframework:spring-test'
+    // ConcurrencyTestSupport：@Autowired JdbcTemplate 直插提交态种子
+    testFixturesImplementation 'org.springframework:spring-beans'
+    testFixturesImplementation 'org.springframework:spring-jdbc'
 }
 
 testing {
@@ -140,6 +164,34 @@ tasks.named('test') {
 
 tasks.named('check') {
     dependsOn jacocoTestCoverageVerification, jacocoAggregatedReport
+}
+
+// PIT 变异测试配置：非阻塞手动诊断，不设覆盖率/变异率门槛、不挂 check；
+// 只变异核心域三类（成本盈亏引擎 / 估值应用服务 / 行情解析器），控制单次运行时长
+pitest {
+    pitestVersion = '1.30.0'
+    junit5PluginVersion = '1.2.3'
+    targetClasses = [
+            'com.portfolio.invest.domain.portfolio.Position',
+            'com.portfolio.invest.application.valuation.*',
+            'com.portfolio.invest.domain.market.MarketDataParser',
+    ]
+    // 显式限定测试类：默认按包通配会把被测主类本身当成测试容器，导致 "tests did not pass" 误报
+    targetTests = [
+            'com.portfolio.invest.domain.portfolio.PositionTest',
+            'com.portfolio.invest.application.valuation.ValuationApplicationServiceTest',
+            'com.portfolio.invest.domain.market.MarketDataParserTest',
+            'com.portfolio.invest.domain.market.MarketDataParserEdgeCasesTest',
+    ]
+    threads = 4
+    // 关闭插件自动向 testRuntimeOnly 注入带版本的 junit-platform-launcher：
+    // 带版本请求经 extendsFrom 传导到 integrationTest/bdd 配置后会触发 Boot 依赖管理的
+    // 降级规则（压回 1.14.4，与 JUnit 6 engine 混代），导致这两个 suite 引擎初始化失败；
+    // PIT minion 的 launcher 由文件上方的 afterEvaluate 规则在 testRuntimeClasspath 上对齐到 6.0.3
+    addJUnitPlatformLauncher = false
+    outputFormats = ['XML', 'HTML']
+    // 固定输出到 build/reports/pitest（不加时间戳子目录，便于直接打开）
+    timestampedReports = false
 }
 
 // test 单任务报告：供聚焦测试（--tests X）快速查看，不触发其他 suite

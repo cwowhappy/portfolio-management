@@ -11,6 +11,6 @@ public class CacheConfig {
 
     @Bean
     public ApplicationCache applicationCache(InvestProperties props) {
-        return new TtlApplicationCache(props.getAppCache().getMaxEntries());
+        return new TtlCache(props.getAppCache().getMaxEntries());
     }
 }

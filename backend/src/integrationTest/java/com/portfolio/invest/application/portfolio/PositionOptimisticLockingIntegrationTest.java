@@ -7,7 +7,7 @@ import com.portfolio.invest.domain.portfolio.PortfolioRepository;
 import com.portfolio.invest.domain.portfolio.Position;
 import com.portfolio.invest.domain.portfolio.Trade;
 import com.portfolio.invest.domain.portfolio.TradeType;
-import com.portfolio.invest.support.PostgresTestSupport;
+import com.portfolio.invest.support.ConcurrencyTestSupport;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -23,7 +23,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.OptimisticLockingFailureException;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -36,7 +35,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * 有 @Version 时 UPDATE ... WHERE version=1 命中 0 行 → ObjectOptimisticLockingFailureException。
  */
 @SpringBootTest
-class PositionOptimisticLockingIntegrationTest extends PostgresTestSupport {
+class PositionOptimisticLockingIntegrationTest extends ConcurrencyTestSupport {
 
     @Autowired
     private PortfolioApplicationService service;
@@ -47,20 +46,15 @@ class PositionOptimisticLockingIntegrationTest extends PostgresTestSupport {
     @Autowired
     private PlatformTransactionManager txManager;
 
-    @Autowired
-    private JdbcTemplate jdbcTemplate;
-
-    private static final long USER_ID = 9003L;
-    private static final long PORTFOLIO_ID = 9003L;
-    private static final long GROUP_ID = 9003L;
-    private static final long POSITION_ID = 9003L;
+    private static final long USER_ID = SENTINEL_ID_9003;
+    private static final long PORTFOLIO_ID = SENTINEL_ID_9003;
+    private static final long GROUP_ID = SENTINEL_ID_9003;
+    private static final long POSITION_ID = SENTINEL_ID_9003;
     private static final String STOCK = "600519";
 
     @BeforeEach
     void seed() {
-        jdbcTemplate.update(
-                "INSERT INTO app_user(id, username, password_hash, role, status) VALUES (?, ?, ?, ?, ?)",
-                USER_ID, "opt-lock", "h", "USER", "PENDING");
+        insertUser(USER_ID, "opt-lock");
         jdbcTemplate.update(
                 "INSERT INTO portfolio(id, user_id, cost_method, created_at, updated_at, version) "
                         + "VALUES (?, ?, 'WEIGHTED_AVG', now(), now(), 1)",
