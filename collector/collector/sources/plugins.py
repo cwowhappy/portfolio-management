@@ -8,9 +8,9 @@ import pandas as pd
 from collector.sources.base import Source, SourceError
 from collector.sources.ratelimit import RateLimiter
 
-# StockFinancialSource 并发拉取各报告期前的最小调用间隔（秒）：4 worker 并发 12 期时，
-# 由全局限速器把请求起始时刻错开，避免突发并发触发上游限流。
-FINANCIAL_MIN_INTERVAL = 0.1
+# StockFinancialSource 逐股拉取 fina_indicator 前的最小调用间隔（秒）。
+# fina_indicator 上游限 200 次/分钟，取 0.35s（≈171 次/分钟）留安全余量，避免逐股并发触发限流。
+FINANCIAL_MIN_INTERVAL = 0.35
 
 INDEX_CODES = {"000016": "上证50", "000300": "沪深300", "000905": "中证500", "399006": "创业板指", "000688": "科创50"}
 
@@ -105,21 +105,24 @@ class IndexValuationSource(Source):
 
 
 class IndustryUniverseSource(Source):
-    """全A快照 + 申万行业映射的 JOIN 源。
+    """全A估值快照 + 申万行业映射的 JOIN 源。
 
     直接读取 weekly `shenwan_mapping` 任务已写入的 shenwan_industry_mapping 表，
-    与 akshare 全A快照做 inner join，产出带 industry_code/industry_name 的全A明细，
+    与 tushare daily_basic 全A估值快照做 inner join，产出带 industry_code/industry_name 的全A明细，
     供行业加权估值（industry_weighted calc）消费。Converter/Calc 保持纯净。
     """
 
     supports_range = False
 
-    def __init__(self, source_id, conn_factory):
+    def __init__(self, source_id, conn_factory, pro_factory):
         self.source_id = source_id
         self.conn_factory = conn_factory  # 返回 psycopg 连接的可调用对象
+        self.pro_factory = pro_factory  # 返回 tushare pro_api 的可调用对象
 
     def fetch(self, params):
-        universe = ak.stock_zh_a_spot_em()  # 原始中文列
+        pro = self.pro_factory()
+        target = normalize_date(params.get("date") or dt.date.today(), "date")
+        universe = _daily_basic_spot(pro, target, self.source_id)  # tushare 全A估值（替代 akshare spot）
         with self.conn_factory() as conn, conn.cursor() as cur:
             cur.execute("SELECT stock_code, industry_code, industry_name FROM shenwan_industry_mapping")
             rows = cur.fetchall()
@@ -288,18 +291,20 @@ class StockFinancialSource(Source):
 
     def fetch(self, params):
         pro = self.pro_factory()
-        periods = _last_n_periods(self.periods)
-        # 一次取全 A 有效池（剔除 ST/退市/北交所），各期结果按池内股票过滤，与全 A 口径一致。
-        valid = _valid_universe_ts_codes(pro)
+        # 最近 N 个季报期末日（升序）的最早一个作截断：逐股拉取后按 end_date 过滤，保留近 N 季。
+        cutoff = min(_last_n_periods(self.periods))
+        # 一次取全 A 有效池（剔除 ST/退市/北交所），逐股请求，与全 A 口径一致。
+        valid = sorted(_valid_universe_ts_codes(pro))
 
-        def _fetch_period(period):
+        def _fetch_stock(ts_code):
             self.limiter.wait()
-            df = pro.fina_indicator(period=period)
+            # fina_indicator 是逐股接口（必填 ts_code），缺省返回该股全部报告期，再按截断过滤近 N 季。
+            df = pro.fina_indicator(ts_code=ts_code)
             if df is None or df.empty:
                 return None
-            df = df[df["ts_code"].str.endswith((".SH", ".SZ"))]
-            if valid:
-                df = df[df["ts_code"].isin(valid)]
+            df = df[df["end_date"] >= cutoff]
+            if df.empty:
+                return None
             return df[
                 [
                     "ts_code",
@@ -314,9 +319,9 @@ class StockFinancialSource(Source):
                 ]
             ]
 
-        # 12 期报告并行拉取：executor.map 保持输入顺序，结果拼接顺序与串行版一致
+        # 全 A 个股并行拉取：executor.map 保持输入顺序，结果拼接顺序与串行版一致
         with ThreadPoolExecutor(max_workers=4) as executor:
-            frames = [frame for frame in executor.map(_fetch_period, periods) if frame is not None]
+            frames = [frame for frame in executor.map(_fetch_stock, valid) if frame is not None]
 
         if not frames:
             return pd.DataFrame(
@@ -370,39 +375,10 @@ class AllASpotBackupSource(Source):
         self.source_id = source_id
         self.pro_factory = pro_factory
 
-    def _open_days(self, pro, day_ymd, lookback=15):
-        """end（含）往前 lookback 个自然日内的开市日，按降序（最近在前）。"""
-        end = dt.datetime.strptime(day_ymd, "%Y%m%d").date()
-        start = end - dt.timedelta(days=lookback)
-        cal = pro.trade_cal(exchange="SSE", start_date=start.strftime("%Y%m%d"), end_date=day_ymd)
-        if cal is None or cal.empty:
-            return []
-        cal = cal[cal["is_open"] == 1]
-        return sorted((str(c) for c in cal["cal_date"]), reverse=True)
-
     def fetch(self, params):
         pro = self.pro_factory()
         target = normalize_date(params.get("date") or dt.date.today(), "date")
-        # 目标日若 daily_basic 尚未发布，沿最近开市日回溯；仍取不到则报 SourceError 触发换源。
-        df = pro.daily_basic(trade_date=target)
-        if df is None or df.empty:
-            day = next((d for d in self._open_days(pro, target) if d < target), None)
-            if day is None:
-                raise SourceError(f"备源 {self.source_id}: 目标日 {target} 无 daily_basic 数据")
-            df = pro.daily_basic(trade_date=day)
-        if df is None or df.empty:
-            raise SourceError(f"备源 {self.source_id}: daily_basic 无数据")
-        basic = pro.stock_basic(list_status="L", fields="ts_code,name")
-        df = df.merge(basic, on="ts_code", how="inner")
-        df = df[df["ts_code"].str.endswith((".SH", ".SZ"))]
-        df = df[~df["name"].str.contains("ST|退", na=False)]
-        df = df.copy()
-        df["代码"] = df["ts_code"].str.split(".").str[0]
-        df["名称"] = df["name"]
-        df["市盈率-动态"] = df["pe_ttm"]
-        df["市净率"] = df["pb"]
-        df["总市值"] = df["total_mv"] * 10000  # tushare 万元 → 元（与 akshare 总市值口径一致）
-        return df[["代码", "名称", "市盈率-动态", "市净率", "总市值"]]
+        return _daily_basic_spot(pro, target, self.source_id)
 
 
 def _open_days_desc(pro, end_ymd, lookback=45):
@@ -417,6 +393,33 @@ def _open_days_desc(pro, end_ymd, lookback=45):
         return []
     cal = cal[cal["is_open"] == 1]
     return sorted((str(c) for c in cal["cal_date"]), reverse=True)
+
+
+def _daily_basic_spot(pro, day_ymd, source_id):
+    """tushare daily_basic 全市场估值 → akshare 同构中文列（代码/名称/市盈率-动态/市净率/总市值）。
+
+    目标日无 daily_basic 时沿最近开市日回溯；输出列与 akshare stock_zh_a_spot_em 同构，
+    供 all_a_valuation 备源与 industry_universe 复用，field_mapping/snapshot/industry calc 无需区分来源。
+    """
+    df = pro.daily_basic(trade_date=day_ymd)
+    if df is None or df.empty:
+        day = next((d for d in _open_days_desc(pro, day_ymd, lookback=15) if d < day_ymd), None)
+        if day is None:
+            raise SourceError(f"{source_id}: 目标日 {day_ymd} 无 daily_basic 数据")
+        df = pro.daily_basic(trade_date=day)
+    if df is None or df.empty:
+        raise SourceError(f"{source_id}: daily_basic 无数据")
+    basic = pro.stock_basic(list_status="L", fields="ts_code,name")
+    df = df.merge(basic, on="ts_code", how="inner")
+    df = df[df["ts_code"].str.endswith((".SH", ".SZ"))]
+    df = df[~df["name"].str.contains("ST|退", na=False)]
+    df = df.copy()
+    df["代码"] = df["ts_code"].str.split(".").str[0]
+    df["名称"] = df["name"]
+    df["市盈率-动态"] = df["pe_ttm"]
+    df["市净率"] = df["pb"]
+    df["总市值"] = df["total_mv"] * 10000  # tushare 万元 → 元（与 akshare 总市值口径一致）
+    return df[["代码", "名称", "市盈率-动态", "市净率", "总市值"]]
 
 
 def _index_dividend_yield(pro, index_code, end_ymd):

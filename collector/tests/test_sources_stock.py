@@ -69,27 +69,12 @@ def test_stock_valuation_daily_filters_st_and_bse(monkeypatch):
 
 def test_stock_financial_normalizes_and_backfills(monkeypatch):
     # 用 monkeypatch 替换 _last_n_periods，隔离真实的 12 期逻辑
-    periods = ["20260630", "20260331"]
-    monkeypatch.setattr(plugins, "_last_n_periods", lambda n: periods)
-
-    def fake_fina(period):
-        return pd.DataFrame(
-            {
-                "ts_code": ["600519.SH", "830000.BJ"],
-                "end_date": [period, period],
-                "roe": [24.5, 10.0],
-                "roa": [18.2, 5.0],
-                "grossprofit_margin": [91.2, 20.0],
-                "debt_to_assets": [21.3, 40.0],
-                "current_ratio": [3.8, 1.5],
-                "or_yoy": [16.8, 3.0],
-                "netprofit_yoy": [15.2, 2.0],
-            }
-        )
+    monkeypatch.setattr(plugins, "_last_n_periods", lambda n: ["20260331", "20260630"])
 
     class FakePro:
-        def fina_indicator(self, period=None):
-            return fake_fina(period)
+        def fina_indicator(self, ts_code=None):
+            assert ts_code is not None
+            return _financial_stock_frame(ts_code)
 
         def stock_basic(self, list_status=None, fields=None):
             return _financial_stock_basic()
@@ -108,27 +93,21 @@ def test_stock_financial_normalizes_and_backfills(monkeypatch):
         "revenue_yoy",
         "netprofit_yoy",
     }
-    assert set(df["stock_code"]) == {"600519"}  # 剔除北交所 830000
-    assert list(df["report_date"].unique()) == periods
+    assert set(df["stock_code"]) == {"600519", "000858"}  # 剔除 ST/退市/北交所
+    assert set(df["report_date"].unique()) == {"20260331", "20260630"}
     assert df.iloc[0]["gross_margin"] == pytest.approx(91.2)
 
 
 def test_stock_financial_all_empty_returns_empty_frame(monkeypatch):
-    # 所有报告期都无数据（None 或空 DataFrame）→ 触发空帧守卫：逐期 continue + 返回空列 DataFrame
-    periods = ["20260630", "20260331"]
-    monkeypatch.setattr(plugins, "_last_n_periods", lambda n: periods)
+    # 所有股票都无数据（None）→ 触发空帧守卫：逐股跳过 + 返回空列 DataFrame
+    monkeypatch.setattr(plugins, "_last_n_periods", lambda n: ["20260331", "20260630"])
 
-    import itertools
-
-    calls = itertools.count()  # 线程安全的调用计数（fetch 已并行，普通 dict 自增会竞态）
+    fetched = []
 
     class FakePro:
-        def fina_indicator(self, period=None):
-            n = next(calls)
-            # 一期为 None，另一期为空 DataFrame，覆盖同一守卫的两种空值形态
-            if n == 0:
-                return None
-            return pd.DataFrame()
+        def fina_indicator(self, ts_code=None):
+            fetched.append(ts_code)
+            return None
 
         def stock_basic(self, list_status=None, fields=None):
             return _financial_stock_basic()
@@ -148,36 +127,28 @@ def test_stock_financial_all_empty_returns_empty_frame(monkeypatch):
         "revenue_yoy",
         "netprofit_yoy",
     ]
-    assert next(calls) == len(periods)  # 每个报告期都实际请求过
+    assert sorted(fetched) == ["000858.SZ", "600519.SH"]  # 每个有效股都请求过
 
 
 def test_stock_financial_mixed_empty_concats_valid_frames(monkeypatch):
-    # 部分期有数据、部分期为 None/空 → 仅拼接有效帧，列/重命名/北交所过滤保持一致
-    periods = ["20260630", "20260331", "20251231"]
-    monkeypatch.setattr(plugins, "_last_n_periods", lambda n: periods)
+    # 部分股有数据、部分股为 None/空 → 仅拼接有效帧，列/重命名/口径过滤保持一致
+    monkeypatch.setattr(plugins, "_last_n_periods", lambda n: ["20260331", "20260630"])
 
     class FakePro:
-        def fina_indicator(self, period=None):
-            if period == "20260331":
+        def fina_indicator(self, ts_code=None):
+            if ts_code == "000858.SZ":
                 return None
-            if period == "20251231":
+            if ts_code == "600003.SH":
                 return pd.DataFrame()
-            return pd.DataFrame(
-                {
-                    "ts_code": ["600519.SH", "000858.SZ", "830000.BJ"],
-                    "end_date": [period, period, period],
-                    "roe": [24.5, 30.1, 10.0],
-                    "roa": [18.2, 22.0, 5.0],
-                    "grossprofit_margin": [91.2, 80.0, 20.0],
-                    "debt_to_assets": [21.3, 18.0, 40.0],
-                    "current_ratio": [3.8, 2.1, 1.5],
-                    "or_yoy": [16.8, 20.0, 3.0],
-                    "netprofit_yoy": [15.2, 18.0, 2.0],
-                }
-            )
+            return _financial_stock_frame(ts_code)
 
         def stock_basic(self, list_status=None, fields=None):
-            return _financial_stock_basic()
+            return pd.DataFrame(
+                {
+                    "ts_code": ["600519.SH", "000858.SZ", "600003.SH"],
+                    "name": ["贵州茅台", "五粮液", "健康股"],
+                }
+            )
 
     src = plugins.StockFinancialSource("sf", pro_factory=lambda: FakePro())
     df = src.fetch({})
@@ -193,72 +164,55 @@ def test_stock_financial_mixed_empty_concats_valid_frames(monkeypatch):
         "revenue_yoy",
         "netprofit_yoy",
     ]
-    assert set(df["report_date"].unique()) == {"20260630"}  # None/空期被跳过
-    assert set(df["stock_code"]) == {"600519", "000858"}  # 剔除北交所 830000
+    assert set(df["report_date"].unique()) == {"20260331", "20260630"}
+    assert set(df["stock_code"]) == {"600519"}  # None/空股被跳过
 
 
-def _financial_frame(period):
+def _financial_stock_frame(ts_code, periods=("20260331", "20260630")):
+    """单只股票的 fina_indicator 返回：多报告期（end_date）的财务指标行。"""
     return pd.DataFrame(
         {
-            "ts_code": ["600519.SH", "000858.SZ", "600001.SH", "600002.SH", "830000.BJ"],
-            "end_date": [period, period, period, period, period],
-            "roe": [24.5, 30.1, 5.0, 4.0, 10.0],
-            "roa": [18.2, 22.0, 2.0, 1.0, 5.0],
-            "grossprofit_margin": [91.2, 80.0, 10.0, 8.0, 20.0],
-            "debt_to_assets": [21.3, 18.0, 60.0, 70.0, 40.0],
-            "current_ratio": [3.8, 2.1, 0.8, 0.7, 1.5],
-            "or_yoy": [16.8, 20.0, -5.0, -8.0, 3.0],
-            "netprofit_yoy": [15.2, 18.0, -10.0, -12.0, 2.0],
+            "ts_code": [ts_code] * len(periods),
+            "end_date": list(periods),
+            "roe": [24.5] * len(periods),
+            "roa": [18.2] * len(periods),
+            "grossprofit_margin": [91.2] * len(periods),
+            "debt_to_assets": [21.3] * len(periods),
+            "current_ratio": [3.8] * len(periods),
+            "or_yoy": [16.8] * len(periods),
+            "netprofit_yoy": [15.2] * len(periods),
         }
     )
 
 
 def test_stock_financial_filters_st_retired_and_bse(monkeypatch):
     """对齐 StockValuationDailySource P1 口径：仅沪深正常交易股，剔除 ST/退市/北交所。"""
-    periods = ["20260630", "20260331"]
-    monkeypatch.setattr(plugins, "_last_n_periods", lambda n: periods)
+    monkeypatch.setattr(plugins, "_last_n_periods", lambda n: ["20260331", "20260630"])
 
-    def fake_fina(period):
-        return _financial_frame(period)
+    fetched = []
 
     class FakePro:
-        def fina_indicator(self, period=None):
-            return fake_fina(period)
+        def fina_indicator(self, ts_code=None):
+            fetched.append(ts_code)
+            return _financial_stock_frame(ts_code)
 
         def stock_basic(self, list_status=None, fields=None):
-            return pd.DataFrame(
-                {
-                    "ts_code": ["600519.SH", "000858.SZ", "600001.SH", "600002.SH", "830000.BJ"],
-                    "name": ["贵州茅台", "五粮液", "ST某某", "退市股", "某北交所"],
-                }
-            )
+            return _financial_stock_basic()  # 含 ST/退市/北交所
 
     src = plugins.StockFinancialSource("sf", pro_factory=lambda: FakePro())
     df = src.fetch({})
 
     assert set(df["stock_code"]) == {"600519", "000858"}  # 剔除 ST 600001、退市 600002、北交所 830000
+    assert sorted(fetched) == ["000858.SZ", "600519.SH"]  # 未请求 ST/退市/北交所
 
 
-def test_stock_financial_applies_rate_limiter_before_each_period(monkeypatch):
-    """FR-11/C-5：每个报告期请求上游前必须经 RateLimiter.wait() 限速。"""
-    periods = ["20260630", "20260331", "20251231"]
-    monkeypatch.setattr(plugins, "_last_n_periods", lambda n: periods)
+def test_stock_financial_applies_rate_limiter_before_each_stock(monkeypatch):
+    """FR-11/C-5：每只个股请求上游前必须经 RateLimiter.wait() 限速。"""
+    monkeypatch.setattr(plugins, "_last_n_periods", lambda n: ["20260331", "20260630"])
 
     class FakePro:
-        def fina_indicator(self, period=None):
-            return pd.DataFrame(
-                {
-                    "ts_code": ["600519.SH"],
-                    "end_date": [period],
-                    "roe": [24.5],
-                    "roa": [18.2],
-                    "grossprofit_margin": [91.2],
-                    "debt_to_assets": [21.3],
-                    "current_ratio": [3.8],
-                    "or_yoy": [16.8],
-                    "netprofit_yoy": [15.2],
-                }
-            )
+        def fina_indicator(self, ts_code=None):
+            return _financial_stock_frame(ts_code)
 
         def stock_basic(self, list_status=None, fields=None):
             return _financial_stock_basic()
@@ -272,7 +226,7 @@ def test_stock_financial_applies_rate_limiter_before_each_period(monkeypatch):
     src = plugins.StockFinancialSource("sf", pro_factory=lambda: FakePro(), limiter=_FakeLimiter())
     src.fetch({})
 
-    assert len(waits) == len(periods)  # 每个报告期都先限速再请求
+    assert len(waits) == 2  # 2 个有效股，每个都先限速再请求
 
 
 def test_last_n_periods_quarter_ends(monkeypatch):
