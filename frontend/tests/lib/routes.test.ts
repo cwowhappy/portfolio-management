@@ -130,7 +130,7 @@ describe("health 反代路由", () => {
 
   it("下游不可达返回 502 统一 JSON（relay 兜底）", async () => {
     fetchMock.mockRejectedValue(new Error("ECONNREFUSED"));
-    const res = await healthGet();
+    const res = await healthGet(req("http://localhost/api/agent/health"));
     expect(res.status).toBe(502);
     expect(await res.json()).toEqual({ message: "无法连接后端服务" });
   });
@@ -142,7 +142,7 @@ describe("health 反代路由", () => {
         headers: { "Content-Type": "application/json" },
       }),
     );
-    const res = await healthGet();
+    const res = await healthGet(req("http://localhost/api/agent/health"));
     expect(res.status).toBe(200);
     expect(fetchMock.mock.calls[0][0]).toBe("http://localhost:8080/api/agent/health");
   });
@@ -150,7 +150,7 @@ describe("health 反代路由", () => {
   it("health 用 10s 上游超时（比其余 15s 更快兜底）", async () => {
     const timeoutSpy = vi.spyOn(AbortSignal, "timeout");
     fetchMock.mockResolvedValue(new Response("{}"));
-    await healthGet();
+    await healthGet(req("http://localhost/api/agent/health"));
     expect(timeoutSpy).toHaveBeenCalledWith(10_000);
     timeoutSpy.mockRestore();
   });
@@ -175,7 +175,7 @@ describe("status 反代路由（完整结构，含行情探活）", () => {
         headers: { "Content-Type": "application/json" },
       }),
     );
-    const res = await statusGet();
+    const res = await statusGet(req("http://localhost/api/agent/status"));
     expect(res.status).toBe(200);
     expect(fetchMock.mock.calls[0][0]).toBe("http://localhost:8080/api/agent/status");
     expect(await res.json()).toEqual({ status: "up", llm: {}, market: { ok: true } });
@@ -183,7 +183,7 @@ describe("status 反代路由（完整结构，含行情探活）", () => {
 
   it("下游不可达返回 502 统一 JSON（relay 兜底）", async () => {
     fetchMock.mockRejectedValue(new Error("ECONNREFUSED"));
-    const res = await statusGet();
+    const res = await statusGet(req("http://localhost/api/agent/status"));
     expect(res.status).toBe(502);
     expect(await res.json()).toEqual({ message: "无法连接后端服务" });
   });
