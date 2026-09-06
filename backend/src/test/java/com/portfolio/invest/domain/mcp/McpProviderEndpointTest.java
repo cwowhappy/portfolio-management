@@ -1,5 +1,6 @@
 package com.portfolio.invest.domain.mcp;
 
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import java.time.Instant;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -11,16 +12,18 @@ class McpProviderEndpointTest {
         return McpProvider.reconstitute(3L, "wind", "Wind AIFin", AuthType.BEARER, null, "ak-secret", true, null, NOW);
     }
 
+    @DisplayName("provider重建保留字段")
     @Test
-    void provider重建保留字段() {
+    void givenProvider_whenReconstitute_thenFieldsPreserved() {
         var p = wind();
         assertThat(p.code()).isEqualTo("wind");
         assertThat(p.authType()).isEqualTo(AuthType.BEARER);
         assertThat(p.authSecretEnc()).isEqualTo("ak-secret");
     }
 
+    @DisplayName("endpoint重建保留字段")
     @Test
-    void endpoint重建保留字段() {
+    void givenEndpoint_whenReconstitute_thenFieldsPreserved() {
         var e = McpEndpoint.reconstitute(5L, 3L, "stock", "Wind 股票",
                 "https://mcp.wind.com.cn/vserver_stock_data/mcp/", true, NOW);
         assertThat(e.providerId()).isEqualTo(3L);

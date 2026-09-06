@@ -53,7 +53,7 @@ class McpConfigRepositoryImplTest extends PostgresTestSupport {
 
     @DisplayName("迁移 seed 了 3 个启用的 provider")
     @Test
-    void 迁移seed了3个provider且启用的可查到() {
+    void givenMigration_whenFindEnabledProviders_thenThreeSeededProvidersFound() {
         var providers = repository.findEnabledProviders();
         assertThat(providers).hasSize(3);
         assertThat(providers).extracting(McpProvider::code)
@@ -62,7 +62,7 @@ class McpConfigRepositoryImplTest extends PostgresTestSupport {
 
     @DisplayName("wind 为 BEARER 且有 6 个 endpoint")
     @Test
-    void wind为BEARER且有6个endpoint() {
+    void givenWindProvider_whenFindEndpoints_thenBearerAuthWithSixEndpoints() {
         var wind = repository.findProviderById(WIND_PROVIDER_ID).orElseThrow();
         assertThat(wind.authType()).isEqualTo(AuthType.BEARER);
         var endpoints = repository.findEnabledEndpointsByProviderId(WIND_PROVIDER_ID);
@@ -73,7 +73,7 @@ class McpConfigRepositoryImplTest extends PostgresTestSupport {
 
     @DisplayName("保存并回读用户配置")
     @Test
-    void 保存并回读用户配置() {
+    void givenSavedConfig_whenReadBack_thenConfigMatches() {
         var saved = repository.save(McpUserConfig.create(USER_61, WIND_PROVIDER_ID, List.of("get_stock_quote"), Instant.now()));
         assertThat(saved.id()).isNotNull();
         var found = repository.findByUserIdAndProviderId(USER_61, WIND_PROVIDER_ID).orElseThrow();
@@ -83,7 +83,7 @@ class McpConfigRepositoryImplTest extends PostgresTestSupport {
 
     @DisplayName("更新后 configVersion 自增")
     @Test
-    void 更新后configVersion自增() {
+    void givenUpdate_whenReadBack_thenConfigVersionIncremented() {
         var saved = repository.save(McpUserConfig.create(USER_61, WIND_PROVIDER_ID, List.of(), Instant.now()));
         repository.save(saved.update(false, List.of("get_stock_kline"), Instant.now()));
         var found = repository.findByUserIdAndProviderId(USER_61, WIND_PROVIDER_ID).orElseThrow();
@@ -93,7 +93,7 @@ class McpConfigRepositoryImplTest extends PostgresTestSupport {
 
     @DisplayName("用户隔离与删除")
     @Test
-    void 用户隔离与删除() {
+    void givenTwoUsers_whenDeleteOneConfig_thenUserIsolationAndDeletion() {
         repository.save(McpUserConfig.create(USER_61, WIND_PROVIDER_ID, List.of(), Instant.now()));
         assertThat(repository.findByUserId(USER_62)).isEmpty();
         repository.deleteByUserIdAndProviderId(USER_61, WIND_PROVIDER_ID);
