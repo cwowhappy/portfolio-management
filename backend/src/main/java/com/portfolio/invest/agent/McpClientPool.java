@@ -32,6 +32,8 @@ public class McpClientPool {
         } else if (provider.authType() == AuthType.BEARER) {
             builder.header("Authorization", "Bearer " + token);
         }
-        return builder.buildSync();
+        McpClientWrapper client = builder.buildSync();
+        client.initialize().block();
+        return client;
     }
 }

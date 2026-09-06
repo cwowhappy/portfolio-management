@@ -27,6 +27,7 @@ public class AgentScopeMcpServerTester implements McpServerTester {
                 default -> { }
             }
             McpClientWrapper client = builder.buildSync();
+            client.initialize().block();
             List<McpToolDescriptor> tools = new ArrayList<>();
             for (var t : client.listTools().block()) {
                 tools.add(new McpToolDescriptor(t.name(), t.description() != null ? t.description() : ""));
