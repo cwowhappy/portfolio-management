@@ -12,6 +12,7 @@ public class InvestProperties {
     private Admin admin = new Admin();
     private Security security = new Security();
     private AppCache appCache = new AppCache();
+    private Mcp mcp = new Mcp();
 
     public Llm getLlm() {
         return llm;
@@ -51,6 +52,14 @@ public class InvestProperties {
 
     public void setAppCache(AppCache appCache) {
         this.appCache = appCache;
+    }
+
+    public Mcp getMcp() {
+        return mcp;
+    }
+
+    public void setMcp(Mcp mcp) {
+        this.mcp = mcp;
     }
 
     public static class Llm {
@@ -259,6 +268,52 @@ public class InvestProperties {
 
         public void setHealthProbeTtl(Duration healthProbeTtl) {
             this.healthProbeTtl = healthProbeTtl;
+        }
+    }
+
+    public static class Mcp {
+        private Duration connectTimeout = Duration.ofSeconds(10);
+        private Duration toolTimeout = Duration.ofSeconds(30);
+        private int poolMaxSize = 20;
+        private Harness harness = new Harness();
+        public Duration getConnectTimeout() { return connectTimeout; }
+        public void setConnectTimeout(Duration connectTimeout) { this.connectTimeout = connectTimeout; }
+        public Duration getToolTimeout() { return toolTimeout; }
+        public void setToolTimeout(Duration toolTimeout) { this.toolTimeout = toolTimeout; }
+        public int getPoolMaxSize() { return poolMaxSize; }
+        public void setPoolMaxSize(int poolMaxSize) { this.poolMaxSize = poolMaxSize; }
+        public Harness getHarness() { return harness; }
+        public void setHarness(Harness harness) { this.harness = harness; }
+
+        public static class Harness {
+            private String workspace = ".agentscope/workspace";
+            private String stateRoot = ".agentscope/state";
+            private Compaction compaction = new Compaction();
+            private Memory memory = new Memory();
+            public String getWorkspace() { return workspace; }
+            public void setWorkspace(String workspace) { this.workspace = workspace; }
+            public String getStateRoot() { return stateRoot; }
+            public void setStateRoot(String stateRoot) { this.stateRoot = stateRoot; }
+            public Compaction getCompaction() { return compaction; }
+            public void setCompaction(Compaction compaction) { this.compaction = compaction; }
+            public Memory getMemory() { return memory; }
+            public void setMemory(Memory memory) { this.memory = memory; }
+            public static class Compaction {
+                private int triggerMessages = 30;
+                private int keepMessages = 10;
+                private boolean flushBeforeCompact = true;
+                public int getTriggerMessages() { return triggerMessages; }
+                public void setTriggerMessages(int triggerMessages) { this.triggerMessages = triggerMessages; }
+                public int getKeepMessages() { return keepMessages; }
+                public void setKeepMessages(int keepMessages) { this.keepMessages = keepMessages; }
+                public boolean isFlushBeforeCompact() { return flushBeforeCompact; }
+                public void setFlushBeforeCompact(boolean flushBeforeCompact) { this.flushBeforeCompact = flushBeforeCompact; }
+            }
+            public static class Memory {
+                private Duration flushMinGap = Duration.ofMinutes(30);
+                public Duration getFlushMinGap() { return flushMinGap; }
+                public void setFlushMinGap(Duration flushMinGap) { this.flushMinGap = flushMinGap; }
+            }
         }
     }
 }

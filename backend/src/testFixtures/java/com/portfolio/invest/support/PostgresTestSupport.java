@@ -17,7 +17,8 @@ import org.testcontainers.containers.PostgreSQLContainer;
 public abstract class PostgresTestSupport {
 
     private static final PostgreSQLContainer<?> POSTGRES =
-            new PostgreSQLContainer<>("postgres:16-alpine");
+            new PostgreSQLContainer<>("postgres:16-alpine")
+                    .withCommand("-c", "max_connections=300");
 
     static {
         POSTGRES.start();
@@ -34,5 +35,9 @@ public abstract class PostgresTestSupport {
         registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
         registry.add("spring.datasource.username", POSTGRES::getUsername);
         registry.add("spring.datasource.password", POSTGRES::getPassword);
+        // 多个集成测试类共享不同 Spring 上下文缓存，各自起一个 HikariCP 池；压低单池规模，
+        // 避免叠加后打满 Postgres 连接上限（FATAL: sorry, too many clients already）。
+        registry.add("spring.datasource.hikari.maximum-pool-size", () -> 5);
+        registry.add("spring.datasource.hikari.minimum-idle", () -> 1);
     }
 }

@@ -29,7 +29,7 @@
 - Create: `backend/src/main/java/com/portfolio/invest/application/mcp/AgentScopeMcpServerTester.java`
 
 **Interfaces:**
-- Produces: `McpToolDescriptor(String name, String description)`；`McpServerTester`（`List<McpToolDescriptor> testConnection(McpProvider provider, String token)`，失败抛 `McpException(CONNECTION_FAILED)`）；`AgentScopeMcpServerTester` 实现（`McpClientBuilder.create(code).streamableHttpTransport(url).header(...).timeout(10s).buildSync()`，工具清单经 P0 已验证的 `client.listTools().block()` 读 `McpSchema.Tool.name()/description()`）。
+- Produces: `McpToolDescriptor(String name, String description)`；`McpServerTester`（`List<McpToolDescriptor> testConnection(McpProvider provider, McpEndpoint endpoint, String token)`，失败抛 `McpException(CONNECTION_FAILED)`）；`AgentScopeMcpServerTester` 实现（`McpClientBuilder.create(code).streamableHttpTransport(url).header(...).timeout(10s).buildSync()` **后必须 `client.initialize().block()`**——MCP 协议要求先 initialize 握手才能 listTools，否则报 `MCP client not initialized`（冒烟实测教训）；再 `client.listTools().block()` 读 `McpSchema.Tool.name()/description()`）。
 
 - [ ] **Step 1-3: 写描述符 + 端口 + 实现 → Commit**（工具清单 API 已由 P0 §2 确认，无需占位；HEADER 用 `builder.header(provider.authHeader(), token)`、BEARER 用 `Authorization: Bearer token`）
 
@@ -356,7 +356,7 @@ public static class Mcp {
         flush-min-gap: 30m
 ```
 
-> 运行参数消费点：`connectTimeout` → `McpServerTester`（Task 1）与 `McpClientPool`（Step 2）的 `McpClientBuilder.timeout(...)`（替换硬编码 10s，注入 `InvestProperties`）；`toolTimeout` → 单工具调用超时；`poolMaxSize` → `McpClientPool` 用 Caffeine `maximumSize(...)` 限池（替换无界 ConcurrentHashMap）。
+> 运行参数消费点：`connectTimeout` → `McpServerTester`（Task 1）与 `McpClientPool`（Step 2）的 `McpClientBuilder.timeout(...)`（替换硬编码 10s，注入 `InvestProperties`）；`toolTimeout` → 单工具调用超时；`poolMaxSize` → `McpClientPool` 用 Caffeine `maximumSize(...)` 限池（替换无界 ConcurrentHashMap）。**`McpClientPool.build()` 与 `AgentScopeMcpServerTester` 一样，`buildSync()` 后必须 `client.initialize().block()`**（MCP 先 initialize 握手才能 listTools，冒烟实测教训）。
 
 `HarnessAgentFactory`（读配置，builder 签名已对照 `agentscope-harness:2.0.1` jar 实测）：
 

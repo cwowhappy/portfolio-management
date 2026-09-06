@@ -7,14 +7,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.portfolio.invest.application.market.MarketDataService;
 import com.portfolio.invest.application.valuation.ValuationApplicationService;
 import com.portfolio.invest.config.InvestProperties;
-import io.agentscope.core.ReActAgent;
-import io.agentscope.core.agent.Agent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ModelRegistry;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.spring.boot.agui.common.AguiAgentRegistryCustomizer;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -49,7 +48,7 @@ class AgentConfigContextTest {
         runner.withPropertyValues("DEEPSEEK_API_KEY=").run(context -> {
             assertThat(context).hasNotFailed();
             assertThat(context).doesNotHaveBean("investModel");
-            assertThat(context).doesNotHaveBean("invest");
+            assertThat(context).doesNotHaveBean("investAgentRegistration");
         });
     }
 
@@ -62,11 +61,10 @@ class AgentConfigContextTest {
                 .run(context -> {
                     assertThat(context).hasNotFailed();
                     assertThat(context).hasBean("investModel");
-                    assertThat(context).hasBean("invest");
+                    assertThat(context).hasBean("investAgentRegistration");
                     assertThat(context.getBean("investModel")).isInstanceOf(FakeModel.class);
-                    Agent agent = (Agent) context.getBean("invest");
-                    assertThat(agent).isInstanceOf(ReActAgent.class);
-                    assertThat(agent.getName()).isEqualTo("invest");
+                    assertThat(context.getBean("investAgentRegistration"))
+                            .isInstanceOf(AguiAgentRegistryCustomizer.class);
                 });
     }
 
@@ -83,6 +81,11 @@ class AgentConfigContextTest {
         InvestTools investTools() {
             return new InvestTools(
                     mock(MarketDataService.class), mock(ValuationApplicationService.class), new ObjectMapper());
+        }
+
+        @Bean
+        HarnessAgentFactory harnessAgentFactory() {
+            return mock(HarnessAgentFactory.class);
         }
     }
 

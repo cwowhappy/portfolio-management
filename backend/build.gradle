@@ -75,6 +75,8 @@ dependencies {
     implementation 'io.agentscope:agentscope-extensions-model-openai:2.0.1'
     // AG-UI 协议端点
     implementation 'io.agentscope:agentscope-agui-spring-boot-starter:2.0.1'
+    // Harness Agent：会话持久化 / 上下文压缩 / 长期记忆
+    implementation 'io.agentscope:agentscope-harness:2.0.1'
 
     // 无需显式声明 spring-boot-starter-test：各测试 starter 已传递引入
     // Spring Boot 4 中 MockMvc 测试自动配置（AutoConfigureMockMvc）迁至 spring-boot-starter-webmvc-test

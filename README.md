@@ -167,6 +167,9 @@ scripts/    smoke.sh 冒烟脚本
 | BACKEND_URL | http://localhost:8080 | 前端反代目标 |
 | PORT | 8080 | 后端端口 |
 | TUSHARE_TOKEN | - | 采集服务（collector）tushare 数据源 token（个股基本面 / 指数估值 / 申万映射；未填则仅 akshare 数据可用） |
+| MCP_SECRET_KEY | - | 二期用：MCP 系统 Token 的 AES-256-GCM 主密钥（base64 32 字节），缺失不阻断启动、加解密时报错；一期 seed 为明文 |
+
+**MCP 数据源**：内置 provider（妙想 `mx-ds` / Tushare / Wind）的 Token 不随迁移进 git——部署时由脚本对 `mcp_provider.auth_secret_enc` 执行 UPDATE 填入（妙想 `em_api_key`、Tushare token、Wind ak token），V10 迁移仅 seed `NULL` 占位。三个 MCP 端点的手动握手冒烟见 `backend/scripts/mcp-smoke.sh`（从 `MX_DS_TOKEN` / `TUSHARE_TOKEN` / `WIND_TOKEN` 读 token，无硬编码密钥）。
 
 ## 免责声明
 

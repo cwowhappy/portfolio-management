@@ -48,7 +48,7 @@ bin/
 .browser-logs/
 
 # Local tool configs
-config/
+/config/
 
 # Local package caches
 .npm-cache/
