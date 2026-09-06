@@ -146,12 +146,18 @@ class IndustryUniverseSource(Source):
 
 
 TERMS = [
-    ("1Y", "中国国债收益率1年"),
-    ("3Y", "中国国债收益率3年"),
-    ("5Y", "中国国债收益率5年"),
-    ("10Y", "中国国债收益率10年"),
-    ("30Y", "中国国债收益率30年"),
+    ("1Y", "1年"),
+    ("3Y", "3年"),
+    ("5Y", "5年"),
+    ("10Y", "10年"),
+    ("30Y", "30年"),
 ]
+
+# bond_zh_us_rate 已下架 1Y/3Y 列（2026-09 实测仅剩 2Y/5Y/10Y/30Y），改用中债信息网
+# bond_china_yield（全期限、按区间查询）。其单次区间上限约 1 年，按 180 天切块留余量。
+_CURVE_NAME = "中债国债收益率曲线"
+_CURVE_CHUNK_DAYS = 180
+_CURVE_EARLIEST = dt.date(2006, 1, 1)  # 中债国债收益率曲线自 2006-03 起，空表全量回填起点
 
 
 class TreasuryCurveSource(Source):
@@ -182,12 +188,35 @@ class TreasuryCurveSource(Source):
         end = dt.datetime.strptime(end_s, "%Y%m%d").date() if end_s else None
         return start, end
 
+    def _fetch_treasury_curve(self, start, end):
+        """bond_china_yield 按 180 天切块拉取，过滤出国债曲线；期限列缺失时显式报错（不静默跳过）。"""
+        frames = []
+        chunk_start = start
+        while chunk_start <= end:
+            chunk_end = min(chunk_start + dt.timedelta(days=_CURVE_CHUNK_DAYS - 1), end)
+            df = ak.bond_china_yield(start_date=chunk_start.strftime("%Y%m%d"), end_date=chunk_end.strftime("%Y%m%d"))
+            if df is not None and not df.empty:
+                frames.append(df)
+            chunk_start = chunk_end + dt.timedelta(days=1)
+        if not frames:
+            return pd.DataFrame(columns=["日期", *[col for _, col in TERMS]])
+        df = pd.concat(frames, ignore_index=True)
+        df = df[df["曲线名称"] == _CURVE_NAME]
+        missing = [col for _, col in TERMS if col not in df.columns]
+        if missing:
+            raise SourceError(f"{self.source_id}: bond_china_yield 缺少期限列 {missing}，上游结构可能已变更")
+        return df
+
     def fetch(self, params):
-        df = ak.bond_zh_us_rate()
         start, end = self._range_bounds(params)
         # 有显式区间时以区间为准，不再以 DB max(trading_day) 做增量下界；
         # 无区间（日常增量调度）才回退到 watermark 行为。
         since = None if start is not None or end is not None else self._max_trading_day()
+        query_start = start or (since + dt.timedelta(days=1) if since else _CURVE_EARLIEST)
+        query_end = end or dt.date.today()
+        if query_start > query_end:
+            return pd.DataFrame(columns=["trading_day", "term", "yield"])
+        df = self._fetch_treasury_curve(query_start, query_end)
         rows = []
         for _, r in df.iterrows():
             day = r["日期"]
@@ -202,7 +231,7 @@ class TreasuryCurveSource(Source):
             if end is not None and day > end:
                 continue
             for term, col in TERMS:
-                if col in df.columns and pd.notna(r[col]):
+                if pd.notna(r[col]):
                     rows.append({"trading_day": day, "term": term, "yield": float(r[col])})
         return pd.DataFrame(rows, columns=["trading_day", "term", "yield"])
 

@@ -3,17 +3,59 @@ import pandas as pd
 from collector.sources.plugins import IndexConstituentSource, TreasuryCurveSource
 
 
+def _curve_df(dates, **overrides):
+    """构造 bond_china_yield 形状的 mock：全期限列 + 一行非国债曲线（应被过滤）。"""
+    n = len(dates)
+    data = {
+        "曲线名称": ["中债国债收益率曲线"] * n,
+        "日期": dates,
+        "1年": [1.5] * n,
+        "3年": [1.7] * n,
+        "5年": [1.9] * n,
+        "10年": [2.2] * n,
+        "30年": [2.5] * n,
+    }
+    for col, values in overrides.items():
+        data[col] = values
+    # 混入一行其他曲线（如国开债），验证只保留中债国债收益率曲线
+    other = {**{k: v[:1] for k, v in data.items()}, "曲线名称": ["中债国开债收益率曲线"]}
+    return pd.concat([pd.DataFrame(data), pd.DataFrame(other)], ignore_index=True)
+
+
 def test_treasury_curve_multiterm(mocker):
     import collector.sources.plugins as p
 
+    mocker.patch.object(p.ak, "bond_china_yield", return_value=_curve_df(["2026-08-28"]))
+    src = TreasuryCurveSource("curve")
+    df = src.fetch({"start": "2026-08-28", "end": "2026-08-28"})
+    assert set(df["term"]) == {"1Y", "3Y", "5Y", "10Y", "30Y"}
+    assert len(df) == 5  # 非国债曲线行已被过滤，单日 5 个期限
+
+
+def test_treasury_curve_skips_na_term(mocker):
+    import collector.sources.plugins as p
+
+    mocker.patch.object(p.ak, "bond_china_yield", return_value=_curve_df(["2026-08-28"], **{"30年": [None]}))
+    src = TreasuryCurveSource("curve")
+    df = src.fetch({"start": "2026-08-28", "end": "2026-08-28"})
+    assert set(df["term"]) == {"1Y", "3Y", "5Y", "10Y"}  # 30 年为 NaN 的行不产出 30Y
+
+
+def test_treasury_curve_missing_term_column_fails_loudly(mocker):
+    """期限列缺失时显式报错，不再静默跳过（1Y/3Y 静默缺失的教训）。"""
+    import pytest
+
+    import collector.sources.plugins as p
+    from collector.sources.base import SourceError
+
     mocker.patch.object(
         p.ak,
-        "bond_zh_us_rate",
-        return_value=pd.DataFrame({"日期": ["2026-08-28"], "中国国债收益率1年": [1.8], "中国国债收益率10年": [2.2]}),
+        "bond_china_yield",
+        return_value=_curve_df(["2026-08-28"]).drop(columns=["1年", "3年"]),
     )
     src = TreasuryCurveSource("curve")
-    df = src.fetch({})
-    assert set(df["term"]) == {"1Y", "10Y"}
+    with pytest.raises(SourceError, match="缺少期限列"):
+        src.fetch({})
 
 
 def test_index_constituent(mocker):
@@ -45,11 +87,7 @@ def _conn_factory(mocker, max_day):
 def test_treasury_curve_incremental_skips_loaded_days(mocker):
     import collector.sources.plugins as p
 
-    mocker.patch.object(
-        p.ak,
-        "bond_zh_us_rate",
-        return_value=pd.DataFrame({"日期": ["2026-08-27", "2026-08-28"], "中国国债收益率1年": [1.7, 1.8]}),
-    )
+    mocker.patch.object(p.ak, "bond_china_yield", return_value=_curve_df(["2026-08-27", "2026-08-28"]))
     src = TreasuryCurveSource("curve", conn_factory=_conn_factory(mocker, dt.date(2026, 8, 27)))
     df = src.fetch({})
     assert set(df["trading_day"]) == {dt.date(2026, 8, 28)}
@@ -61,10 +99,8 @@ def test_treasury_curve_full_load_when_table_empty(mocker):
 
     mocker.patch.object(
         p.ak,
-        "bond_zh_us_rate",
-        return_value=pd.DataFrame(
-            {"日期": [pd.Timestamp("2026-08-27"), pd.Timestamp("2026-08-28")], "中国国债收益率1年": [1.7, 1.8]}
-        ),
+        "bond_china_yield",
+        return_value=_curve_df([pd.Timestamp("2026-08-27"), pd.Timestamp("2026-08-28")]),
     )
     src = TreasuryCurveSource("curve", conn_factory=_conn_factory(mocker, None))
     df = src.fetch({})
@@ -78,16 +114,7 @@ def test_treasury_curve_backfill_respects_range_on_empty_table(mocker):
     """空表 + 显式 start/end 回填：只返回区间内行，不再整段写历史。"""
     import collector.sources.plugins as p
 
-    mocker.patch.object(
-        p.ak,
-        "bond_zh_us_rate",
-        return_value=pd.DataFrame(
-            {
-                "日期": ["2026-07-30", "2026-08-05", "2026-08-12"],
-                "中国国债收益率1年": [1.5, 1.6, 1.7],
-            }
-        ),
-    )
+    mocker.patch.object(p.ak, "bond_china_yield", return_value=_curve_df(["2026-07-30", "2026-08-05", "2026-08-12"]))
     src = TreasuryCurveSource("curve", conn_factory=_conn_factory(mocker, None))
     df = src.fetch({"start": "2026-08-01", "end": "2026-08-10"})
     assert set(df["trading_day"]) == {dt.date(2026, 8, 5)}
@@ -98,16 +125,7 @@ def test_treasury_curve_backfill_range_overrides_watermark(mocker):
     区间外行（即使晚于 watermark）不被写入。"""
     import collector.sources.plugins as p
 
-    mocker.patch.object(
-        p.ak,
-        "bond_zh_us_rate",
-        return_value=pd.DataFrame(
-            {
-                "日期": ["2026-08-05", "2026-09-02"],
-                "中国国债收益率1年": [1.6, 1.8],
-            }
-        ),
-    )
+    mocker.patch.object(p.ak, "bond_china_yield", return_value=_curve_df(["2026-08-05", "2026-09-02"]))
     src = TreasuryCurveSource("curve", conn_factory=_conn_factory(mocker, dt.date(2026, 9, 1)))
     df = src.fetch({"start": "2026-08-01", "end": "2026-08-10"})
     assert set(df["trading_day"]) == {dt.date(2026, 8, 5)}
@@ -117,16 +135,17 @@ def test_treasury_curve_incremental_still_uses_watermark_when_no_range(mocker):
     """无显式区间（增量调度）仍保留 DB watermark 行为，不受区间逻辑影响。"""
     import collector.sources.plugins as p
 
-    mocker.patch.object(
-        p.ak,
-        "bond_zh_us_rate",
-        return_value=pd.DataFrame(
-            {
-                "日期": ["2026-08-27", "2026-08-28", "2026-09-02"],
-                "中国国债收益率1年": [1.7, 1.8, 1.9],
-            }
-        ),
-    )
+    mocker.patch.object(p.ak, "bond_china_yield", return_value=_curve_df(["2026-08-27", "2026-08-28", "2026-09-02"]))
     src = TreasuryCurveSource("curve", conn_factory=_conn_factory(mocker, dt.date(2026, 8, 27)))
     df = src.fetch({})
     assert set(df["trading_day"]) == {dt.date(2026, 8, 28), dt.date(2026, 9, 2)}
+
+
+def test_treasury_curve_long_range_fetches_in_chunks(mocker):
+    """bond_china_yield 单次区间上限约 1 年，长区间按 180 天切块分多次调用。"""
+    import collector.sources.plugins as p
+
+    mocked = mocker.patch.object(p.ak, "bond_china_yield", return_value=_curve_df(["2026-08-05"]))
+    src = TreasuryCurveSource("curve", conn_factory=_conn_factory(mocker, None))
+    src.fetch({"start": "2026-01-01", "end": "2026-08-10"})  # 222 天 > 180 天
+    assert mocked.call_count == 2
