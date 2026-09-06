@@ -35,6 +35,9 @@ export function AuthNav() {
           管理
         </Link>
       )}
+      <Link href="/settings/mcp" className={linkClass}>
+        MCP 设置
+      </Link>
       <span className="px-1 text-[13px] text-[color:var(--color-ink)]">{user.username}</span>
       <button
         type="button"
