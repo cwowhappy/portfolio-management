@@ -14,7 +14,7 @@
 
 - 后端 DDD 洋葱分层；application/agent 禁直连 `infrastructure.*`（加解密走 `TokenCipher` 端口）。
 - 所有权隔离沿用会话隔离惯例：个人配置非本人 404（`findByUserIdAndCatalogId`）。
-- 出参永不包含 Token 明文/密文；目录 URL 出参一律 `redactedUrl()`。
+- 出参永不包含 Token 明文/密文；目录 URL 出参直接用 `url()`（无 token 内嵌，无需脱敏）。
 - 空 Token 语义：PUT 空 token = 保留旧值；清空用 DELETE 配置。
 - 单次工具调用超时 30s（FR-6 降级）；连接超时 10s。
 - 覆盖率门槛 ≥80%（JaCoCo）。
@@ -73,9 +73,8 @@ public class AgentScopeMcpServerTester implements McpServerTester {
     @Override
     public List<McpToolDescriptor> testConnection(McpServerCatalog catalog, String token) {
         try {
-            String url = catalog.authType() == AuthType.URL_TOKEN ? catalog.renderUrl(token) : catalog.url();
             McpClientBuilder builder = McpClientBuilder.create(catalog.code())
-                    .streamableHttpTransport(url)
+                    .streamableHttpTransport(catalog.url())
                     .timeout(Duration.ofSeconds(10));
             switch (catalog.authType()) {
                 case HEADER -> builder.header(catalog.authHeader(), token);
@@ -136,7 +135,7 @@ import com.portfolio.invest.domain.mcp.McpServerCatalog;
 public record McpCatalogView(Long id, String code, String name, String url,
                              AuthType authType, String authHeader, String remark) {
     public static McpCatalogView from(McpServerCatalog c) {
-        return new McpCatalogView(c.id(), c.code(), c.name(), c.redactedUrl(),
+        return new McpCatalogView(c.id(), c.code(), c.name(), c.url(),
                 c.authType(), c.authHeader(), c.remark());
     }
 }
@@ -213,7 +212,7 @@ class McpConfigApplicationServiceTest {
 
     private static McpServerCatalog tushare() {
         return McpServerCatalog.reconstitute(2L, "tushare", "Tushare",
-                "https://api.tushare.pro/mcp/token={token}", AuthType.URL_TOKEN, null, true, null, NOW);
+                "https://api.tushare.pro/mcp/", AuthType.BEARER, null, true, null, NOW);
     }
 
     @BeforeEach
@@ -563,7 +562,6 @@ git commit -m "feat(mcp): 配置 REST 接口与异常映射"
 - Create: `backend/src/main/java/com/portfolio/invest/agent/InvestAguiRuntimeContextResolver.java`
 - Create: `backend/src/main/java/com/portfolio/invest/agent/McpClientPool.java`
 - Create: `backend/src/main/java/com/portfolio/invest/agent/UserToolkitFactory.java`
-- Create: `backend/src/main/java/com/portfolio/invest/agent/InvestAgentResolver.java`
 - Modify: `backend/src/main/java/com/portfolio/invest/agent/AgentConfig.java`
 - Modify: `backend/src/main/java/com/portfolio/invest/agent/InvestSystemPrompt.java`
 
@@ -630,9 +628,8 @@ public class McpClientPool {
     }
 
     private McpClientWrapper build(McpServerCatalog catalog, String token) {
-        String url = catalog.authType() == AuthType.URL_TOKEN ? catalog.renderUrl(token) : catalog.url();
         McpClientBuilder builder = McpClientBuilder.create(catalog.code())
-                .streamableHttpTransport(url).timeout(Duration.ofSeconds(10));
+                .streamableHttpTransport(catalog.url()).timeout(Duration.ofSeconds(10));
         if (catalog.authType() == AuthType.HEADER) {
             builder.header(catalog.authHeader(), token);
         } else if (catalog.authType() == AuthType.BEARER) {
@@ -682,7 +679,7 @@ public class UserToolkitFactory {
     public Toolkit build(Long userId) {
         Toolkit toolkit = new Toolkit();
         toolkit.registerTool(investTools);
-        Set<String> names = new HashSet<>(); // 内置工具名从 InvestTools 拿；P0 §2 确认读法
+        Set<String> names = new HashSet<>(); // 已注册工具名（内置 + 前置服务器）
 
         for (McpServerCatalog catalog : repository.findEnabledCatalogs()) {
             McpUserConfig config = repository.findByUserIdAndCatalogId(userId, catalog.id()).orElse(null);
@@ -694,27 +691,52 @@ public class UserToolkitFactory {
             }
             try {
                 String token = catalog.authType() == AuthType.NONE ? null : cipher.decrypt(config.authSecretEnc());
-                var client = clientPool.acquire(catalog, userId, config.configVersion(), token);
-                // P0 §2：从 client 逐个取 McpTool，按 disabled_tools 过滤、按 names 去重后 registerTool
-                registerFiltered(toolkit, client, config, names);
+                McpClientWrapper client = clientPool.acquire(catalog, userId, config.configVersion(), token);
+                // 去重（内置 > 目录顺序）+ disabled_tools 过滤 → 汇总为 disable 清单，走官方过滤 API
+                List<String> toDisable = new ArrayList<>();
+                for (McpSchema.Tool t : client.listTools().block()) {
+                    if (config.disabledTools().contains(t.name()) || names.contains(t.name())) {
+                        toDisable.add(t.name());
+                    } else {
+                        names.add(t.name());
+                    }
+                }
+                toolkit.registration().mcpClient(client).disableTools(toDisable).apply();
             } catch (Exception e) {
                 log.warn("MCP 数据源 {} 装配失败，跳过：{}", catalog.code(), e.getMessage());
             }
         }
         return toolkit;
     }
-
-    private void registerFiltered(Toolkit toolkit, Object client, McpUserConfig config, Set<String> names) {
-        // P0 §2：逐工具 name/description 读取 + 去重 + disabled 过滤
-    }
 }
 ```
 
 > P0 §2/§3 定稿后：`registerFiltered` 换成真实 `McpTool` 逐个注册；`names` 去重「内置 > 目录顺序」；并发结论决定缓存键 userId vs (userId, threadId)。
 
-- [ ] **Step 4: 改 AgentConfig 为按用户建 Agent + 注册 factory（依 P0 §1）**
+- [ ] **Step 4: 改 AgentConfig 为 registerFactory（依 P0 §1）**
 
-P0 §1 确认覆盖点后，将 `AgentConfig` 的单例 `investAgent` bean 改为：`AguiAgentRegistry.registerFactory("invest", () -> buildAgent(runtimeContextUserId()))` + 自定义 `InvestAgentResolver`（按 userId 取/建 Agent，Caffeine 缓存 key=userId）。`InvestAgentResolver` 的接口方法签名依 P0 §1 回填。
+删除单例 `investAgent` bean，新增 `AguiAgentRegistryCustomizer` bean 在 registry 上 `registerFactory("invest", ...)`；工厂内从 `SecurityContextHolder` 取 userId 现建 Agent（P0 §1 结论：`DefaultAgentResolver` 非 bean 不可覆盖，但 `registerFactory` 足够，无需自定义 `InvestAgentResolver`）：
+
+```java
+@Bean
+public AguiAgentRegistryCustomizer investAgentRegistration(UserToolkitFactory toolkitFactory, Model model) {
+    return registry -> registry.registerFactory("invest", () ->
+            ReActAgent.builder()
+                    .name("invest")
+                    .sysPrompt(InvestSystemPrompt.TEXT)
+                    .model(model)
+                    .toolkit(toolkitFactory.build(currentUserId()))
+                    .maxIters(10)
+                    .build());
+}
+
+private static Long currentUserId() {
+    Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+    return (auth != null && auth.getPrincipal() instanceof AuthenticatedUser u) ? u.user().id() : null;
+}
+```
+
+> 每请求现建 Agent（无缓存）；`McpClientPool` 缓存昂贵的 MCP 握手，故首 token 延迟主要来自首次 client 构建（10s 超时内，失败跳过）。
 
 - [ ] **Step 5: 追加 InvestSystemPrompt**
 

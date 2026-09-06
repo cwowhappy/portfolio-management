@@ -40,7 +40,7 @@ export const McpCatalogSchema = z.object({
   code: z.string(),
   name: z.string(),
   url: z.string(),
-  authType: z.enum(["NONE", "BEARER", "HEADER", "URL_TOKEN"]),
+  authType: z.enum(["NONE", "BEARER", "HEADER"]),
   authHeader: z.string().nullable(),
   remark: z.string().nullable(),
 });

@@ -149,7 +149,7 @@ git commit -m "docs(mcp): P0 验证记录——共享 Agent 并发模型"
 - iFinD 的 MCP endpoint URL 与鉴权头名
 - Wind AIFin 的 MCP endpoint URL 与鉴权头名（`WIND_API_KEY`？）
 
-- [ ] **Step 3: 验证 Tushare 是否支持 header 鉴权（决定 URL_TOKEN 是否必要）**
+- [ ] **Step 3: 验证 Tushare 是否支持 header 鉴权**（已确认支持 `Authorization: Bearer`，URL_TOKEN 已弃用）
 
 试以 header（如 `Authorization` 或自定义头）替代 URL token 访问 Tushare MCP，记录结果。
 

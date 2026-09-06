@@ -31,7 +31,7 @@
 - Create: `backend/src/main/java/com/portfolio/invest/domain/mcp/TokenCipher.java`
 
 **Interfaces:**
-- Produces: `AuthType`（`NONE`/`BEARER`/`HEADER`/`URL_TOKEN`）；`McpException(String code, String message)` + `.code()`；`McpErrorCode` 常量；`TokenCipher`（`String encrypt(String)` / `String decrypt(String)`）。
+- Produces: `AuthType`（`NONE`/`BEARER`/`HEADER`）；`McpException(String code, String message)` + `.code()`；`McpErrorCode` 常量；`TokenCipher`（`String encrypt(String)` / `String decrypt(String)`）。
 
 - [ ] **Step 1: 写失败测试**
 
@@ -45,9 +45,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class AuthTypeTest {
     @Test
-    void 四种鉴权类型() {
+    void 三种鉴权类型() {
         assertThat(AuthType.values())
-                .containsExactly(AuthType.NONE, AuthType.BEARER, AuthType.HEADER, AuthType.URL_TOKEN);
+                .containsExactly(AuthType.NONE, AuthType.BEARER, AuthType.HEADER);
     }
 }
 ```
@@ -63,9 +63,9 @@ Expected: 编译失败（类型不存在）。
 ```java
 package com.portfolio.invest.domain.mcp;
 
-/** MCP 服务器鉴权方式。URL_TOKEN：token 拼在 URL 路径（如 Tushare）。 */
+/** MCP 服务器鉴权方式。 */
 public enum AuthType {
-    NONE, BEARER, HEADER, URL_TOKEN
+    NONE, BEARER, HEADER
 }
 ```
 
@@ -128,14 +128,14 @@ git commit -m "feat(mcp): 鉴权类型/领域异常/加密端口"
 
 ---
 
-### Task 2: McpServerCatalog 实体（含 URL_TOKEN 模板渲染/脱敏）
+### Task 2: McpServerCatalog 实体
 
 **Files:**
 - Create: `backend/src/main/java/com/portfolio/invest/domain/mcp/McpServerCatalog.java`
 - Test: `backend/src/test/java/com/portfolio/invest/domain/mcp/McpServerCatalogTest.java`
 
 **Interfaces:**
-- Produces: `McpServerCatalog` 只读值对象，工厂 `reconstitute(...)`；实例方法 `redactedUrl()`（`{token}`→`***`）、`renderUrl(String token)`（`{token}`→真值）。访问器 `id()/code()/name()/url()/authType()/authHeader()/enabled()/remark()/createdAt()`。
+- Produces: `McpServerCatalog` 只读值对象，工厂 `reconstitute(...)`。访问器 `id()/code()/name()/url()/authType()/authHeader()/enabled()/remark()/createdAt()`。
 
 - [ ] **Step 1: 写失败测试**
 
@@ -152,7 +152,7 @@ class McpServerCatalogTest {
 
     private static McpServerCatalog tushare() {
         return McpServerCatalog.reconstitute(2L, "tushare", "Tushare 官方",
-                "https://api.tushare.pro/mcp/token={token}", AuthType.URL_TOKEN, null, true, "A股行情", NOW);
+                "https://api.tushare.pro/mcp/", AuthType.BEARER, null, true, "A股行情", NOW);
     }
 
     @Test
@@ -160,28 +160,16 @@ class McpServerCatalogTest {
         var c = tushare();
         assertThat(c.id()).isEqualTo(2L);
         assertThat(c.code()).isEqualTo("tushare");
-        assertThat(c.authType()).isEqualTo(AuthType.URL_TOKEN);
-        assertThat(c.url()).contains("{token}");
+        assertThat(c.authType()).isEqualTo(AuthType.BEARER);
+        assertThat(c.url()).isEqualTo("https://api.tushare.pro/mcp/");
     }
 
     @Test
-    void 脱敏URL把token占位符替换为星号() {
-        assertThat(tushare().redactedUrl())
-                .isEqualTo("https://api.tushare.pro/mcp/token=***");
-    }
-
-    @Test
-    void 渲染URL把占位符替换为真token() {
-        assertThat(tushare().renderUrl("abc123"))
-                .isEqualTo("https://api.tushare.pro/mcp/token=abc123");
-    }
-
-    @Test
-    void 非URL_TOKEN的URL无占位符时脱敏与渲染不变() {
+    void 妙想为HEADER且带鉴权头名() {
         var c = McpServerCatalog.reconstitute(1L, "mx-ds", "妙想",
                 "https://mxapi.eastmoney.com/mxds/mcp", AuthType.HEADER, "em_api_key", true, null, NOW);
-        assertThat(c.redactedUrl()).isEqualTo("https://mxapi.eastmoney.com/mxds/mcp");
-        assertThat(c.renderUrl("x")).isEqualTo("https://mxapi.eastmoney.com/mxds/mcp");
+        assertThat(c.authType()).isEqualTo(AuthType.HEADER);
+        assertThat(c.authHeader()).isEqualTo("em_api_key");
     }
 }
 ```
@@ -198,7 +186,7 @@ package com.portfolio.invest.domain.mcp;
 
 import java.time.Instant;
 
-/** 内置数据源目录条目：只读，seed 来自 Flyway 迁移。URL_TOKEN 时 url 含 {token} 占位符。 */
+/** 内置数据源目录条目：只读，seed 来自 Flyway 迁移。 */
 public final class McpServerCatalog {
 
     private final Long id;
@@ -230,16 +218,6 @@ public final class McpServerCatalog {
         return new McpServerCatalog(id, code, name, url, authType, authHeader, enabled, remark, createdAt);
     }
 
-    /** 出参用：把 URL 中的 token 占位符脱敏为 ***。 */
-    public String redactedUrl() {
-        return url.replace("{token}", "***");
-    }
-
-    /** 装配用：把 URL 中的 token 占位符替换为真实 token（解密后）。 */
-    public String renderUrl(String token) {
-        return url.replace("{token}", token);
-    }
-
     public Long id() { return id; }
     public String code() { return code; }
     public String name() { return name; }
@@ -261,7 +239,7 @@ Run: 同 Step 2。Expected: PASS。
 ```bash
 git add backend/src/main/java/com/portfolio/invest/domain/mcp/McpServerCatalog.java \
         backend/src/test/java/com/portfolio/invest/domain/mcp/McpServerCatalogTest.java
-git commit -m "feat(mcp): 目录条目实体（URL_TOKEN 模板渲染/脱敏）"
+git commit -m "feat(mcp): 目录条目实体"
 ```
 
 ---
@@ -463,8 +441,8 @@ CREATE TABLE mcp_server_catalog (
     id          BIGSERIAL PRIMARY KEY,
     code        VARCHAR(32) NOT NULL UNIQUE,
     name        VARCHAR(64) NOT NULL,
-    url         VARCHAR(512) NOT NULL,          -- 仅 https；URL_TOKEN 时含 {token} 占位符
-    auth_type   VARCHAR(16) NOT NULL,           -- NONE / BEARER / HEADER / URL_TOKEN
+    url         VARCHAR(512) NOT NULL,          -- 仅 https
+    auth_type   VARCHAR(16) NOT NULL,           -- NONE / BEARER / HEADER
     auth_header VARCHAR(64),                    -- HEADER 时的头名（如 em_api_key）
     enabled     BOOLEAN NOT NULL DEFAULT TRUE,
     remark      VARCHAR(255),
@@ -487,7 +465,7 @@ CREATE INDEX idx_mcp_user_config_user ON mcp_user_config(user_id);
 
 INSERT INTO mcp_server_catalog (code, name, url, auth_type, auth_header, remark) VALUES
     ('mx-ds',   '东方财富妙想', 'https://mxapi.eastmoney.com/mxds/mcp', 'HEADER', 'em_api_key', 'A股/港股/美股行情、财务、估值、宏观、公告'),
-    ('tushare', 'Tushare 官方', 'https://api.tushare.pro/mcp/token={token}', 'URL_TOKEN', NULL, 'A股行情、财务、宏观、债券、基金、指数'),
+    ('tushare', 'Tushare 官方', 'https://api.tushare.pro/mcp/', 'BEARER', NULL, 'A股行情、财务、宏观、债券、基金、指数'),
     ('ifind',   '同花顺 iFinD', '<P0§4 端点>', 'HEADER', '<P0§4 头名>', 'A股分析、基金、宏观行业、公告检索'),
     ('wind',    'Wind AIFin',  '<P0§4 端点>', 'HEADER', '<P0§4 头名>', 'A股/港美股行情、财报、宏观、债券、基金、指数');
 ```
@@ -799,10 +777,10 @@ class McpConfigRepositoryImplTest extends PostgresTestSupport {
     }
 
     @Test
-    void tushare为URL_TOKEN且url含占位符() {
+    void tushare为BEARER() {
         var c = repository.findCatalogById(2L).orElseThrow();
-        assertThat(c.authType()).isEqualTo(AuthType.URL_TOKEN);
-        assertThat(c.redactedUrl()).contains("token=***");
+        assertThat(c.authType()).isEqualTo(AuthType.BEARER);
+        assertThat(c.url()).isEqualTo("https://api.tushare.pro/mcp/");
     }
 
     @Test
