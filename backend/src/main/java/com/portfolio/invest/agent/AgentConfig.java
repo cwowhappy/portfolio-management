@@ -1,13 +1,11 @@
 package com.portfolio.invest.agent;
 
 import com.portfolio.invest.config.InvestProperties;
-import io.agentscope.core.ReActAgent;
-import io.agentscope.core.agent.Agent;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ModelCreationContext;
 import io.agentscope.core.model.ModelRegistry;
-import io.agentscope.core.tool.Toolkit;
+import io.agentscope.spring.boot.agui.common.AguiAgentRegistryCustomizer;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -38,17 +36,16 @@ public class AgentConfig {
                         .build());
     }
 
-    @Bean(name = "invest")
-    @ConditionalOnExpression("T(org.springframework.util.StringUtils).hasText('${DEEPSEEK_API_KEY:}')")
-    public Agent investAgent(Model investModel, InvestTools investTools) {
-        Toolkit toolkit = new Toolkit();
-        toolkit.registerTool(investTools);
-        return ReActAgent.builder()
-                .name("invest")
-                .sysPrompt(InvestSystemPrompt.TEXT)
-                .model(investModel)
-                .toolkit(toolkit)
-                .maxIters(10)
-                .build();
+    @Bean
+    public AguiAgentRegistryCustomizer investAgentRegistration(HarnessAgentFactory factory) {
+        return registry -> registry.registerFactory("invest", () -> {
+            Long userId = CurrentUserHolder.get();
+            if (userId == null) throw new IllegalStateException("未认证用户无法访问 /agui");
+            try {
+                return factory.build(userId);
+            } finally {
+                CurrentUserHolder.remove();
+            }
+        });
     }
 }
