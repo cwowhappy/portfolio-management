@@ -76,3 +76,16 @@ invest:
       financials-ttl: 1h
       news-ttl: 5m
       overview-ttl: 15s
+  mcp:
+    connect-timeout: 10s
+    tool-timeout: 30s
+    pool-max-size: 20
+    harness:
+      workspace: .agentscope/workspace
+      state-root: .agentscope/state
+      compaction:
+        trigger-messages: 30
+        keep-messages: 10
+        flush-before-compact: true
+      memory:
+        flush-min-gap: 30m
