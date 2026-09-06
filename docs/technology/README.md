@@ -30,6 +30,7 @@ docs/technology/
     ├── 00-技术储备与规划.md    │   储备盘点 + MVP/二期/三期技术规划
     ├── 01-财经新闻与股市数据来源参考.md │   外部数据源全景（行情/新闻/基本面/宏观）与获取方法
     ├── 02-akshare与tushare接口详析.md │   两库接口手册：87 次实测、返回字段、限制、本系统映射
+    ├── 03-金融机构MCP服务参考.md   │   国内外金融机构/券商 MCP 服务全景与使用方法
     └── agentscope/           │   AgentScope Java 调研笔记（离线参考）
 ```
 
@@ -84,6 +85,7 @@ docs/technology/
 | [00-技术储备与规划.md](research/00-技术储备与规划.md) | 已有储备盘点 + MVP/二期/三期新增技术能力规划 + 技术债清单 |
 | [01-财经新闻与股市数据来源参考.md](research/01-财经新闻与股市数据来源参考.md) | 外部数据源全景参考：行情/新闻/基本面/宏观/公告的获取方法、接口明细、推荐组合（2026-09-06 调研核实） |
 | [02-akshare与tushare接口详析.md](research/02-akshare与tushare接口详析.md) | 两库接口手册：87 次实测（真实返回字段/限制/报错根因）+ 本系统映射（已在用/可替代/可扩展） |
+| [03-金融机构MCP服务参考.md](research/03-金融机构MCP服务参考.md) | 金融机构/券商 MCP 全景：国内官方（东财妙想/iFinD/Wind/Tushare/长桥/老虎）、国际（Alpha Vantage/FactSet/S&P 等）、A 股社区封装、接入方式与安全注意（2026-09-06 调研核实） |
 | [agentscope/](research/agentscope/) | AgentScope Java 框架调研笔记（`scripts/fetch_docs.py` 离线抓取） |
 
 ## 按需求快速定位
@@ -94,6 +96,7 @@ docs/technology/
 - 想知道**数据怎么来、怎么保护** → [modules/02-行情数据服务.md](modules/02-行情数据服务.md)
 - 想知道**有哪些证券数据、各自来源与接口** → [architecture/05-数据类型与来源.md](architecture/05-数据类型与来源.md)
 - 想知道**后续可接入哪些外部数据源** → [research/01-财经新闻与股市数据来源参考.md](research/01-财经新闻与股市数据来源参考.md)
+- 想知道**金融机构有哪些 MCP 服务、怎么接入** → [research/03-金融机构MCP服务参考.md](research/03-金融机构MCP服务参考.md)
 - 想知道**对外有哪些接口** → [modules/03-接口设计.md](modules/03-接口设计.md)
 - 想知道**怎么部署、测试、排错** → [modules/04-工程与运维.md](modules/04-工程与运维.md)
 - 想知道**后端测试怎么分层、新测试放哪** → [architecture/03-后端测试架构.md](architecture/03-后端测试架构.md)
