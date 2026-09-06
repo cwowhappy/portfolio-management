@@ -42,8 +42,8 @@ agentscope:
     path-prefix: /agui
     # Agent bean 名与 agent id 均为 invest
     default-agent-id: invest
-    # 前端持有完整历史，后端不存会话（ADR-0004）
-    server-side-memory: false
+    # 服务端以 HarnessAgent 的 stateStore 持久化会话历史，前端只发最新一条用户消息
+    server-side-memory: true
     enable-reasoning: true
     emit-tool-call-args: true
     emit-token-usage: true

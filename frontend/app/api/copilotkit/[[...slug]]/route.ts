@@ -34,6 +34,44 @@ async function normalizeNullContent(req: Request): Promise<Request> {
   }
 }
 
+/**
+ * 服务端历史已切到 server-side-memory（HarnessAgent 的 stateStore 持久化），
+ * 前端不再重发完整历史，只把「最新一条 user 消息」交给后端，避免后端重复追加。
+ * CopilotKit 的 useAgent/runAgent 不提供单条消息入参（RunAgentParameters 仅 runId/tools/context/
+ * forwardedProps/resume），HttpAgent 也总是携带 agent.messages 全量历史，故在本反代边界裁剪。
+ * 裁剪只影响发给 /agui/run 的 input.messages；浏览器侧 agent.messages（用于展示）不变，
+ * 后端返回的 RUN_STARTED 只会补缺已存在消息，不会清空前端已渲染历史。
+ */
+async function trimToLatestUserMessage(req: Request): Promise<Request> {
+  try {
+    const body = await req.clone().json();
+    const input = body?.input as { messages?: Array<{ role?: string }> } | undefined;
+    const messages = input?.messages;
+    if (!Array.isArray(messages) || messages.length <= 1) return req;
+
+    let lastUserIdx = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m && m.role === "user") {
+        lastUserIdx = i;
+        break;
+      }
+    }
+    if (lastUserIdx < 0) return req; // 无 user 消息（不应发生），原样透传
+    if (lastUserIdx === messages.length - 1) return req; // 已是最新一条，无需重建
+
+    body.input.messages = [messages[lastUserIdx]];
+    return new Request(req.url, {
+      method: req.method,
+      headers: req.headers,
+      body: JSON.stringify(body),
+    });
+  } catch {
+    // 非 JSON 或非预期结构：原样透传，不中断请求
+    return req;
+  }
+}
+
 // 后端 /agui/run 已按 anyRequest().authenticated() 保护，会话识别依赖浏览器下发的
 // JSESSIONID。HttpAgent 的 server-side fetch 不会自动透传浏览器 Cookie，因此这里必须
 // 按请求构建运行时，把入站请求的 Cookie 头注入到 HttpAgent（模块级构建拿不到每个请求的 Cookie）。
@@ -43,6 +81,7 @@ async function handle(req: Request) {
   // 在进入 handler 前把 input.messages 里 content 为 null 的消息归一化为空字符串。
   if (req.method === "POST") {
     req = await normalizeNullContent(req);
+    req = await trimToLatestUserMessage(req);
   }
 
   const cookie = req.headers.get("cookie") ?? "";
