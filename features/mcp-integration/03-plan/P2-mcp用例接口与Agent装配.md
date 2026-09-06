@@ -284,7 +284,128 @@ public class UserToolkitFactory {
 
 - [ ] **Step 3: 写 HarnessAgentFactory + 改 AgentConfig（registerFactory）**
 
-`HarnessAgentFactory.build(userId)`：调 `UserToolkitFactory.build(userId)` 得 toolkit，再 `HarnessAgent.builder().name("invest").sysPrompt(InvestSystemPrompt.TEXT).model(model).toolkit(toolkit).workspace(workspaceBase).compaction(...).memory(...).stateStore(...).build()`。**harness 具体配置对象（`CompactionConfig`/`MemoryConfig`/`AgentStateStore`/workspace 路径）以 `agentscope-harness:2.0.1` 的 builder 实际签名为准**，P0 已确认 builder 方法名，参数类型落地时对照 jar。
+先加配置（沿用 `InvestProperties` 嵌套类模式）：
+
+`InvestProperties` 新增 `Mcp` 嵌套类（`getMcp()` 访问器 + 内部 `Harness`）：
+
+```java
+public static class Mcp {
+    private Duration connectTimeout = Duration.ofSeconds(10);
+    private Duration toolTimeout = Duration.ofSeconds(30);
+    private int poolMaxSize = 20;
+    private Harness harness = new Harness();
+    public Duration getConnectTimeout() { return connectTimeout; }
+    public void setConnectTimeout(Duration connectTimeout) { this.connectTimeout = connectTimeout; }
+    public Duration getToolTimeout() { return toolTimeout; }
+    public void setToolTimeout(Duration toolTimeout) { this.toolTimeout = toolTimeout; }
+    public int getPoolMaxSize() { return poolMaxSize; }
+    public void setPoolMaxSize(int poolMaxSize) { this.poolMaxSize = poolMaxSize; }
+    public Harness getHarness() { return harness; }
+    public void setHarness(Harness harness) { this.harness = harness; }
+
+    public static class Harness {
+        private String workspace = ".agentscope/workspace";
+        private String stateRoot = ".agentscope/state";
+        private Compaction compaction = new Compaction();
+        private Memory memory = new Memory();
+        public String getWorkspace() { return workspace; }
+        public void setWorkspace(String workspace) { this.workspace = workspace; }
+        public String getStateRoot() { return stateRoot; }
+        public void setStateRoot(String stateRoot) { this.stateRoot = stateRoot; }
+        public Compaction getCompaction() { return compaction; }
+        public void setCompaction(Compaction compaction) { this.compaction = compaction; }
+        public Memory getMemory() { return memory; }
+        public void setMemory(Memory memory) { this.memory = memory; }
+
+        public static class Compaction {
+            private int triggerMessages = 30;
+            private int keepMessages = 10;
+            private boolean flushBeforeCompact = true;
+            public int getTriggerMessages() { return triggerMessages; }
+            public void setTriggerMessages(int triggerMessages) { this.triggerMessages = triggerMessages; }
+            public int getKeepMessages() { return keepMessages; }
+            public void setKeepMessages(int keepMessages) { this.keepMessages = keepMessages; }
+            public boolean isFlushBeforeCompact() { return flushBeforeCompact; }
+            public void setFlushBeforeCompact(boolean flushBeforeCompact) { this.flushBeforeCompact = flushBeforeCompact; }
+        }
+
+        public static class Memory {
+            private Duration flushMinGap = Duration.ofMinutes(30);
+            public Duration getFlushMinGap() { return flushMinGap; }
+            public void setFlushMinGap(Duration flushMinGap) { this.flushMinGap = flushMinGap; }
+        }
+    }
+}
+```
+
+`application.yml` 新增（`invest:` 段下）：
+
+```yaml
+  mcp:
+    connect-timeout: 10s
+    tool-timeout: 30s
+    pool-max-size: 20
+    harness:
+      workspace: .agentscope/workspace
+      state-root: .agentscope/state
+      compaction:
+        trigger-messages: 30
+        keep-messages: 10
+        flush-before-compact: true
+      memory:
+        flush-min-gap: 30m
+```
+
+> 运行参数消费点：`connectTimeout` → `McpServerTester`（Task 1）与 `McpClientPool`（Step 2）的 `McpClientBuilder.timeout(...)`（替换硬编码 10s，注入 `InvestProperties`）；`toolTimeout` → 单工具调用超时；`poolMaxSize` → `McpClientPool` 用 Caffeine `maximumSize(...)` 限池（替换无界 ConcurrentHashMap）。
+
+`HarnessAgentFactory`（读配置，builder 签名已对照 `agentscope-harness:2.0.1` jar 实测）：
+
+```java
+package com.portfolio.invest.agent;
+
+import com.portfolio.invest.config.InvestProperties;
+import io.agentscope.core.model.Model;
+import io.agentscope.core.state.JsonFileAgentStateStore;
+import io.agentscope.harness.agent.HarnessAgent;
+import io.agentscope.harness.agent.memory.MemoryConfig;
+import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
+import java.nio.file.Paths;
+import org.springframework.stereotype.Component;
+
+@Component
+public class HarnessAgentFactory {
+    private final UserToolkitFactory toolkitFactory;
+    private final Model model;
+    private final InvestProperties.Mcp.Harness config;
+
+    public HarnessAgentFactory(UserToolkitFactory toolkitFactory, Model model, InvestProperties props) {
+        this.toolkitFactory = toolkitFactory;
+        this.model = model;
+        this.config = props.getMcp().getHarness();
+    }
+
+    public HarnessAgent build(Long userId) {
+        return HarnessAgent.builder()
+                .name("invest")
+                .sysPrompt(InvestSystemPrompt.TEXT)
+                .model(model)
+                .toolkit(toolkitFactory.build(userId))
+                .workspace(Paths.get(config.getWorkspace()))   // 基路径，harness 按 RuntimeContext.userId 隔离
+                .stateStore(new JsonFileAgentStateStore(Paths.get(config.getStateRoot())))
+                .compaction(CompactionConfig.builder()
+                        .triggerMessages(config.getCompaction().getTriggerMessages())
+                        .keepMessages(config.getCompaction().getKeepMessages())
+                        .flushBeforeCompact(config.getCompaction().isFlushBeforeCompact())
+                        .build())
+                .memory(MemoryConfig.builder()
+                        .flushTrigger(MemoryConfig.FlushTrigger.throttled(config.getMemory().getFlushMinGap()))
+                        .build())
+                .build();
+    }
+}
+```
+
+> 关键类型（已实测）：`HarnessAgent implements Agent, AutoCloseable`；builder 方法 `.workspace(Path|String)`、`.stateStore(AgentStateStore)`、`.compaction(CompactionConfig)`、`.memory(MemoryConfig)`、`.toolkit(Toolkit)`、`.model(Model|String)`、`.name/.sysPrompt/.maxIters`；`CompactionConfig.builder().triggerMessages/keepMessages/flushBeforeCompact/triggerTokens/keepTokens/...`；`MemoryConfig.builder().flushTrigger(FlushTrigger)/consolidationMaxTokens/consolidationMinGap/...`（`FlushTrigger` 是 `MemoryConfig` 内部 `public static final class`，静态工厂 `always()/never()/throttled(Duration)`）；`JsonFileAgentStateStore` 构造器 `()`（默认 `~/.agentscope/state`）或 `(Path rootDirectory)`。文件系统一期用默认本地实现，不显式 `.filesystem(...)`。
 
 `AgentConfig`：删单例 `investAgent` bean，加 `AguiAgentRegistryCustomizer`：
 
