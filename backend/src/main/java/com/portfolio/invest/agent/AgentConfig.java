@@ -37,6 +37,7 @@ public class AgentConfig {
     }
 
     @Bean
+    @ConditionalOnExpression("T(org.springframework.util.StringUtils).hasText('${DEEPSEEK_API_KEY:}')")
     public AguiAgentRegistryCustomizer investAgentRegistration(HarnessAgentFactory factory) {
         return registry -> registry.registerFactory("invest", () -> {
             Long userId = CurrentUserHolder.get();
