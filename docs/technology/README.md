@@ -29,6 +29,7 @@ docs/technology/
 └── research/                ← 五、技术储备与规划
     ├── 00-技术储备与规划.md    │   储备盘点 + MVP/二期/三期技术规划
     ├── 01-财经新闻与股市数据来源参考.md │   外部数据源全景（行情/新闻/基本面/宏观）与获取方法
+    ├── 02-akshare与tushare接口详析.md │   两库接口手册：87 次实测、返回字段、限制、本系统映射
     └── agentscope/           │   AgentScope Java 调研笔记（离线参考）
 ```
 
@@ -82,6 +83,7 @@ docs/technology/
 |---|---|
 | [00-技术储备与规划.md](research/00-技术储备与规划.md) | 已有储备盘点 + MVP/二期/三期新增技术能力规划 + 技术债清单 |
 | [01-财经新闻与股市数据来源参考.md](research/01-财经新闻与股市数据来源参考.md) | 外部数据源全景参考：行情/新闻/基本面/宏观/公告的获取方法、接口明细、推荐组合（2026-09-06 调研核实） |
+| [02-akshare与tushare接口详析.md](research/02-akshare与tushare接口详析.md) | 两库接口手册：87 次实测（真实返回字段/限制/报错根因）+ 本系统映射（已在用/可替代/可扩展） |
 | [agentscope/](research/agentscope/) | AgentScope Java 框架调研笔记（`scripts/fetch_docs.py` 离线抓取） |
 
 ## 按需求快速定位
