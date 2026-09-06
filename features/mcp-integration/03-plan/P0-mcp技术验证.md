@@ -1,5 +1,7 @@
 # P0 mcp 技术验证 Implementation Plan
 
+> 状态：✅ 已完成（2026-09-06）。结论见 `03-plan/验证记录.md`：装配机制定案 Option B（resolver session → ThreadLocal → factory）、harness `HarnessAgent` drop-in、妙想/Tushare/Wind 冒烟、URL_TOKEN 已删。以下任务为历史验证清单。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 验证 AgentScope 2.0.1 的四个关键集成点，产出「验证记录」，确认或修正设计规格，为 P1 后端实现解锁。
