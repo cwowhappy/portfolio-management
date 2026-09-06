@@ -3,6 +3,8 @@ package com.portfolio.invest.web;
 import com.portfolio.invest.domain.conversation.ConversationErrorCode;
 import com.portfolio.invest.domain.market.MarketDataErrorCode;
 import com.portfolio.invest.domain.market.MarketDataException;
+import com.portfolio.invest.domain.mcp.McpErrorCode;
+import com.portfolio.invest.domain.mcp.McpException;
 import com.portfolio.invest.domain.user.UserErrorCode;
 import java.util.Objects;
 import org.slf4j.Logger;
@@ -33,6 +35,17 @@ public class GlobalExceptionHandler {
             }
         };
         return ResponseEntity.status(status).body(new ApiError(e.getCode(), e.getMessage()));
+    }
+
+    @ExceptionHandler(McpException.class)
+    public ResponseEntity<ApiError> mcp(McpException e) {
+        HttpStatus status = switch (e.code()) {
+            case McpErrorCode.PROVIDER_NOT_FOUND, McpErrorCode.CONFIG_NOT_FOUND -> HttpStatus.NOT_FOUND;
+            case McpErrorCode.INVALID_INPUT -> HttpStatus.BAD_REQUEST;
+            case McpErrorCode.CONNECTION_FAILED -> HttpStatus.BAD_GATEWAY;
+            default -> HttpStatus.BAD_REQUEST;
+        };
+        return ResponseEntity.status(status).body(new ApiError(e.code(), e.getMessage()));
     }
 
     @ExceptionHandler(com.portfolio.invest.domain.user.UserException.class)
