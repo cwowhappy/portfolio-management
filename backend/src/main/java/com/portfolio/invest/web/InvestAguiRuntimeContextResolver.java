@@ -1,5 +1,6 @@
-package com.portfolio.invest.agent;
+package com.portfolio.invest.web;
 
+import com.portfolio.invest.agent.CurrentUserHolder;
 import com.portfolio.invest.infrastructure.security.AuthenticatedUser;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.spring.boot.agui.common.AguiRuntimeContextRequest;
