@@ -13,7 +13,8 @@ docs/technology/
 │   ├── 01-系统架构.md        │   总体架构图、分层职责、请求链路、会话模型
 │   ├── 02-技术栈与工程结构.md │   技术栈版本定版、目录结构、部署拓扑
 │   ├── 03-后端测试架构.md     │   四层测试模型、source set、覆盖率门禁、ArchUnit 守护、BDD 设计
-│   └── 04-数据采集服务架构.md │   collector 数据采集服务架构（数据源、任务调度、写入链路）
+│   ├── 04-数据采集服务架构.md │   collector 数据采集服务架构（数据源、任务调度、写入链路）
+│   └── 05-数据类型与来源.md   │   证券数据类型全景 + 各来源接口明细（东财/新浪/腾讯/Tushare/中债）
 ├── modules/                 ← 二、技术视角的模块划分与设计
 │   ├── 01-Agent实现.md       │   ReActAgent 装配、模型配置、提示词、6 个 @Tool
 │   ├── 02-行情数据服务.md     │   数据源降级、代码规范化、缓存/限流
@@ -27,6 +28,9 @@ docs/technology/
 ├── decisions/               ← 四、技术决策（ADR 0001–0009 + 索引）
 └── research/                ← 五、技术储备与规划
     ├── 00-技术储备与规划.md    │   储备盘点 + MVP/二期/三期技术规划
+    ├── 01-财经新闻与股市数据来源参考.md │   外部数据源全景（行情/新闻/基本面/宏观）与获取方法
+    ├── 02-akshare与tushare接口详析.md │   两库接口手册：87 次实测、返回字段、限制、本系统映射
+    ├── 03-金融机构MCP服务参考.md   │   国内外金融机构/券商 MCP 服务全景与使用方法
     └── agentscope/           │   AgentScope Java 调研笔记（离线参考）
 ```
 
@@ -38,6 +42,7 @@ docs/technology/
 | [02-技术栈与工程结构.md](architecture/02-技术栈与工程结构.md) | 技术栈版本定版表、前后端目录结构、Docker Compose 部署拓扑 |
 | [03-后端测试架构.md](architecture/03-后端测试架构.md) | 后端四层测试模型（单元/切片/集成/BDD）、source set 划分、PostgresTestSupport 单例容器、JaCoCo 聚合门禁、ArchUnit 守护、BDD 场景清单 |
 | [04-数据采集服务架构.md](architecture/04-数据采集服务架构.md) | collector 数据采集服务架构：数据源/转换器/计算/执行/校验/写入链路、任务调度、幂等写入 |
+| [05-数据类型与来源.md](architecture/05-数据类型与来源.md) | 证券数据类型全景（运行期实时数据 + 落库估值/基本面）与各来源接口明细（东方财富/新浪/腾讯/Tushare/中债）、降级链与数据治理 |
 
 ## 二、技术视角的模块划分与设计（modules/）
 
@@ -78,6 +83,9 @@ docs/technology/
 | 文档 | 内容 |
 |---|---|
 | [00-技术储备与规划.md](research/00-技术储备与规划.md) | 已有储备盘点 + MVP/二期/三期新增技术能力规划 + 技术债清单 |
+| [01-财经新闻与股市数据来源参考.md](research/01-财经新闻与股市数据来源参考.md) | 外部数据源全景参考：行情/新闻/基本面/宏观/公告的获取方法、接口明细、推荐组合（2026-09-06 调研核实） |
+| [02-akshare与tushare接口详析.md](research/02-akshare与tushare接口详析.md) | 两库接口手册：87 次实测（真实返回字段/限制/报错根因）+ 本系统映射（已在用/可替代/可扩展） |
+| [03-金融机构MCP服务参考.md](research/03-金融机构MCP服务参考.md) | 金融机构/券商 MCP 全景：国内官方（东财妙想/iFinD/Wind/Tushare/长桥/老虎）、国际（Alpha Vantage/FactSet/S&P 等）、A 股社区封装、接入方式与安全注意（2026-09-06 调研核实） |
 | [agentscope/](research/agentscope/) | AgentScope Java 框架调研笔记（`scripts/fetch_docs.py` 离线抓取） |
 
 ## 按需求快速定位
@@ -86,6 +94,9 @@ docs/technology/
 - 想知道**后端怎么分包、新代码放哪** → [conventions/01-后端DDD分包规范.md](conventions/01-后端DDD分包规范.md)
 - 想知道**AI 怎么实现** → [modules/01-Agent实现.md](modules/01-Agent实现.md)
 - 想知道**数据怎么来、怎么保护** → [modules/02-行情数据服务.md](modules/02-行情数据服务.md)
+- 想知道**有哪些证券数据、各自来源与接口** → [architecture/05-数据类型与来源.md](architecture/05-数据类型与来源.md)
+- 想知道**后续可接入哪些外部数据源** → [research/01-财经新闻与股市数据来源参考.md](research/01-财经新闻与股市数据来源参考.md)
+- 想知道**金融机构有哪些 MCP 服务、怎么接入** → [research/03-金融机构MCP服务参考.md](research/03-金融机构MCP服务参考.md)
 - 想知道**对外有哪些接口** → [modules/03-接口设计.md](modules/03-接口设计.md)
 - 想知道**怎么部署、测试、排错** → [modules/04-工程与运维.md](modules/04-工程与运维.md)
 - 想知道**后端测试怎么分层、新测试放哪** → [architecture/03-后端测试架构.md](architecture/03-后端测试架构.md)
