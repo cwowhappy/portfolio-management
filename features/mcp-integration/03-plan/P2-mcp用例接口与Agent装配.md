@@ -265,7 +265,7 @@ public class UserToolkitFactory {
             String token = provider.authSecretEnc(); // 一期明文；二期 cipher.decrypt(...)
             for (McpEndpoint endpoint : repository.findEnabledEndpointsByProviderId(provider.id())) {
                 try {
-                    McpClientWrapper client = clientPool.acquire(endpoint, provider, userId, config.configVersion(), token);
+                    McpClientWrapper client = clientPool.acquire(endpoint, provider, token); // 键=endpointId，token 全局不 per-user
                     List<String> toDisable = new ArrayList<>();
                     for (McpSchema.Tool t : client.listTools().block()) {
                         if (config.disabledTools().contains(t.name()) || names.contains(t.name())) toDisable.add(t.name());
@@ -414,6 +414,7 @@ public class HarnessAgentFactory {
 public AguiAgentRegistryCustomizer investAgentRegistration(HarnessAgentFactory factory) {
     return registry -> registry.registerFactory("invest", () -> {
         Long userId = CurrentUserHolder.get();
+        if (userId == null) throw new IllegalStateException("未认证用户无法访问 /agui");
         try { return factory.build(userId); }
         finally { CurrentUserHolder.remove(); }
     });
