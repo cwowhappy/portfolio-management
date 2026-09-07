@@ -7,6 +7,8 @@ import static org.mockito.Mockito.when;
 import com.portfolio.invest.domain.market.MarketDataErrorCode;
 import com.portfolio.invest.domain.market.MarketDataException;
 import com.portfolio.invest.domain.conversation.ConversationErrorCode;
+import com.portfolio.invest.domain.skill.SkillErrorCode;
+import com.portfolio.invest.domain.skill.SkillException;
 import com.portfolio.invest.domain.user.UserErrorCode;
 import com.portfolio.invest.domain.user.UserException;
 import com.portfolio.invest.domain.valuation.ValuationErrorCode;
@@ -89,6 +91,15 @@ class GlobalExceptionHandlerTest {
                 new ValuationException(ValuationErrorCode.INVALID_INPUT, "非法周期"));
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(res.getBody()).isEqualTo(new ApiError(ValuationErrorCode.INVALID_INPUT, "非法周期"));
+    }
+
+    @DisplayName("技能异常INVALID_INPUT映射400")
+    @Test
+    void givenSkillInvalidInput_whenHandlingSkillException_thenReturn400() {
+        ResponseEntity<ApiError> res = handler.skill(
+                new SkillException(SkillErrorCode.INVALID_INPUT, "用户ID不能为空"));
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(res.getBody()).isEqualTo(new ApiError(SkillErrorCode.INVALID_INPUT, "用户ID不能为空"));
     }
 
     @DisplayName("会话异常INVALID_MESSAGE映射400")

@@ -135,6 +135,13 @@ Playwright e2e 位于 `frontend/e2e/`，配置见 `frontend/playwright.config.ts
 | POST /api/allocation/plans/{planId}/activate | 激活方案 |
 | GET /api/allocation/deviation | 目标配置 vs 持仓偏离度 |
 
+**Skill**（前端经 /api/skills/** 反代，需登录）：
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/skills` | 内置 skill 目录 + 我的启用状态 |
+| PUT | `/api/skills/config` | 全量保存我的启用集合（body `{"enabled":["tushare_data"]}`） |
+
 ## 目录结构
 
 ```
