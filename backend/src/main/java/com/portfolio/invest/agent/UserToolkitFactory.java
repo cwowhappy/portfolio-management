@@ -3,11 +3,12 @@ package com.portfolio.invest.agent;
 import com.portfolio.invest.domain.mcp.*;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
+import io.agentscope.core.tool.mcp.McpTool;
 import io.modelcontextprotocol.spec.McpSchema;
-import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -37,17 +38,31 @@ public class UserToolkitFactory {
             for (McpEndpoint endpoint : repository.findEnabledEndpointsByProviderId(provider.id())) {
                 try {
                     McpClientWrapper client = clientPool.acquire(provider, endpoint, token);
-                    List<String> toDisable = new ArrayList<>();
                     for (McpSchema.Tool t : client.listTools().block()) {
-                        if (config.disabledTools().contains(t.name()) || names.contains(t.name())) toDisable.add(t.name());
-                        else names.add(t.name());
+                        String name = t.name();
+                        if (config.disabledTools().contains(name) || names.contains(name)) continue;
+                        names.add(name);
+                        toolkit.registerAgentTool(readOnlyMcpTool(t, client));
                     }
-                    toolkit.registration().mcpClient(client).disableTools(toDisable).apply();
                 } catch (Exception e) {
                     log.warn("MCP 端点 {} 装配失败，跳过：{}", endpoint.name(), e.getMessage());
                 }
             }
         }
         return toolkit;
+    }
+
+    /** 手动构造 McpTool 并强制 readOnly=true：MCP 数据源工具未标 readOnlyHint，本系统只接只读数据源。 */
+    private static McpTool readOnlyMcpTool(McpSchema.Tool t, McpClientWrapper client) {
+        Map<String, Object> params = McpTool.convertMcpSchemaToParameters(t.inputSchema(), Set.of());
+        return new McpTool(
+                t.name(),
+                t.description() != null ? t.description() : "",
+                params,
+                t.outputSchema() != null ? new ConcurrentHashMap<>(t.outputSchema()) : null,
+                client,
+                null,
+                client.getName(),
+                true);
     }
 }
