@@ -263,6 +263,8 @@ The default is `MERGE_FRONTEND_PRIORITY`. Injection is run scoped and does not p
 
 ## HITL Interrupts
 
+> ⚠️ **版本注意（2.0.1 实测，2026-09-08）**：本节描述的「`RequireUserConfirmEvent → tool_call interrupt`（含 `agentscope.interruptKind` metadata）」在 agentscope 2.0.1 **未实现**。2.0.1 实测：权限确认流走 RAW `RequireUserConfirmEvent` + `REQUEST_STOP`（`generateReason=PERMISSION_ASKING`），`RUN_FINISHED` 无 `outcome`；`resume[]` 只对 `TOOL_SUSPENDED` 流有效，权限流返回 `AGUI_INTERRUPT_CONTRACT_ERROR`；真实续跑需后续消息挂 `agentscope_confirm_results` metadata（`Msg.METADATA_CONFIRM_RESULTS`），但 `AguiMessage` 无 metadata 字段、`AguiMessageConverter` 丢弃 metadata，前端经 `/agui/run` 无法承载 `ConfirmResult`。源码证据：`AgentEventConverterRegistry` 不覆盖 `RequireUserConfirmEvent`（兜底 RAW）、`AgentLifecycleEventConverter` 仅对 `TOOL_SUSPENDED` 产 interrupt outcome、`AguiResumeCoordinator` 无 pending interrupt 时拒绝 `resume[]`。→ 一期改用「MCP 工具强制 `readOnly=true`」放行（见 `features/mcp-integration` 的 `UserToolkitFactory`）。
+
 When a run pauses for a tool decision, the AG-UI adapter emits the official interrupt outcome on `RUN_FINISHED`. AgentScope Java has two built-in tool-call interrupt paths:
 
 - **Tool suspension / external execution**: a suspended `ToolResultBlock` becomes a `tool_call` interrupt and resumes as a `ToolResultBlock`.
