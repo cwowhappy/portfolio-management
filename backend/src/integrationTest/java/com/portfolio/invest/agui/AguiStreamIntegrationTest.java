@@ -3,7 +3,6 @@ package com.portfolio.invest.agui;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -121,19 +120,23 @@ class AguiStreamIntegrationTest extends PostgresTestSupport {
         assertThat(body).doesNotContain("TEXT_MESSAGE_START");
     }
 
-    @DisplayName("非法请求体返回结构化错误而非事件流")
+    @DisplayName("非法请求体返回400与流内解析错误事件")
     @Test
     void givenInvalidRequestBody_whenRunConversation_thenStructuredErrorNotEventStream() throws Exception {
         MockHttpSession session = registerApproveAndLogin("agui_carol");
 
-        // JSON 解析在控制器入参绑定阶段失败，走不到 SSE：
-        // GlobalExceptionHandler 的 HttpMessageNotReadableException 映射 → 400 INVALID_REQUEST
-        mockMvc.perform(post("/agui/run")
+        // agentscope 2.0.3：请求体由 starter 内置 AguiRequestBodyParser 解析，非法 JSON 不再
+        // 冒泡为 MVC 绑定异常（GlobalExceptionHandler 不介入），而是以 SSE 流内 RAW 事件返回
+        // 解析错误（threadId/runId 回退 unknown），HTTP 状态 400
+        MvcResult result = mockMvc.perform(post("/agui/run")
                         .session(session)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{not-a-json"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+                .andReturn();
+        String body = result.getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(body).contains("Failed to parse request");
+        assertThat(body).doesNotContain("TEXT_MESSAGE_START");
     }
 
     private MockHttpSession registerApproveAndLogin(String username) throws Exception {
