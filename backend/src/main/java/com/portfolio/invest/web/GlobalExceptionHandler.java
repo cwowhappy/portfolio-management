@@ -5,6 +5,8 @@ import com.portfolio.invest.domain.market.MarketDataErrorCode;
 import com.portfolio.invest.domain.market.MarketDataException;
 import com.portfolio.invest.domain.mcp.McpErrorCode;
 import com.portfolio.invest.domain.mcp.McpException;
+import com.portfolio.invest.domain.skill.SkillErrorCode;
+import com.portfolio.invest.domain.skill.SkillException;
 import com.portfolio.invest.domain.user.UserErrorCode;
 import java.util.Objects;
 import org.slf4j.Logger;
@@ -43,6 +45,15 @@ public class GlobalExceptionHandler {
             case McpErrorCode.PROVIDER_NOT_FOUND, McpErrorCode.CONFIG_NOT_FOUND -> HttpStatus.NOT_FOUND;
             case McpErrorCode.INVALID_INPUT -> HttpStatus.BAD_REQUEST;
             case McpErrorCode.CONNECTION_FAILED -> HttpStatus.BAD_GATEWAY;
+            default -> HttpStatus.BAD_REQUEST;
+        };
+        return ResponseEntity.status(status).body(new ApiError(e.code(), e.getMessage()));
+    }
+
+    @ExceptionHandler(SkillException.class)
+    public ResponseEntity<ApiError> skill(SkillException e) {
+        HttpStatus status = switch (e.code()) {
+            case SkillErrorCode.INVALID_INPUT -> HttpStatus.BAD_REQUEST;
             default -> HttpStatus.BAD_REQUEST;
         };
         return ResponseEntity.status(status).body(new ApiError(e.code(), e.getMessage()));
