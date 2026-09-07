@@ -350,6 +350,9 @@ v2 hooks 全景（[Which Hook for Which Job](https://docs.copilotkit.ai/concepts
 4. **配套**：方案 7（权限规则）做长期治理——首次审批时可考虑让后端带 suggested rules（AgentScope `ConfirmResult.rules`），沉淀为 ALLOW 规则减少打扰（前端 resume payload 只需 approved/editedArgs，规则由后端侧处理）。
 5. **方案 1/2**：用于「agent 主动问用户要结构化输入」的增量场景（如确认调仓参数），`useHumanInTheLoop` 注册 `confirm_trade` 类前端工具即可，与方案 3 互补（Overview 的官方分工：LLM 发起 → useHumanInTheLoop；运行时强制 → useInterrupt）。
 
+> 已落地（2026-09）：readOnly 按 MCP 规范判定 + useInterrupt 审批卡片（全部铺开）+ 契约错误中文引导；
+> 验收测试 `McpHitlIntegrationTest`（真实 MCP server 内嵌自供，全链路四场景）。见 `features/mcp-hitl/`。
+
 **风险与验证点**（✅ 2026-09-08 已随 2.0.3 升级实测，见 §4.4 与 `AguiInterruptIntegrationTest`）：
 
 - ~~2.0.3 的 `PermissionConfirmEventConverter` 行为需 end-to-end 确认~~ ✅ 已验证：4 场景集成测试全绿（假 Model + 写工具，覆盖 `/agui/run` SSE → interrupt outcome → resume → ConfirmResult → 续跑）；前端 `useInterrupt` 渲染层留待 HITL UI 立项时验证；
