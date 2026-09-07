@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   useAgentProps: null as Record<string, unknown> | null,
   defaultToolRender: null as null | ((props: Record<string, unknown>) => React.ReactNode),
   renderToolCall: vi.fn(),
+  interruptProps: null as { interrupts: unknown[]; resolve: (p: unknown, id?: string) => void } | null,
 }));
 
 vi.mock("@copilotkit/react-core/v2", () => ({
@@ -31,6 +32,8 @@ vi.mock("@copilotkit/react-core/v2", () => ({
   useDefaultRenderTool: ({ render }: { render: (p: Record<string, unknown>) => React.ReactNode }) => {
     mocks.defaultToolRender = render;
   },
+  useInterrupt: (config: { render: (p: unknown) => React.ReactNode }) =>
+    mocks.interruptProps ? config.render(mocks.interruptProps) : null,
   useRenderToolCall: () => mocks.renderToolCall,
   UseAgentUpdate: { OnMessagesChanged: "messages", OnRunStatusChanged: "run" },
 }));
@@ -76,6 +79,7 @@ beforeEach(() => {
   mocks.renderToolCall.mockReset();
   mocks.renderToolCall.mockReturnValue(<div data-testid="tool-rendered" />);
   mocks.defaultToolRender = null;
+  mocks.interruptProps = null;
 });
 
 afterEach(() => {
@@ -416,6 +420,49 @@ describe("ThreadArea", () => {
     });
     const { getByText } = render(<>{node}</>);
     expect(getByText("实时行情")).toBeTruthy();
+  });
+
+  it("权限中断：卡片渲染且批准/拒绝 resolve 携带 interruptId（FR-5）", async () => {
+    const resolve = vi.fn();
+    mocks.interruptProps = {
+      interrupts: [
+        {
+          id: "reply-1:call_a",
+          message: "需要确认后执行",
+          metadata: { toolName: "write_note", toolInput: '{"file":"a.md"}' },
+        },
+      ],
+      resolve,
+    };
+    renderThread();
+    await waitFor(() => expect(screen.getByText(/write_note/)).toBeTruthy());
+    expect(screen.getByText("需要确认后执行")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "批准" }));
+    expect(resolve).toHaveBeenCalledWith({ approved: true }, "reply-1:call_a");
+
+    fireEvent.click(screen.getByRole("button", { name: "拒绝" }));
+    expect(resolve).toHaveBeenCalledWith({ approved: false }, "reply-1:call_a");
+  });
+
+  it("契约错误翻译：中断失效报错显示中文引导（FR-8）", async () => {
+    mocks.runAgent.mockRejectedValue(
+      new Error(
+        "Thread has unresolved interrupts; RunAgentInput.resume must address all of them",
+      ),
+    );
+    renderThread();
+    await waitFor(() => expect(screen.getByPlaceholderText(composerPlaceholder)).toBeTruthy());
+    const ta = screen.getByPlaceholderText(composerPlaceholder);
+    fireEvent.change(ta, { target: { value: "继续" } });
+    fireEvent.keyDown(ta, { key: "Enter", shiftKey: false });
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          "当前对话有未完成的审批（可能因页面刷新或服务重启失效），请开启新对话继续。",
+        ),
+      ).toBeTruthy(),
+    );
   });
 
   describe("Composer", () => {

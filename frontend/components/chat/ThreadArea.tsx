@@ -4,6 +4,7 @@ import {
   useAgent,
   useCopilotKit,
   useDefaultRenderTool,
+  useInterrupt,
   useRenderToolCall,
   UseAgentUpdate,
 } from "@copilotkit/react-core/v2";
@@ -18,11 +19,26 @@ import {
   useChatRuntime,
 } from "./RuntimeProvider";
 import { loadMessages, newThreadId } from "@/lib/conversations";
+import InterruptApprovalCard from "./InterruptApprovalCard";
 import ToolCallCard from "./ToolCallCard";
 import { CodeBlock, InlineCode } from "./CodeHighlight";
 
 // 模块级常量：避免每次渲染新建数组触发潜在的重订阅
 const AGENT_UPDATES = [UseAgentUpdate.OnMessagesChanged, UseAgentUpdate.OnRunStatusChanged];
+
+// mcp-hitl FR-8：上游契约错误文案翻译（agentscope 2.0.3 字节码核对的稳定字面量）
+const INTERRUPT_CONTRACT_ERROR_HINTS = [
+  "Thread has unresolved interrupts",
+  "RunAgentInput.resume does not match any open interrupt",
+] as const;
+
+function toSendErrorText(e: unknown): string {
+  const msg = e instanceof Error ? e.message : "";
+  if (INTERRUPT_CONTRACT_ERROR_HINTS.some((h) => msg.includes(h))) {
+    return "当前对话有未完成的审批（可能因页面刷新或服务重启失效），请开启新对话继续。";
+  }
+  return msg !== "" ? msg : "请求失败，请稍后重试";
+}
 
 // ———— 思考折叠 ————
 
@@ -356,6 +372,27 @@ export default function ThreadArea({ llmReady, onUnauthorized }: {
   });
   const { copilotkit } = useCopilotKit();
   const [sendError, setSendError] = useState<string | null>(null);
+  // 权限审批（mcp-hitl）：renderInChat:false 时 hook 返回元素，须手动渲染（挂载点在消息流尾部）
+  const interruptBar = useInterrupt({
+    renderInChat: false,
+    render: ({ interrupts, resolve }) =>
+      interrupts.length > 0 ? (
+        <div className="mx-auto w-full max-w-[860px] px-5">
+          {interrupts.map((it) => (
+            <InterruptApprovalCard
+              key={it.id}
+              toolName={(it.metadata?.["toolName"] as string) ?? "未知工具"}
+              toolInput={it.metadata?.["toolInput"]}
+              message={it.message}
+              onApprove={() => void resolve({ approved: true }, it.id)}
+              onDeny={() => void resolve({ approved: false }, it.id)}
+            />
+          ))}
+        </div>
+      ) : (
+        <></>
+      ),
+  });
   const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 防抖窗口内待写入的快照：供「运行停止立即 flush」与「卸载/切线程 best-effort flush」使用
   const pendingPersist = useRef<{ threadId: string; msgs: Message[] } | null>(null);
@@ -389,7 +426,7 @@ export default function ThreadArea({ llmReady, onUnauthorized }: {
           onUnauthorized?.();
           return;
         }
-        setSendError(e instanceof Error ? e.message : "请求失败，请稍后重试");
+        setSendError(toSendErrorText(e));
       }
     },
     [agent, copilotkit, isReady, onUnauthorized],
@@ -525,6 +562,7 @@ export default function ThreadArea({ llmReady, onUnauthorized }: {
             })
           )}
           <div className="h-6" />
+          {interruptBar}
         </div>
       </div>
       {sendError && (
