@@ -263,7 +263,11 @@ The default is `MERGE_FRONTEND_PRIORITY`. Injection is run scoped and does not p
 
 ## HITL Interrupts
 
-> ⚠️ **版本注意（2.0.1 实测，2026-09-08）**：本节描述的「`RequireUserConfirmEvent → tool_call interrupt`（含 `agentscope.interruptKind` metadata）」在 agentscope 2.0.1 **未实现**。2.0.1 实测：权限确认流走 RAW `RequireUserConfirmEvent` + `REQUEST_STOP`（`generateReason=PERMISSION_ASKING`），`RUN_FINISHED` 无 `outcome`；`resume[]` 只对 `TOOL_SUSPENDED` 流有效，权限流返回 `AGUI_INTERRUPT_CONTRACT_ERROR`；真实续跑需后续消息挂 `agentscope_confirm_results` metadata（`Msg.METADATA_CONFIRM_RESULTS`），但 `AguiMessage` 无 metadata 字段、`AguiMessageConverter` 丢弃 metadata，前端经 `/agui/run` 无法承载 `ConfirmResult`。源码证据：`AgentEventConverterRegistry` 不覆盖 `RequireUserConfirmEvent`（兜底 RAW）、`AgentLifecycleEventConverter` 仅对 `TOOL_SUSPENDED` 产 interrupt outcome、`AguiResumeCoordinator` 无 pending interrupt 时拒绝 `resume[]`。→ 一期改用「MCP 工具强制 `readOnly=true`」放行（见 `features/mcp-integration` 的 `UserToolkitFactory`）。
+> ⚠️ **版本注意（2.0.1 实测，2026-09-08；2.0.3 已修复并实测，2026-09-08）**：本节描述的「`RequireUserConfirmEvent → tool_call interrupt`（含 `agentscope.interruptKind` metadata）」在 agentscope **2.0.1 未实现**，自 **2.0.3（PR #2495）起已实现**，本项目已升级 2.0.3 并以集成测试验证（`backend/src/integrationTest/.../AguiInterruptIntegrationTest.java`，4 场景全绿）。
+>
+> 2.0.1 实测：权限确认流走 RAW `RequireUserConfirmEvent` + `REQUEST_STOP`（`generateReason=PERMISSION_ASKING`），`RUN_FINISHED` 无 `outcome`；`resume[]` 只对 `TOOL_SUSPENDED` 流有效，权限流返回 `AGUI_INTERRUPT_CONTRACT_ERROR`；真实续跑需后续消息挂 `agentscope_confirm_results` metadata（`Msg.METADATA_CONFIRM_RESULTS`），但 `AguiMessage` 无 metadata 字段、`AguiMessageConverter` 丢弃 metadata，前端经 `/agui/run` 无法承载 `ConfirmResult`。源码证据：`AgentEventConverterRegistry` 不覆盖 `RequireUserConfirmEvent`（兜底 RAW）、`AgentLifecycleEventConverter` 仅对 `TOOL_SUSPENDED` 产 interrupt outcome、`AguiResumeCoordinator` 无 pending interrupt 时拒绝 `resume[]`。
+>
+> 2.0.3 实测补充（详见 `docs/technology/research/copilotkit/agui-hitl.md` §4）：① 权限上下文为 trivial（DEFAULT 模式且无规则）时走轻量路径，工具**自身** `checkPermissions` 不返回 ASK 即放行——`@Tool(readOnly=false)` 注解工具默认 passthrough 不会 ASK，MCP 工具不受影响（`McpTool#checkPermissions` 对非只读工具固定返回 ASK）；② resume 续跑轮不重放工具事件（`TOOL_CALL_RESULT` 被 `AguiStreamContext#hasStartedToolCall` 抑制），工具执行以服务端 state 佐证；③ `resume[]` 的 payload 由 `AguiMessageConverter#toConfirmResultMsg` 转 `ConfirmResult`，`AguiMessage` 无 metadata 的缺口被绕开；④ 无 open interrupt 时 `resume[]` 仍返回 `AGUI_INTERRUPT_CONTRACT_ERROR`（契约行为保持）。
 
 When a run pauses for a tool decision, the AG-UI adapter emits the official interrupt outcome on `RUN_FINISHED`. AgentScope Java has two built-in tool-call interrupt paths:
 

@@ -149,4 +149,69 @@ describe("AG-UI 事件流（真实 HttpAgent + 假 SSE 帧）", () => {
     expect(agent.messages).toEqual([]);
     expect(agent.isRunning).toBe(false);
   });
+
+  // ———— HITL interrupt（agentscope 2.0.3 权限确认流，useInterrupt 依赖的客户端层契约） ————
+
+  const INTERRUPT = {
+    id: "reply-1:tc9",
+    reason: "tool_call",
+    toolCallId: "tc9",
+    message: "Need approval before running this tool",
+    metadata: { "agentscope.interruptKind": "permission_confirm", toolName: "test_write" },
+  };
+
+  it("RUN_FINISHED 携带 outcome.interrupt：runAgent 正常结束且 pendingInterrupts 填充", async () => {
+    const { agent } = makeAgent([
+      RUN_STARTED,
+      { type: "TOOL_CALL_START", toolCallId: "tc9", toolCallName: "test_write", parentMessageId: "a1" },
+      { type: "TOOL_CALL_ARGS", toolCallId: "tc9", delta: '{"note":"x"}' },
+      { type: "TOOL_CALL_END", toolCallId: "tc9" },
+      {
+        type: "RUN_FINISHED",
+        threadId: "t1",
+        runId: "r1",
+        outcome: { type: "interrupt", interrupts: [INTERRUPT] },
+      },
+    ]);
+    agent.addMessage({ id: "u1", role: "user", content: "写一条记录" });
+    // 中断即正常结束：runAgent resolve、不 throw（钉住 0.0.59 行为，useInterrupt 的前提）
+    await agent.runAgent();
+    expect(agent.isRunning).toBe(false);
+    expect(agent.pendingInterrupts).toEqual([INTERRUPT]);
+  });
+
+  it("resolve 后续跑：runAgent({resume}) 把 ResumeEntry 原样放进请求体", async () => {
+    const events = [
+      RUN_STARTED,
+      {
+        type: "RUN_FINISHED",
+        threadId: "t1",
+        runId: "r1",
+        outcome: { type: "interrupt", interrupts: [INTERRUPT] },
+      },
+    ];
+    const resumeEvents = [RUN_STARTED, RUN_FINISHED];
+    const bodies: unknown[] = [];
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      bodies.push(JSON.parse(String(init.body)));
+      // 第一轮返回中断流，第二轮返回普通完成流
+      return sseResponse(bodies.length === 1 ? events : resumeEvents);
+    });
+    const agent = new HttpAgent({ url: "http://test.local/agui/run", fetch: fetchMock as unknown as HttpAgent["fetch"] });
+    agent.addMessage({ id: "u1", role: "user", content: "写一条记录" });
+    await agent.runAgent();
+    expect(agent.pendingInterrupts).toHaveLength(1);
+
+    await agent.runAgent({
+      resume: [{ interruptId: INTERRUPT.id, status: "resolved", payload: { approved: true } }],
+    });
+
+    // 第二次请求体：resume 数组原样出现在 RunAgentInput 顶层（后端 AguiResumeCoordinator 的入口）
+    expect(bodies).toHaveLength(2);
+    expect(bodies[1]).toMatchObject({
+      resume: [{ interruptId: "reply-1:tc9", status: "resolved", payload: { approved: true } }],
+    });
+    // 成功续跑后 pendingInterrupts 清空（客户端 0.0.59 语义）
+    expect(agent.pendingInterrupts).toEqual([]);
+  });
 });
