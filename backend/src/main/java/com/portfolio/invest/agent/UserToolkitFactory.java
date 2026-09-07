@@ -42,7 +42,7 @@ public class UserToolkitFactory {
                         String name = t.name();
                         if (config.disabledTools().contains(name) || names.contains(name)) continue;
                         names.add(name);
-                        toolkit.registerAgentTool(readOnlyMcpTool(t, client));
+                        toolkit.registerAgentTool(mcpTool(t, client));
                     }
                 } catch (Exception e) {
                     log.warn("MCP 端点 {} 装配失败，跳过：{}", endpoint.name(), e.getMessage());
@@ -52,8 +52,14 @@ public class UserToolkitFactory {
         return toolkit;
     }
 
-    /** 手动构造 McpTool 并强制 readOnly=true：MCP 数据源工具未标 readOnlyHint，本系统只接只读数据源。 */
-    private static McpTool readOnlyMcpTool(McpSchema.Tool t, McpClientWrapper client) {
+    /**
+     * 手动构造 McpTool，readOnly 按 MCP 规范判定（FR-1）：readOnlyHint=true 只读放行；
+     * 缺省或 false 视为写，触发权限审批（宁多问不漏问，治理路径见 ADR-0010）。
+     * 判定式与上游 McpClientManager（agentscope 2.0.3）逐字一致——上游为包私有，只能复制。
+     */
+    private static McpTool mcpTool(McpSchema.Tool t, McpClientWrapper client) {
+        boolean readOnly =
+                t.annotations() != null && Boolean.TRUE.equals(t.annotations().readOnlyHint());
         Map<String, Object> params = McpTool.convertMcpSchemaToParameters(t.inputSchema(), Set.of());
         return new McpTool(
                 t.name(),
@@ -63,6 +69,6 @@ public class UserToolkitFactory {
                 client,
                 null,
                 client.getName(),
-                true);
+                readOnly);
     }
 }
