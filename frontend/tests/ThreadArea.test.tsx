@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
     addMessage: vi.fn(),
     setMessages: vi.fn(),
     abortRun: vi.fn(),
+    subscribe: vi.fn(),
   },
   runAgent: vi.fn(),
   isReady: true,
@@ -76,6 +77,8 @@ beforeEach(() => {
   mocks.agent.addMessage.mockReset();
   mocks.agent.setMessages.mockReset();
   mocks.agent.abortRun.mockReset();
+  mocks.agent.subscribe.mockReset();
+  mocks.agent.subscribe.mockReturnValue({ unsubscribe: vi.fn() });
   mocks.renderToolCall.mockReset();
   mocks.renderToolCall.mockReturnValue(<div data-testid="tool-rendered" />);
   mocks.defaultToolRender = null;
@@ -445,6 +448,43 @@ describe("ThreadArea", () => {
     expect(resolve).toHaveBeenCalledWith({ approved: false }, "reply-1:call_a");
   });
 
+  it("多中断铺开：两个 interrupt 渲染两张卡片，resolve 各自携带 interruptId（FR-5）", async () => {
+    const resolve = vi.fn();
+    mocks.interruptProps = {
+      interrupts: [
+        {
+          id: "reply-1:call_a",
+          message: "写入前请确认 A",
+          metadata: { toolName: "write_note", toolInput: '{"file":"a.md"}' },
+        },
+        {
+          id: "reply-2:call_b",
+          message: "写入前请确认 B",
+          metadata: { toolName: "delete_record", toolInput: '{"id":42}' },
+        },
+      ],
+      resolve,
+    };
+    renderThread();
+    // 两张卡片都渲染（不同工具名与 message 各自可见）
+    await waitFor(() => expect(screen.getByText(/write_note/)).toBeTruthy());
+    expect(screen.getByText(/delete_record/)).toBeTruthy();
+    expect(screen.getByText("写入前请确认 A")).toBeTruthy();
+    expect(screen.getByText("写入前请确认 B")).toBeTruthy();
+
+    // 两组批准/拒绝按钮（DOM 顺序与 interrupts 数组一致）
+    const approveButtons = screen.getAllByRole("button", { name: "批准" });
+    const denyButtons = screen.getAllByRole("button", { name: "拒绝" });
+    expect(approveButtons).toHaveLength(2);
+    expect(denyButtons).toHaveLength(2);
+
+    fireEvent.click(approveButtons[0]);
+    fireEvent.click(denyButtons[1]);
+    // 各自按钮 resolve 携带各自的 interruptId
+    expect(resolve).toHaveBeenCalledWith({ approved: true }, "reply-1:call_a");
+    expect(resolve).toHaveBeenCalledWith({ approved: false }, "reply-2:call_b");
+  });
+
   it("契约错误翻译：中断失效报错显示中文引导（FR-8）", async () => {
     mocks.runAgent.mockRejectedValue(
       new Error(
@@ -463,6 +503,61 @@ describe("ThreadArea", () => {
         ),
       ).toBeTruthy(),
     );
+  });
+
+  // FR-8 终审修复：契约错误以流内 RUN_ERROR SSE 事件到达，@ag-ui/client 0.0.59 对其
+  // resolve（而非 reject）runAgent 的 promise —— catch 出口不可达，须经 agent 订阅出口透出。
+  function lastAgentSubscriber() {
+    const calls = mocks.agent.subscribe.mock.calls;
+    expect(calls.length).toBeGreaterThan(0);
+    return calls[calls.length - 1][0] as {
+      onRunErrorEvent: (params: {
+        event: { type: string; message: string; code?: string };
+      }) => void;
+    };
+  }
+
+  it("流内 RUN_ERROR 契约错误事件（code 优先匹配）显示中文引导横幅（FR-8）", async () => {
+    renderThread();
+    await waitFor(() => expect(mocks.agent.subscribe).toHaveBeenCalled());
+    act(() => {
+      lastAgentSubscriber().onRunErrorEvent({
+        event: {
+          type: "RUN_ERROR",
+          message: "Thread has unresolved interrupts; RunAgentInput.resume must address all of them",
+          code: "AGUI_INTERRUPT_CONTRACT_ERROR",
+        },
+      });
+    });
+    expect(
+      await screen.findByText(
+        "当前对话有未完成的审批（可能因页面刷新或服务重启失效），请开启新对话继续。",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("流内 RUN_ERROR 非契约错误显示其 message（FR-8）", async () => {
+    renderThread();
+    await waitFor(() => expect(mocks.agent.subscribe).toHaveBeenCalled());
+    act(() => {
+      lastAgentSubscriber().onRunErrorEvent({
+        event: { type: "RUN_ERROR", message: "上游模型超时", code: "UPSTREAM_TIMEOUT" },
+      });
+    });
+    expect(await screen.findByText("上游模型超时")).toBeTruthy();
+  });
+
+  it("流内 RUN_ERROR 用户主动停止（code=abort）不弹错误横幅（FR-8）", async () => {
+    renderThread();
+    await waitFor(() => expect(mocks.agent.subscribe).toHaveBeenCalled());
+    act(() => {
+      lastAgentSubscriber().onRunErrorEvent({
+        event: { type: "RUN_ERROR", message: "This operation was aborted", code: "abort" },
+      });
+    });
+    await act(async () => {});
+    expect(screen.queryByText(/This operation was aborted/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "关闭错误提示" })).toBeNull();
   });
 
   describe("Composer", () => {

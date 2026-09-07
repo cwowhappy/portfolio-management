@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
     addMessage: vi.fn(),
     setMessages: vi.fn(),
     abortRun: vi.fn(),
+    subscribe: vi.fn(),
   },
   runAgent: vi.fn(),
   isReady: true,
@@ -64,6 +65,8 @@ beforeEach(() => {
   mocks.agent.addMessage.mockReset();
   mocks.agent.setMessages.mockReset();
   mocks.agent.abortRun.mockReset();
+  mocks.agent.subscribe.mockReset();
+  mocks.agent.subscribe.mockReturnValue({ unsubscribe: vi.fn() });
   mocks.renderToolCall.mockReset();
   mocks.renderToolCall.mockReturnValue(<div data-testid="tool-rendered" />);
   mocks.defaultToolRender = null;

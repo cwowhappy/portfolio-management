@@ -355,7 +355,7 @@ v2 hooks 全景（[Which Hook for Which Job](https://docs.copilotkit.ai/concepts
 
 **风险与验证点**（✅ 2026-09-08 已随 2.0.3 升级实测，见 §4.4 与 `AguiInterruptIntegrationTest`）：
 
-- ~~2.0.3 的 `PermissionConfirmEventConverter` 行为需 end-to-end 确认~~ ✅ 已验证：4 场景集成测试全绿（假 Model + 写工具，覆盖 `/agui/run` SSE → interrupt outcome → resume → ConfirmResult → 续跑）；前端 `useInterrupt` 渲染层留待 HITL UI 立项时验证；
+- ~~2.0.3 的 `PermissionConfirmEventConverter` 行为需 end-to-end 确认~~ ✅ 已验证：4 场景集成测试全绿（假 Model + 写工具，覆盖 `/agui/run` SSE → interrupt outcome → resume → ConfirmResult → 续跑）；前端 `useInterrupt` 渲染层已随 mcp-hitl 落地（ThreadArea 审批卡片）；
 - `AguiResumeCoordinator` 的 pending interrupts 为服务端内存态（`ConcurrentMap`），单实例部署无问题；未来多实例需注意（源码已按 thread 串行 run 设计）；
 - ~~CopilotRuntime 对 `RUN_FINISHED.outcome` 的代理透传未单测~~ ✅ 已夹逼覆盖：客户端层（`pendingInterrupts`/`runAgent({resume})` 请求体）+ 反代层（resume 不被 `trimToLatestUserMessage` 破坏）均已钉住测试；中间 CopilotRuntime 为上游代码不做单测。
 
