@@ -37,6 +37,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.apache.catalina.Context;
 import org.apache.catalina.startup.Tomcat;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -260,13 +261,7 @@ class McpHitlIntegrationTest extends PostgresTestSupport {
     /** seed provider(NONE)/endpoint(内嵌 Tomcat)/用户配置（disabled_tools 空）。幂等：先清旧。 */
     private void seedMcpConfig(String username) {
         int port = TOMCAT.getConnector().getLocalPort();
-        jdbcTemplate.update(
-                "DELETE FROM mcp_user_config WHERE provider_id IN (SELECT id FROM mcp_provider WHERE code = ?)",
-                PROVIDER_CODE);
-        jdbcTemplate.update(
-                "DELETE FROM mcp_endpoint WHERE provider_id IN (SELECT id FROM mcp_provider WHERE code = ?)",
-                PROVIDER_CODE);
-        jdbcTemplate.update("DELETE FROM mcp_provider WHERE code = ?", PROVIDER_CODE);
+        cleanupSeededMcpConfig();
         jdbcTemplate.update(
                 "INSERT INTO mcp_provider (code, name, auth_type, enabled, remark) VALUES (?, ?, 'NONE', TRUE, 'HITL 验证内嵌 server')",
                 PROVIDER_CODE, "HITL 测试数据源");
@@ -280,6 +275,22 @@ class McpHitlIntegrationTest extends PostgresTestSupport {
         jdbcTemplate.update(
                 "INSERT INTO mcp_user_config (user_id, provider_id, enabled, disabled_tools) VALUES (?, ?, TRUE, '[]'::jsonb)",
                 userId, providerId);
+    }
+
+    /**
+     * 清掉本类 seed 的 provider/endpoint/用户配置。PostgresTestSupport 容器为 JVM 级单例、
+     * 本类非事务，行会 commit 留存——若不清理，后续同 JVM 运行的计数类断言（如
+     * McpConfigRepositoryImplTest 的「迁移 seed 了 3 个启用的 provider」）会看到第 4 个 provider。
+     */
+    @AfterEach
+    void cleanupSeededMcpConfig() {
+        jdbcTemplate.update(
+                "DELETE FROM mcp_user_config WHERE provider_id IN (SELECT id FROM mcp_provider WHERE code = ?)",
+                PROVIDER_CODE);
+        jdbcTemplate.update(
+                "DELETE FROM mcp_endpoint WHERE provider_id IN (SELECT id FROM mcp_provider WHERE code = ?)",
+                PROVIDER_CODE);
+        jdbcTemplate.update("DELETE FROM mcp_provider WHERE code = ?", PROVIDER_CODE);
     }
 
     // ———— 请求与 SSE 解析（与 AguiInterruptIntegrationTest 同构） ————
