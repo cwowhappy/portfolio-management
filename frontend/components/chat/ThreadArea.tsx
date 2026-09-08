@@ -383,8 +383,11 @@ export default function ThreadArea({ llmReady, onUnauthorized }: {
   });
   const { copilotkit } = useCopilotKit();
   const [sendError, setSendError] = useState<string | null>(null);
-  // 权限审批（mcp-hitl）：renderInChat:false 时 hook 返回元素，须手动渲染（挂载点在消息流尾部）
+  // 权限审批（mcp-hitl）：renderInChat:false 时 hook 返回元素，须手动渲染（挂载点在消息流尾部）。
+  // agentId 必须显式绑定：useInterrupt 内部经 useAgent 解析 config.agentId ?? "default"，
+  // 本应用只注册 invest，缺省会在运行时抛「Agent 'default' not found」导致对话页崩溃。
   const interruptBar = useInterrupt({
+    agentId: AGENT_ID,
     renderInChat: false,
     render: ({ interrupts, resolve }) =>
       interrupts.length > 0 ? (

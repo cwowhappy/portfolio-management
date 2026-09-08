@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   defaultToolRender: null as null | ((props: Record<string, unknown>) => React.ReactNode),
   renderToolCall: vi.fn(),
   interruptProps: null as { interrupts: unknown[]; resolve: (p: unknown, id?: string) => void } | null,
+  interruptConfig: null as Record<string, unknown> | null,
 }));
 
 vi.mock("@copilotkit/react-core/v2", () => ({
@@ -33,8 +34,10 @@ vi.mock("@copilotkit/react-core/v2", () => ({
   useDefaultRenderTool: ({ render }: { render: (p: Record<string, unknown>) => React.ReactNode }) => {
     mocks.defaultToolRender = render;
   },
-  useInterrupt: (config: { render: (p: unknown) => React.ReactNode }) =>
-    mocks.interruptProps ? config.render(mocks.interruptProps) : null,
+  useInterrupt: (config: { render: (p: unknown) => React.ReactNode }) => {
+    mocks.interruptConfig = config;
+    return mocks.interruptProps ? config.render(mocks.interruptProps) : null;
+  },
   useRenderToolCall: () => mocks.renderToolCall,
   UseAgentUpdate: { OnMessagesChanged: "messages", OnRunStatusChanged: "run" },
 }));
@@ -83,6 +86,7 @@ beforeEach(() => {
   mocks.renderToolCall.mockReturnValue(<div data-testid="tool-rendered" />);
   mocks.defaultToolRender = null;
   mocks.interruptProps = null;
+  mocks.interruptConfig = null;
 });
 
 afterEach(() => {
@@ -423,6 +427,12 @@ describe("ThreadArea", () => {
     });
     const { getByText } = render(<>{node}</>);
     expect(getByText("实时行情")).toBeTruthy();
+  });
+
+  it("useInterrupt 显式绑定 invest agent：缺省会解析到不存在的 default agent 导致页面崩溃（e2e 回归钉）", async () => {
+    renderThread();
+    await waitFor(() => expect(mocks.interruptConfig).not.toBeNull());
+    expect(mocks.interruptConfig?.agentId).toBe("invest");
   });
 
   it("权限中断：卡片渲染且批准/拒绝 resolve 携带 interruptId（FR-5）", async () => {
