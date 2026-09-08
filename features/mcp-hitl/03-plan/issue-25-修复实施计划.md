@@ -36,6 +36,13 @@
 
 H' 安全性前置验证（已完成）：线上 null 字段仅 2 处（`expiresAt` + RUN_STARTED input 回显的 `toolCallId`）；`@ag-ui/core` 全库不存在「`.nullable()` 而非 `.optional()`」的字段（omission 零误伤）；null/缺省在前端到期检查语义等价。
 
+**H' 对象初始化逻辑（字节码级核实，2026-09-08）**：
+- `JsonUtils` 静态块饿汉式 `new JacksonJsonCodec()` 存入 volatile 字段；`AguiEventEncoder.encode()` 每次 `invokestatic getJsonCodec()` 动态取——set 只需早于第一个 `/agui/run` 请求。
+- `createDefaultObjectMapper()` = `new ObjectMapper().registerModule(new JavaTimeModule()).configure(FAIL_ON_UNKNOWN_PROPERTIES, false)`，**仅此两条配置**（`areturn` 处终止）。
+- `JacksonJsonCodec.toJson()` = `writeValueAsString` + `JsonProcessingException` → log + 包 `JsonException`，无特殊 writer。
+- 全 agentscope 2.0.3 jar 扫描（zipgrep）：`setJsonCodec` 调用方仅 `JsonUtils` 自身，**无运行期覆盖者**。
+- 装配用 `fallback.getObjectMapper().copy()` 而非手写默认——上游改默认配置时自动继承，避免两套默认漂移；`NON_NULL` 递归生效（嵌套的 `outcome.interrupts[].expiresAt` 同样被剥）。
+
 范围外（Task 7 开独立 issue）：FR-8 的 CopilotKit v2 threadId 每次加载再生；登录后立发消息的就绪竞态（hydration abortRun）。
 
 ---
