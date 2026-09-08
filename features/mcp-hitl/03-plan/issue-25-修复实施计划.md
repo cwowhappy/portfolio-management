@@ -682,9 +682,9 @@ test.describe("MCP 写工具审批（HITL）", () => {
 - [ ] **Step 2: 本地全链路跑（webServer 自动拉起三件套）**
 
 ```bash
-cd frontend && rm -rf .next && pnpm test:e2e -- e2e/hitl.spec.ts
+cd frontend && rm -rf .next && E2E_HITL_MCP_URL=http://127.0.0.1:8765/mcp pnpm test:e2e e2e/hitl.spec.ts
 ```
-（`.next` 先清——既有 e2e 复用旧构建产物的坑。）Expected: PASS。
+两个坑（T6 实施时踩实）：① pnpm 传 filter 不加 `--`（`--` 会让 pnpm 吞掉后面的 playwright 参数而跑全量）；② `E2E_HITL_MCP_URL` 必须以环境变量前缀提供给测试 worker（webServer 的 `env` 只作用于被拉起的服务进程，不达 worker；CI 由 job env 提供）。（`.next` 先清——既有 e2e 复用旧构建产物的坑。）Expected: PASS。
 
 - [ ] **Step 3: Commit**
 
