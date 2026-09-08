@@ -4,6 +4,7 @@ import com.portfolio.invest.domain.mcp.McpConfigRepository;
 import com.portfolio.invest.domain.mcp.McpEndpoint;
 import com.portfolio.invest.domain.mcp.McpProvider;
 import com.portfolio.invest.domain.mcp.McpUserConfig;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.stereotype.Repository;
@@ -43,5 +44,18 @@ public class McpConfigRepositoryImpl implements McpConfigRepository {
     }
     @Override public void deleteByUserIdAndProviderId(Long userId, Long providerId) {
         configJpa.deleteByUserIdAndProviderId(userId, providerId);
+    }
+
+    // e2e 种子（env 门控调用，见 HitlE2eSeedRunner）：按自然键幂等
+    @Override public Optional<McpProvider> findProviderByCode(String code) {
+        return providerJpa.findByCode(code).map(McpProviderJpaEntity::toDomain);
+    }
+    @Override public void upsertSeedProvider(McpProvider provider) {
+        providerJpa.save(McpProviderJpaEntity.fromDomain(provider));
+    }
+    @Override public void upsertSeedEndpoint(Long providerId, String url) {
+        if (endpointJpa.existsByProviderIdAndUrl(providerId, url)) return;
+        endpointJpa.save(McpEndpointJpaEntity.fromDomain(
+                McpEndpoint.reconstitute(null, providerId, null, "HITL e2e", url, true, Instant.now())));
     }
 }

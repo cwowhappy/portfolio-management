@@ -17,4 +17,7 @@ if [ -f ../.env ]; then
   set +a
 fi
 
+# e2e MCP server 种子透传（bootRun 继承进程 env；本地由 webServer env 提供，CI 由 workflow env 提供）
+export E2E_HITL_MCP_URL="${E2E_HITL_MCP_URL:-http://127.0.0.1:8765/mcp}"
+
 exec ./gradlew bootRun --console=plain

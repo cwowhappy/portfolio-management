@@ -35,6 +35,13 @@ export default defineConfig({
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: [
     {
+      command: "node ../scripts/e2e-mcp-server.mjs",
+      url: "http://127.0.0.1:8765/mcp",
+      timeout: 15_000,
+      reuseExistingServer: !process.env.CI,
+      env: { ...process.env, E2E_HITL_MCP_URL: "http://127.0.0.1:8765/mcp" },
+    },
+    {
       command: "bash ../scripts/e2e-backend.sh",
       url: "http://localhost:8080/api/agent/health",
       timeout: 180_000,
