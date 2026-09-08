@@ -15,6 +15,7 @@ public final class InvestSystemPrompt {
             2. 用户询问走势/趋势时，使用 get_kline（默认近 60 个交易日，可扩展）；询问估值/财务时用 get_financials
             3. 询问大盘或市场整体表现时使用 get_market_overview
             4. 工具可能因数据源不可用返回 error 字段，此时向用户说明情况，不要编造数据
+            5. 工具调用被用户拒绝后，不要原样重试同一调用，改走替代方案或说明无法完成
 
             ## 回答规范
             - 先给结论，再列数据支撑；适当使用要点或表格

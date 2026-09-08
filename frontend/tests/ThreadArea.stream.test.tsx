@@ -17,11 +17,13 @@ const mocks = vi.hoisted(() => ({
     addMessage: vi.fn(),
     setMessages: vi.fn(),
     abortRun: vi.fn(),
+    subscribe: vi.fn(),
   },
   runAgent: vi.fn(),
   isReady: true,
   defaultToolRender: null as null | ((props: Record<string, unknown>) => React.ReactNode),
   renderToolCall: vi.fn(),
+  interruptProps: null as { interrupts: unknown[]; resolve: (p: unknown, id?: string) => void } | null,
 }));
 
 vi.mock("@copilotkit/react-core/v2", () => ({
@@ -30,6 +32,8 @@ vi.mock("@copilotkit/react-core/v2", () => ({
   useDefaultRenderTool: ({ render }: { render: (p: Record<string, unknown>) => React.ReactNode }) => {
     mocks.defaultToolRender = render;
   },
+  useInterrupt: (config: { render: (p: unknown) => React.ReactNode }) =>
+    mocks.interruptProps ? config.render(mocks.interruptProps) : null,
   useRenderToolCall: () => mocks.renderToolCall,
   UseAgentUpdate: { OnMessagesChanged: "messages", OnRunStatusChanged: "run" },
 }));
@@ -61,9 +65,12 @@ beforeEach(() => {
   mocks.agent.addMessage.mockReset();
   mocks.agent.setMessages.mockReset();
   mocks.agent.abortRun.mockReset();
+  mocks.agent.subscribe.mockReset();
+  mocks.agent.subscribe.mockReturnValue({ unsubscribe: vi.fn() });
   mocks.renderToolCall.mockReset();
   mocks.renderToolCall.mockReturnValue(<div data-testid="tool-rendered" />);
   mocks.defaultToolRender = null;
+  mocks.interruptProps = null;
 });
 
 afterEach(() => {
