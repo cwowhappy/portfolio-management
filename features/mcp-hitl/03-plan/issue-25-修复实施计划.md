@@ -632,17 +632,19 @@ test.describe("MCP 写工具审批（HITL）", () => {
   const NOTES = process.env.HITL_E2E_NOTES ?? "/tmp/hitl-e2e-notes.log";
   const notesText = () => (existsSync(NOTES) ? readFileSync(NOTES, "utf8") : "");
 
-  test("写工具弹卡 → 批准 → 落盘并续跑；拒绝 → 不落盘", async ({ page, request }) => {
+  test("写工具弹卡 → 批准 → 落盘并续跑；拒绝 → 不落盘", async ({ page }) => {
     rmSync(NOTES, { force: true });
     const username = uniqueUsername("hitl");
     await registerAndApprove(page, username, TEST_PASSWORD);
 
-    // 经同源 API 为当前用户启用 hitl-e2e provider（UI 开关已有组件测试；request 与浏览器共享会话 cookie）
-    const providers = await request.get("/api/mcp/providers");
+    // 经同源 API 为当前用户启用 hitl-e2e provider。注意必须用 page.request（Page 绑定的
+    // APIRequestContext，与浏览器共享会话 cookie）；顶层 request fixture 是 isolated 的、
+    // 不带登录态（playwright 1.62.1 types/test.d.ts:7854 核实）
+    const providers = await page.request.get("/api/mcp/providers");
     const hitl = ((await providers.json()) as Array<{ id: number; code: string }>)
       .find((p) => p.code === "hitl-e2e");
     expect(hitl, "种子 provider hitl-e2e 应存在").toBeTruthy();
-    const enable = await request.put(`/api/mcp/configs/${hitl!.id}`, {
+    const enable = await page.request.put(`/api/mcp/configs/${hitl!.id}`, {
       data: { enabled: true, disabledTools: [] },
     });
     expect(enable.ok()).toBeTruthy();
