@@ -1,12 +1,22 @@
 "use client";
 
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import { useMemo } from "react";
+import { EChart } from "@/components/charts/EChart";
+import { buildPieOption } from "@/components/charts/optionBuilders";
 import type { AssetAllocation } from "@/lib/types";
-
-const COLORS = ["var(--color-up)", "var(--color-accent)", "var(--color-ink-faint)"];
 
 export default function AllocationPie({ allocation }: { allocation: AssetAllocation | null }) {
   const data = allocation?.slices ?? [];
+  const option = useMemo(
+    () =>
+      buildPieOption({
+        specVersion: 1,
+        type: "pie",
+        title: "资产配置",
+        data: data.map((s) => ({ name: s.category, value: s.marketValue })),
+      }),
+    [data],
+  );
   if (data.length === 0) {
     return (
       <div className="rounded-2xl border border-[color:var(--color-line)] bg-[color:var(--color-panel)]/70 p-5">
@@ -18,15 +28,7 @@ export default function AllocationPie({ allocation }: { allocation: AssetAllocat
   return (
     <div className="rounded-2xl border border-[color:var(--color-line)] bg-[color:var(--color-panel)]/70 p-5">
       <div className="font-[family-name:var(--font-display)] text-[15px] mb-3">资产配置</div>
-      <ResponsiveContainer width="100%" height={200}>
-        <PieChart>
-          <Pie data={data} dataKey="marketValue" nameKey="category" innerRadius={45} outerRadius={70} paddingAngle={2}>
-            {data.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-          </Pie>
-          <Tooltip contentStyle={{ background: "var(--color-panel)", border: "1px solid var(--color-line)" }} />
-          <Legend />
-        </PieChart>
-      </ResponsiveContainer>
+      <EChart option={option} height={200} testid="allocation-chart" />
       <div className="mt-2 text-xs text-[color:var(--color-ink-faint)]">ETF 归入权益</div>
     </div>
   );
