@@ -23,6 +23,15 @@ describe("buildPieOption", () => {
     expect(s.data[1].itemStyle?.color).toBe("#222");
     expect(s.data[2].itemStyle?.color).toBe("#111"); // 循环取色
   });
+
+  it("出 legend（底部定位由主题承载）并保留扇区间隙 padAngle=2", () => {
+    const opt = buildPieOption({
+      specVersion: 1, type: "pie", title: "资产配置",
+      data: [{ name: "权益", value: 1 }, { name: "现金", value: 2 }],
+    });
+    expect(opt.legend).toBeDefined();
+    expect((opt.series as { padAngle?: number }[])[0].padAngle).toBe(2);
+  });
 });
 
 describe("buildBarOption", () => {

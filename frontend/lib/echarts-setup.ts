@@ -1,4 +1,4 @@
-// ★ 全仓库唯一允许 import echarts 的文件（eslint.config.mjs 禁裸 'echarts' 入口）。
+// ★ 全仓库唯一 echarts.use() 注册点（子路径 import 见 ESLint 规则，eslint.config.mjs 禁裸 'echarts' 入口）。
 // 只注册页面当前用到的图表；聊天流阶段再补 Candlestick/DataZoom/Dataset（见 05 §4.4）。
 import * as echarts from "echarts/core";
 import { PieChart, BarChart, LineChart } from "echarts/charts";

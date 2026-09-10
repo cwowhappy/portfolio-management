@@ -13,11 +13,13 @@ const colorAt = (style: BuilderStyle | undefined, i: number) =>
 export function buildPieOption(spec: PieSpec, style?: BuilderStyle): ECOption {
   return {
     tooltip: { trigger: "item" },
+    legend: {},                         // 底部定位/样式由 app 主题默认承载
     series: [
       {
         type: "pie",
         name: spec.title,
         radius: ["40%", "70%"],           // 环形，对齐旧 AllocationPie innerRadius/outerRadius 观感
+        padAngle: 2,                      // 扇区间隙，对齐旧 paddingAngle={2}
         label: { show: false },
         data: spec.data.map((d, i) => {
           const color = colorAt(style, i);
