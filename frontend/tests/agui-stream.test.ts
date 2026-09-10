@@ -214,4 +214,27 @@ describe("AG-UI 事件流（真实 HttpAgent + 假 SSE 帧）", () => {
     // 成功续跑后 pendingInterrupts 清空（客户端 0.0.59 语义）
     expect(agent.pendingInterrupts).toEqual([]);
   });
+
+  it("中断回合后不 resolve、同线程再发普通消息：客户端守卫拒绝且零请求（#25 死会话行为钉）", async () => {
+    const fetchMock = vi.fn(async () =>
+      sseResponse([
+        RUN_STARTED,
+        { type: "TOOL_CALL_START", toolCallId: "tc9", toolCallName: "test_write", parentMessageId: "a1" },
+        { type: "TOOL_CALL_ARGS", toolCallId: "tc9", delta: '{"note":"x"}' },
+        { type: "TOOL_CALL_END", toolCallId: "tc9" },
+        { type: "RUN_FINISHED", threadId: "t1", runId: "r1", outcome: { type: "interrupt", interrupts: [INTERRUPT] } },
+      ]),
+    );
+    const agent = new HttpAgent({ url: "http://test.local/agui/run", fetch: fetchMock as unknown as HttpAgent["fetch"] });
+    agent.addMessage({ id: "u1", role: "user", content: "写一条记录" });
+    await agent.runAgent();
+    expect(agent.pendingInterrupts).toHaveLength(1);
+
+    // @ag-ui/client 0.0.59 守卫：pendingInterrupts 非空时不带 resume 的 runAgent 在发出请求前即拒绝。
+    // 守卫拦截 = 审批卡片渲染后的正确门控（应 resolve 卡片而非越过）；该行为取代了修复前的
+    // 「死会话」症状（interrupt 被 zod 拒收 + 请求侧 content:null 拒绝），钉住防语义漂移。
+    agent.addMessage({ id: "u2", role: "user", content: "你好" });
+    await expect(agent.runAgent()).rejects.toThrow(/pending interrupt\(s\) not addressed by resume/);
+    expect(fetchMock).toHaveBeenCalledTimes(1); // 第二条消息未发出任何请求
+  });
 });

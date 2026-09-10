@@ -12,4 +12,9 @@ public interface McpConfigRepository {
     Optional<McpUserConfig> findByUserIdAndProviderId(Long userId, Long providerId);
     McpUserConfig save(McpUserConfig config);
     void deleteByUserIdAndProviderId(Long userId, Long providerId);
+
+    // e2e 种子用（HitlE2eSeedRunner，env 门控）：按自然键幂等
+    Optional<McpProvider> findProviderByCode(String code);
+    void upsertSeedProvider(McpProvider provider);
+    void upsertSeedEndpoint(Long providerId, String url);
 }

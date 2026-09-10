@@ -183,6 +183,10 @@ class McpHitlIntegrationTest extends PostgresTestSupport {
         assertThat(interrupt.path("id").asText()).endsWith(":call_m_1");
         assertThat(interrupt.path("responseSchema").path("properties").has("approved")).isTrue();
 
+        // #25：AG-UI 线上不得出现 null 字段（前端 @ag-ui/core InterruptSchema 只认缺省/字符串，
+        // "expiresAt":null 会导致整条 RUN_FINISHED 被浏览器端 zod 拒收、审批卡片不渲染）
+        assertThat(body).doesNotContain("\"expiresAt\"");
+
         // 中断即停：写工具未执行（文件未落盘）、无工具结果事件
         assertThat(Files.exists(note)).as("中断即停：写工具未执行").isFalse();
         assertThat(eventOfType(body, "TOOL_CALL_RESULT")).isNull();
