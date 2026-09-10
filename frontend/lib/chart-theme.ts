@@ -91,10 +91,22 @@ export function currentThemeName(): "app-dark" | "app-light" {
 // 已知限制：切换主题后已挂图表不自动重绘色值，需触发重渲染（视觉 QA 项，见 Task 10）。
 let cached: { name: string; palette: ChartPalette } | null = null;
 
+// SSR 安全：服务端渲染期无 document（getComputedStyle ReferenceError）；
+// canvas 非 SSR 内容，返回深色字面值 fallback 不会产生 hydration 问题（Task 9 渲染期调用依赖此守卫）。
+export const SSR_FALLBACK: ChartPalette = {
+  up: "#e85b55", down: "#2fbe8f", accent: "#3fb8d8", ink: "#e8eef6", inkDim: "#96a4b7",
+  inkFaint: "#5d6b7f", line: "#243041", lineSoft: "#1d2735", panel: "#141a24", panel2: "#1a2230",
+};
+
 export function getPalette(): ChartPalette {
+  if (typeof document === "undefined") return SSR_FALLBACK;
   const name = currentThemeName();
   if (cached?.name === name) return cached.palette;
   const palette = resolvePalette();
   cached = { name, palette };
   return palette;
+}
+
+export function ensureAppThemes(): void {
+  registerAppThemes(getPalette());
 }

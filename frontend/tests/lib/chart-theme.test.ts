@@ -58,4 +58,19 @@ describe("chart-theme", () => {
     const p = resolvePalette((v) => vars[v] ?? "");
     expect(Object.keys(PALETTE_VARS).sort()).toEqual(Object.keys(p).sort());
   });
+
+  it("getPalette 按主题名缓存（同主题只解析一次）", async () => {
+    const { getPalette } = await import("@/lib/chart-theme");
+    document.documentElement.removeAttribute("data-theme");
+    const a = getPalette();
+    const b = getPalette();
+    expect(a).toBe(b); // 同引用
+  });
+
+  it("getPalette SSR 守卫：SSR_FALLBACK 十键齐全且不破坏缓存同引用", async () => {
+    const { getPalette, SSR_FALLBACK } = await import("@/lib/chart-theme");
+    expect(Object.keys(SSR_FALLBACK).sort()).toEqual(Object.keys(PALETTE_VARS).sort());
+    document.documentElement.removeAttribute("data-theme");
+    expect(getPalette()).toBe(getPalette());
+  });
 });
