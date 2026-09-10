@@ -1,6 +1,8 @@
 "use client";
 
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
+import { useMemo } from "react";
+import { EChart } from "@/components/charts/EChart";
+import { buildLineOption } from "@/components/charts/optionBuilders";
 import type { ValuationSnapshot, IndexValuationSeries } from "@/lib/types";
 
 interface TrendPoint {
@@ -34,6 +36,20 @@ export default function TrendChart({
   selectedIndex?: string;
 }) {
   const data = toPoints(snapshots, indexValuations, selectedIndex);
+  const option = useMemo(
+    () =>
+      buildLineOption({
+        specVersion: 1,
+        type: "line",
+        title: "估值历史走势",
+        categories: data.map((p) => p.day),
+        series: [
+          { name: "PE", data: data.map((p) => p.pe) },
+          { name: "PB", data: data.map((p) => p.pb) },
+        ],
+      }),
+    [data],
+  );
   if (data.length === 0) {
     return (
       <div className="rounded-2xl border border-[color:var(--color-line)] bg-[color:var(--color-panel)]/70 p-5">
@@ -45,16 +61,7 @@ export default function TrendChart({
   return (
     <div className="rounded-2xl border border-[color:var(--color-line)] bg-[color:var(--color-panel)]/70 p-5">
       <div className="font-[family-name:var(--font-display)] text-[15px] mb-3">估值历史走势</div>
-      <ResponsiveContainer width="100%" height={240}>
-        <LineChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-          <CartesianGrid stroke="var(--color-line-soft)" strokeDasharray="3 3" />
-          <XAxis dataKey="day" stroke="var(--color-ink-faint)" fontSize={12} />
-          <YAxis stroke="var(--color-ink-faint)" fontSize={12} />
-          <Tooltip contentStyle={{ background: "var(--color-panel)", border: "1px solid var(--color-line)" }} />
-          <Line type="monotone" dataKey="pe" name="PE" stroke="var(--color-up)" dot={false} />
-          <Line type="monotone" dataKey="pb" name="PB" stroke="var(--color-accent)" dot={false} />
-        </LineChart>
-      </ResponsiveContainer>
+      <EChart option={option} height={240} testid="trend-chart" />
     </div>
   );
 }
