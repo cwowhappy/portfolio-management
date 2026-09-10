@@ -31,6 +31,8 @@ docs/technology/
     ├── 01-财经新闻与股市数据来源参考.md │   外部数据源全景（行情/新闻/基本面/宏观）与获取方法
     ├── 02-akshare与tushare接口详析.md │   两库接口手册：87 次实测、返回字段、限制、本系统映射
     ├── 03-金融机构MCP服务参考.md   │   国内外金融机构/券商 MCP 服务全景与使用方法
+    ├── 04-AGUI事件全景与三场景技术方案.md │ AG-UI 36 事件 + AgentScope 28 事件字段级对照、CopilotKit 消费映射、HITL/富文本/问答三场景方案
+    ├── 05-富文本场景技术方案.md │ 聊天流富文本落地：ChartSpec 契约、ToolEmitter 双通道、ECharts/TanStack Table 集成
     └── agentscope/           │   AgentScope Java 调研笔记（离线参考）
 ```
 
@@ -86,6 +88,8 @@ docs/technology/
 | [01-财经新闻与股市数据来源参考.md](research/01-财经新闻与股市数据来源参考.md) | 外部数据源全景参考：行情/新闻/基本面/宏观/公告的获取方法、接口明细、推荐组合（2026-09-06 调研核实） |
 | [02-akshare与tushare接口详析.md](research/02-akshare与tushare接口详析.md) | 两库接口手册：87 次实测（真实返回字段/限制/报错根因）+ 本系统映射（已在用/可替代/可扩展） |
 | [03-金融机构MCP服务参考.md](research/03-金融机构MCP服务参考.md) | 金融机构/券商 MCP 全景：国内官方（东财妙想/iFinD/Wind/Tushare/长桥/老虎）、国际（Alpha Vantage/FactSet/S&P 等）、A 股社区封装、接入方式与安全注意（2026-09-06 调研核实） |
+| [04-AGUI事件全景与三场景技术方案.md](research/04-AGUI事件全景与三场景技术方案.md) | AG-UI 协议 36 事件 + AgentScope 2.0.3 的 28 事件字段级全景、CopilotKit 1.70.1 消费/发射映射、HITL/富文本（Markdown·图表·文件）/用户问答三场景技术方案与风险清单（2026-09-10 调研核实） |
+| [05-富文本场景技术方案.md](research/05-富文本场景技术方案.md) | 聊天流富文本（文字/图片/表格/图表）落地细化：单一 ChartSpec 双端契约（table 为变体之一）、AgentScope ToolEmitter 双通道（全量走 SSE、摘要进 LLM）、ECharts 6 按需引入与自写 hook、TanStack Table v9、前置缺陷修复与实施顺序（2026-09-10） |
 | [agentscope/](research/agentscope/) | AgentScope Java 框架调研笔记（`scripts/fetch_docs.py` 离线抓取） |
 
 ## 按需求快速定位
@@ -97,6 +101,7 @@ docs/technology/
 - 想知道**有哪些证券数据、各自来源与接口** → [architecture/05-数据类型与来源.md](architecture/05-数据类型与来源.md)
 - 想知道**后续可接入哪些外部数据源** → [research/01-财经新闻与股市数据来源参考.md](research/01-财经新闻与股市数据来源参考.md)
 - 想知道**金融机构有哪些 MCP 服务、怎么接入** → [research/03-金融机构MCP服务参考.md](research/03-金融机构MCP服务参考.md)
+- 想知道**AG-UI 有哪些事件、HITL/富文本/问答怎么实现** → [research/04-AGUI事件全景与三场景技术方案.md](research/04-AGUI事件全景与三场景技术方案.md)
 - 想知道**对外有哪些接口** → [modules/03-接口设计.md](modules/03-接口设计.md)
 - 想知道**怎么部署、测试、排错** → [modules/04-工程与运维.md](modules/04-工程与运维.md)
 - 想知道**后端测试怎么分层、新测试放哪** → [architecture/03-后端测试架构.md](architecture/03-后端测试架构.md)

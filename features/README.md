@@ -30,6 +30,7 @@ features/
 | [mcp-integration](mcp-integration/) | 待排期（设计中） | M03 对话式投研问答、M14 系统与工程 | `/settings/mcp` |
 | [skill-integration](skill-integration/) | 待排期（设计中） | M03 对话式投研问答、M14 系统与工程 | `/settings/skills` |
 | [mcp-hitl](mcp-hitl/) | 待排期（已设计） | M03 对话式投研问答、M14 系统与工程 | — |
+| [chat-rich-content](chat-rich-content/) | 待排期（已设计） | M03 对话式投研问答、M14 系统与工程 | —（对话流内，图表基建惠及 `/portfolio` `/valuation` `/allocation`） |
 
 > 里程碑（MS）定义与进度见 [产品落地计划](../docs/plans/2026-08-27-产品落地计划.md)；模块（M）定义与进度看板见 [功能模块概览](../docs/function/00-功能模块概览.md)。
 
