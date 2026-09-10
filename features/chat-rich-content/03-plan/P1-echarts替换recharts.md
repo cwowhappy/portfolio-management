@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- 图表色值必须来自 CSS 变量解析（`--color-up` 红=涨、`--color-down` 绿=跌、`--color-accent`、`--color-ink-faint` 等，`frontend/app/globals.css:5-18` 暗色默认 + `.light` 覆盖）——**不得在 ECharts option 里写 `var(--x)` 字符串**（canvas 不解析，渲染成透明/黑）。
+- 图表色值必须来自 CSS 变量解析（`--color-up` 红=涨、`--color-down` 绿=跌、`--color-accent`、`--color-ink-faint` 等，`frontend/app/globals.css:5-18` 暗色默认 + `[data-theme="light"]` 覆盖（globals.css:46；`app/layout.tsx` 内联脚本按 localStorage 设 `data-theme` 属性））——**不得在 ECharts option 里写 `var(--x)` 字符串**（canvas 不解析，渲染成透明/黑）。
 - 只允许 `echarts/core|charts|components|features|renderers` 子路径 import 与 `import type`；裸 `'echarts'` 入口被 ESLint 禁止（Task 1 加规则）。
 - 4 个组件对外 props、空态文案、卡片外壳 class、`data-testid`（allocation-chart / industry-chart / trend-chart / deviation-chart）**保持不变**。
 - 本期只注册 Pie/Bar/Line（页面在用的）；candlestick/dataZoom/dataset 等聊天流阶段再加（YAGNI）。
@@ -341,12 +341,12 @@ describe("chart-theme", () => {
     expect(theme.color).toEqual(["#e85b55", "#d4a94f", "#888"]);
   });
 
-  it("currentThemeName 按根节点 .light 类判断", () => {
-    document.documentElement.classList.remove("light");
+  it("currentThemeName 按根节点 data-theme 属性判断（globals.css 用 [data-theme=\"light\"]，无 .light 类）", () => {
+    document.documentElement.removeAttribute("data-theme");
     expect(currentThemeName()).toBe("app-dark");
-    document.documentElement.classList.add("light");
+    document.documentElement.setAttribute("data-theme", "light");
     expect(currentThemeName()).toBe("app-light");
-    document.documentElement.classList.remove("light");
+    document.documentElement.removeAttribute("data-theme");
   });
 
   it("PALETTE_VARS 覆盖全部 palette 键", () => {
@@ -448,7 +448,7 @@ export function registerAppThemes(
 
 export function currentThemeName(): "app-dark" | "app-light" {
   return typeof document !== "undefined" &&
-    document.documentElement.classList.contains("light")
+    document.documentElement.getAttribute("data-theme") === "light"
     ? "app-light"
     : "app-dark";
 }
@@ -616,7 +616,7 @@ export function ensureAppThemes(): void {
 ```ts
   it("getPalette 按主题名缓存（同主题只解析一次）", async () => {
     const { getPalette } = await import("@/lib/chart-theme");
-    document.documentElement.classList.remove("light");
+    document.documentElement.removeAttribute("data-theme");
     const a = getPalette();
     const b = getPalette();
     expect(a).toBe(b); // 同引用
@@ -1512,7 +1512,7 @@ cd frontend && pnpm test && pnpm eslint . && pnpm build
 2. 行业分布卡：柱色=涨红、圆角柱顶、x 轴行业名可读（倾斜时可接受）；
 3. 估值历史走势：PE=红（up）、PB=青蓝（accent）、无数据点符号、虚线网格；
 4. 目标 vs 实际：目标=灰、实际=红、y 轴 `%`、底部图例；
-5. 切换亮色主题刷新页面：全部图表颜色随 `.light` 变量重取（**已知限制**：不刷新页面仅切类，已挂图表色不变——记录为后续优化项，不阻塞）。
+5. 切换亮色主题刷新页面（localStorage 存 `theme` 后 reload，`app/layout.tsx` 内联脚本设 `data-theme`）：全部图表颜色随 `[data-theme="light"]` 变量重取（**已知限制**：不刷新页面仅切属性，已挂图表色不变——记录为后续优化项，不阻塞）。
 
 发现问题 → 修 `chart-theme.ts` 主题对象或 builder 默认值（不得在组件里硬编码色值）。
 
