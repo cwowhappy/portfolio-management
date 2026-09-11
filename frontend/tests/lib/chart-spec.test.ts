@@ -92,4 +92,7 @@ describe("table 变体（单一 ChartSpec 的变体，非独立 schema）", () =
   it("列 align 只允许 left/right/center", () => {
     expect(ChartSpecSchema.safeParse({ ...valid, columns: [{ key: "a", label: "A", align: "middle" }] }).success).toBe(false);
   });
+  it("空列数组拒绝（后端契约保证 ≥1 列，zod 层兜底）", () => {
+    expect(ChartSpecSchema.safeParse({ ...valid, columns: [] }).success).toBe(false);
+  });
 });

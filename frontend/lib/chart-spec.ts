@@ -63,9 +63,9 @@ export const ChartSpecSchema = z.discriminatedUnion("type", [
       key: z.string(), label: z.string(),
       align: z.enum(["left", "right", "center"]).optional(),
       sortable: z.boolean().optional(),                  // 默认 true
-    })),
+    })).min(1),                                          // 空列拒绝（后端契约保证 ≥1 列）
     rows: z.array(z.record(z.string(), z.union([z.string(), z.number(), z.null()]))),
-    defaultPageSize: z.number().optional(),              // 卡片内表格可视高度（P4 消费）
+    defaultPageSize: z.number().optional(),              // 预留：卡片内表格可视高度（本期固定 360px 未消费）
   }),
 ]);
 
