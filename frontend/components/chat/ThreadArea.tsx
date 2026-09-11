@@ -9,7 +9,7 @@ import {
   UseAgentUpdate,
 } from "@copilotkit/react-core/v2";
 import type { Message } from "@ag-ui/client";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -195,9 +195,27 @@ function ReasoningMessage({ text }: { text: string }) {
   );
 }
 
+/** ag-ui 的 role:"tool" 消息（配对键 toolCallId，@ag-ui/core ToolMessage 的本地形态） */
+type ToolMessage = Extract<Message, { role: "tool" }>;
+
+/** role:"tool" 消息按 toolCallId 建索引，供工具卡渲染时配对取 result（FR-7）。 */
+function buildToolMessageMap(messages: Message[]): Map<string, ToolMessage> {
+  const map = new Map<string, ToolMessage>();
+  for (const m of messages) if (m.role === "tool" && m.toolCallId) map.set(m.toolCallId, m);
+  return map;
+}
+
 // memo 隔离历史消息重渲染：流式期间 agent.messages 高频变化，
-// 已完成的历史消息 props 不变时不重渲染（Markdown 解析是主要开销）
-const AssistantMessage = memo(function AssistantMessage({ message }: { message: Message }) {
+// 已完成的历史消息 props 不变时不重渲染（Markdown 解析是主要开销）。
+// 比较器必须自定义：messages 每次变化都会重建 toolMessageByCallId（Map 新引用），
+// 默认浅比较会让全部历史消息在每次流式 delta 重渲染，废掉本隔离。
+const AssistantMessage = memo(function AssistantMessage({
+  message,
+  toolMessageByCallId,
+}: {
+  message: Message;
+  toolMessageByCallId: Map<string, ToolMessage>;
+}) {
   const renderToolCall = useRenderToolCall();
   const toolCalls = message.role === "assistant" ? (message.toolCalls ?? []) : [];
   const content = typeof message.content === "string" ? message.content : "";
@@ -209,7 +227,10 @@ const AssistantMessage = memo(function AssistantMessage({ message }: { message: 
       </span>
       <div className="min-w-0 flex-1">
         {toolCalls.map((tc) => (
-          <div key={tc.id}>{renderToolCall({ toolCall: tc })}</div>
+          // FR-7：complete 态依赖 toolMessage 配对（官方 CopilotChatToolCallsView 范式，05 §4.2）
+          <div key={tc.id}>
+            {renderToolCall({ toolCall: tc, toolMessage: toolMessageByCallId.get(tc.id) })}
+          </div>
         ))}
         {content && (
           <div className="md-body text-[14px] leading-relaxed text-[color:var(--color-ink)]">
@@ -237,6 +258,13 @@ const AssistantMessage = memo(function AssistantMessage({ message }: { message: 
         <FeedbackBar messageId={message.id} />
       </div>
     </div>
+  );
+}, (prev, next) => {
+  if (prev.message !== next.message) return false;
+  const tcs = next.message.role === "assistant" ? (next.message.toolCalls ?? []) : [];
+  // 只有本条消息涉及的 toolMessage 变化才重渲染
+  return tcs.every(
+    (tc) => prev.toolMessageByCallId.get(tc.id) === next.toolMessageByCallId.get(tc.id),
   );
 });
 
@@ -561,6 +589,8 @@ export default function ThreadArea({ llmReady, onUnauthorized }: {
   }, [currentThreadId, flushPersist]);
 
   const messages = agent.messages ?? [];
+  // FR-7：role:"tool" 消息按 toolCallId 建索引；messages 引用不变时 Map 复用，避免无谓重建
+  const toolMessageByCallId = useMemo(() => buildToolMessageMap(messages), [messages]);
   const isEmpty = messages.length === 0;
 
   return (
@@ -581,7 +611,9 @@ export default function ThreadArea({ llmReady, onUnauthorized }: {
                 );
               }
               if (m.role === "assistant") {
-                return <AssistantMessage key={m.id} message={m} />;
+                return (
+                  <AssistantMessage key={m.id} message={m} toolMessageByCallId={toolMessageByCallId} />
+                );
               }
               if (m.role === "reasoning") {
                 return <ReasoningMessage key={m.id} text={m.content} />;
