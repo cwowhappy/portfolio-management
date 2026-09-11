@@ -51,6 +51,7 @@ describe("ChartToolRenderers", () => {
     const valuation = renderToolConfigs.find((c) => c.name === "get_valuation")!;
     const { getByTestId: g1 } = render(valuation.render({ status: "complete", result: JSON.stringify(lineSpec) }) as React.ReactElement);
     expect(JSON.parse(g1("chart-card-chart").dataset.option!).series[0].data).toEqual([25.1, 25.3]);
+    expect(JSON.parse(g1("chart-card-chart").dataset.option!).series[1].data).toEqual([2.1, null]);
     // 同一 it 内二次 render：RTL 查询绑定 document.body，先 cleanup 隔离，否则 getByTestId 撞多元素
     cleanup();
     const overview = renderToolConfigs.find((c) => c.name === "get_market_overview")!;
