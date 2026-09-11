@@ -114,8 +114,8 @@ public final class ChartSpecs {
       row.put("reportDate", i.reportDate());
       row.put("eps", i.eps());
       row.put("bps", i.bps());
-      row.put("revenueYi", round2(i.totalRevenue() / 1e8));   // 元 → 亿元，两位小数
-      row.put("netProfitYi", round2(i.netProfit() / 1e8));
+      row.put("revenueYi", round2Yi(i.totalRevenue()));   // 元 → 亿元，两位小数
+      row.put("netProfitYi", round2Yi(i.netProfit()));
       row.put("roe", i.weightedRoe());
       row.put("grossMargin", i.grossMargin());
       rows.add(row);
@@ -128,11 +128,12 @@ public final class ChartSpecs {
     var last = f.indicators().get(f.indicators().size() - 1);
     return "%s（%s）：PE %s / PB %s；最新报告期 %s：EPS %s、营收 %s亿、净利 %s亿、加权ROE %s%%、毛利率 %s%%。共 %d 期，明细见表格。"
             .formatted(f.name(), f.code(), f.pe(), f.pb(), last.reportDate(), last.eps(),
-                    round2(last.totalRevenue() / 1e8), round2(last.netProfit() / 1e8),
+                    round2Yi(last.totalRevenue()), round2Yi(last.netProfit()),
                     last.weightedRoe(), last.grossMargin(), f.indicators().size());
   }
 
   private static Double nullable(BigDecimal v) { return v == null ? null : v.doubleValue(); }
-  private static double round2(Double v) { return v == null ? 0d : Math.round(v * 100) / 100d; }
+  /** 元 → 亿元，两位小数。T1：FinancialIndicator 的 Double 字段可空，null 先除法拆箱会 NPE → 保 null（行输出 null 而非 0）。 */
+  private static Double round2Yi(Double yuan) { return yuan == null ? null : Math.round(yuan / 1e8 * 100) / 100d; }
   private static String trim(double price) { return String.format("%.2f", price); }
 }

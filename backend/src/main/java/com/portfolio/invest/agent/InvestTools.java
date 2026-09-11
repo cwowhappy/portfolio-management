@@ -3,10 +3,10 @@ package com.portfolio.invest.agent;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.portfolio.invest.agent.chart.ChartSpecs;
-import com.portfolio.invest.domain.market.FinancialIndicator;
 import com.portfolio.invest.domain.market.Financials;
 import com.portfolio.invest.domain.market.KlineBar;
 import com.portfolio.invest.domain.market.MarketDataException;
+import com.portfolio.invest.domain.market.MarketOverview;
 import com.portfolio.invest.application.market.MarketDataService;
 import com.portfolio.invest.application.valuation.ValuationApplicationService;
 import io.agentscope.core.message.TextBlock;
@@ -14,7 +14,6 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolEmitter;
 import io.agentscope.core.tool.ToolParam;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -38,8 +37,7 @@ public class InvestTools {
             ObjectMapper mapper) {
         this.market = market;
         this.valuationApplicationService = valuationApplicationService;
-        // 注入 Spring Boot 已配置的 ObjectMapper（已注册 JavaTimeModule 并按 ISO 日期序列化），
-        // 使 getValuation 能正确序列化 ValuationSnapshot.tradingDay(LocalDate)。
+        // 注入 Spring Boot 已配置的 ObjectMapper（统一序列化行为；日期已在 ChartSpecs 预转为 ISO 字符串）。
         this.mapper = mapper;
     }
 
@@ -91,29 +89,18 @@ public class InvestTools {
             description = "获取个股核心财务指标：每股收益、每股净资产、营收、净利润、加权ROE、毛利率，以及当前市盈率/市净率。",
             readOnly = true,
             concurrencySafe = true)
-    public String getFinancials(
-            @ToolParam(name = "code", description = "6位A股代码，如 600519") String code) {
-        return run(() -> {
+    public ToolResultBlock getFinancials(
+            @ToolParam(name = "code", description = "6位A股代码，如 600519") String code,
+            ToolEmitter emitter) {
+        return runBlock(() -> {
             Financials f = market.financials(code);
-            Map<String, Object> out = new LinkedHashMap<>();
-            out.put("code", f.code());
-            out.put("name", f.name());
-            out.put("pe", f.pe());
-            out.put("pb", f.pb());
-            List<Map<String, Object>> periods = new ArrayList<>();
-            for (FinancialIndicator i : f.indicators()) {
-                Map<String, Object> row = new LinkedHashMap<>();
-                row.put("报告期", i.reportDate());
-                row.put("每股收益EPS", i.eps());
-                row.put("每股净资产BPS", i.bps());
-                row.put("营收(亿元)", round2Yi(i.totalRevenue()));
-                row.put("净利润(亿元)", round2Yi(i.netProfit()));
-                row.put("加权ROE(%)", i.weightedRoe());
-                row.put("毛利率(%)", i.grossMargin());
-                periods.add(row);
-            }
-            out.put("periods", periods);
-            return mapper.writeValueAsString(out);
+            // ① SSE 全量（只 emit 一次）：table spec（P4 前端接 DataTable 渲染）
+            emitter.emit(ToolResultBlock.builder()
+                    .output(TextBlock.builder().text(mapper.writeValueAsString(
+                            ChartSpecs.financialsTable(f))).build())
+                    .build());
+            // ② LLM 摘要：PE/PB 与最新报告期
+            return ToolResultBlock.text(ChartSpecs.financialsSummary(f));
         });
     }
 
@@ -133,8 +120,17 @@ public class InvestTools {
             description = "获取A股大盘速览：上证指数、深证成指、创业板指的最新点位与涨跌幅。",
             readOnly = true,
             concurrencySafe = true)
-    public String getMarketOverview() {
-        return run(() -> mapper.writeValueAsString(market.overview()));
+    public ToolResultBlock getMarketOverview(ToolEmitter emitter) {
+        return runBlock(() -> {
+            MarketOverview overview = market.overview();
+            // ① SSE 全量（只 emit 一次）：bar 只画涨跌幅，点位不进图
+            emitter.emit(ToolResultBlock.builder()
+                    .output(TextBlock.builder().text(mapper.writeValueAsString(
+                            ChartSpecs.overviewBar(overview))).build())
+                    .build());
+            // ② LLM 摘要：指数名与点位
+            return ToolResultBlock.text(ChartSpecs.overviewSummary(overview));
+        });
     }
 
     @Tool(
@@ -142,8 +138,19 @@ public class InvestTools {
             description = "查询市场估值：全A股PE/PB中位数及历史分位、股债利差(ERP)、主要指数估值、市场情绪温度计。用于回答「现在市场贵不贵/估值高不高」类问题。",
             readOnly = true,
             concurrencySafe = true)
-    public String getValuation() {
-        return run(() -> mapper.writeValueAsString(valuationApplicationService.overview()));
+    public ToolResultBlock getValuation(ToolEmitter emitter) {
+        return runBlock(() -> {
+            // ⚠ 图数据来自 history()（overview() 视图无 peHistory/pbHistory 字段——一手核实）
+            var history = valuationApplicationService.history();
+            var overview = valuationApplicationService.overview();
+            // ① SSE 全量（只 emit 一次）：PE/PB 中位数历史 line（含 null 缺口）
+            emitter.emit(ToolResultBlock.builder()
+                    .output(TextBlock.builder().text(mapper.writeValueAsString(
+                            ChartSpecs.valuationLine(history.snapshots()))).build())
+                    .build());
+            // ② LLM 摘要：overview() 标量（分位/ERP/温度计）
+            return ToolResultBlock.text(ChartSpecs.valuationSummary(overview, history.snapshots().size()));
+        });
     }
 
     private String run(JsonSupplier supplier) {
@@ -181,13 +188,6 @@ public class InvestTools {
             log.error("工具执行异常", e);
             return ToolResultBlock.text(toError("工具执行失败", "请稍后重试"));
         }
-    }
-
-    private static Double round2Yi(Double v) {
-        if (v == null) {
-            return null;
-        }
-        return Math.round(v / 1_0000_0000.0 * 100.0) / 100.0;
     }
 
     @FunctionalInterface
