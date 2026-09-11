@@ -48,9 +48,14 @@ describe("InterruptApprovalCard", () => {
   it("批准/拒绝按钮触发回调", () => {
     const onApprove = vi.fn();
     const onDeny = vi.fn();
-    render(<InterruptApprovalCard toolName="write_note" onApprove={onApprove} onDeny={onDeny} />);
+    // v2：点击后卡片自身切已处理态、按钮收起，两条路径须分开挂载验证
+    const first = render(
+      <InterruptApprovalCard toolName="write_note" onApprove={onApprove} onDeny={() => {}} />,
+    );
     fireEvent.click(screen.getByRole("button", { name: "批准" }));
     expect(onApprove).toHaveBeenCalledTimes(1);
+    first.unmount();
+    render(<InterruptApprovalCard toolName="write_note" onApprove={() => {}} onDeny={onDeny} />);
     fireEvent.click(screen.getByRole("button", { name: "拒绝" }));
     expect(onDeny).toHaveBeenCalledTimes(1);
   });
@@ -85,6 +90,32 @@ describe("InterruptApprovalCard", () => {
         onDeny={() => {}}
       />,
     );
+    expect(screen.getByText("已拒绝，等待其余确认…")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "批准" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "拒绝" })).toBeNull();
+  });
+
+  // —— v2：已处理态默认走卡片内部 state ——
+  // useInterrupt 对 render 产物做元素 memo 且依赖不含宿主组件重渲染：宿主 setState 后 memo
+  // 命中仍返回旧元素（旧闭包），父层 decision prop 传不进去（v1 真机失效根因）。
+  // 唯一稳态路径是卡片自身 setState 重渲染自身——以下用例不传 decision、点击后也无任何
+  // 父组件重渲染/prop 变化，正是钉住这一行为的断言。
+
+  it("不传 decision：点「批准」后卡片自身切已批准态（无父组件重渲染）", () => {
+    const onApprove = vi.fn();
+    render(<InterruptApprovalCard toolName="write_note" onApprove={onApprove} onDeny={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: "批准" }));
+    expect(onApprove).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("已批准，等待其余确认…")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "批准" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "拒绝" })).toBeNull();
+  });
+
+  it("不传 decision：点「拒绝」后卡片自身切已拒绝态（无父组件重渲染）", () => {
+    const onDeny = vi.fn();
+    render(<InterruptApprovalCard toolName="write_note" onApprove={() => {}} onDeny={onDeny} />);
+    fireEvent.click(screen.getByRole("button", { name: "拒绝" }));
+    expect(onDeny).toHaveBeenCalledTimes(1);
     expect(screen.getByText("已拒绝，等待其余确认…")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "批准" })).toBeNull();
     expect(screen.queryByRole("button", { name: "拒绝" })).toBeNull();
