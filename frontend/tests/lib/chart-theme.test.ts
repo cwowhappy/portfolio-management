@@ -73,4 +73,15 @@ describe("chart-theme", () => {
     document.documentElement.removeAttribute("data-theme");
     expect(getPalette()).toBe(getPalette());
   });
+
+  it("getPalette SSR 守卫真触发：无 document 时返回 SSR_FALLBACK 同引用", async () => {
+    const { getPalette, SSR_FALLBACK } = await import("@/lib/chart-theme");
+    // jsdom 下 document 是全局属性：stubGlobal 置 undefined 使 typeof 检查走 SSR 分支（此前该分支从未执行）
+    vi.stubGlobal("document", undefined);
+    try {
+      expect(getPalette()).toBe(SSR_FALLBACK);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });

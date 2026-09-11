@@ -34,6 +34,15 @@ describe("buildPieOption", () => {
     expect(opt.legend).toBeDefined();
     expect((opt.series as { padAngle?: number }[])[0].padAngle).toBe(2);
   });
+
+  it("subtitle 是 spec 字段非 option 字段：透传不出 title 键（title 仅作 series.name）", () => {
+    const opt = buildPieOption({
+      specVersion: 1, type: "pie", title: "资产配置", subtitle: "单位：元",
+      data: [{ name: "权益", value: 1 }],
+    });
+    expect("title" in opt).toBe(false);
+    expect((opt.series as { name: string }[])[0].name).toBe("资产配置");
+  });
 });
 
 describe("buildBarOption", () => {
@@ -70,6 +79,14 @@ describe("buildBarOption", () => {
     });
     expect(opt.legend).toBeUndefined();
   });
+
+  it("horizontal:true 轴互换——xAxis 变 value 轴（含 unit 格式）、yAxis 变类目轴；圆角随横条转向", () => {
+    const opt = buildBarOption({ ...spec, horizontal: true });
+    expect(opt.xAxis).toMatchObject({ type: "value", axisLabel: { formatter: "{value}%" } });
+    expect(opt.yAxis).toMatchObject({ type: "category", data: ["股票", "债券"] });
+    const series = opt.series as { itemStyle?: { borderRadius?: number[] } }[];
+    expect(series[0].itemStyle?.borderRadius).toEqual([0, 4, 4, 0]);
+  });
 });
 
 describe("buildLineOption", () => {
@@ -89,6 +106,20 @@ describe("buildLineOption", () => {
     expect(series[0].smooth).toBe(true);
     expect(series[0].showSymbol).toBe(false);
     expect(series[0].connectNulls).toBe(false);
+  });
+
+  it("series.area:true 时补 areaStyle opacity 0.15；未标记系列无 areaStyle", () => {
+    const opt = buildLineOption({
+      specVersion: 1, type: "line", title: "走势",
+      categories: ["09-10", "09-11"],
+      series: [
+        { name: "净值", data: [1.0, 1.1], area: true },
+        { name: "PE", data: [15, 16] },
+      ],
+    });
+    const series = opt.series as { areaStyle?: { opacity: number } }[];
+    expect(series[0].areaStyle).toEqual({ opacity: 0.15 });
+    expect(series[1].areaStyle).toBeUndefined();
   });
 });
 

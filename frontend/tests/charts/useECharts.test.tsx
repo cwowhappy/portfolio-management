@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { cleanup, render } from "@testing-library/react";
+import { StrictMode } from "react";
 import type { ReactNode } from "react";
 
 // echarts/core mock init（useECharts 直接用）+ registerTheme（ensureAppThemes→registerAppThemes 默认参数会取它）
@@ -28,7 +29,7 @@ function Probe({ option }: { option: ECOption; children?: ReactNode }) {
 
 describe("useECharts", () => {
   beforeEach(() => {
-    initSpy.mockClear(); fakeChart.setOption.mockClear(); fakeChart.dispose.mockClear();
+    initSpy.mockClear(); fakeChart.setOption.mockClear(); fakeChart.dispose.mockClear(); fakeChart.resize.mockClear();
     roCallback = null;
     vi.stubGlobal("ResizeObserver", ResizeObserverStub);
   });
@@ -54,10 +55,17 @@ describe("useECharts", () => {
     expect(fakeChart.setOption).toHaveBeenLastCalledWith(next, { notMerge: true });
   });
 
-  it("卸载时 dispose 并断开监听（StrictMode 对称清理）", () => {
-    const { unmount } = render(<Probe option={{ series: [{ type: "pie" as const, data: [] }] }} />);
+  it("StrictMode 双挂载下 dispose 对称：挂载期演练一次清理，真卸载再一次（共 2）", () => {
+    // React 18+/19 StrictMode 开发模式 mount→cleanup→mount：卸载清理路径在挂载期即被演练一次，
+    // 据此断言 dispose 被调且恰为 2 次（1 次模拟卸载 + 1 次真卸载）——effect 必须可安全重复执行。
+    const { unmount } = render(
+      <StrictMode>
+        <Probe option={{ series: [{ type: "pie" as const, data: [] }] }} />
+      </StrictMode>,
+    );
+    expect(fakeChart.dispose).toHaveBeenCalledTimes(1); // 模拟卸载的 cleanup
     unmount();
-    expect(fakeChart.dispose).toHaveBeenCalledTimes(1);
+    expect(fakeChart.dispose).toHaveBeenCalledTimes(2);
   });
 
   // 补充断言（brief 四用例之外）：卸载必须显式 disconnect ResizeObserver，与 dispose 对称
