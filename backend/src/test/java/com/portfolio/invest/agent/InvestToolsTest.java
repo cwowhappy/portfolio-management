@@ -1,6 +1,8 @@
 package com.portfolio.invest.agent;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -66,23 +68,42 @@ class InvestToolsTest {
         assertThat(json).contains("1680.5").contains("19.95").contains("8.5");
     }
 
-    @DisplayName("getKline参数缺省时回退day与120")
+    @DisplayName("getKline双通道：emit全量ChartSpec，返回摘要")
     @Test
-    void givenParamsMissing_whenGetKline_thenFallsBackToDayAnd120() {
-        when(market.kline("600519", "day", 120)).thenReturn(List.of());
-        tools.getKline("600519", null, null);
-        when(market.kline("600519", "week", 120)).thenReturn(List.of());
-        String json = tools.getKline("600519", "week", 120);
-        assertThat(json).isEqualTo("[]");
+    void givenKlineBars_whenGetKline_thenEmitsFullChartSpecAndReturnsSummary() throws Exception {
+        when(market.kline("600519", "day", 120)).thenReturn(List.of(
+                new KlineBar("2026-09-09", 1800.0, 1850.0, 1860.0, 1790.0, 120_000, 0, 0),
+                new KlineBar("2026-09-10", 1850.0, 1840.0, 1870.0, 1830.0, 98_000, 0, 0)));
+        io.agentscope.core.message.ToolResultBlock[] emitted = new io.agentscope.core.message.ToolResultBlock[1];
+        io.agentscope.core.tool.ToolEmitter capture = block -> emitted[0] = block;
+
+        var result = tools.getKline("600519", null, null, capture);
+
+        // ① emit 全量：SSE 通道收到 ChartSpec JSON（文本块）
+        String emittedText = ((io.agentscope.core.message.TextBlock) emitted[0].getOutput().get(0)).getText();
+        assertThat(emittedText)
+                .contains("\"type\":\"candlestick\"")
+                .contains("\"specVersion\":1");
+        // ② 返回摘要：只进 LLM/stateStore，不含 specVersion。
+        // state 实测 RUNNING（javap 核实 2.0.3：text() 走 4 参构造，state=null 默认 RUNNING；
+        // ReActAgent.determineToolResultState 组装最终 Msg 时才把无错误块的 RUNNING 归一为 SUCCESS）
+        assertThat(result.getState().toString()).isEqualTo("RUNNING");
+        assertThat(result.getOutput().get(0).toString()).contains("600519 日K 2根");
+        assertThat(emittedText).doesNotContain("日K 2根");
     }
 
-    @DisplayName("getKline序列化K线")
+    @DisplayName("getKline失败：不emit，返回错误JSON")
     @Test
-    void givenKlineBar_whenGetKline_thenSerializesJson() {
-        var bar = new KlineBar("2026-08-18", 10, 11, 12, 9, 1000, 10000, 1.5);
-        when(market.kline("600519", "day", 60)).thenReturn(List.of(bar));
-        String json = tools.getKline("600519", "day", 60);
-        assertThat(json).contains("2026-08-18").contains("11.0");
+    void givenSourceDown_whenGetKline_thenNoEmitAndReturnsErrorJson() {
+        when(market.kline(any(), any(), anyInt()))
+                .thenThrow(new MarketDataException("SOURCE_DOWN", "数据源超时"));
+        io.agentscope.core.message.ToolResultBlock[] emitted = new io.agentscope.core.message.ToolResultBlock[1];
+        io.agentscope.core.tool.ToolEmitter capture = block -> emitted[0] = block;
+
+        var result = tools.getKline("600519", null, null, capture);
+
+        assertThat(emitted[0]).as("失败不 emit（SSE 无 ChartSpec）").isNull();
+        assertThat(result.getOutput().get(0).toString()).contains("\"error\"");
     }
 
     @DisplayName("getFinancials组装指标与估值")

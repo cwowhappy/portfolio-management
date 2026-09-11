@@ -2,12 +2,17 @@ package com.portfolio.invest.agent;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.portfolio.invest.agent.chart.ChartSpecs;
 import com.portfolio.invest.domain.market.FinancialIndicator;
 import com.portfolio.invest.domain.market.Financials;
+import com.portfolio.invest.domain.market.KlineBar;
 import com.portfolio.invest.domain.market.MarketDataException;
 import com.portfolio.invest.application.market.MarketDataService;
 import com.portfolio.invest.application.valuation.ValuationApplicationService;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.Tool;
+import io.agentscope.core.tool.ToolEmitter;
 import io.agentscope.core.tool.ToolParam;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -60,15 +65,25 @@ public class InvestTools {
 
     @Tool(
             name = "get_kline",
-            description = "获取个股历史K线（前复权），用于分析价格趋势、均线与成交量变化。",
+            description = "获取个股历史K线（前复权，返回K线图表数据），用于分析价格趋势、均线与成交量变化。",
             readOnly = true,
             concurrencySafe = true)
-    public String getKline(
+    public ToolResultBlock getKline(
             @ToolParam(name = "code", description = "6位A股代码，如 600519") String code,
             @ToolParam(name = "period", description = "周期：day 日K / week 周K / month 月K，默认 day") String period,
-            @ToolParam(name = "limit", description = "返回根数，默认 120，最大 500") Integer limit) {
-        return run(() -> mapper.writeValueAsString(
-                market.kline(code, period == null ? "day" : period, limit == null ? 120 : limit)));
+            @ToolParam(name = "limit", description = "返回根数，默认 120，最大 500") Integer limit,
+            ToolEmitter emitter) {                       // 无 @ToolParam → 自动注入（05 §3.2）
+        return runBlock(() -> {
+            List<KlineBar> bars = market.kline(code, period == null ? "day" : period,
+                    Math.min(limit == null ? 120 : limit, 500));
+            // ① SSE 全量（只 emit 一次）：emit 的块永不进 LLM，emit 过则返回值 delta 被 skipSet 跳过
+            emitter.emit(ToolResultBlock.builder()
+                    .output(TextBlock.builder().text(mapper.writeValueAsString(
+                            ChartSpecs.kline(code, period, bars))).build())
+                    .build());
+            // ② LLM 摘要：返回值只进 Msg/stateStore
+            return ToolResultBlock.text(ChartSpecs.klineSummary(code, period, bars));
+        });
     }
 
     @Tool(
@@ -155,6 +170,19 @@ public class InvestTools {
         }
     }
 
+    /** 双通道版 run()：失败不 emit，返回错误 JSON 文本（前端 ChartCard 嗅探降级）。 */
+    private ToolResultBlock runBlock(BlockSupplier supplier) {
+        try {
+            return supplier.get();
+        } catch (MarketDataException e) {
+            log.warn("工具数据获取失败: code={}, msg={}", e.getCode(), e.getMessage());
+            return ToolResultBlock.text(toError(e.getMessage(), "数据源暂不可用，请稍后重试或换个问法"));
+        } catch (Exception e) {
+            log.error("工具执行异常", e);
+            return ToolResultBlock.text(toError("工具执行失败", "请稍后重试"));
+        }
+    }
+
     private static Double round2Yi(Double v) {
         if (v == null) {
             return null;
@@ -165,5 +193,10 @@ public class InvestTools {
     @FunctionalInterface
     private interface JsonSupplier {
         String get() throws Exception;
+    }
+
+    @FunctionalInterface
+    private interface BlockSupplier {
+        ToolResultBlock get() throws Exception;
     }
 }
