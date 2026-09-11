@@ -9,3 +9,6 @@ export const KlineParamsSchema = z.object({
 });
 export const ValuationParamsSchema = z.object({});
 export const OverviewParamsSchema = z.object({});
+export const FinancialsParamsSchema = z.object({
+  code: z.string().describe("6位A股代码"),
+});

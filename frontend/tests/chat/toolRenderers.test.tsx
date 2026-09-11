@@ -30,11 +30,18 @@ const barSpec = {
   specVersion: 1, type: "bar", title: "主要指数涨跌幅", unit: "%",
   categories: ["上证指数", "深证成指", "创业板指"], series: [{ name: "涨跌幅", data: [0.8, -0.3, 1.2] }],
 };
+// financials.json fixture 的最小形态（双端契约真源，Task 2 表格卡端到端）
+const tableSpec = {
+  specVersion: 1, type: "table", title: "600519 贵州茅台 财务指标",
+  columns: [{ key: "reportDate", label: "报告期" }, { key: "eps", label: "每股收益EPS", align: "right" }],
+  rows: [{ reportDate: "2026-06-30", eps: 24.2 }],
+};
 
 describe("ChartToolRenderers", () => {
-  it("注册 get_kline/get_valuation/get_market_overview 三个具名渲染器（无 agentId，05 §4.1）", () => {
+  it("注册 get_kline/get_valuation/get_market_overview/get_financials 四个具名渲染器（无 agentId，05 §4.1）", () => {
     render(<ChartToolRenderers />);
-    expect(renderToolConfigs.map((c) => c.name)).toEqual(["get_kline", "get_valuation", "get_market_overview"]);
+    expect(renderToolConfigs.map((c) => c.name)).toEqual(
+      ["get_kline", "get_valuation", "get_market_overview", "get_financials"]);
     expect(renderToolConfigs.every((c) => "parameters" in c)).toBe(true);
   });
 
@@ -50,13 +57,24 @@ describe("ChartToolRenderers", () => {
     render(<ChartToolRenderers />);
     const valuation = renderToolConfigs.find((c) => c.name === "get_valuation")!;
     const { getByTestId: g1 } = render(valuation.render({ status: "complete", result: JSON.stringify(lineSpec) }) as React.ReactElement);
-    expect(JSON.parse(g1("chart-card-chart").dataset.option!).series[0].data).toEqual([25.1, 25.3]);
-    expect(JSON.parse(g1("chart-card-chart").dataset.option!).series[1].data).toEqual([2.1, null]);
+    // 同一 dataset.option 只解析一次，两条断言共用
+    const lineOption = JSON.parse(g1("chart-card-chart").dataset.option!);
+    expect(lineOption.series[0].data).toEqual([25.1, 25.3]);
+    expect(lineOption.series[1].data).toEqual([2.1, null]);
     // 同一 it 内二次 render：RTL 查询绑定 document.body，先 cleanup 隔离，否则 getByTestId 撞多元素
     cleanup();
     const overview = renderToolConfigs.find((c) => c.name === "get_market_overview")!;
     const { getByTestId: g2 } = render(overview.render({ status: "complete", result: JSON.stringify(barSpec) }) as React.ReactElement);
-    expect(JSON.parse(g2("chart-card-chart").dataset.option!).xAxis.data).toEqual(barSpec.categories);
+    const barOption = JSON.parse(g2("chart-card-chart").dataset.option!);
+    expect(barOption.xAxis.data).toEqual(barSpec.categories);
+  });
+
+  it("get_financials complete + TableSpec JSON → 表头渲染（financials fixture 最小形态）", () => {
+    render(<ChartToolRenderers />);
+    const financials = renderToolConfigs.find((c) => c.name === "get_financials")!;
+    const { getByText } = render(financials.render({ status: "complete", result: JSON.stringify(tableSpec) }) as React.ReactElement);
+    expect(getByText("报告期")).toBeTruthy();
+    expect(getByText("每股收益EPS")).toBeTruthy();
   });
 
   it("inProgress 半截参数（Partial）→ 骨架不崩", () => {

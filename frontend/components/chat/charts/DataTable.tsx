@@ -53,7 +53,7 @@ export function DataTable({ spec }: { spec: TableSpec }) {
           {table.getRowModel().rows.map((r) => (
             <tr key={r.id} className="border-t border-[color:var(--color-line-soft)]">
               {r.getVisibleCells().map((c) => (
-                <td key={c.id} className="px-2 py-1 text-[color:var(--color-ink)]">
+                <td key={c.id} className="px-2 py-1 text-[color:var(--color-ink)]" style={{ textAlign: alignOf(c.column.id) ?? "left" }}>
                   {flexRender(c.column.columnDef.cell, c.getContext())}
                 </td>
               ))}

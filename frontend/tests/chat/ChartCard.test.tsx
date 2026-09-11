@@ -57,14 +57,27 @@ describe("ChartCard（状态机壳，05 §4.6）", () => {
     expect(document.querySelectorAll("details.tool-card")).toHaveLength(2);
   });
 
-  it("complete + table 变体 → 本期降级折叠卡（P4 换 DataTable）", () => {
+  it("complete + table 变体 → DataTable（th 可见、非降级卡，无 builder 也渲染）", () => {
     const tableSpec = {
       specVersion: 1, type: "table", title: "财务指标",
-      columns: [{ key: "a", label: "A" }], rows: [{ a: 1 }],
+      columns: [{ key: "a", label: "报告期" }], rows: [{ a: "2026-06-30" }],
     };
-    render(<ChartCard status="complete" name="get_financials" result={JSON.stringify(tableSpec)} builder={anyBuilder} />);
+    render(<ChartCard status="complete" name="get_financials" result={JSON.stringify(tableSpec)} />);
+    expect(screen.getByText("报告期")).toBeTruthy();
     expect(screen.queryByTestId("chart-card-chart")).toBeNull();
-    expect(document.querySelector("details.tool-card")).toBeTruthy();
+    expect(document.querySelector("details.tool-card")).toBeNull();
+  });
+
+  it("complete + table rows 含行内 error 键 → 不误判降级（isToolError 只嗅顶层 error）", () => {
+    const tableSpec = {
+      specVersion: 1, type: "table", title: "财务指标",
+      columns: [{ key: "a", label: "代码" }, { key: "error", label: "错误码" }],
+      rows: [{ a: "600519", error: "ERR_CODE" }],
+    };
+    render(<ChartCard status="complete" name="get_financials" result={JSON.stringify(tableSpec)} />);
+    expect(screen.getByText("错误码")).toBeTruthy();
+    expect(screen.getByText("ERR_CODE")).toBeTruthy();
+    expect(document.querySelector("details.tool-card")).toBeNull();
   });
 
   it("complete 但 result undefined（RUN_ERROR 流级错误，无 toolMessage）→ 维持骨架", () => {
