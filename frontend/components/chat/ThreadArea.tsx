@@ -450,6 +450,10 @@ export default function ThreadArea({ llmReady, onUnauthorized }: {
   // 权限审批（mcp-hitl）：renderInChat:false 时 hook 返回元素，须手动渲染（挂载点在消息流尾部）。
   // agentId 必须显式绑定：useInterrupt 内部经 useAgent 解析 config.agentId ?? "default"，
   // 本应用只注册 invest，缺省会在运行时抛「Agent 'default' not found」导致对话页崩溃。
+  // 已处理态（FR-5 补全：resolve 是 accumulate-then-submit，多卡期间单卡点击即显反馈）由
+  // InterruptApprovalCard 内部 state 维护——useInterrupt 对 render 产物做元素 memo 且依赖
+  // 不含宿主重渲染，本组件 setState 传不进 memo 命中的旧元素（v1 真机失效根因），
+  // 故此处不持有任何审批反馈状态，handler 保持纯 resolve。
   const interruptBar = useInterrupt({
     agentId: AGENT_ID,
     renderInChat: false,

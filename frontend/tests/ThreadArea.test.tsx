@@ -449,15 +449,21 @@ describe("ThreadArea", () => {
       ],
       resolve,
     };
-    renderThread();
+    const view = renderThread();
     await waitFor(() => expect(screen.getByText(/write_note/)).toBeTruthy());
     expect(screen.getByText("需要确认后执行")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "批准" }));
     expect(resolve).toHaveBeenCalledWith({ approved: true }, "reply-1:call_a");
 
+    // FR-5 补全：单卡点击后即入已处理态（按钮收起），同卡不可再改选；
+    // 拒绝路径重新挂载后验证（断言意图不变：resolve 携带 interruptId）
+    view.unmount();
+    const view2 = renderThread();
+    await waitFor(() => expect(screen.getByRole("button", { name: "拒绝" })).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "拒绝" }));
     expect(resolve).toHaveBeenCalledWith({ approved: false }, "reply-1:call_a");
+    view2.unmount();
   });
 
   it("多中断铺开：两个 interrupt 渲染两张卡片，resolve 各自携带 interruptId（FR-5）", async () => {
@@ -495,6 +501,88 @@ describe("ThreadArea", () => {
     // 各自按钮 resolve 携带各自的 interruptId
     expect(resolve).toHaveBeenCalledWith({ approved: true }, "reply-1:call_a");
     expect(resolve).toHaveBeenCalledWith({ approved: false }, "reply-2:call_b");
+  });
+
+  it("多审批卡逐张反馈：单卡点击即显已处理态，其余卡仍可点（FR-5 补全）", async () => {
+    const resolve = vi.fn();
+    mocks.interruptProps = {
+      interrupts: [
+        {
+          id: "reply-1:call_a",
+          message: "写入前请确认 A",
+          metadata: { toolName: "write_note", toolInput: '{"file":"a.md"}' },
+        },
+        {
+          id: "reply-2:call_b",
+          message: "写入前请确认 B",
+          metadata: { toolName: "delete_record", toolInput: '{"id":42}' },
+        },
+      ],
+      resolve,
+    };
+    renderThread();
+    await waitFor(() =>
+      expect(screen.getAllByRole("button", { name: "批准" })).toHaveLength(2),
+    );
+
+    // 点第一张「批准」→ 第一张变为已批准态（文案在、按钮不在），第二张仍可点
+    fireEvent.click(screen.getAllByRole("button", { name: "批准" })[0]);
+    expect(resolve).toHaveBeenCalledWith({ approved: true }, "reply-1:call_a");
+    await waitFor(() => expect(screen.getByText("已批准，等待其余确认…")).toBeTruthy());
+    // 仅剩第二张的批准/拒绝按钮；第二张内容不受影响
+    expect(screen.getAllByRole("button", { name: "批准" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "拒绝" })).toHaveLength(1);
+    expect(screen.getByText(/delete_record/)).toBeTruthy();
+    expect(screen.getByText("写入前请确认 B")).toBeTruthy();
+
+    // 再点第二张「拒绝」→ 两张均为已处理态，按钮全部收起
+    fireEvent.click(screen.getAllByRole("button", { name: "拒绝" })[0]);
+    expect(resolve).toHaveBeenCalledWith({ approved: false }, "reply-2:call_b");
+    await waitFor(() => expect(screen.getByText("已拒绝，等待其余确认…")).toBeTruthy());
+    expect(screen.getByText("已批准，等待其余确认…")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "批准" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "拒绝" })).toBeNull();
+  });
+
+  it("interrupts 换新一轮：旧已处理标记不残留到新卡（状态清理）", async () => {
+    const resolve = vi.fn();
+    mocks.interruptProps = {
+      interrupts: [
+        {
+          id: "reply-1:call_a",
+          message: "写入前请确认 A",
+          metadata: { toolName: "write_note", toolInput: '{"file":"a.md"}' },
+        },
+      ],
+      resolve,
+    };
+    const view = renderThread();
+    await waitFor(() => expect(screen.getByRole("button", { name: "批准" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "批准" }));
+    await waitFor(() => expect(screen.getByText("已批准，等待其余确认…")).toBeTruthy());
+
+    // 全部应答已提交续跑，新一轮中断到来（不同 id）：旧卡/旧已处理态消失，新卡可正常审批
+    mocks.interruptProps = {
+      interrupts: [
+        {
+          id: "reply-9:call_x",
+          message: "新一轮写入",
+          metadata: { toolName: "write_note", toolInput: '{"file":"b.md"}' },
+        },
+      ],
+      resolve,
+    };
+    view.rerender(
+      <RuntimeProvider>
+        <ThreadArea llmReady={null} />
+      </RuntimeProvider>,
+    );
+    await waitFor(() => expect(screen.getByRole("button", { name: "批准" })).toBeTruthy());
+    expect(screen.queryByText(/等待其余确认/)).toBeNull();
+    expect(screen.getByText("新一轮写入")).toBeTruthy();
+    // 新卡点击照常 resolve
+    fireEvent.click(screen.getByRole("button", { name: "批准" }));
+    expect(resolve).toHaveBeenCalledWith({ approved: true }, "reply-9:call_x");
   });
 
   it("契约错误翻译：中断失效报错显示中文引导（FR-8）", async () => {
