@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # e2e 前端服务：默认复用 .next 产物；E2E_FRESH_BUILD=1 强制清产物重建。
 # 既有教训（mcp-hitl）：复用陈旧 .next 会用旧代码跑新断言 → 图表/渲染器类改动后必须带 E2E_FRESH_BUILD=1。
+# 由 playwright.config.ts 的 webServer 调用（E2E_FRESH_BUILD 经 webServer env 传导）。
 set -euo pipefail
 cd "$(dirname "$0")/../frontend"
 
