@@ -19,6 +19,11 @@
 - e2e 前置：本地跑 `E2E_FRESH_BUILD=1`（Task 1 落地后）或手动 `rm -rf frontend/.next`——**陈旧 .next 是既有坑**（旧构建无 ChartCard 会让新断言假失败）。
 - 提交信息 conventional + 中文，一个 Task 一个 commit。
 
+## P4 终审携带项（2026-09-12 P4 终审裁定，执行时顺带处理）
+
+1. **DataTable 空列守卫**（一行）：`chart-spec.ts` 的 table columns 加 `.min(1)`（后端契约已保证 ≥1 列，钉进 zod）或 DataTable 用 `table.getHeaderGroups()[0]?.headers ?? []`——当前不可达，防御「聊天流不崩」红线。
+2. **`defaultPageSize` 注释过时**：chart-spec.ts 该字段注释改为「预留：卡片内表格可视高度（本期固定 360px 未消费）」。
+
 ---
 
 ### Task 1: e2e-frontend.sh 新鲜度守卫
