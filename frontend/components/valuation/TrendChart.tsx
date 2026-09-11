@@ -28,14 +28,18 @@ function toPoints(
 
 export default function TrendChart({
   snapshots,
-  indexValuations = [],
+  indexValuations,
   selectedIndex = "market",
 }: {
   snapshots: ValuationSnapshot[];
   indexValuations?: IndexValuationSeries[];
   selectedIndex?: string;
 }) {
-  const data = toPoints(snapshots, indexValuations, selectedIndex);
+  // data 依赖 props 本体：toPoints 每次返回新数组，若在 memo 外计算会让下游 option memo 恒重算（P1 遗留）
+  const data = useMemo(
+    () => toPoints(snapshots, indexValuations ?? [], selectedIndex),
+    [snapshots, indexValuations, selectedIndex],
+  );
   const option = useMemo(
     () =>
       buildLineOption({

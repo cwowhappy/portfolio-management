@@ -8,7 +8,8 @@ import type { DeviationView } from "@/lib/types";
 import { ASSET_CLASS_LABELS } from "@/lib/allocationApi";
 
 export default function DeviationChart({ deviation }: { deviation: DeviationView | null }) {
-  const slices = deviation?.slices ?? [];
+  // ?? [] 移入 memo 内、依赖 prop 本体：否则每次渲染新空数组使下游 memo 恒重算（exhaustive-deps）
+  const slices = useMemo(() => deviation?.slices ?? [], [deviation]);
   const option = useMemo(() => {
     const p = getPalette();
     return buildBarOption(

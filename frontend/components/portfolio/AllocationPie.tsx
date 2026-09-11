@@ -6,7 +6,8 @@ import { buildPieOption } from "@/components/charts/optionBuilders";
 import type { AssetAllocation } from "@/lib/types";
 
 export default function AllocationPie({ allocation }: { allocation: AssetAllocation | null }) {
-  const data = allocation?.slices ?? [];
+  // ?? [] 移入 memo 内、依赖 prop 本体：否则每次渲染新空数组使下游 memo 恒重算（exhaustive-deps）
+  const data = useMemo(() => allocation?.slices ?? [], [allocation]);
   const option = useMemo(
     () =>
       buildPieOption({

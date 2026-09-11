@@ -3,10 +3,13 @@ import { cleanup, render, screen } from "@testing-library/react";
 import TrendChart from "@/components/valuation/TrendChart";
 import type { ValuationSnapshot, IndexValuationSeries } from "@/lib/types";
 
+// 记录 EChart 收到的 option 引用（mock 每渲染 push 一次），供 memo 稳定性用例断言引用不变
+const seenOptions = vi.hoisted(() => [] as unknown[]);
 vi.mock("@/components/charts/EChart", () => ({
-  EChart: (p: { option: unknown; testid?: string }) => (
-    <div data-testid={p.testid ?? "echart"} data-option={JSON.stringify(p.option)} />
-  ),
+  EChart: (p: { option: unknown; testid?: string }) => {
+    seenOptions.push(p.option);
+    return <div data-testid={p.testid ?? "echart"} data-option={JSON.stringify(p.option)} />;
+  },
 }));
 
 const snapshots: ValuationSnapshot[] = [
@@ -61,6 +64,17 @@ describe("TrendChart", () => {
     const option = readOption();
     expect(option.series[0].data).toEqual([22, 23]);
     expect(option.series[1].data).toEqual([1.8, 1.9]);
+  });
+
+  it("同 props 重渲染 option 引用稳定（data memo 不因 toPoints 每渲染新数组而失效）", () => {
+    seenOptions.length = 0;
+    // indexValuations 不传：走参数默认值的最坏情形，data 计算必须仍被 memo 钉住
+    const view = render(<TrendChart snapshots={snapshots} />);
+    view.rerender(<TrendChart snapshots={snapshots} />);
+    view.rerender(<TrendChart snapshots={snapshots} />);
+    expect(seenOptions.length).toBe(3); // 组件本体每次重渲染，EChart 均收到 option
+    expect(seenOptions[0]).toBe(seenOptions[1]);
+    expect(seenOptions[1]).toBe(seenOptions[2]);
   });
 
   it("选中无数据序列的指数时渲染积累中且不渲染图表", () => {

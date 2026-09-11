@@ -594,7 +594,8 @@ export default function ThreadArea({ llmReady, onUnauthorized }: {
     };
   }, [currentThreadId, flushPersist]);
 
-  const messages = agent.messages ?? [];
+  // ?? [] 移入 memo 内、依赖 prop 本体：否则每次渲染新空数组使下方 Map memo 恒重算（exhaustive-deps）
+  const messages = useMemo(() => agent.messages ?? [], [agent.messages]);
   // FR-7：role:"tool" 消息按 toolCallId 建索引；messages 引用不变时 Map 复用，避免无谓重建
   const toolMessageByCallId = useMemo(() => buildToolMessageMap(messages), [messages]);
   const isEmpty = messages.length === 0;

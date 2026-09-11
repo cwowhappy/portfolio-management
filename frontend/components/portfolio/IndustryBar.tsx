@@ -6,7 +6,8 @@ import { buildBarOption } from "@/components/charts/optionBuilders";
 import type { IndustryDistribution } from "@/lib/types";
 
 export default function IndustryBar({ industry }: { industry: IndustryDistribution | null }) {
-  const data = industry?.slices ?? [];
+  // ?? [] 移入 memo 内、依赖 prop 本体：否则每次渲染新空数组使下游 memo 恒重算（exhaustive-deps）
+  const data = useMemo(() => industry?.slices ?? [], [industry]);
   const option = useMemo(
     () =>
       buildBarOption({
