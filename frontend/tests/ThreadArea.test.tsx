@@ -774,3 +774,40 @@ describe("ThreadArea", () => {
     });
   });
 });
+
+describe("markdown 图片/链接防御（FR-6）", () => {
+  const md = [
+    "![快照](https://cdn.example.com/snapshot.png)",
+    "![明文](http://insecure.example.com/x.png)",
+    "[资料](https://example.com/doc)",
+  ].join("\n");
+
+  /** 与既有用例同一渲染入口：铺 agent.messages 后走 renderThread，等链接文本可见即 Markdown 已渲染。 */
+  async function renderMarkdownMessage() {
+    mocks.agent.messages = [agentMessage({ id: "a1", role: "assistant", content: md })];
+    renderThread();
+    await waitFor(() => expect(screen.getByText("资料")).toBeTruthy());
+  }
+
+  it("https 图片：懒加载 + no-referrer + 尺寸约束", async () => {
+    await renderMarkdownMessage();
+    const img = document.querySelector('img[src*="cdn.example.com"]') as HTMLImageElement;
+    expect(img.getAttribute("loading")).toBe("lazy");
+    expect(img.getAttribute("decoding")).toBe("async");
+    expect(img.getAttribute("referrerPolicy")).toBe("no-referrer");
+    expect(img.className).toContain("max-w-full");
+    expect(img.getAttribute("alt")).toBe("快照");
+  });
+
+  it("http 图片被 urlTransform 拦截（不渲染 img）", async () => {
+    await renderMarkdownMessage();
+    expect(document.querySelector('img[src*="insecure.example.com"]')).toBeNull();
+  });
+
+  it("链接新窗口打开 + noopener", async () => {
+    await renderMarkdownMessage();
+    const a = document.querySelector('a[href="https://example.com/doc"]') as HTMLAnchorElement;
+    expect(a.getAttribute("target")).toBe("_blank");
+    expect(a.getAttribute("rel")).toBe("noopener noreferrer");
+  });
+});

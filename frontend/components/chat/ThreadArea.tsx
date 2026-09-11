@@ -242,6 +242,12 @@ const AssistantMessage = memo(function AssistantMessage({
           <div className="md-body text-[14px] leading-relaxed text-[color:var(--color-ink)]">
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
+              urlTransform={(url) => {
+                // FR-6：默认 transform 已拦 javascript:/data:；再拦 http:（明文外域）。
+                // 同源相对路径与 https 放行——本期无工具产图，纯防御 LLM 幻觉 URL。
+                if (url.startsWith("/") || url.startsWith("https://")) return url;
+                return "";
+              }}
               components={{
                 pre: (p) => <>{p.children}</>,
                 code: ({ className, children }) => {
@@ -255,6 +261,30 @@ const AssistantMessage = memo(function AssistantMessage({
                     <InlineCode>{children}</InlineCode>
                   );
                 },
+                img: ({ src, alt, title }) => (
+                  // 外域 URL 由 LLM 产出、来源不可枚举，无法配置 next/image 的 remotePatterns；
+                  // 已以 https 门控 + no-referrer + 尺寸约束兜底（FR-6）。
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={src}
+                    alt={alt ?? ""}
+                    title={title}
+                    loading="lazy"
+                    decoding="async"
+                    referrerPolicy="no-referrer"
+                    className="my-2 max-h-[420px] max-w-full rounded-md border border-[color:var(--color-line-soft)]"
+                  />
+                ),
+                a: ({ href, children }) => (
+                  <a
+                    href={href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline decoration-[color:var(--color-ink-faint)] underline-offset-2"
+                  >
+                    {children}
+                  </a>
+                ),
               }}
             >
               {content}
