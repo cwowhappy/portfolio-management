@@ -41,6 +41,7 @@ describe("useECharts", () => {
     render(<Probe option={option} />);
     expect(initSpy).toHaveBeenCalledTimes(1);
     expect(fakeChart.setOption).toHaveBeenCalledWith(option, { notMerge: true });
+    expect(useSpy).toHaveBeenCalled(); // 注册副作用进模块图——值导入回退（import type 擦除）在此变红
   });
 
   it("容器尺寸变化时 resize", () => {
