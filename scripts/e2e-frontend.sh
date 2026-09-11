@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Playwright e2e 前端启动：next start（缺构建产物时先 build）。由 playwright.config.ts 的 webServer 调用。
-set -e
+# e2e 前端服务：默认复用 .next 产物；E2E_FRESH_BUILD=1 强制清产物重建。
+# 既有教训（mcp-hitl）：复用陈旧 .next 会用旧代码跑新断言 → 图表/渲染器类改动后必须带 E2E_FRESH_BUILD=1。
+set -euo pipefail
 cd "$(dirname "$0")/../frontend"
 
-if [ ! -f .next/BUILD_ID ]; then
+if [ "${E2E_FRESH_BUILD:-0}" = "1" ] || [ ! -f .next/BUILD_ID ]; then
+  rm -rf .next
   CI=true ./node_modules/.bin/next build
 fi
-
 exec ./node_modules/.bin/next start -p 3000
