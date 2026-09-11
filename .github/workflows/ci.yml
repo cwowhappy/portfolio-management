@@ -42,6 +42,9 @@ jobs:
       - name: Test
         working-directory: frontend
         run: pnpm test
+      - name: chart bundle 体积断言
+        working-directory: frontend
+        run: pnpm test:bundle
 
   collector:
     name: Collector tests
