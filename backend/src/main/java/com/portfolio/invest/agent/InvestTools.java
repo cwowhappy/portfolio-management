@@ -74,6 +74,10 @@ public class InvestTools {
         return runBlock(() -> {
             List<KlineBar> bars = market.kline(code, period == null ? "day" : period,
                     Math.min(limit == null ? 120 : limit, 500));
+            if (bars.isEmpty()) {
+                // emit 前守卫：空 bars 不 emit（SSE 不发空 spec），LLM 收安全摘要
+                return ToolResultBlock.text(ChartSpecs.klineEmptySummary(code, period));
+            }
             // ① SSE 全量（只 emit 一次）：emit 的块永不进 LLM，emit 过则返回值 delta 被 skipSet 跳过
             emitter.emit(ToolResultBlock.builder()
                     .output(TextBlock.builder().text(mapper.writeValueAsString(
@@ -94,6 +98,10 @@ public class InvestTools {
             ToolEmitter emitter) {
         return runBlock(() -> {
             Financials f = market.financials(code);
+            if (f.indicators().isEmpty()) {
+                // emit 前守卫：空指标不 emit（摘要 get(0) 也会 IOOBE），LLM 收安全摘要
+                return ToolResultBlock.text(ChartSpecs.financialsEmptySummary(f));
+            }
             // ① SSE 全量（只 emit 一次）：table spec（P4 前端接 DataTable 渲染）
             emitter.emit(ToolResultBlock.builder()
                     .output(TextBlock.builder().text(mapper.writeValueAsString(
@@ -142,6 +150,10 @@ public class InvestTools {
         return runBlock(() -> {
             // ⚠ 图数据来自 history()（overview() 视图无 peHistory/pbHistory 字段——一手核实）
             var history = valuationApplicationService.history();
+            if (history.snapshots().isEmpty()) {
+                // emit 前守卫：冷库期（ValuationApplicationService 空表）合法产出空——不 emit 空走势 spec
+                return ToolResultBlock.text(ChartSpecs.valuationEmptySummary());
+            }
             var overview = valuationApplicationService.overview();
             // ① SSE 全量（只 emit 一次）：PE/PB 中位数历史 line（含 null 缺口）
             emitter.emit(ToolResultBlock.builder()

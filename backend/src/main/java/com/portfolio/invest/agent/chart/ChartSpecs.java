@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /** 域数据 → ChartSpec/摘要文本。title/label 的文案是 e2e 断言锚点，改动须同步 P5。 */
 public final class ChartSpecs {
@@ -43,6 +44,20 @@ public final class ChartSpecs {
             .formatted(code, periodLabel(period), bars.size(), latest, lo, hi);
   }
 
+  // ———— 空数据安全摘要（InvestTools emit 前守卫用）：不 emit 空 spec，LLM 收文本 ————
+
+  public static String klineEmptySummary(String code, String period) {
+    return "%s %sK 暂无数据".formatted(code, periodLabel(period));
+  }
+
+  public static String valuationEmptySummary() {
+    return "估值数据积累中，暂无历史走势。";
+  }
+
+  public static String financialsEmptySummary(Financials f) {
+    return "%s（%s）暂无财务数据".formatted(f.name(), f.code());
+  }
+
   private static List<Double> ma(List<KlineBar> bars, int window) {
     List<Double> out = new ArrayList<>(bars.size());
     double sum = 0;
@@ -70,12 +85,30 @@ public final class ChartSpecs {
         null);
   }
 
-  /** 摘要用 overview() 标量（分位/ERP/温度计）；n 为图表交易日数。 */
+  /**
+   * 摘要用 overview() 标量（分位/ERP/温度计/指数估值——设计规格 §二.3）；n 为图表交易日数。
+   * latestSnapshot 冷库期可为 null（ValuationApplicationService 空表合法产出）——判空跳段，其余标量照常。
+   */
   public static String valuationSummary(ValuationOverviewView o, int n) {
+    StringBuilder sb = new StringBuilder("估值概览");
     var s = o.latestSnapshot();
-    return "估值概览(%s)：全A PE 中位数 %s（%s 分位）、PB 中位数 %s（%s 分位）；ERP %s%%（%s 分位）；情绪温度计 %s/100。附图：PE/PB 中位数历史 %d 个交易日。"
-            .formatted(s.tradingDay(), s.peMedian(), o.pePercentile(), s.pbMedian(), o.pbPercentile(),
-                    o.erp(), o.erpPercentile(), o.thermometer(), n);
+    if (s != null) {
+      sb.append("(%s)：全A PE 中位数 %s（%s 分位）、PB 中位数 %s（%s 分位）；"
+              .formatted(s.tradingDay(), s.peMedian(), o.pePercentile(), s.pbMedian(), o.pbPercentile()));
+    } else {
+      sb.append("：");
+    }
+    sb.append("ERP %s%%（%s 分位）；情绪温度计 %s/100。".formatted(o.erp(), o.erpPercentile(), o.thermometer()));
+    // 指数估值段：一行循环各指数（冷库期指数名为空/PE 为 null 的占位条目跳过；共 5 个，长度可控）
+    String indices = o.indices() == null ? "" : o.indices().stream()
+            .filter(i -> i.pe() != null && i.indexName() != null && !i.indexName().isEmpty())
+            .map(i -> "%s PE %s（%s 分位）".formatted(i.indexName(), i.pe(), i.pePercentile()))
+            .collect(Collectors.joining(" "));
+    if (!indices.isEmpty()) {
+      sb.append("指数估值：").append(indices).append("。");
+    }
+    sb.append("附图：PE/PB 中位数历史 %d 个交易日。".formatted(n));
+    return sb.toString();
   }
 
   // ———— get_market_overview → bar（仅涨跌幅，点位进摘要）————
@@ -125,7 +158,8 @@ public final class ChartSpecs {
   }
 
   public static String financialsSummary(Financials f) {
-    var last = f.indicators().get(f.indicators().size() - 1);
+    // 真实管线降序（EastmoneyClient sortTypes=-1），首期即最新——与 OrchestratingMarketDataService 同一不变式
+    var last = f.indicators().get(0);
     return "%s（%s）：PE %s / PB %s；最新报告期 %s：EPS %s、营收 %s亿、净利 %s亿、加权ROE %s%%、毛利率 %s%%。共 %d 期，明细见表格。"
             .formatted(f.name(), f.code(), f.pe(), f.pb(), last.reportDate(), last.eps(),
                     round2Yi(last.totalRevenue()), round2Yi(last.netProfit()),

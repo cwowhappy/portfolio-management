@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -111,21 +112,48 @@ class InvestToolsTest {
         assertThat(result.getOutput().get(0).toString()).contains("\"error\"");
     }
 
+    @DisplayName("getKline空bars：emit前守卫，不emit返回安全摘要")
+    @Test
+    void givenEmptyKlineBars_whenGetKline_thenNoEmitAndReturnsSafeSummary() {
+        when(market.kline("600519", "day", 120)).thenReturn(List.of());
+        ToolResultBlock[] emitted = new ToolResultBlock[1];
+        ToolEmitter capture = block -> emitted[0] = block;
+
+        var result = tools.getKline("600519", null, null, capture);
+
+        assertThat(emitted[0]).as("空 bars 不 emit（SSE 无空 ChartSpec）").isNull();
+        assertThat(result.getOutput().get(0).toString()).contains("600519 日K 暂无数据");
+    }
+
+    @DisplayName("getKline limit超上限：夹到500")
+    @Test
+    void givenLimitOverMax_whenGetKline_thenClampsTo500() {
+        when(market.kline("600519", "day", 500)).thenReturn(List.of(
+                new KlineBar("2026-09-10", 1850.0, 1840.0, 1870.0, 1830.0, 98_000, 0, 0)));
+        ToolResultBlock[] emitted = new ToolResultBlock[1];
+        ToolEmitter capture = block -> emitted[0] = block;
+
+        tools.getKline("600519", "day", 999, capture);
+
+        verify(market).kline("600519", "day", 500);
+        assertThat(emitted[0]).as("clamp 不影响正常双通道").isNotNull();
+    }
+
     @DisplayName("getFinancials双通道：emit指标table，返回PE/PB摘要")
     @Test
     void givenFinancials_whenGetFinancials_thenEmitsTableSpecAndReturnsSummary() {
-        // 升序排列：financialsSummary 取末位为「最新报告期」
-        var i3 = new FinancialIndicator("2025-12-31", 0.9, 9.0, -1.23e9, -4.56e8, null, null); // 负值取整（原用例并入）
-        var i2 = new FinancialIndicator("2026-03-31", 1.0, null, null, null, null, null);       // null 金额 → 行输出 null 而非 0（T1）
-        var i1 = new FinancialIndicator("2026-06-30", 2.0, 10.0, 8.19e10, 2.3e10, 12.5, 50.2);
+        // 降序（新→旧）：与真实管线一致（EastmoneyClient sortTypes=-1；OrchestratingMarketDataService 以 get(0) 为最新）
+        var newest = new FinancialIndicator("2026-06-30", 2.0, 10.0, 8.19e10, 2.3e10, 12.5, 50.2);
+        var mid = new FinancialIndicator("2026-03-31", 1.0, null, null, null, null, null);       // null 金额 → 行输出 null 而非 0（T1）
+        var oldest = new FinancialIndicator("2025-12-31", 0.9, 9.0, -1.23e9, -4.56e8, null, null); // 负值取整（原用例并入）
         when(market.financials("600519")).thenReturn(
-                new Financials("600519", "贵州茅台", 19.95, 8.5, List.of(i3, i2, i1)));
+                new Financials("600519", "贵州茅台", 19.95, 8.5, List.of(newest, mid, oldest)));
         ToolResultBlock[] emitted = new ToolResultBlock[1];
         ToolEmitter capture = block -> emitted[0] = block;
 
         var result = tools.getFinancials("600519", capture);
 
-        // ① emit 全量：table 列/行映射；金额转亿、null 保 null、负值取整
+        // ① emit 全量：table 列/行映射；金额转亿、null 保 null、负值取整；rows 保持源序（新在前是正确展示序）
         String emittedText = ((TextBlock) emitted[0].getOutput().get(0)).getText();
         assertThat(emittedText)
                 .contains("\"type\":\"table\"").contains("\"label\":\"报告期\"")
@@ -133,11 +161,27 @@ class InvestToolsTest {
                 .contains("\"revenueYi\":null")
                 .contains("\"revenueYi\":-12.3").contains("\"netProfitYi\":-4.56")
                 .doesNotContain("PE 19.95");
-        // ② 返回摘要：PE/PB 与最新报告期进 LLM/stateStore
+        assertThat(emittedText.indexOf("2026-06-30"))
+                .as("表格行保持源序：新报告期在前").isLessThan(emittedText.indexOf("2025-12-31"));
+        // ② 返回摘要：PE/PB 与最新报告期（降序首期）进 LLM/stateStore
         assertThat(result.getState().toString()).isEqualTo("RUNNING");
         assertThat(result.getOutput().get(0).toString())
-                .contains("PE 19.95 / PB 8.5").contains("2026-06-30").contains("见表格")
+                .contains("PE 19.95 / PB 8.5").contains("最新报告期 2026-06-30").contains("见表格")
                 .doesNotContain("specVersion");
+    }
+
+    @DisplayName("getFinancials空指标：emit前守卫，不emit返回安全摘要")
+    @Test
+    void givenEmptyIndicators_whenGetFinancials_thenNoEmitAndReturnsSafeSummary() {
+        when(market.financials("600519")).thenReturn(
+                new Financials("600519", "贵州茅台", 19.95, 8.5, List.of()));
+        ToolResultBlock[] emitted = new ToolResultBlock[1];
+        ToolEmitter capture = block -> emitted[0] = block;
+
+        var result = tools.getFinancials("600519", capture);
+
+        assertThat(emitted[0]).as("空指标不 emit（SSE 无空表格 spec）").isNull();
+        assertThat(result.getOutput().get(0).toString()).contains("暂无财务数据");
     }
 
     @DisplayName("getFinancials失败：不emit，返回错误JSON")
@@ -229,9 +273,14 @@ class InvestToolsTest {
         var snapshot = new ValuationOverviewView.SnapshotView(
                 LocalDate.of(2026, 9, 11), new BigDecimal("19.14"), new BigDecimal("1.68"), 220,
                 new BigDecimal("0.041"));
+        // 指数估值进摘要（设计规格 §二.3：ERP/指数估值/温度计入摘要）
         when(valuationService.overview()).thenReturn(new ValuationOverviewView(
                 snapshot, new BigDecimal("55"), new BigDecimal("60"), new BigDecimal("40"),
-                new BigDecimal("0.5"), new BigDecimal("10"), new BigDecimal("80"), List.of(), true));
+                new BigDecimal("0.5"), new BigDecimal("10"), new BigDecimal("80"),
+                List.of(new ValuationOverviewView.IndexValuationView("000300", "沪深300",
+                        new BigDecimal("12.5"), new BigDecimal("1.4"), new BigDecimal("2.5"),
+                        new BigDecimal("65"), new BigDecimal("70"))),
+                true));
         ToolResultBlock[] emitted = new ToolResultBlock[1];
         ToolEmitter capture = block -> emitted[0] = block;
 
@@ -243,11 +292,25 @@ class InvestToolsTest {
                 .contains("\"type\":\"line\"")
                 .contains("\"data\":[2.1,null]")
                 .doesNotContain("温度计");
-        // ② 返回摘要：分位/ERP/温度计进 LLM/stateStore
+        // ② 返回摘要：分位/ERP/温度计/指数估值进 LLM/stateStore
         assertThat(result.getState().toString()).isEqualTo("RUNNING");
         assertThat(result.getOutput().get(0).toString())
                 .contains("分位").contains("温度计")
+                .contains("沪深300 PE 12.5（65 分位）")
                 .doesNotContain("specVersion");
+    }
+
+    @DisplayName("getValuation冷库期：snapshots空不emit，返回积累中文本")
+    @Test
+    void givenEmptySnapshots_whenGetValuation_thenNoEmitAndReturnsAccumulatingSummary() {
+        when(valuationService.history()).thenReturn(new ValuationHistoryView(List.of(), List.of(), List.of()));
+        ToolResultBlock[] emitted = new ToolResultBlock[1];
+        ToolEmitter capture = block -> emitted[0] = block;
+
+        var result = tools.getValuation(capture);
+
+        assertThat(emitted[0]).as("冷库期不 emit（SSE 无空走势 spec）").isNull();
+        assertThat(result.getOutput().get(0).toString()).contains("估值数据积累中");
     }
 
     @DisplayName("getValuation失败：不emit，返回错误JSON")

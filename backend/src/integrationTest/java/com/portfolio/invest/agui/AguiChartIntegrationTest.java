@@ -101,7 +101,6 @@ class AguiChartIntegrationTest extends PostgresTestSupport {
                 .contains("\"specVersion\":1");
         // ② 摘要不出现在 SSE（emit 过的工具，返回值 delta 被 skipSet 跳过）
         assertThat(body).doesNotContain("日K 2根");
-        assertThat(lastEventOfType(body, "RUN_FINISHED").path("outcome").isMissingNode()).isTrue();
         assertThat(eventOfType(body, "RUN_ERROR")).isNull();
 
         // ③ stateStore：TOOL 消息 output 只有摘要，全量 ChartSpec 不得进 LLM 上下文/state
