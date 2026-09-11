@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildPieOption, buildBarOption, buildLineOption } from "@/components/charts/optionBuilders";
+import { buildCandlestickOption } from "@/components/charts/optionBuilders";
+import type { CandlestickSpec } from "@/lib/chart-spec";
 
 describe("buildPieOption", () => {
   it("环形半径与 name/value 映射，默认不带 per-item 颜色（主题配色循环）", () => {
@@ -87,5 +89,50 @@ describe("buildLineOption", () => {
     expect(series[0].smooth).toBe(true);
     expect(series[0].showSymbol).toBe(false);
     expect(series[0].connectNulls).toBe(false);
+  });
+});
+
+describe("buildCandlestickOption", () => {
+  const spec: CandlestickSpec = {
+    specVersion: 1 as const, type: "candlestick" as const, title: "600519 贵州茅台 日K",
+    symbol: "600519 贵州茅台", period: "day",
+    dates: ["09-09", "09-10", "09-11"],
+    klines: [[1800, 1850, 1790, 1860], [1850, 1840, 1830, 1870], [1840, 1880, 1835, 1890]],
+    volumes: [120_000, 98_000, 111_000],
+    mas: [{ name: "MA5", data: [null, 1830.1, 1855.0] }],
+  };
+  const style = { up: "#e85b55", down: "#2fbe8f" };
+
+  it("主副图双 grid、双 xAxis、inside+slider dataZoom 联动", () => {
+    const opt = buildCandlestickOption(spec, style);
+    expect(opt.grid).toHaveLength(2);
+    expect(opt.xAxis).toHaveLength(2);
+    const zoom = opt.dataZoom as { type: string; xAxisIndex: number[] }[];
+    expect(zoom.map((z) => z.type)).toEqual(["inside", "slider"]);
+    expect(zoom.every((z) => z.xAxisIndex.includes(0) && z.xAxisIndex.includes(1))).toBe(true);
+  });
+
+  it("烛台 series 涨红跌绿四色 itemStyle；klines 原样透传（[开,收,低,高]）", () => {
+    const opt = buildCandlestickOption(spec, style);
+    const candle = (opt.series as { type: string }[]).find((s) => s.type === "candlestick") as {
+      type: string; data: number[][]; itemStyle: { color: string; color0: string; borderColor: string; borderColor0: string };
+    };
+    expect(candle.data).toEqual(spec.klines);
+    expect(candle.itemStyle).toMatchObject({ color: "#e85b55", color0: "#2fbe8f", borderColor: "#e85b55", borderColor0: "#2fbe8f" });
+  });
+
+  it("MA 线与成交量副图叠加；无 volumes 时不出成交量 series", () => {
+    const opt = buildCandlestickOption(spec, style);
+    const names = (opt.series as { name?: string }[]).map((s) => s.name);
+    expect(names).toContain("MA5");
+    expect(names).toContain("成交量");
+    const noVol = buildCandlestickOption({ ...spec, volumes: undefined }, style);
+    expect((noVol.series as { name?: string }[]).map((s) => s.name)).not.toContain("成交量");
+  });
+
+  it("style 缺省时回退深色主题字面值（ChartCard 生产路径必传 getPalette 解析值）", () => {
+    const opt = buildCandlestickOption(spec);
+    const candle = (opt.series as { type: string }[]).find((s) => s.type === "candlestick") as { type: string; itemStyle: { color: string } };
+    expect(candle.itemStyle.color).toBe("#e85b55");
   });
 });
