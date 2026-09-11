@@ -49,3 +49,47 @@ describe("ChartSpecSchema", () => {
     }).success).toBe(false);
   });
 });
+
+describe("candlestick 变体", () => {
+  const valid = {
+    specVersion: 1, type: "candlestick", title: "600519 贵州茅台 日K",
+    symbol: "600519 贵州茅台", period: "day",
+    dates: ["2026-09-09", "2026-09-10"],
+    klines: [[1800.5, 1850.2, 1790.1, 1860.0], [1850.2, 1840.0, 1830.5, 1870.3]],
+    volumes: [120_000, 98_000],
+    mas: [{ name: "MA5", data: [null, 1830.1] }],           // null = 预热缺口，与 dates 对齐
+  };
+  it("解析合法 candlestick（含 null MA 预热）", () => {
+    expect(ChartSpecSchema.safeParse(valid).success).toBe(true);
+  });
+  it("klines 必须是 4 元数值元组（[开,收,低,高]）", () => {
+    expect(ChartSpecSchema.safeParse({ ...valid, klines: [[1, 2, 3]] }).success).toBe(false);
+    expect(ChartSpecSchema.safeParse({ ...valid, klines: [["1", "2", "3", "4"]] }).success).toBe(false);
+  });
+  it("period/day-week-month 之外的字符串仍可解析（后端契约展示字段）", () => {
+    expect(ChartSpecSchema.safeParse({ ...valid, period: "week" }).success).toBe(true);
+  });
+});
+
+describe("table 变体（单一 ChartSpec 的变体，非独立 schema）", () => {
+  const valid = {
+    specVersion: 1, type: "table", title: "贵州茅台 财务指标",
+    columns: [
+      { key: "reportDate", label: "报告期" },
+      { key: "eps", label: "每股收益EPS", align: "right" as const, sortable: true },
+    ],
+    rows: [
+      { reportDate: "2026-06-30", eps: 24.2, roi: null },
+      { reportDate: "2026-03-31", eps: 11.8 },
+    ],
+  };
+  it("解析合法 table（列定义 + 行记录，值允许 string/number/null）", () => {
+    expect(ChartSpecSchema.safeParse(valid).success).toBe(true);
+  });
+  it("行值为对象/数组时拒绝", () => {
+    expect(ChartSpecSchema.safeParse({ ...valid, rows: [{ reportDate: { v: 1 } }] }).success).toBe(false);
+  });
+  it("列 align 只允许 left/right/center", () => {
+    expect(ChartSpecSchema.safeParse({ ...valid, columns: [{ key: "a", label: "A", align: "middle" }] }).success).toBe(false);
+  });
+});

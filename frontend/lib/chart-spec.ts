@@ -38,9 +38,40 @@ export const ChartSpecSchema = z.discriminatedUnion("type", [
     ),
     unit: z.string().optional(),
   }),
+  z.object({
+    specVersion: z.literal(1),
+    type: z.literal("candlestick"),
+    title: z.string(),
+    subtitle: z.string().optional(),
+    symbol: z.string(),                                  // "600519 贵州茅台"
+    period: z.string(),                                  // "day"|"week"|"month"（与工具入参一致，展示用）
+    dates: z.array(z.string()),                          // 交易日
+    klines: z.array(z.tuple([z.number(), z.number(), z.number(), z.number()])),
+    //                        ⚠ 顺序 = [开, 收, 低, 高]（ECharts 官方约定）
+    volumes: z.array(z.number()).optional(),             // 成交量副图
+    mas: z.array(z.object({
+      name: z.string(),
+      data: z.array(z.union([z.number(), z.null()])),    // null = 预热缺口，与 dates 对齐
+    })).optional(),                                      // MA 线后端算好
+  }),
+  z.object({
+    specVersion: z.literal(1),
+    type: z.literal("table"),
+    title: z.string(),
+    subtitle: z.string().optional(),
+    columns: z.array(z.object({
+      key: z.string(), label: z.string(),
+      align: z.enum(["left", "right", "center"]).optional(),
+      sortable: z.boolean().optional(),                  // 默认 true
+    })),
+    rows: z.array(z.record(z.string(), z.union([z.string(), z.number(), z.null()]))),
+    defaultPageSize: z.number().optional(),              // 卡片内表格可视高度（P4 消费）
+  }),
 ]);
 
 export type ChartSpec = z.infer<typeof ChartSpecSchema>;
 export type PieSpec = Extract<ChartSpec, { type: "pie" }>;
 export type BarSpec = Extract<ChartSpec, { type: "bar" }>;
 export type LineSpec = Extract<ChartSpec, { type: "line" }>;
+export type CandlestickSpec = Extract<ChartSpec, { type: "candlestick" }>;
+export type TableSpec = Extract<ChartSpec, { type: "table" }>;
