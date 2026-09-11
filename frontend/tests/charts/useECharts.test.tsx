@@ -3,13 +3,14 @@ import { cleanup, render } from "@testing-library/react";
 import { StrictMode } from "react";
 import type { ReactNode } from "react";
 
-// echarts/core mock init（useECharts 直接用）+ registerTheme（ensureAppThemes→registerAppThemes 默认参数会取它）
+// echarts/core mock init + registerTheme（ensureAppThemes→registerAppThemes 默认参数会取它）
+// + use（useECharts 经 echarts-setup 值导入，其模块顶层的 echarts.use([...]) 会真调它）
 // vi.hoisted：vi.mock 工厂会被提升到静态 import 前，普通 const 撞 TDZ（Task 3 实测教训）
-const { fakeChart, initSpy } = vi.hoisted(() => {
+const { fakeChart, initSpy, useSpy } = vi.hoisted(() => {
   const chart = { setOption: vi.fn(), resize: vi.fn(), dispose: vi.fn() };
-  return { fakeChart: chart, initSpy: vi.fn(() => chart) };
+  return { fakeChart: chart, initSpy: vi.fn(() => chart), useSpy: vi.fn() };
 });
-vi.mock("echarts/core", () => ({ init: initSpy, registerTheme: vi.fn() }));
+vi.mock("echarts/core", () => ({ init: initSpy, registerTheme: vi.fn(), use: useSpy }));
 
 import { useECharts } from "@/components/charts/useECharts";
 import type { ECOption } from "@/lib/echarts-setup";
