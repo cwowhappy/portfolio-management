@@ -39,6 +39,8 @@ vi.mock("@copilotkit/react-core/v2", () => ({
     return mocks.interruptProps ? config.render(mocks.interruptProps) : null;
   },
   useRenderToolCall: () => mocks.renderToolCall,
+  // ChartToolRenderers（图表具名渲染器）挂进 ToolCallRenderers 后，模块 mock 需补该导出（无操作即可）
+  useRenderTool: () => {},
   UseAgentUpdate: { OnMessagesChanged: "messages", OnRunStatusChanged: "run" },
 }));
 
@@ -691,5 +693,121 @@ describe("ThreadArea", () => {
       expect(localStorage.getItem("invest.feedback.m1")).not.toBeNull();
       expect(localStorage.getItem("invest.feedback.a1")).toContain('"positive"');
     });
+  });
+
+  describe("toolMessage 配对（FR-7）", () => {
+    const toolCall = {
+      id: "tc1",
+      type: "function" as const,
+      function: { name: "get_kline", arguments: "{}" },
+    };
+
+    /** 与既有用例同一渲染入口：先铺 agent.messages 再走 renderThread（RuntimeProvider 异步 ready 后才挂 ThreadArea）。 */
+    function renderThreadWithMessages(messages: Message[]) {
+      mocks.agent.messages = messages;
+      return renderThread();
+    }
+
+    it("把 role:tool 消息按 toolCallId 配对传给 renderToolCall", async () => {
+      renderThreadWithMessages([
+        agentMessage({ id: "a1", role: "assistant", content: "查一下", toolCalls: [toolCall] }),
+        agentMessage({ id: "tr1", role: "tool", toolCallId: "tc1", content: '{"specVersion":1}' }),
+      ]);
+      await waitFor(() => expect(screen.getByTestId("tool-rendered")).toBeTruthy());
+      expect(mocks.renderToolCall).toHaveBeenCalledWith(
+        expect.objectContaining({
+          toolCall: expect.objectContaining({ id: "tc1" }),
+          toolMessage: expect.objectContaining({ id: "tr1", toolCallId: "tc1" }),
+        }),
+      );
+    });
+
+    it("无 tool 消息时 toolMessage 为 undefined（不崩）", async () => {
+      renderThreadWithMessages([
+        agentMessage({ id: "a1", role: "assistant", content: "hi", toolCalls: [toolCall] }),
+      ]);
+      await waitFor(() => expect(screen.getByTestId("tool-rendered")).toBeTruthy());
+      expect(mocks.renderToolCall).toHaveBeenCalledWith(
+        expect.objectContaining({ toolMessage: undefined }),
+      );
+    });
+
+    it("消息数组变化但本条 toolCall 的 toolMessage 未变时不重渲染（memo 比较器）", async () => {
+      const assistant = agentMessage({
+        id: "a1",
+        role: "assistant",
+        content: "查一下",
+        toolCalls: [toolCall],
+      });
+      const tool = agentMessage({ id: "tr1", role: "tool", toolCallId: "tc1", content: "{}" });
+      const view = renderThreadWithMessages([assistant, tool]);
+      await waitFor(() => expect(screen.getByTestId("tool-rendered")).toBeTruthy());
+      expect(mocks.renderToolCall).toHaveBeenCalledTimes(1);
+      // 追加无关 user 消息 → 新数组、新 Map，但 a1 引用与 tc1 的 toolMessage 引用不变 → 不重渲染
+      mocks.agent.messages = [
+        assistant,
+        tool,
+        agentMessage({ id: "u2", role: "user", content: "再问一句" }),
+      ];
+      view.rerender(
+        <RuntimeProvider>
+          <ThreadArea llmReady={null} />
+        </RuntimeProvider>,
+      );
+      expect(mocks.renderToolCall).toHaveBeenCalledTimes(1);
+      // tool 消息内容更新（新引用；直接构造而非联合类型 spread，避免 content 类型冲突）→ 重渲染
+      mocks.agent.messages = [
+        assistant,
+        agentMessage({
+          id: "tr1",
+          role: "tool",
+          toolCallId: "tc1",
+          content: '{"specVersion":1,"type":"candlestick"}',
+        }),
+      ];
+      view.rerender(
+        <RuntimeProvider>
+          <ThreadArea llmReady={null} />
+        </RuntimeProvider>,
+      );
+      expect(mocks.renderToolCall).toHaveBeenCalledTimes(2);
+    });
+  });
+});
+
+describe("markdown 图片/链接防御（FR-6）", () => {
+  const md = [
+    "![快照](https://cdn.example.com/snapshot.png)",
+    "![明文](http://insecure.example.com/x.png)",
+    "[资料](https://example.com/doc)",
+  ].join("\n");
+
+  /** 与既有用例同一渲染入口：铺 agent.messages 后走 renderThread，等链接文本可见即 Markdown 已渲染。 */
+  async function renderMarkdownMessage() {
+    mocks.agent.messages = [agentMessage({ id: "a1", role: "assistant", content: md })];
+    renderThread();
+    await waitFor(() => expect(screen.getByText("资料")).toBeTruthy());
+  }
+
+  it("https 图片：懒加载 + no-referrer + 尺寸约束", async () => {
+    await renderMarkdownMessage();
+    const img = document.querySelector('img[src*="cdn.example.com"]') as HTMLImageElement;
+    expect(img.getAttribute("loading")).toBe("lazy");
+    expect(img.getAttribute("decoding")).toBe("async");
+    expect(img.getAttribute("referrerPolicy")).toBe("no-referrer");
+    expect(img.className).toContain("max-w-full");
+    expect(img.getAttribute("alt")).toBe("快照");
+  });
+
+  it("http 图片被 urlTransform 拦截（不渲染 img）", async () => {
+    await renderMarkdownMessage();
+    expect(document.querySelector('img[src*="insecure.example.com"]')).toBeNull();
+  });
+
+  it("链接新窗口打开 + noopener", async () => {
+    await renderMarkdownMessage();
+    const a = document.querySelector('a[href="https://example.com/doc"]') as HTMLAnchorElement;
+    expect(a.getAttribute("target")).toBe("_blank");
+    expect(a.getAttribute("rel")).toBe("noopener noreferrer");
   });
 });

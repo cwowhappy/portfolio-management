@@ -1,10 +1,24 @@
 "use client";
 
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
+import { useMemo } from "react";
+import { EChart } from "@/components/charts/EChart";
+import { buildBarOption } from "@/components/charts/optionBuilders";
 import type { IndustryDistribution } from "@/lib/types";
 
 export default function IndustryBar({ industry }: { industry: IndustryDistribution | null }) {
-  const data = industry?.slices ?? [];
+  // ?? [] 移入 memo 内、依赖 prop 本体：否则每次渲染新空数组使下游 memo 恒重算（exhaustive-deps）
+  const data = useMemo(() => industry?.slices ?? [], [industry]);
+  const option = useMemo(
+    () =>
+      buildBarOption({
+        specVersion: 1,
+        type: "bar",
+        title: "行业分布",
+        categories: data.map((s) => s.industryName),
+        series: [{ name: "市值", data: data.map((s) => s.marketValue) }],
+      }),
+    [data],
+  );
   if (data.length === 0) {
     return (
       <div className="rounded-2xl border border-[color:var(--color-line)] bg-[color:var(--color-panel)]/70 p-5">
@@ -16,16 +30,7 @@ export default function IndustryBar({ industry }: { industry: IndustryDistributi
   return (
     <div className="rounded-2xl border border-[color:var(--color-line)] bg-[color:var(--color-panel)]/70 p-5">
       <div className="font-[family-name:var(--font-display)] text-[15px] mb-3">行业分布</div>
-      <ResponsiveContainer width="100%" height={200}>
-        <BarChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-          <XAxis dataKey="industryName" stroke="var(--color-ink-faint)" fontSize={12} />
-          <YAxis stroke="var(--color-ink-faint)" fontSize={12} />
-          <Tooltip contentStyle={{ background: "var(--color-panel)", border: "1px solid var(--color-line)" }} />
-          <Bar dataKey="marketValue" name="市值" fill="var(--color-up)" radius={[4, 4, 0, 0]}>
-            {data.map((_, i) => <Cell key={i} fill="var(--color-up)" />)}
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
+      <EChart option={option} height={200} testid="industry-chart" />
       <div className="mt-2 text-xs text-[color:var(--color-ink-faint)]">个股按申万行业，ETF 排除</div>
     </div>
   );

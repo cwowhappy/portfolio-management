@@ -38,19 +38,6 @@ const eslintConfig = [
       ...reactHooks.configs["recommended-latest"].rules,
       // 规范 6.2：禁止 dangerouslySetInnerHTML
       "react/no-danger": "error",
-      // 规范 6.2：Markdown 渲染禁止引入 rehype-raw（不允许渲染原始 HTML）
-      "no-restricted-imports": [
-        "error",
-        {
-          paths: [
-            {
-              name: "rehype-raw",
-              message:
-                "禁止 rehype-raw：Markdown 渲染不允许放行原始 HTML（规范 6.2）。",
-            },
-          ],
-        },
-      ],
     },
   },
   {
@@ -64,6 +51,31 @@ const eslintConfig = [
           selector: "CallExpression[callee.name='fetch']",
           message:
             "组件内禁止直接 fetch：数据访问必须经 lib/*Api.ts（规范 1.2）。",
+        },
+      ],
+    },
+  },
+  {
+    rules: {
+      // 全仓库的 import 禁令集中在这一个规则里：flat config 中后出现的同名规则
+      // 会整体覆盖前者（paths 不合并），分散写会让先前的禁令失效。
+      // 05 方案 §4.4：全量入口会把 gzip 379KB 全部拉进包（按需四图 218KB）
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              // 规范 6.2：Markdown 渲染禁止引入 rehype-raw（不允许渲染原始 HTML）
+              name: "rehype-raw",
+              message:
+                "禁止 rehype-raw：Markdown 渲染不允许放行原始 HTML（规范 6.2）。",
+            },
+            {
+              name: "echarts",
+              message:
+                "禁用 echarts 全量入口：只允许 echarts/core|charts|components|features|renderers 子路径（唯一注册点 lib/echarts-setup.ts，见 docs/technology/research/05 §4.4）",
+            },
+          ],
         },
       ],
     },
