@@ -21,6 +21,7 @@ import {
 import { loadMessages, newThreadId } from "@/lib/conversations";
 import InterruptApprovalCard from "./InterruptApprovalCard";
 import ToolCallCard from "./ToolCallCard";
+import { ChartToolRenderers } from "./toolRenderers";
 import { CodeBlock, InlineCode } from "./CodeHighlight";
 
 // 模块级常量：避免每次渲染新建数组触发潜在的重订阅
@@ -81,7 +82,12 @@ function ToolCallRenderers() {
       />
     ),
   });
-  return null;
+  // 具名图表渲染器（05 §4.3）：精确工具名压过上面的通配兜底（优先级由库保证，注册顺序无关）
+  return (
+    <>
+      <ChartToolRenderers />
+    </>
+  );
 }
 
 // ———— 反馈 ————

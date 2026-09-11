@@ -39,6 +39,8 @@ vi.mock("@copilotkit/react-core/v2", () => ({
     return mocks.interruptProps ? config.render(mocks.interruptProps) : null;
   },
   useRenderToolCall: () => mocks.renderToolCall,
+  // ChartToolRenderers（图表具名渲染器）挂进 ToolCallRenderers 后，模块 mock 需补该导出（无操作即可）
+  useRenderTool: () => {},
   UseAgentUpdate: { OnMessagesChanged: "messages", OnRunStatusChanged: "run" },
 }));
 
