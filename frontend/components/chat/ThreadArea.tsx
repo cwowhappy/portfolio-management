@@ -447,14 +447,22 @@ export default function ThreadArea({ llmReady, onUnauthorized }: {
   });
   const { copilotkit } = useCopilotKit();
   const [sendError, setSendError] = useState<string | null>(null);
+  // 权限审批（mcp-hitl FR-5 补全）：resolve 是 accumulate-then-submit——单卡点击只记录决策，
+  // 全部 open interrupt 应答后才提交 resume，期间卡片不会消失。本地先标记已处理态，
+  // 让单卡点击立即呈现反馈，消除「点击没有响应」感。状态清理见下方 useEffect。
+  const [handled, setHandled] = useState<Record<string, "approved" | "denied">>({});
+  // 最近一次 render 闭包看到的 open interrupt id 集合（useInterrupt 在渲染期调用 render，
+  // 此 ref 即渲染期最新快照，供渲染后的清理 effect 比对）
+  const openInterruptIdsRef = useRef<Set<string>>(new Set());
   // 权限审批（mcp-hitl）：renderInChat:false 时 hook 返回元素，须手动渲染（挂载点在消息流尾部）。
   // agentId 必须显式绑定：useInterrupt 内部经 useAgent 解析 config.agentId ?? "default"，
   // 本应用只注册 invest，缺省会在运行时抛「Agent 'default' not found」导致对话页崩溃。
   const interruptBar = useInterrupt({
     agentId: AGENT_ID,
     renderInChat: false,
-    render: ({ interrupts, resolve }) =>
-      interrupts.length > 0 ? (
+    render: ({ interrupts, resolve }) => {
+      openInterruptIdsRef.current = new Set(interrupts.map((it) => it.id));
+      return interrupts.length > 0 ? (
         <div className="mx-auto w-full max-w-[860px] px-5">
           {interrupts.map((it) => (
             <InterruptApprovalCard
@@ -462,15 +470,35 @@ export default function ThreadArea({ llmReady, onUnauthorized }: {
               toolName={(it.metadata?.["toolName"] as string) ?? "未知工具"}
               toolInput={it.metadata?.["toolInput"]}
               message={it.message}
-              onApprove={() => void resolve({ approved: true }, it.id)}
-              onDeny={() => void resolve({ approved: false }, it.id)}
+              decision={handled[it.id]}
+              onApprove={() => {
+                setHandled((prev) => ({ ...prev, [it.id]: "approved" }));
+                void resolve({ approved: true }, it.id);
+              }}
+              onDeny={() => {
+                setHandled((prev) => ({ ...prev, [it.id]: "denied" }));
+                void resolve({ approved: false }, it.id);
+              }}
             />
           ))}
         </div>
       ) : (
         <></>
-      ),
+      );
+    },
   });
+  // 已处理标记清理：interrupts 全空（已提交续跑）或集合变化（新一轮）时，移除已不在
+  // open set 的 id，防止跨轮残留。依赖 interruptBar——render 闭包每次重新执行都会
+  // 产出新元素，即 open 集合可能发生变化的时机；无失效项时返回原引用，不触发重渲染。
+  useEffect(() => {
+    setHandled((prev) => {
+      const stale = Object.keys(prev).filter((id) => !openInterruptIdsRef.current.has(id));
+      if (stale.length === 0) return prev;
+      const next = { ...prev };
+      for (const id of stale) delete next[id];
+      return next;
+    });
+  }, [interruptBar]);
   const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 防抖窗口内待写入的快照：供「运行停止立即 flush」与「卸载/切线程 best-effort flush」使用
   const pendingPersist = useRef<{ threadId: string; msgs: Message[] } | null>(null);

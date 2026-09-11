@@ -54,4 +54,39 @@ describe("InterruptApprovalCard", () => {
     fireEvent.click(screen.getByRole("button", { name: "拒绝" }));
     expect(onDeny).toHaveBeenCalledTimes(1);
   });
+
+  // —— 已处理态（FR-5 补全：resolve 是 accumulate-then-submit，多卡期间单卡点击后立即反馈） ——
+
+  it("decision=approved：按钮区替换为已批准文案，工具名/参数仍展示", () => {
+    render(
+      <InterruptApprovalCard
+        toolName="write_note"
+        toolInput={'{"file":"a.md"}'}
+        decision="approved"
+        onApprove={() => {}}
+        onDeny={() => {}}
+      />,
+    );
+    expect(screen.getByText("已批准，等待其余确认…")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "批准" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "拒绝" })).toBeNull();
+    // 已处理态保留工具名与参数展示
+    expect(screen.getByText(/write_note/)).toBeTruthy();
+    fireEvent.click(screen.getByText("查看调用参数"));
+    expect(screen.getByText(/"file":"a.md"/)).toBeTruthy();
+  });
+
+  it("decision=denied：按钮区替换为已拒绝文案", () => {
+    render(
+      <InterruptApprovalCard
+        toolName="write_note"
+        decision="denied"
+        onApprove={() => {}}
+        onDeny={() => {}}
+      />,
+    );
+    expect(screen.getByText("已拒绝，等待其余确认…")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "批准" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "拒绝" })).toBeNull();
+  });
 });
