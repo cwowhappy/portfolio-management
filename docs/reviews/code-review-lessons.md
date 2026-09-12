@@ -220,3 +220,81 @@
 - **框架隐含契约静默吞掉业务意图**：`AbstractRememberMeServices.loginSuccess` 内部二次校验 `remember-me` **表单参数**，而 JSON API 登录只有 body 字段——`AuthController` 判断了 `rememberMe` 并调用了 `loginSuccess`，框架却静默不下发 cookie，无任何报错/日志。mock RememberMeServices 的切片测试全绿掩盖了它，只有「真实装配 + 真实链路」的测试才能抓到。→ **凡「控制器判断 + 委托框架组件」的两段式调用，问一句：框架内部还有没有自己的第二道判定？**这类「双方都觉得自己尽责」的接缝要用真实装配测试锁。审查技巧：对安全/会话类关键路径，mock 切片之外至少保留一条真实 bean 链路的集成/BDD 断言。
 - **编写 BDD 旅程时的「绕行参数」是 bug 信号而非测试技巧**。实施者为跑通场景加 `.param("remember-me","true")` 并注释说明——这个注释其实就是缺陷报告。→ 测试里凡出现「真实用户不会这么做」的妥协，先停下来确认是不是生产 bug。
 - **测试双实现/双轨并存会漂移**：两个 TTL 缓存（薄适配器与引擎分立）、standalone 与 @WebMvcTest 双轨靠注释区分。→ 周期性盘点测试资产本身：合并语义重复的实现，把「选型约定」升级为 ArchUnit 规则。
+
+---
+
+## 2026-09-07 轮（MCP 数据源集成 MS-16 + Skill 系统 MS-17 交付复盘）
+
+### 本轮做了什么
+
+- 完整交付 MS-16 MCP 数据源集成（内置 provider 目录 + 用户级配置 + 按用户装配工具，`domain.mcp` 三表 + Flyway V10，PR #19）与 MS-17 Skill 系统（内置 tushare_data / wind_finance + 用户级启停，`domain.skill` + V11，PR #20）；过渡期 PR #21 将 MCP 工具强制 `readOnly=true` 为 HITL 铺路。
+- 两特性均执行「P0 验证先行」：先跑装配点/协议/资源加载的实证验证，再从结论长出实施计划。
+
+### 方法论经验（值得固化）
+
+1. **外部协议的隐含握手契约靠真实冒烟暴露，不靠 SDK 文档**。MCP client `buildSync()` 后必须先 `initialize()` 握手才能 `listTools`——SDK 不强制、报错信息（`MCP client not initialized`）也要跑起来才见（`acb58c2` 修复，`28a8d56` 把教训回填 P2 计划）。→ 接新协议先写一个最小真握手冒烟（后来沉淀为 `backend/scripts/mcp-smoke.sh`），协议状态机类的坑在 mock 测试里永远不出现。
+2. **集成第三方框架，P0 验证是计划的输入而不是计划的附件**。skill 特性先落地 5 个 P0 验证（SkillFilter 语义、HarnessAgent.Builder 装配点、ClasspathSkillRepository 枚举、fat-jar 下 classpath 资源行为、空目录行为，`b028373`~`513a7db`）再写计划——计划里的代码样例全部来自实测。→ 对照 [写计划须对照真实代码验证] 的项目记忆，这条已在流程上成立，值得继续强制。
+3. **可选依赖的启动健壮性**：HarnessAgentFactory 与注册 bean 加 `@ConditionalOnExpression`——本地无 API key 也能启动（`c6539b3`）。→ 凡「外部凭证类」bean 一律条件装配，缺 key 降级而非拒绝启动，否则本地/CI 全被外部依赖劫持。
+4. **过渡期止血修复要显式标注并留恢复路径**。PR #21 把 MCP 工具强制 `readOnly=true` 放行，是为 HITL 未落地前的可用性妥协；MS-18 落地时 `4e16eaa` 按 MCP 规范恢复判定（缺省视为写）。→ 语义妥协型 fix 必须在特性文档与里程碑记录里可见，否则「临时」会变成「永久」。
+
+### 反复出现的问题模式（新增审查清单）
+
+- **Flyway 迁移版本断言第三次被撞**：V10（`328e9e7`）与 V11（`8d59d55`）落地时 `FlywayMigrationIntegrationTest` 的版本清单断言均未同步更新——印证 2026-08-31 轮教训「新增迁移 = 改两处」，此模式已连续三轮出现，建议直接把版本断言改成 `containsExactlyInAnyOrder` 之外再补一条「迁移文件数 = 断言数」的双向守卫，让漏改从「跑红」升级为「写不出来」。
+- **Spike 产物混入主干**：Option B spike 测试与真实 resolver 冲突，需显式删除（`b82bab2`）。→ spike 分支的测试代码不进特性分支；特性计划里列出「待删除的 spike 资产」清单。
+
+---
+
+## 2026-09-08 轮（MCP 写工具 HITL 审批 MS-18 交付 + issue #25 契约修复复盘）
+
+### 本轮做了什么
+
+- 交付 MS-18 MCP 写工具 HITL 审批（ADR-0010）：AgentScope 2.0.3 权限确认端到端（PR #22）+ 审批卡/accumulate-then-submit/拒绝重试约束全链路（PR #23）。
+- 上线次日发现审批卡不渲染（issue #25）：红测定位 → codec 修复（PR #28，2026-09-11）；2026-09-12 再修多卡逐张反馈（PR #30）。
+
+### 方法论经验（值得固化）
+
+1. **跨端 wire 契约必须显式约定「null 字段发不发」，并用真实序列化 round-trip 钉住**。#25 根因：后端 AG-UI 事件经 Jackson 默认序列化带出 `expiresAt: null`，前端 zod schema 拒收 null → 整卡不渲染；两端的单元测试各自全绿，裂缝只在真实 SSE 线上出现。修复 `AguiEventNonNullCodec`（`5214cac`），先写红测钉住线上形态（`3518d41`）。→ 契约测试的对象应是「线上字节」，不是「内存对象」；含 nullable 字段的跨端事件，序列化形态（NON_NULL 与否）要写进契约文档。
+2. **库对协议的「未实现标注」要留档并驱动版本决策**。AgentScope 2.0.1 未实现 `permission_confirm` interrupt 映射，调研文档先标注（`96b2df8`），升级 2.0.3 后才做集成验证（PR #22 `316e835`）。→ 「等上游实现」的依赖项记录在调研文档里并绑定版本号，避免凭记忆选版本。
+3. **宿主组件的 setState 不必然触发第三方 render 回调产物重渲染**。PR #30 v1 的「已处理」态放宿主 ThreadArea，被 `useInterrupt` 对 render 产物的元素 memo 吞掉（memo 命中返回旧闭包元素）；v2 把状态收进卡片内部 state，自身 setState 必然重渲染自身（`b0c4e78`）。→ 在框架托管的渲染槽（render prop/interrupt 卡）里做交互状态，先问「宿主重渲染会不会传导进来」；行为测试要在「无任何父重渲染」条件下断言，钉住 memo 盲区。
+4. **终审发现的「多中断并发」语义要补测试而不是补注释**。终审修复把契约错误翻译接入流内 RUN_ERROR 并补多中断测试（`dac77f4`）；中断未决时同线程续发的客户端守卫同样以测试钉住（`3e0e8b3`）。→ 「终审说这个分支可能有问题」= 立刻写一条测试把它变成已知行为。
+
+### 反复出现的问题模式（新增审查清单）
+
+- **共享测试容器的 seed 污染**：`McpHitlIntegrationTest` 用例后不清理 seed 的 MCP 配置，污染共享容器中的后续用例（`b72fa64` 修复）。→ seed 类 fixture 必须配套 teardown；与 2026-08-31 轮「隔离跑 ≠ 全量」同源，合并为一条：凡「测试写库」的用例，审查时检查它的清理路径与全量执行顺序。
+- **mock 直接调 render/config 回调绕过框架缓存**：PR #30 v1 单测全绿是因为 mock 直接调 `config.render(...)`，完全绕过 `useInterrupt` 的元素 memo（`b0c4e78` 提交信息明确记录）。→ 对「框架包装后的回调」，测试要么走真实 hook 装配，要么显式断言「不依赖宿主重渲染」。
+
+---
+
+## 2026-09-12 轮（聊天富内容图表 MS-19 交付复盘）
+
+### 本轮做了什么
+
+- 交付 MS-19 聊天富内容图表（PR #29）：ChartSpec 双端契约（Java 契约 + zod 一一对应，`af11ad1`/`d90fd46`）、四工具双通道（emit 全量 ChartSpec + 返回摘要）、ECharts 全站替换移除 recharts（gzip -126KB，`f383892`）、chart 载荷 gzip ≤240KB CI 断言（`2161005`）、真实浏览器 e2e 四用例（`8aeb649`）。
+- P1~P5 每阶段终审均产出修复或「携带项清单」：P1 pie 视觉等价（`0c05b03`）与 renderToolCall 配对 toolMessage（`0740d3a`）；P3 报告期取降序首期等（`f627b1f`）；P4 columns 最小长度守卫（`1ba3672`）；P5 useSpy 断言封注册擦除盲区（`3c54232`）。
+
+### 方法论经验（值得固化）
+
+1. **`import type` 擦除会吞掉全局副作用模块的唯一生产引用**。全仓唯一 `echarts.use()` 注册点在生产代码中只被 `import type`（编译期擦除），唯一值导入在单测里——生产构建图表渲染器从未注册，真浏览器全部 canvas 崩溃（`TypeError: nC[a] is not a constructor`），而 mock echarts/core 的单测全绿（`703e919` 修复，P5 e2e 实证）。→ 注册表/副作用模块：审查「谁值导入它」要 grep 值导入而不是 grep import；行为断言用「执行过注册」的 spy（`3c54232` 的 useSpy 模式）而不是「调用了 init」。
+2. **同一契约裂缝在相邻特性复发 = 该升级为通用条款**。P3 终审把验收口径从「空集合省略」勘误为「null 字段省略」（Jackson NON_NULL 语义，`520c116`）——与三天前 issue #25 的 `5214cac` 同源。→ 同类问题一特性内或相邻特性内出现两次，就写进 conventions/契约模板，而不是各自修各自的 codec。
+3. **e2e 复用 `.next` 陈旧构建是系统性盲区，须有强制重建开关**。`8f9d241` 给 `e2e-frontend.sh` 加 `E2E_FRESH_BUILD`；验收要求三连绿含一次全新构建（fresh 51.2s / 复用 ~14.1s，`a342cdd` 回填验收记录）。→ 关键前端的「验收跑」必须至少一次 fresh build，CI 亦然；复用构建只用于迭代加速。
+4. **体积/树摇守卫靠 CI 断言不靠自觉**。`2161005` 把 chart 载荷 gzip ≤240KB 写成测试断言并接 CI——`31cf0f8` 的「全量入口树摇守卫」从一次性验证变成长期门禁。→ 「一次性度量」类结论（体积、启动耗时）凡是回归敏感的，落成可重复执行的断言。
+5. **终审「携带项清单」是跨阶段传递债务的正确载体**。每阶段终审把「不阻塞本阶段但必须带上」的项显式写进下一阶段计划（`733a3f7`/`f70d1f7`/`9e339f1`），P4 的空列守卫即由 P3 终审携带而来（`1ba3672`）。→ 终审报告固定一节「携带项 → 交给哪个阶段/哪张票」，防止口头传递丢失。
+
+### 待观察 / 下轮关注
+
+- `E2E_FRESH_BUILD=1` 在 CI 的耗时影响（fresh 51.2s 是否值得每次付）。
+- chat.spec 既有 flaky（`.last()` 命中隐藏思考预览 `<p>`，重试即过）是否需要根治。
+
+---
+
+## 2026-09-12 轮（Descartes 变异粗筛接入，工程项 PR #31）
+
+### 本轮做了什么
+
+- PIT 1.30.0 → 1.20.2 降级对齐 Descartes 1.3.4 的 SPI 基线，新增独立 `pitestDescartes` 任务（extreme mutation 定位 pseudo-tested 方法，无阈值、不挂 check），Makefile 与 AGENTS.md 命令表同步（`d01132f`）。属工程项（M14-F12），不归属任何里程碑。
+
+### 方法论经验（值得固化）
+
+1. **三方版本矩阵（宿主插件 × 扩展 SPI × 测试框架）由扩展方的兼容基线锁定**。PIT 1.30.0 与 Descartes 1.3.4 SPI 不兼容（pitest-descartes#149 有 minor 不兼容先例）；`junit-platform-launcher` 需对齐 6.0.3 绕行且经回归验证。→ 升级带扩展点的工具链前，先查所有扩展声明的宿主版本基线；「宿主最新」不等于「组合可用」。
+2. **插件的 `configureTaskDefault` 只装配它自己创建的主任务**。手动 new 的 `pitestDescartes` task 不被自动装配，须显式赋全量属性（`d01132f` 提交信息记录）。→ 用 Gradle 插件自定义同类 task 时，逐属性与主 task 对照，不能假设 DSL 默认值生效。
+3. **质量工具的定位是「诊断仪」不是「门禁」**：Descartes 粗筛 + PIT 精筛两阶段均无阈值、纯手动触发——先让工具产出可信数据，再谈把指标挂进 check；一上来挂门槛只会逼出「为过门槛而写测试」。
