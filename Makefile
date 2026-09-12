@@ -8,7 +8,7 @@ export GRADLE_OPTS := -Dorg.gradle.native.dir=$(PWD)/.gradle-native
 -include .env
 export
 
-.PHONY: dev dev-backend dev-frontend test test-backend test-backend-unit test-backend-integration test-backend-bdd test-backend-mutation test-frontend test-e2e build up down smoke
+.PHONY: dev dev-backend dev-frontend test test-backend test-backend-unit test-backend-integration test-backend-bdd test-backend-mutation test-backend-mutation-descartes test-frontend test-e2e build up down smoke
 
 ## 本地开发：同时启动后端(8080)与前端(3000)
 dev:
@@ -40,6 +40,10 @@ test-backend-bdd:
 # PIT 变异测试：核心域三类的手动诊断任务（不挂 check、无门槛），报告在 backend/build/reports/pitest
 test-backend-mutation:
 	cd backend && ./gradlew pitest --console=plain
+
+# Descartes 方法级粗筛：extreme mutation 定位 pseudo-tested 方法（手动诊断，无门槛），报告在 backend/build/reports/pitest-descartes
+test-backend-mutation-descartes:
+	cd backend && ./gradlew pitestDescartes --console=plain
 
 test-frontend:
 	cd frontend && pnpm lint && pnpm test
