@@ -22,6 +22,7 @@ A 股投研对话助手（证券投资与分析系统）。AI Agent Web 服务�
 | `make test-backend` / `make test-frontend` / `make collect-test` | 单独跑一端 |
 | `make test-backend-unit` / `make test-backend-integration` / `make test-backend-bdd` | 后端分层跑：单元+切片 / 集成（Testcontainers 真实 PG）/ BDD（Cucumber） |
 | `make test-backend-mutation` | PIT 变异测试（核心域三类，纯手动诊断，不挂 check、无门槛），报告在 `backend/build/reports/pitest` |
+| `make test-backend-mutation-descartes` | Descartes 方法级粗筛（extreme mutation，定位 pseudo-tested 方法，手动诊断无门槛），报告在 `backend/build/reports/pitest-descartes` |
 | `make build` | 后端 `bootJar` + 前端 `next build` |
 | `make up` / `make down` | Docker Compose 部署 / 停止 |
 | `make smoke` | 端到端冒烟（真实行情 + AI 对话） |

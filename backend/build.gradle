@@ -101,6 +101,11 @@ dependencies {
     // ConcurrencyTestSupport：@Autowired JdbcTemplate 直插提交态种子
     testFixturesImplementation 'org.springframework:spring-beans'
     testFixturesImplementation 'org.springframework:spring-jdbc'
+
+    // Descartes 变异引擎（extreme mutation 粗筛）：官方 1.3.4 基于 PIT 1.20.2 SPI 构建，
+    // 经 ServiceLoader 作为 mutationEngine 切换使用；升级 PIT 前需先确认其适配（历史先例：
+    // Descartes 连 PIT minor 升级都不兼容，STAMP-project/pitest-descartes#149）
+    pitest 'eu.stamp-project:descartes:1.3.4'
 }
 
 testing {
@@ -171,7 +176,9 @@ tasks.named('check') {
 // PIT 变异测试配置：非阻塞手动诊断，不设覆盖率/变异率门槛、不挂 check；
 // 只变异核心域三类（成本盈亏引擎 / 估值应用服务 / 行情解析器），控制单次运行时长
 pitest {
-    pitestVersion = '1.30.0'
+    // 1.20.2：与 Descartes 1.3.4 的 SPI 基线对齐（降级自 1.30.0）。注意该版本早于 JUnit 6，
+    // minion 驱动 platform 6 引擎属超纲组合，靠下方 launcher 对齐 6.0.3 工作；升级前回归验证
+    pitestVersion = '1.20.2'
     junit5PluginVersion = '1.2.3'
     targetClasses = [
             'com.portfolio.invest.domain.portfolio.Position',
@@ -194,6 +201,44 @@ pitest {
     outputFormats = ['XML', 'HTML']
     // 固定输出到 build/reports/pitest（不加时间戳子目录，便于直接打开）
     timestampedReports = false
+}
+
+// Descartes 常态化粗筛任务：extreme mutation 方法级定位（pseudo-tested 方法清单），
+// 与主 pitest 任务（gregor 指令级细测）并行存在，报告独立目录，无阈值、不挂 check。
+// 注意：gradle-pitest-plugin 1.19.0 的 configureTaskDefault 只装配主任务（暴露给自定义
+// task 是 1.20.0 milestone 项），此处须显式配全 launchClasspath / additionalClasspath / sourceDirs
+tasks.register('pitestDescartes', info.solidsoft.gradle.pitest.PitestTask) {
+    group = 'verification'
+    description = 'Descartes extreme mutation 方法级粗筛（核心域三类，报告含 methods.json/ISSUES）'
+    targetClasses = [
+            'com.portfolio.invest.domain.portfolio.Position',
+            'com.portfolio.invest.application.valuation.*',
+            'com.portfolio.invest.domain.market.MarketDataParser',
+    ]
+    targetTests = [
+            'com.portfolio.invest.domain.portfolio.PositionTest',
+            'com.portfolio.invest.application.valuation.ValuationApplicationServiceTest',
+            'com.portfolio.invest.domain.market.MarketDataParserTest',
+            'com.portfolio.invest.domain.market.MarketDataParserEdgeCasesTest',
+    ]
+    threads = 4
+    mutationEngine = 'descartes'
+    outputFormats = ['HTML', 'METHODS', 'ISSUES']
+    timestampedReports = false
+    reportDir = layout.buildDirectory.dir('reports/pitest-descartes')
+    // 增量分析关闭并给独立历史文件（插件只为扩展装配默认，自定义任务须自给）
+    enableDefaultIncrementalAnalysis = false
+    defaultFileForHistoryData = layout.buildDirectory.file('pitHistoryDescartes.txt')
+    // 工具链 classpath 与主任务同源（pitest 配置：PIT 1.20.2 + junit5 插件 1.2.3 + Descartes 1.3.4）
+    launchClasspath.from(configurations.named('pitest'))
+    // 被测主类目录 + 测试运行 classpath（测试类与其依赖），装配方式对齐主任务
+    mutableCodePaths.from(sourceSets.main.output.classesDirs)
+    additionalClasspath.from(sourceSets.test.runtimeClasspath, sourceSets.main.output.classesDirs)
+    sourceDirs.from(sourceSets.main.allSource.sourceDirectories)
+    // classpath 清单文件名与主任务区分，避免同构建内两任务并发写同一文件
+    useAdditionalClasspathFile = true
+    additionalClasspathFile = layout.buildDirectory.file('pitClasspathDescartes')
+    shouldRunAfter(tasks.named('test'))
 }
 
 // test 单任务报告：供聚焦测试（--tests X）快速查看，不触发其他 suite
