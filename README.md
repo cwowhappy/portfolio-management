@@ -11,7 +11,7 @@
 
 ## 能力一览
 
-- **对话式投研问答**：自然语言问行情、走势、财务、新闻，Agent 自动调用 6 个数据工具并流式输出分析（AG-UI 协议，思考过程/工具进度可视化）——**需登录后使用**
+- **对话式投研问答**：自然语言问行情、走势、财务、新闻，Agent 自动调用 7 个数据工具并流式输出分析（AG-UI 协议，思考过程/工具进度可视化）——**需登录后使用**
 - **行情数据台**：指数速览、股票搜索、实时报价、K线（日/周/月 + MA5/MA20）、财务指标、新闻——**公开访问**
 - **用户管理**：注册/登录（用户名 + 密码，密码 ≥8 位含字母数字）；注册需**管理员审核通过**后方可使用 AI；管理员可审核、停用/启用、重置密码；内置管理员（env 种子）
 - **会话持久化**：AI 对话历史存服务端 PostgreSQL、归属账号，换设备可见（标题取首条消息前 24 字）
@@ -20,7 +20,7 @@
 - **资产配置**：经典模板一键套用 + 自定义方案 + 与持仓的偏离度对比——**需登录**（`/allocation`）
 - **价值筛选器**：估值/盈利/财务健康/成长/市值流动性五维 AND 组合筛选 + 结果排序——**公开访问**（`/screener`）
 - **行业估值**：申万 31 行业 PE/PB/ROE/股息率对比 + 估值热力图，点击跳转筛选器——**公开访问**（`/industry`）
-- **技术栈**：Spring Boot 4 + Spring Security 7 + PostgreSQL/Flyway + AgentScope Java · Next.js 15 + React 19 + CopilotKit（AG-UI 前端）· 东方财富公开接口（新浪兜底）· Python 采集服务（akshare/tushare）
+- **技术栈**：Spring Boot 4 + Spring Security 7 + PostgreSQL/Flyway + AgentScope Java 2.0.3（含 harness）· Next.js 15 + React 19 + CopilotKit（AG-UI 前端）+ echarts + TanStack Table · 东方财富公开接口（新浪兜底）· Python 采集服务（akshare/tushare）
 
 ## 快速开始
 
@@ -50,10 +50,11 @@ docker compose up -d db
 ### 测试与冒烟
 
 ```bash
-make test                     # 后端单元/架构/集成测试（含 ArchUnit 分包规范 + Testcontainers）+ 前端单元测试（vitest）
-                              # 覆盖率强制门槛：后端 JaCoCo 指令/分支 ≥ 80%，前端 V8 语句/分支 ≥ 80%
+make test                     # 后端单元/架构/集成测试（含 ArchUnit 分包规范 + Testcontainers）+ 前端单元测试（vitest）+ collector 测试（pytest）
+                              # 覆盖率强制门槛：后端 JaCoCo 指令/分支 ≥ 80%，前端 V8 语句/分支 ≥ 80%，collector pytest ≥ 80%
 make smoke                    # 端到端冒烟（含真实行情接口 + AI 对话）
-cd frontend && pnpm test:e2e  # 浏览器端到端（Playwright）：导航 / 行情台 / AI 对话 / 用户管理 / 会话持久化
+cd frontend && pnpm test:e2e  # 浏览器端到端（Playwright，15 份 spec）：导航 / 登录注册 / 行情台 / AI 对话（含聊天图表、HITL 审批）
+                              #   / 用户管理 / 会话持久化 / 估值 / 持仓 / 配置 / 筛选 / 行业 / 投资日志 / 错误态
                               #   自动拉起后端+前端（已运行时复用）；AI 用例需配置 DEEPSEEK_API_KEY
 ```
 
@@ -119,11 +120,24 @@ Playwright e2e 位于 `frontend/e2e/`，配置见 `frontend/playwright.config.ts
 | 端点 | 说明 |
 |---|---|
 | GET /api/portfolio/overview | 组合总览 |
-| GET /api/portfolio/positions | 持仓列表 |
+| GET /api/portfolio/positions | 持仓列表（可按 groupId 过滤） |
 | POST /api/portfolio/positions/buy · /sell | 买入 / 卖出 |
 | POST /api/portfolio/positions/cash-dividend · /stock-dividend | 现金 / 股票分红 |
+| DELETE /api/portfolio/positions/{positionId} | 删除持仓 |
+| GET /api/portfolio/positions/{positionId}/trades · PUT /api/portfolio/positions/{positionId}/trades/{tradeId} | 交易列表 / 修改交易 |
+| GET /api/portfolio/positions/{positionId}/dividends | 分红记录 |
 | GET /api/portfolio/groups · POST /api/portfolio/groups | 持仓分组查询 / 新建 |
+| PUT /api/portfolio/groups/{groupId} · DELETE /api/portfolio/groups/{groupId} | 重命名 / 删除分组 |
+| POST /api/portfolio/cash-transactions · GET /api/portfolio/cash-transactions | 资金流水新增 / 查询（GET 按 groupId） |
 | GET /api/portfolio/allocation · /industry-distribution · /concentration | 配置结构 / 行业分布 / 集中度 |
+
+**投资日志**（前端经 /api/journal/** 反代，需登录，按归属隔离）：
+
+| 端点 | 说明 |
+|---|---|
+| GET /api/journal/entries · POST /api/journal/entries | 日志列表（可按 type 过滤）/ 新建 |
+| GET /api/journal/entries/{entryId} · PUT /api/journal/entries/{entryId} · DELETE /api/journal/entries/{entryId} | 详情 / 修改 / 删除 |
+| GET /api/journal/timeline | 时间线（日志 + 交易/分红事件合并，可按 from/to 过滤） |
 
 **配置**（前端经 /api/allocation/** 反代，需登录）：
 
@@ -134,6 +148,17 @@ Playwright e2e 位于 `frontend/e2e/`，配置见 `frontend/playwright.config.ts
 | PUT /api/allocation/plans/{planId} · DELETE /api/allocation/plans/{planId} | 修改 / 删除方案 |
 | POST /api/allocation/plans/{planId}/activate | 激活方案 |
 | GET /api/allocation/deviation | 目标配置 vs 持仓偏离度 |
+
+**MCP 数据源配置**（前端经 /api/mcp/** 反代，需登录，个人配置以当前登录用户为归属、非本人 404）：
+
+| 端点 | 说明 |
+|---|---|
+| GET /api/mcp/providers | provider 目录（内置妙想 / Tushare / Wind） |
+| GET /api/mcp/configs | 我的配置列表 |
+| PUT /api/mcp/configs/{providerId} | 保存配置（enabled + disabledTools） |
+| DELETE /api/mcp/configs/{providerId} | 删除配置 |
+| POST /api/mcp/providers/test | provider 连通性测试 |
+| GET /api/mcp/configs/{providerId}/tools | 该 provider 的可用工具列表 |
 
 **Skill**（前端经 /api/skills/** 反代，需登录）：
 
@@ -147,16 +172,21 @@ Playwright e2e 位于 `frontend/e2e/`，配置见 `frontend/playwright.config.ts
 ```
 backend/    Spring Boot 4 + Spring Security 7 + Spring Data JPA（DDD 洋葱分层）
   src/main/java/com/portfolio/invest/
-    web/              接入层：Auth / UserAdmin / Conversation / Market / Valuation / Portfolio / Allocation / Screening / Health 控制器
-    application/      应用层：auth / useradmin / conversation / market / valuation / portfolio / allocation / screening 用例编排
-    domain/           领域层：user / conversation / market / valuation / portfolio / allocation / screening（纯 POJO，零 Spring/JPA）
-    infrastructure/   基础设施：persistence(JPA+Flyway) / security / seed / market(客户端+缓存)
-    agent/            独立能力域：AgentConfig / InvestTools / InvestSystemPrompt
+    web/              接入层：Auth / UserAdmin / Conversation / Market / Valuation / Screening / Portfolio /
+                      Allocation / Journal / McpConfig / SkillConfig / Health 控制器 + InvestAguiRuntimeContextResolver
+    application/      应用层：auth / useradmin / conversation / market / valuation / portfolio / allocation /
+                      screening / journal / mcp / skill / cache 用例编排
+    domain/           领域层：user / conversation / market / valuation / portfolio / allocation / screening /
+                      journal / mcp / skill（纯 POJO，零 Spring/JPA）
+    infrastructure/   基础设施：persistence(JPA+Flyway) / security / seed / market(客户端+缓存) / cache(TtlCache+CacheConfig)
+    agent/            独立能力域：AgentConfig / InvestTools / InvestSystemPrompt / HarnessAgentFactory /
+                      UserToolkitFactory / McpClientPool / CurrentUserHolder / chart(图表spec) /
+                      AguiEventNonNullCodec / AguiWireJsonConfig
     config/           配置属性：InvestProperties
-  src/main/resources/ application.yml / application-prod.yml / db/migration/(V1~V9)
+  src/main/resources/ application.yml / application-prod.yml / db/migration/(V1~V11) / skills/(内置skill)
 
 collector/  Python 3.12 采集服务（akshare/tushare → PostgreSQL，APScheduler 调度）：市场估值快照 / 指数估值 / 国债曲线 / 申万映射 / 指数成分股 / 个股基本面
-frontend/   Next.js 15（聊天 UI / 行情台 / 估值 / 持仓 / 配置 / 筛选 / 行业 / 登录注册 / 管理页 / API 反代）
+frontend/   Next.js 15（聊天 UI / 行情台 / 估值 / 持仓 / 配置 / 筛选 / 行业 / 投资日志 / MCP与Skill设置 / 登录注册 / 管理页 / API 反代）
 docs/       function/（产品功能）· technology/（技术文档）· plans/（跨模块/版本级计划）· reviews/（代码审查报告与经验沉淀）· archive/（历史归档）
 features/   <feature>/（特性需求/设计/计划，如 asset-allocation、portfolio-management）· plans/（跨特性工程计划）
 scripts/    smoke.sh 冒烟脚本
@@ -174,7 +204,7 @@ scripts/    smoke.sh 冒烟脚本
 | BACKEND_URL | http://localhost:8080 | 前端反代目标 |
 | PORT | 8080 | 后端端口 |
 | TUSHARE_TOKEN | - | 采集服务（collector）tushare 数据源 token（个股基本面 / 指数估值 / 申万映射；未填则仅 akshare 数据可用） |
-| MCP_SECRET_KEY | - | 二期用：MCP 系统 Token 的 AES-256-GCM 主密钥（base64 32 字节），缺失不阻断启动、加解密时报错；一期 seed 为明文 |
+| MCP_SECRET_KEY | - | **规划中（二期），代码尚未实现**——当前 provider token 为 `auth_secret_enc` 明文直读；规划语义：MCP 系统 Token 的 AES-256-GCM 主密钥（base64 32 字节），缺失不阻断启动、加解密时报错 |
 
 **MCP 数据源**：内置 provider（妙想 `mx-ds` / Tushare / Wind）的 Token 不随迁移进 git——部署时由脚本对 `mcp_provider.auth_secret_enc` 执行 UPDATE 填入（妙想 `em_api_key`、Tushare token、Wind ak token），V10 迁移仅 seed `NULL` 占位。三个 MCP 端点的手动握手冒烟见 `backend/scripts/mcp-smoke.sh`（从 `MX_DS_TOKEN` / `TUSHARE_TOKEN` / `WIND_TOKEN` 读 token，无硬编码密钥）。
 
