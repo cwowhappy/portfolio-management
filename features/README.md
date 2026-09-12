@@ -12,7 +12,7 @@ features/
 │   ├── 01-requirement/    需求规格说明.md（需求 + 关键决策）
 │   ├── 02-design/         设计规格说明.md（可选，仅需独立设计时）
 │   └── 02-plan/ 或 03-plan/  P1/P2/P3 分阶段实施计划（无独立设计用 02-plan，有则用 03-plan）
-├── plans/                 ← 跨特性工程/质量计划（测试体系加固、CodeReview 修复）
+├── plans/                 ← 跨特性工程/质量计划（测试体系加固、CodeReview 修复、2026-09-12-文档体系全面更新.md）
 └── README.md
 ```
 

@@ -94,4 +94,4 @@ infrastructure ──→ {domain, application, config}
 - `docs/technology/`（技术文档）、`docs/function/`（产品功能）
 - `docs/plans/2026-08-27-产品落地计划.md`：里程碑级落地计划与进度跟踪（MS-00~MS-15）
 - `docs/README.md`：文档中心总导航
-- `docs/code-review-lessons.md`：代码审查经验沉淀（问题模式清单，评审/开发前参考）
+- `docs/reviews/code-review-lessons.md`：代码审查经验沉淀（问题模式清单，评审/开发前参考）

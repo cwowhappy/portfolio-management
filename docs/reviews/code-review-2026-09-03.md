@@ -8,7 +8,7 @@
 
 ## 一、Standards 轴（规范 + 代码坏味）
 
-规范源：`docs/technology/conventions/01~04`、`AGENTS.md`、ADR（0003/0005~0009）、`docs/code-review-lessons.md`（问题模式清单）+ Fowler 坏味基线。
+规范源：`docs/technology/conventions/01~04`、`AGENTS.md`、ADR（0003/0005~0009）、`docs/reviews/code-review-lessons.md`（问题模式清单）+ Fowler 坏味基线。
 
 ### backend（24 条：P1×3 / P2×21）
 
