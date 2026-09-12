@@ -7,7 +7,7 @@
 | 目录 | 定位 | 入口 |
 |------|------|------|
 | [function/](function/) | 产品功能（M01–M14 + 进度看板），供产品/设计/测试/新人 | [README](function/README.md) |
-| [technology/](technology/) | 技术文档（架构/模块/规范/决策/储备） | [README](technology/README.md) |
+| [technology/](technology/) | 技术文档（架构 / 模块 01–13 / 规范 / 决策 0001–0011 / 储备） | [README](technology/README.md) |
 | [plans/](plans/) | 跨模块/版本级计划（产品落地计划） | 见下 |
 | [reviews/](reviews/) | 代码审查一次性报告（留档）与经验沉淀 lessons | 见下 |
 | [archive/](archive/) | 历史归档（记录当时决策，不再随代码维护） | [README](archive/README.md) |

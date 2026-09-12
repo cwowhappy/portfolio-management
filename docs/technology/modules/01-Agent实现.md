@@ -136,4 +136,4 @@ invest:
         flush-min-gap: 30m
 ```
 
-**服务端状态机制**（`server-side-memory: true`）：starter 的 `ThreadSessionManager` 按（userId, threadId）维护 agent 会话实例，历史由 `JsonFileAgentStateStore` 落盘恢复（§3 的 stateStore/compaction/memory 都作用其上）；前端 CopilotKit/HttpAgent 总是携带全量渲染历史，由 `/api/copilotkit` 反代边界裁剪为最新一条 user 消息再转发 `/agui/run`。会话 REST（`GET/PUT /api/conversations/{id}/messages`）保留作历史回灌与跨设备回显，不再作为 agent 上下文来源（[ADR-0008](../decisions/0008-conversation-persistence.md) 的表结构与转写存储仍有效，agent 上下文部分已由服务端记忆取代）。
+**服务端状态机制**（`server-side-memory: true`）：starter 的 `ThreadSessionManager` 按（userId, threadId）维护 agent 会话实例，历史由 `JsonFileAgentStateStore` 落盘恢复（§3 的 stateStore/compaction/memory 都作用其上）；前端 CopilotKit/HttpAgent 总是携带全量渲染历史，由 `/api/copilotkit` 反代边界裁剪为最新一条 user 消息再转发 `/agui/run`。会话 REST（`GET/PUT /api/conversations/{id}/messages`）保留作历史回灌与跨设备回显，不再作为 agent 上下文来源（[ADR-0008](../decisions/0008-conversation-persistence.md) 与 [ADR-0011](../decisions/0011-server-side-agent-state.md)：0008 的表结构与转写存储仍有效，agent 上下文部分已由 0011 的服务端记忆取代）。

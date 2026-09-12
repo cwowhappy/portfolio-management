@@ -1,5 +1,7 @@
 # AG-UI
 
+> 项目勘误指针：本篇为官方文档摘录（vendored，见 [README](README.md)）；文中与项目实测有出入处（尤其下方 2.0.1 版本警告块），以 [features/mcp-hitl/03-plan/验证记录.md](../../../../features/mcp-hitl/03-plan/验证记录.md)（P0 协议勘误正式沉淀）为准。
+
 ## Compatibility Notes
 
 `agentscope-extensions-agui` converts AgentScope v2 `AgentEvent` streams into [AG-UI Protocol](https://github.com/ag-ui-protocol/ag-ui) events so front-end UIs can render an agent run in real time, including text, reasoning, tool calls, state, custom events, token usage, and HITL interrupts.

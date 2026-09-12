@@ -65,10 +65,10 @@ infrastructure ──→ {domain, application, config}
 ### Agent 能力域现状
 
 - **HarnessAgent 按请求构建**：`HarnessAgentFactory.build(userId)` 按用户装配（skill 过滤、状态存储、上下文压缩、长期记忆）；`agentscope.agui.server-side-memory: true`——会话历史由服务端 `stateStore` 持久化，前端每轮只发最新一条用户消息。
-- **用户自配 MCP 工具**：用户在设置页启用/禁用 provider 与工具（`/api/mcp/**`），`UserToolkitFactory` 按用户装配进 Toolkit；MCP 工具 `readOnlyHint` 缺省或为 false 视为写工具，**触发 HITL 权限审批**（前端渲染审批卡片，见 ADR-0010）。
+- **MCP 数据源（内置 provider，不可自定义 server）**：内置 provider 目录（妙想/Tushare/Wind，`V10__mcp.sql` seed），用户在设置页启用/停用 provider 与单个工具（`/api/mcp/**`，无新增 provider 端点），`UserToolkitFactory` 按用户装配进 Toolkit；MCP 工具 `readOnlyHint` 缺省或为 false 视为写工具，**触发 HITL 权限审批**（前端渲染审批卡片，见 ADR-0010）。
 - **内置 Skill**：`src/main/resources/skills/`（tushare_data、wind_finance），按用户启用集合过滤注入 Agent。
 
-细节见 `docs/technology/modules/`（模块技术文档，新篇见该目录）。
+细节见 `docs/technology/modules/`（模块技术文档，篇目索引见下方参考文档节）。
 
 ### 前端：Next.js 同源反代
 
@@ -97,10 +97,10 @@ infrastructure ──→ {domain, application, config}
 
 - `README.md`：功能全览 + API 端点表 + 环境变量表 + 目录结构
 - `docs/technology/conventions/`（01 后端 DDD 分包 / 02 后端 / 03 前端 / 04 采集服务，改代码前必读对应规范）
-- `docs/technology/modules/`（模块技术文档：现有 01 Agent 实现 / 02 行情数据服务 / 03 接口设计 / 04 工程与运维，05–13 新篇编纂中，见该目录）
-- `docs/technology/decisions/`（0001–0010）：Agent 框架、AG-UI 协议、行情源、会话模型、用户认证、后端分层、MCP 工具权限审批等架构决策
+- `docs/technology/modules/`（模块技术文档，通用机制篇 01–08 + 业务域篇 09–13）：[01 Agent 实现](docs/technology/modules/01-Agent实现.md) / [02 行情数据服务](docs/technology/modules/02-行情数据服务.md) / [03 接口设计](docs/technology/modules/03-接口设计.md) / [04 工程与运维](docs/technology/modules/04-工程与运维.md) / [05 MCP数据源集成](docs/technology/modules/05-MCP数据源集成.md) / [06 Skill系统](docs/technology/modules/06-Skill系统.md) / [07 HITL人工审批](docs/technology/modules/07-HITL人工审批.md) / [08 聊天图表双通道](docs/technology/modules/08-聊天图表双通道.md) / [09 估值域](docs/technology/modules/09-估值域.md) / [10 筛选域](docs/technology/modules/10-筛选域.md) / [11 持仓域](docs/technology/modules/11-持仓域.md) / [12 资产配置域](docs/technology/modules/12-资产配置域.md) / [13 投研日志域](docs/technology/modules/13-投研日志域.md)
+- `docs/technology/decisions/`（0001–0011）：Agent 框架、AG-UI 协议、行情源、会话模型、用户认证、后端分层、MCP 工具权限审批、服务端会话状态等架构决策
 - `features/<feature>/`（特性需求/设计/计划，索引与「特性↔里程碑↔模块」映射见 `features/README.md`）
 - `docs/technology/`（技术文档）、`docs/function/`（产品功能）
-- `docs/plans/2026-08-27-产品落地计划.md`：里程碑级落地计划与进度跟踪（MS-00~MS-15）
+- `docs/plans/2026-08-27-产品落地计划.md`：里程碑级落地计划与进度跟踪（MS-00~MS-15 + 平台增强 MS-16~19）
 - `docs/README.md`：文档中心总导航
 - `docs/reviews/code-review-lessons.md`：代码审查经验沉淀（问题模式清单，评审/开发前参考）
