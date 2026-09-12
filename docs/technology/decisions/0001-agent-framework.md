@@ -1,5 +1,7 @@
 # ADR-0001 Agent 框架选型：AgentScope Java
 
+> 2026-09-08 修订：AgentScope 已升级 2.0.3 并新增 agentscope-harness 构件（见 [0010](0010-mcp-hitl-permission.md) / [0011](0011-server-side-agent-state.md)）
+
 - 状态：已接受（2026-08-18）
 - 决策者：项目负责人 + 技术选型评审
 

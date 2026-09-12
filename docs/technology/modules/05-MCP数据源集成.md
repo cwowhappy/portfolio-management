@@ -42,7 +42,7 @@ POST /agui/run
 
 ### 2.3 MCP 客户端（McpClientPool）
 
-- **传输**：streamable HTTP（`McpClientBuilder.streamableHttpTransport(url)`），`initialize()` 握手后 `buildSync()`。
+- **传输**：streamable HTTP（`McpClientBuilder.streamableHttpTransport(url)`），`buildSync()` 建同步客户端后 `initialize()` 握手。
 - **鉴权**：`HEADER` → 自定义头 `provider.authHeader(): token`；`BEARER` → `Authorization: Bearer <token>`。
 - **池化**：按 `endpoint.id()` 用 `ConcurrentHashMap` 缓存客户端，进程内复用，不主动失效。
 - **连接测试**（设置页「测试连接」按钮）：`AgentScopeMcpServerTester` 对每个启用端点真实 initialize + tools/list（固定 10s 超时），返回 `TestResult{success, tools, latencyMs, errorMessage}`。
