@@ -24,6 +24,13 @@ import io.modelcontextprotocol.server.McpServer;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider;
 import io.modelcontextprotocol.spec.McpSchema;
+import jakarta.servlet.Filter;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.ServletRequest;
+import jakarta.servlet.ServletResponse;
+import jakarta.servlet.http.HttpServletRequest;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -31,11 +38,14 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.catalina.Context;
 import org.apache.catalina.startup.Tomcat;
+import org.apache.tomcat.util.descriptor.web.FilterDef;
+import org.apache.tomcat.util.descriptor.web.FilterMap;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -59,7 +69,8 @@ import reactor.core.publisher.Flux;
  * MCP server（官方 SDK streamable HTTP，classpath 已有 mcp-core 0.17.2）提供 write_note
  * （不标 readOnlyHint → 写，触发审批）与 read_note（readOnlyHint=true → 只读放行），
  * seed McpProvider/McpEndpoint/McpUserConfig 后由生产 UserToolkitFactory 经 McpClientPool
- * 真实 HTTP 装配，验证 FR-1/2/4/6 全链路。
+ * 真实 HTTP 装配，验证 FR-1/2/4/6 全链路。另以只读捕获 Filter 验证 HEADER/BEARER 鉴权
+ * header（McpClientPool 装配分支）真实到达内嵌 server。
  *
  * <p>技术方案：MockMvc 无真实 HTTP 栈，而 MCP 调用需真 socket（agent 线程 → HTTP → 本
  * 测试 JVM），故 MCP servlet 单独起随机端口内嵌 Tomcat；/agui/run 断言沿用 MockMvc 异步模式。
@@ -81,6 +92,9 @@ class McpHitlIntegrationTest extends PostgresTestSupport {
 
     private static Tomcat TOMCAT;
     private static McpSyncServer MCP_SERVER;
+
+    /** /mcp 请求 header 快照队列（HeaderCaptureFilter 只读捕获；用例内 clear 后 run 再断言）。 */
+    private static final ConcurrentLinkedQueue<Map<String, String>> CAPTURED_HEADERS = new ConcurrentLinkedQueue<>();
 
     @Autowired
     MockMvc mockMvc;
@@ -151,6 +165,16 @@ class McpHitlIntegrationTest extends PostgresTestSupport {
         // ISO-8859-1 解码会毁掉中文参数（Spring Boot 内嵌容器默认 UTF-8，手动装配须自设）
         ctx.setRequestCharacterEncoding(java.nio.charset.StandardCharsets.UTF_8.name());
         Tomcat.addServlet(ctx, "mcp", transport).addMapping("/mcp");
+        // HEADER/BEARER 鉴权用例观测点：/mcp 挂只读捕获 Filter。FilterDef/FilterMap 程序化注册
+        // （ServletContext#addFilter 的内部实现同款），须在 start() 前完成
+        FilterDef captureDef = new FilterDef();
+        captureDef.setFilterName("header-capture");
+        captureDef.setFilter(new HeaderCaptureFilter());
+        ctx.addFilterDef(captureDef);
+        FilterMap captureMap = new FilterMap();
+        captureMap.setFilterName("header-capture");
+        captureMap.addURLPattern("/mcp");
+        ctx.addFilterMap(captureMap);
         TOMCAT.start();
     }
 
@@ -260,15 +284,68 @@ class McpHitlIntegrationTest extends PostgresTestSupport {
         assertThat(eventOfType(body, "RUN_ERROR")).isNull();
     }
 
+    @DisplayName("HEADER 鉴权端点的工具调用请求携带自定义鉴权 header 到达 server")
+    @Test
+    void givenHeaderAuthEndpoint_whenCallTool_thenRequestCarriesCustomHeader() throws Exception {
+        MockHttpSession session = registerApproveAndLogin("mcp_hitl_eve");
+        seedMcpConfig("mcp_hitl_eve", "HEADER", "X-Test-Token", "hitl-secret-123");
+        MODEL.script(
+                List.of(toolCall("call_r_1", "read_note", Map.of())),
+                List.of(TextBlock.builder().text("笔记读取完成。").build()));
+        CAPTURED_HEADERS.clear();
+
+        String body = run(session, runRequest("interrupt-" + UUID.randomUUID(), "r-1", "读一条笔记"));
+
+        // 工具真实执行 + Agent 续跑（同 read-tool 用例，只读不弹审批）
+        assertThat(lastEventOfType(body, "RUN_FINISHED").path("outcome").isMissingNode()).isTrue();
+        assertThat(body).contains("note-content");
+        assertThat(body).contains("笔记读取完成。");
+        // run() 已阻塞到流结束，callTool 响应含 note-content 即其请求已过 Filter，快照已就绪
+        List<Map<String, String>> captured = List.copyOf(CAPTURED_HEADERS);
+        assertThat(captured).as("run 期间到达 server 的 /mcp 请求（initialize/listTools/callTool）").isNotEmpty();
+        assertThat(captured).allSatisfy(h -> assertThat(h.get("X-Test-Token")).isEqualTo("hitl-secret-123"));
+    }
+
+    @DisplayName("BEARER 鉴权端点的工具调用请求携带 Authorization Bearer 到达 server")
+    @Test
+    void givenBearerAuthEndpoint_whenCallTool_thenRequestCarriesAuthorizationBearer() throws Exception {
+        MockHttpSession session = registerApproveAndLogin("mcp_hitl_frank");
+        seedMcpConfig("mcp_hitl_frank", "BEARER", null, "hitl-bearer-token");
+        MODEL.script(
+                List.of(toolCall("call_r_1", "read_note", Map.of())),
+                List.of(TextBlock.builder().text("笔记读取完成。").build()));
+        CAPTURED_HEADERS.clear();
+
+        String body = run(session, runRequest("interrupt-" + UUID.randomUUID(), "r-1", "读一条笔记"));
+
+        // 工具真实执行 + Agent 续跑（同 read-tool 用例，只读不弹审批）
+        assertThat(lastEventOfType(body, "RUN_FINISHED").path("outcome").isMissingNode()).isTrue();
+        assertThat(body).contains("note-content");
+        assertThat(body).contains("笔记读取完成。");
+        // run() 已阻塞到流结束，callTool 响应含 note-content 即其请求已过 Filter，快照已就绪
+        List<Map<String, String>> captured = List.copyOf(CAPTURED_HEADERS);
+        assertThat(captured).as("run 期间到达 server 的 /mcp 请求（initialize/listTools/callTool）").isNotEmpty();
+        assertThat(captured).allSatisfy(h -> assertThat(h.get("Authorization")).isEqualTo("Bearer hitl-bearer-token"));
+    }
+
     // ———— seed 与内嵌 server ————
 
     /** seed provider(NONE)/endpoint(内嵌 Tomcat)/用户配置（disabled_tools 空）。幂等：先清旧。 */
     private void seedMcpConfig(String username) {
+        seedMcpConfig(username, "NONE", null, null);
+    }
+
+    /**
+     * 带鉴权维度的 seed：HEADER 需 authHeader + secret，BEARER 仅 secret。非 NONE 且 secret
+     * 空白会被 UserToolkitFactory 跳过（视为未配置），故 authSecret 必须非空。
+     */
+    private void seedMcpConfig(String username, String authType, String authHeader, String authSecret) {
         int port = TOMCAT.getConnector().getLocalPort();
         cleanupSeededMcpConfig();
         jdbcTemplate.update(
-                "INSERT INTO mcp_provider (code, name, auth_type, enabled, remark) VALUES (?, ?, 'NONE', TRUE, 'HITL 验证内嵌 server')",
-                PROVIDER_CODE, "HITL 测试数据源");
+                "INSERT INTO mcp_provider (code, name, auth_type, auth_header, auth_secret_enc, enabled, remark)"
+                        + " VALUES (?, ?, ?, ?, ?, TRUE, 'HITL 验证内嵌 server')",
+                PROVIDER_CODE, "HITL 测试数据源", authType, authHeader, authSecret);
         Long providerId = jdbcTemplate.queryForObject(
                 "SELECT id FROM mcp_provider WHERE code = ?", Long.class, PROVIDER_CODE);
         Long userId = jdbcTemplate.queryForObject(
@@ -295,6 +372,25 @@ class McpHitlIntegrationTest extends PostgresTestSupport {
                 "DELETE FROM mcp_endpoint WHERE provider_id IN (SELECT id FROM mcp_provider WHERE code = ?)",
                 PROVIDER_CODE);
         jdbcTemplate.update("DELETE FROM mcp_provider WHERE code = ?", PROVIDER_CODE);
+    }
+
+    /** 只读捕获 /mcp 请求 header（大小写不敏感快照）后放行；不碰请求/响应，恒调 chain.doFilter。 */
+    static class HeaderCaptureFilter implements Filter {
+        @Override
+        public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
+                throws IOException, ServletException {
+            if (request instanceof HttpServletRequest http) {
+                // HTTP header 名大小写不敏感，快照用大小写不敏感 map，断言可按任意大小写取名
+                Map<String, String> snapshot = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+                var names = http.getHeaderNames();
+                while (names.hasMoreElements()) {
+                    String name = names.nextElement();
+                    snapshot.put(name, http.getHeader(name));
+                }
+                CAPTURED_HEADERS.add(snapshot);
+            }
+            chain.doFilter(request, response);
+        }
     }
 
     // ———— 请求与 SSE 解析（与 AguiInterruptIntegrationTest 同构） ————
