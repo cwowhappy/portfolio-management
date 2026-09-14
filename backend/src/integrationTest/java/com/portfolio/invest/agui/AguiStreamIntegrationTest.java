@@ -16,7 +16,10 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -47,9 +50,13 @@ import reactor.core.publisher.Flux;
  *   因此直接对响应体做子串断言，无需真实端口与 HTTP 客户端。</li>
  *   <li>假 Model 返回单条不含 ToolUseBlock 的文本块：ReActAgent 收到无工具调用的响应即结束推理循环，
  *   驱动出完整 RUN_STARTED → TEXT_MESSAGE_* → RUN_FINISHED 生命周期。</li>
+ *   <li>状态隔离：state-root 指向 build/agui-stream-test/state（照抄 McpHitlIntegrationTest 模式），
+ *   避免 harness 会话状态写进仓库 .agentscope；现有用例不断言 state，无影响。</li>
  * </ul>
  */
-@SpringBootTest(properties = "DEEPSEEK_API_KEY=test-dummy-key")
+@SpringBootTest(properties = {
+        "DEEPSEEK_API_KEY=test-dummy-key",
+        "invest.mcp.harness.state-root=build/agui-stream-test/state"})
 @AutoConfigureMockMvc
 class AguiStreamIntegrationTest extends PostgresTestSupport {
 
@@ -139,6 +146,75 @@ class AguiStreamIntegrationTest extends PostgresTestSupport {
         assertThat(body).doesNotContain("TEXT_MESSAGE_START");
     }
 
+    @DisplayName("同会话两轮对话第二轮只发最新消息时模型输入仍含第一轮文本")
+    @Test
+    void givenSecondTurn_whenSendOnlyLatestMessage_thenAgentSeesPriorContext() throws Exception {
+        // 录制清零：只看本用例的两轮调用（记忆用例不关心其它用例的历史录制）
+        FixedReplyModel.RECORDED_CALLS.clear();
+        MockHttpSession session = registerApproveAndLogin("agui_memory");
+        // 同一 session 同一 threadId、不同 runId：两轮各自独立 run，会话连续性由服务端识别
+        String threadId = "memory-" + UUID.randomUUID();
+
+        // 第一轮告知姓名；第二轮 runRequest 天然只携带最新一条消息（不发历史）
+        String firstBody = runAgui(session, runRequest(threadId, "r-mem-1", "我叫小明，请记住"));
+        String secondBody = runAgui(session, runRequest(threadId, "r-mem-2", "我叫什么名字？"));
+
+        // 两轮均完整走完生命周期且无流内错误
+        assertThat(firstBody).contains("RUN_FINISHED").doesNotContain("RUN_ERROR");
+        assertThat(secondBody).contains("RUN_FINISHED").doesNotContain("RUN_ERROR");
+
+        // 第二次推理调用的 messages 含第一轮用户文本：历史由服务端 stateStore 拼装而非客户端回传，
+        // 锁 ADR-0011 server-side-memory 语义（agentscope.agui.server-side-memory=true）
+        List<Msg> secondTurnInput = inferenceInputs().stream()
+                .filter(msgs -> containsText(msgs, "我叫什么名字？"))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(
+                        "未找到含第二轮问句的推理调用，实际录制：" + FixedReplyModel.RECORDED_CALLS));
+        assertThat(joinText(secondTurnInput)).contains("我叫小明");
+    }
+
+    // ———— 两轮记忆用例辅助（录制判读 + 三段式 run 收敛） ————
+
+    /** 三段式跑一轮 /agui/run（asyncStarted → getAsyncResult → asyncDispatch），返回完整 SSE 响应体。 */
+    private String runAgui(MockHttpSession session, String json) throws Exception {
+        MvcResult result = mockMvc.perform(post("/agui/run")
+                        .session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+        result.getAsyncResult(30_000);
+        mockMvc.perform(asyncDispatch(result)).andExpect(status().isOk());
+        return result.getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    /**
+     * 推理轮的 Model 输入：剔除 harness 记忆归档/整合调用。该类调用以 {@code tools=null}
+     * 直呼 Model，或提示词含 "Extract NEW memories"（守卫口径同 McpHitlIntegrationTest
+     * 的 ScriptedModel），录制时一并留存以便过滤。
+     */
+    private static List<List<Msg>> inferenceInputs() {
+        return FixedReplyModel.RECORDED_CALLS.stream()
+                .filter(call -> call.tools() != null)
+                .filter(call -> !containsText(call.messages(), "Extract NEW memories"))
+                .map(FixedReplyModel.ModelCall::messages)
+                .toList();
+    }
+
+    private static boolean containsText(List<Msg> messages, String needle) {
+        return messages.stream().anyMatch(m -> {
+            String text = m.getTextContent();
+            return text != null && text.contains(needle);
+        });
+    }
+
+    private static String joinText(List<Msg> messages) {
+        return messages.stream()
+                .map(Msg::getTextContent)
+                .filter(Objects::nonNull)
+                .collect(Collectors.joining("\n"));
+    }
+
     private MockHttpSession registerApproveAndLogin(String username) throws Exception {
         String password = "abc12345";
         mockMvc.perform(post("/api/auth/register")
@@ -165,13 +241,24 @@ class AguiStreamIntegrationTest extends PostgresTestSupport {
                 .formatted(threadId, runId, UUID.randomUUID(), text);
     }
 
-    /** 固定回复的假 Model：返回单条预构造文本响应（含 usage，配合 emit-token-usage）。 */
+    /**
+     * 固定回复的假 Model：返回单条预构造文本响应（含 usage，配合 emit-token-usage）。
+     * 另顺带录制每次 {@code stream()} 的 {@code (messages, tools)} 快照到 {@link #RECORDED_CALLS}
+     * （只录不改，回复语义不变），供两轮记忆用例判读模型实际收到的输入。
+     */
     static class FixedReplyModel implements Model {
 
         static final String REPLY = "这是测试环境的固定投研回复。";
 
+        /** 单次 stream() 调用快照：messages 与 tools 成对留存，供断言区分推理轮与记忆归档调用。 */
+        record ModelCall(List<Msg> messages, List<ToolSchema> tools) {}
+
+        /** 跨用例累积的调用录制（用例开始前 clear）；并发结构，agent 异步线程写、测试线程读。 */
+        static final ConcurrentLinkedQueue<ModelCall> RECORDED_CALLS = new ConcurrentLinkedQueue<>();
+
         @Override
         public Flux<ChatResponse> stream(List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            RECORDED_CALLS.add(new ModelCall(List.copyOf(messages), tools));
             return Flux.just(ChatResponse.builder()
                     .id("fake-completion-1")
                     .content(List.of(TextBlock.builder().text(REPLY).build()))
