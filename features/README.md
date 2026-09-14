@@ -31,6 +31,7 @@ features/
 | [skill-integration](skill-integration/) | MS-17（已交付 2026-09-08，PR #20） | M03 对话式投研问答、M14 系统与工程 | `/settings/skills` |
 | [mcp-hitl](mcp-hitl/) | MS-18（已交付 2026-09-08，PR #22/#23；修复 #28/#30） | M03 对话式投研问答、M14 系统与工程 | — |
 | [chat-rich-content](chat-rich-content/) | MS-19（已交付 2026-09-12，PR #29） | M03 对话式投研问答、M14 系统与工程 | —（对话流内，图表基建惠及 `/portfolio` `/valuation` `/allocation`） |
+| [agent-testing](agent-testing/) | 跨 MS-16~19（测试加固，进行中） | M03 对话式投研问答（被测域）、M14 系统与工程 | —（纯测试/评估，无新页面） |
 
 > 里程碑（MS）定义与进度见 [产品落地计划](../docs/plans/2026-08-27-产品落地计划.md)；模块（M）定义与进度看板见 [功能模块概览](../docs/function/00-功能模块概览.md)。
 
