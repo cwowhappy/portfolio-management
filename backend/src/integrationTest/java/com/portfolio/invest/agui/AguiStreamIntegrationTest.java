@@ -50,8 +50,10 @@ import reactor.core.publisher.Flux;
  *   因此直接对响应体做子串断言，无需真实端口与 HTTP 客户端。</li>
  *   <li>假 Model 返回单条不含 ToolUseBlock 的文本块：ReActAgent 收到无工具调用的响应即结束推理循环，
  *   驱动出完整 RUN_STARTED → TEXT_MESSAGE_* → RUN_FINISHED 生命周期。</li>
- *   <li>状态隔离：state-root 指向 build/agui-stream-test/state（照抄 McpHitlIntegrationTest 模式），
- *   避免 harness 会话状态写进仓库 .agentscope；现有用例不断言 state，无影响。</li>
+ *   <li>状态隔离：仅重定向 state-root 至 build/agui-stream-test/state，避免 harness 会话状态写进
+ *   仓库 .agentscope/state（McpHitlIntegrationTest 另重定向 workspace，本类不重定向——workspace
+ *   仍为缺省 .agentscope/workspace，整目录已 gitignore，且本类假 Model 固定回复不含 ToolUseBlock，
+ *   不会调用任何写工具）；现有用例不断言 state，无影响。</li>
  * </ul>
  */
 @SpringBootTest(properties = {

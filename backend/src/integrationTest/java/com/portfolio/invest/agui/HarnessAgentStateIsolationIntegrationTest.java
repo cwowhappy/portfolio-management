@@ -34,15 +34,17 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
 /**
- * HarnessAgent 落盘 state 的按用户隔离（方案 4.2-B，缺口 #4 集成侧）：真实 HarnessAgent +
- * JsonFileAgentStateStore 落盘，两用户各自 threadId 各跑一轮，断言 state-root 下两用户的
- * state 文件互不重叠、各自只含自己的消息文本。
+ * HarnessAgent 落盘 state 的按用户/会话隔离（方案 4.2-B，缺口 #4 集成侧）：真实 HarnessAgent +
+ * JsonFileAgentStateStore 落盘。两用例分别锁 state 键 (userId, sessionId) 的两个半边——两用户
+ * 各自 threadId 各跑一轮断言用户维度互不重叠；同一用户两个 threadId 各跑一轮断言会话维度互不重叠，
+ * 各自只含自己的消息文本。
  *
  * <p>落盘布局「先探后锁」：javap agentscope 2.0.3 {@code JsonFileAgentStateStore} 核实路径拼接为
  * {@code root/<safeSegment(userId)>/<safeSegment(sessionId)>/<key>.json|.jsonl|.hash}（userId 来自
  * {@code InvestAguiRuntimeContextResolver} 写入的 DB 用户 id 字符串，纯数字过 safeSegment 原样保留），
- * 实跑确认顶层目录即 userId 字符串。断言只锁「相对路径含 userId 路径段」这一用户维度，
- * 不锁 sessionId 命名与文件名/后缀风格（防上游改版脆断）。
+ * 实跑确认顶层目录即 userId 字符串。用户维度断言只锁「相对路径含 userId 路径段」；会话维度
+ * 断言锁「路径段等于 threadId」（safeSegment 白名单 {@code ^[a-zA-Z0-9_\-.]+$} 对 threadId
+ * 原样保留，实跑会话目录段即 threadId）；均不锁文件名/后缀风格（防上游改版脆断）。
  *
  * <p>技术方案说明：
  * <ul>
@@ -68,6 +70,9 @@ class HarnessAgentStateIsolationIntegrationTest extends PostgresTestSupport {
 
     private static final String USERNAME_A = "state_iso_alice";
     private static final String USERNAME_B = "state_iso_bob";
+
+    /** 会话维度用例专用用户：注册非幂等（容器 JVM 级单例、行留存），不可复用 A/B。 */
+    private static final String USERNAME_S = "state_iso_same";
 
     @Autowired
     MockMvc mockMvc;
@@ -138,6 +143,47 @@ class HarnessAgentStateIsolationIntegrationTest extends PostgresTestSupport {
         assertThat(joinedContent(filesB)).contains(markerB).doesNotContain(markerA);
     }
 
+    @DisplayName("同一用户两会话对话后state文件按会话维度互不重叠且各含各自消息")
+    @Test
+    void givenSameUser_whenRunInTwoSessions_thenStateFilesSeparatedBySession() throws Exception {
+        // 同一用户注册/审批/登录一次，两个不同 threadId 各跑一轮：锁 (userId, sessionId) 键的 sessionId 半边
+        MockHttpSession session = registerApproveAndLogin(USERNAME_S);
+        long userId = userIdOf(USERNAME_S);
+
+        // 两个会话各自 threadId 各发一轮，消息带可检索标记串（UUID 保证跨用例/跨运行唯一）
+        String threadA = "iso-s-a-" + UUID.randomUUID();
+        String threadB = "iso-s-b-" + UUID.randomUUID();
+        String markerA = "S-A-会话-专属-消息-" + UUID.randomUUID();
+        String markerB = "S-B-会话-专属-消息-" + UUID.randomUUID();
+        String bodyA = runAgui(session, runRequest(threadA, "run-iso-s-a", markerA));
+        String bodyB = runAgui(session, runRequest(threadB, "run-iso-s-b", markerB));
+
+        // 两个会话均构建跑完
+        assertThat(bodyA).contains("RUN_FINISHED").doesNotContain("RUN_ERROR");
+        assertThat(bodyB).contains("RUN_FINISHED").doesNotContain("RUN_ERROR");
+
+        // 先归组到该用户名下，再按 threadId 路径段归组到两个会话（实跑布局会话目录段即 threadId）
+        Set<Path> sessionFilesA;
+        Set<Path> sessionFilesB;
+        try (Stream<Path> walked = Files.walk(STATE_ROOT)) {
+            Set<Path> userFiles = filesOfUser(walked.filter(Files::isRegularFile).toList(), userId);
+            sessionFilesA = filesOfSession(userFiles, threadA);
+            sessionFilesB = filesOfSession(userFiles, threadB);
+        }
+
+        // 两组都非空：两会话确实各自落盘，且都在同一个 userId 目录段之下（先经 filesOfUser 过滤）
+        assertThat(sessionFilesA).as("会话 A 的 state 文件").isNotEmpty();
+        assertThat(sessionFilesB).as("会话 B 的 state 文件").isNotEmpty();
+        // 同一 userId 下两会话路径互不重叠：同一文件被两个 threadId 路径段命中即串写
+        Set<Path> overlap = new HashSet<>(sessionFilesA);
+        overlap.retainAll(sessionFilesB);
+        assertThat(overlap).as("同用户两会话 state 文件交集").isEmpty();
+
+        // 各自只含自己的消息：A 会话文件含 A 标记且无 B 标记，反之亦然
+        assertThat(joinedContent(sessionFilesA)).contains(markerA).doesNotContain(markerB);
+        assertThat(joinedContent(sessionFilesB)).contains(markerB).doesNotContain(markerA);
+    }
+
     @AfterEach
     void cleanupSeededSkillConfig() {
         // seed 行按 username→userId 清理（PostgresTestSupport 容器 JVM 级单例，行会留存）
@@ -154,6 +200,17 @@ class HarnessAgentStateIsolationIntegrationTest extends PostgresTestSupport {
         String uid = String.valueOf(userId);
         return files.stream()
                 .filter(f -> hasPathSegment(STATE_ROOT.relativize(f), uid))
+                .collect(Collectors.toSet());
+    }
+
+    /**
+     * 归组（会话维度）：文件相对 stateRoot 的路径任一段等于 threadId。threadId 仅含
+     * {@code [a-zA-Z0-9-]}，过 safeSegment（白名单 {@code ^[a-zA-Z0-9_\-.]+$}）原样保留，
+     * 实跑布局会话目录段即 threadId；不锁文件名/后缀风格（防上游改版脆断）。
+     */
+    private static Set<Path> filesOfSession(Set<Path> files, String threadId) {
+        return files.stream()
+                .filter(f -> hasPathSegment(STATE_ROOT.relativize(f), threadId))
                 .collect(Collectors.toSet());
     }
 

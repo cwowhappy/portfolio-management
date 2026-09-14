@@ -300,6 +300,7 @@ class McpHitlIntegrationTest extends PostgresTestSupport {
         assertThat(lastEventOfType(body, "RUN_FINISHED").path("outcome").isMissingNode()).isTrue();
         assertThat(body).contains("note-content");
         assertThat(body).contains("笔记读取完成。");
+        assertThat(eventOfType(body, "RUN_ERROR")).isNull();
         // run() 已阻塞到流结束，callTool 响应含 note-content 即其请求已过 Filter，快照已就绪
         List<Map<String, String>> captured = List.copyOf(CAPTURED_HEADERS);
         assertThat(captured).as("run 期间到达 server 的 /mcp 请求（initialize/listTools/callTool）").isNotEmpty();
@@ -322,6 +323,7 @@ class McpHitlIntegrationTest extends PostgresTestSupport {
         assertThat(lastEventOfType(body, "RUN_FINISHED").path("outcome").isMissingNode()).isTrue();
         assertThat(body).contains("note-content");
         assertThat(body).contains("笔记读取完成。");
+        assertThat(eventOfType(body, "RUN_ERROR")).isNull();
         // run() 已阻塞到流结束，callTool 响应含 note-content 即其请求已过 Filter，快照已就绪
         List<Map<String, String>> captured = List.copyOf(CAPTURED_HEADERS);
         assertThat(captured).as("run 期间到达 server 的 /mcp 请求（initialize/listTools/callTool）").isNotEmpty();
