@@ -174,7 +174,8 @@ tasks.named('check') {
 }
 
 // PIT 变异测试配置：非阻塞手动诊断，不设覆盖率/变异率门槛、不挂 check；
-// 只变异核心域三类（成本盈亏引擎 / 估值应用服务 / 行情解析器），控制单次运行时长
+// 变异核心域三类（成本盈亏引擎 / 估值应用服务 / 行情解析器）+ agent 纯逻辑三类
+// （InvestTools / UserToolkitFactory / ChartSpecs，2026-09-15 测试方案批次 3 扩入），控制单次运行时长
 pitest {
     // 1.20.2：与 Descartes 1.3.4 的 SPI 基线对齐（降级自 1.30.0）。注意该版本早于 JUnit 6，
     // minion 驱动 platform 6 引擎属超纲组合，靠下方 launcher 对齐 6.0.3 工作；升级前回归验证
@@ -184,6 +185,10 @@ pitest {
             'com.portfolio.invest.domain.portfolio.Position',
             'com.portfolio.invest.application.valuation.*',
             'com.portfolio.invest.domain.market.MarketDataParser',
+            // agent 纯逻辑三类（2026-09-15 测试方案批次 3 扩入）
+            'com.portfolio.invest.agent.InvestTools',
+            'com.portfolio.invest.agent.UserToolkitFactory',
+            'com.portfolio.invest.agent.chart.ChartSpecs',
     ]
     // 显式限定测试类：默认按包通配会把被测主类本身当成测试容器，导致 "tests did not pass" 误报
     targetTests = [
@@ -191,6 +196,9 @@ pitest {
             'com.portfolio.invest.application.valuation.ValuationApplicationServiceTest',
             'com.portfolio.invest.domain.market.MarketDataParserTest',
             'com.portfolio.invest.domain.market.MarketDataParserEdgeCasesTest',
+            'com.portfolio.invest.agent.InvestToolsTest',
+            'com.portfolio.invest.agent.UserToolkitFactoryTest',
+            'com.portfolio.invest.agent.chart.ChartSpecsTest',
     ]
     threads = 4
     // 关闭插件自动向 testRuntimeOnly 注入带版本的 junit-platform-launcher：
