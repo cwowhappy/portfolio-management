@@ -4,11 +4,16 @@ JAVA_HOME ?= $(shell [ -d "$$HOME/.sdkman/candidates/java/21.0.6-amzn" ] && echo
 export JAVA_HOME
 export GRADLE_USER_HOME := $(PWD)/.gradle-home
 export GRADLE_OPTS := -Dorg.gradle.native.dir=$(PWD)/.gradle-native
+# 捕获调用 shell 的 DEEPSEEK_* 覆盖（须在 -include .env 之前：.env 的同名变量会以文件变量身份
+# 压掉 shell 环境值，eval-agent 的模型临时切换依赖这里留存原始值）
+EVAL_DEEPSEEK_MODEL_FROM_SHELL := $(DEEPSEEK_MODEL)
+EVAL_DEEPSEEK_BASE_URL_FROM_SHELL := $(DEEPSEEK_BASE_URL)
+
 # 读取 .env（若存在）
 -include .env
 export
 
-.PHONY: dev dev-backend dev-frontend test test-backend test-backend-unit test-backend-integration test-backend-bdd test-backend-mutation test-backend-mutation-descartes test-frontend test-e2e build up down smoke
+.PHONY: dev dev-backend dev-frontend test test-backend test-backend-unit test-backend-integration test-backend-bdd test-backend-mutation test-backend-mutation-descartes eval-agent test-frontend test-e2e build up down smoke
 
 ## 本地开发：同时启动后端(8080)与前端(3000)
 dev:
@@ -44,6 +49,13 @@ test-backend-mutation:
 # Descartes 方法级粗筛：extreme mutation 定位 pseudo-tested 方法（手动诊断，无门槛），报告在 backend/build/reports/pitest-descartes
 test-backend-mutation-descartes:
 	cd backend && ./gradlew pitestDescartes --console=plain
+
+# Agent 效果评估：真实 LLM（DeepSeek）周期性诊断（题库 backend/src/eval/resources，报告
+# backend/build/reports/eval-agent）。不挂 CI 门禁、无通过率阈值，退出码恒 0。
+# 可选：DEEPSEEK_MODEL=deepseek-v4-pro 临时换被评模型（传 shell 环境变量，gradle 任务会盖写 daemon 旧值）；
+#       EVAL_ARGS="--compare=<上次报告>" 透传 runner 参数
+eval-agent:
+	cd backend && ./gradlew evalAgent --console=plain$(if $(EVAL_DEEPSEEK_MODEL_FROM_SHELL), -PevalDeepseekModel=$(EVAL_DEEPSEEK_MODEL_FROM_SHELL),)$(if $(EVAL_DEEPSEEK_BASE_URL_FROM_SHELL), -PevalDeepseekBaseUrl=$(EVAL_DEEPSEEK_BASE_URL_FROM_SHELL),)$(if $(EVAL_ARGS), -PevalArgs=$(EVAL_ARGS),)
 
 test-frontend:
 	cd frontend && pnpm lint && pnpm test
