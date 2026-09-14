@@ -120,7 +120,7 @@ public class InvestTools {
     public String getNews(
             @ToolParam(name = "code", description = "6位A股代码，如 600519") String code,
             @ToolParam(name = "limit", description = "返回条数，默认 10，最大 20") Integer limit) {
-        return run(() -> mapper.writeValueAsString(market.news(code, limit == null ? 10 : limit)));
+        return run(() -> mapper.writeValueAsString(market.news(code, Math.min(limit == null ? 10 : limit, 20))));
     }
 
     @Tool(

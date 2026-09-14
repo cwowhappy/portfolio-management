@@ -208,6 +208,16 @@ class InvestToolsTest {
         assertThat(tools.getNews("600519", 5)).isEqualTo("[]");
     }
 
+    @DisplayName("getNews limit超上限：夹到20")
+    @Test
+    void givenLimitAbove20_whenGetNews_thenClampedTo20() {
+        var item = new NewsItem("标题", "摘要", "来源", "2026-08-18", "https://x/1");
+        when(market.news("600519", 20)).thenReturn(List.of(item));
+        String json = tools.getNews("600519", 999);
+        verify(market).news("600519", 20);
+        assertThat(json).as("clamp 不影响正常返回").contains("标题");
+    }
+
     @DisplayName("getMarketOverview双通道：emit涨跌幅bar，返回含点位摘要")
     @Test
     void givenOverviewIndices_whenGetMarketOverview_thenEmitsBarSpecAndReturnsSummary() {
