@@ -1,10 +1,9 @@
 package com.portfolio.invest.agui;
 
+import static com.portfolio.invest.support.AguiTestSupport.registerApproveAndLogin;
+import static com.portfolio.invest.support.AguiTestSupport.run;
+import static com.portfolio.invest.support.AguiTestSupport.runRequest;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.portfolio.invest.application.skill.SkillApplicationService;
 import com.portfolio.invest.domain.user.UserRepository;
@@ -26,12 +25,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.context.bean.override.convention.TestBean;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.MvcResult;
 
 /**
  * HarnessAgent 落盘 state 的按用户/会话隔离（方案 4.2-B，缺口 #4 集成侧）：真实 HarnessAgent +
@@ -98,8 +95,8 @@ class HarnessAgentStateIsolationIntegrationTest extends PostgresTestSupport {
     @Test
     void givenTwoUsers_whenRunEachInOwnSession_thenStateFilesIsolatedByUserAndSession() throws Exception {
         // 用户 A、B 各自注册/审批/登录（各自独立 MockHttpSession → 各自 DB userId）
-        MockHttpSession sessionA = registerApproveAndLogin(USERNAME_A);
-        MockHttpSession sessionB = registerApproveAndLogin(USERNAME_B);
+        MockHttpSession sessionA = registerApproveAndLogin(mockMvc, userRepository, USERNAME_A);
+        MockHttpSession sessionB = registerApproveAndLogin(mockMvc, userRepository, USERNAME_B);
         long userIdA = userIdOf(USERNAME_A);
         long userIdB = userIdOf(USERNAME_B);
 
@@ -110,8 +107,8 @@ class HarnessAgentStateIsolationIntegrationTest extends PostgresTestSupport {
         // 各自 threadId 各发一轮，消息带可检索标记串（UUID 保证跨用例/跨运行唯一）
         String markerA = "A-用户-专属-消息-" + UUID.randomUUID();
         String markerB = "B-用户-专属-消息-" + UUID.randomUUID();
-        String bodyA = runAgui(sessionA, runRequest("iso-a-" + UUID.randomUUID(), "run-iso-a", markerA));
-        String bodyB = runAgui(sessionB, runRequest("iso-b-" + UUID.randomUUID(), "run-iso-b", markerB));
+        String bodyA = run(mockMvc, sessionA, runRequest("iso-a-" + UUID.randomUUID(), "run-iso-a", markerA));
+        String bodyB = run(mockMvc, sessionB, runRequest("iso-b-" + UUID.randomUUID(), "run-iso-b", markerB));
 
         // skill 差异下两侧 agent 均构建跑完（skillFilter 不炸），不断 skill 内容
         assertThat(bodyA).contains("RUN_FINISHED").doesNotContain("RUN_ERROR");
@@ -147,7 +144,7 @@ class HarnessAgentStateIsolationIntegrationTest extends PostgresTestSupport {
     @Test
     void givenSameUser_whenRunInTwoSessions_thenStateFilesSeparatedBySession() throws Exception {
         // 同一用户注册/审批/登录一次，两个不同 threadId 各跑一轮：锁 (userId, sessionId) 键的 sessionId 半边
-        MockHttpSession session = registerApproveAndLogin(USERNAME_S);
+        MockHttpSession session = registerApproveAndLogin(mockMvc, userRepository, USERNAME_S);
         long userId = userIdOf(USERNAME_S);
 
         // 两个会话各自 threadId 各发一轮，消息带可检索标记串（UUID 保证跨用例/跨运行唯一）
@@ -155,8 +152,8 @@ class HarnessAgentStateIsolationIntegrationTest extends PostgresTestSupport {
         String threadB = "iso-s-b-" + UUID.randomUUID();
         String markerA = "S-A-会话-专属-消息-" + UUID.randomUUID();
         String markerB = "S-B-会话-专属-消息-" + UUID.randomUUID();
-        String bodyA = runAgui(session, runRequest(threadA, "run-iso-s-a", markerA));
-        String bodyB = runAgui(session, runRequest(threadB, "run-iso-s-b", markerB));
+        String bodyA = run(mockMvc, session, runRequest(threadA, "run-iso-s-a", markerA));
+        String bodyB = run(mockMvc, session, runRequest(threadB, "run-iso-s-b", markerB));
 
         // 两个会话均构建跑完
         assertThat(bodyA).contains("RUN_FINISHED").doesNotContain("RUN_ERROR");
@@ -232,48 +229,9 @@ class HarnessAgentStateIsolationIntegrationTest extends PostgresTestSupport {
         return joined.toString();
     }
 
-    // ———— 三段式 run / 注册审批登录 / 请求体（照抄 AguiStreamIntegrationTest） ————
-
-    /** 三段式跑一轮 /agui/run（asyncStarted → getAsyncResult → asyncDispatch），返回完整 SSE 响应体。 */
-    private String runAgui(MockHttpSession session, String json) throws Exception {
-        MvcResult result = mockMvc.perform(post("/agui/run")
-                        .session(session)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(json))
-                .andExpect(request().asyncStarted())
-                .andReturn();
-        result.getAsyncResult(30_000);
-        mockMvc.perform(asyncDispatch(result)).andExpect(status().isOk());
-        return result.getResponse().getContentAsString(StandardCharsets.UTF_8);
-    }
-
-    private MockHttpSession registerApproveAndLogin(String username) throws Exception {
-        String password = "abc12345";
-        mockMvc.perform(post("/api/auth/register")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"username\":\"" + username + "\",\"password\":\"" + password + "\"}"))
-                .andExpect(status().isCreated());
-        var user = userRepository.findByUsername(username).orElseThrow();
-        userRepository.save(user.approve());
-
-        var login = mockMvc.perform(post("/api/auth/login")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"username\":\"" + username + "\",\"password\":\"" + password + "\"}"))
-                .andExpect(status().isOk())
-                .andReturn();
-        // MockMvc 不会依据 JSESSIONID cookie 重建会话，需显式传递登录产生的 MockHttpSession
-        return (MockHttpSession) login.getRequest().getSession(false);
-    }
+    // ———— 其余辅助（三段式 run / 注册审批登录 / 请求体收敛至 testFixtures 的 AguiTestSupport） ————
 
     private long userIdOf(String username) {
         return userRepository.findByUsername(username).orElseThrow().id();
-    }
-
-    private static String runRequest(String threadId, String runId, String text) {
-        // AG-UI RunAgentInput 线格式（与 CopilotKit HttpAgent 发送的一致）
-        return """
-                {"threadId":"%s","runId":"%s","state":{},"messages":[{"id":"%s","role":"user","content":"%s"}],"tools":[],"context":[],"forwardedProps":{}}
-                """
-                .formatted(threadId, runId, UUID.randomUUID(), text);
     }
 }

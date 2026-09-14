@@ -1,10 +1,12 @@
 package com.portfolio.invest.agui;
 
+import static com.portfolio.invest.support.AguiTestSupport.eventOfType;
+import static com.portfolio.invest.support.AguiTestSupport.lastEventOfType;
+import static com.portfolio.invest.support.AguiTestSupport.registerApproveAndLogin;
+import static com.portfolio.invest.support.AguiTestSupport.resumeRequest;
+import static com.portfolio.invest.support.AguiTestSupport.run;
+import static com.portfolio.invest.support.AguiTestSupport.runRequest;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -33,7 +35,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -54,12 +55,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.context.bean.override.convention.TestBean;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.MvcResult;
 import reactor.core.publisher.Flux;
 
 /**
@@ -187,14 +186,14 @@ class McpHitlIntegrationTest extends PostgresTestSupport {
     @DisplayName("真实 MCP 写工具（未标 readOnlyHint）触发权限中断且不执行")
     @Test
     void givenRealMcpWriteTool_whenRun_thenPermissionConfirmInterruptEmitted() throws Exception {
-        MockHttpSession session = registerApproveAndLogin("mcp_hitl_alice");
+        MockHttpSession session = registerApproveAndLogin(mockMvc, userRepository, "mcp_hitl_alice");
         seedMcpConfig("mcp_hitl_alice");
         Path note = NOTE_DIR.resolve("alice.md");
         Files.deleteIfExists(note);
         MODEL.script(List.of(toolCall("call_m_1", "write_note",
                 Map.of("file", "alice.md", "content", "验证写入"))));
 
-        String body = run(session, runRequest("interrupt-" + UUID.randomUUID(), "r-1", "写一条笔记"));
+        String body = run(mockMvc, session, runRequest("interrupt-" + UUID.randomUUID(), "r-1", "写一条笔记"));
 
         JsonNode finished = lastEventOfType(body, "RUN_FINISHED");
         assertThat(finished.path("outcome").path("type").asText()).isEqualTo("interrupt");
@@ -219,7 +218,7 @@ class McpHitlIntegrationTest extends PostgresTestSupport {
     @DisplayName("批准后真实 MCP 写工具执行且 Agent 续跑")
     @Test
     void givenInterrupt_whenResumeApproved_thenRealMcpToolExecutesAndRunContinues() throws Exception {
-        MockHttpSession session = registerApproveAndLogin("mcp_hitl_bob");
+        MockHttpSession session = registerApproveAndLogin(mockMvc, userRepository, "mcp_hitl_bob");
         seedMcpConfig("mcp_hitl_bob");
         Path note = NOTE_DIR.resolve("bob.md");
         Files.deleteIfExists(note);
@@ -229,11 +228,11 @@ class McpHitlIntegrationTest extends PostgresTestSupport {
                 List.of(TextBlock.builder().text("已写入笔记。").build()));
         String threadId = "interrupt-" + UUID.randomUUID();
 
-        String first = run(session, runRequest(threadId, "r-1", "写一条笔记"));
+        String first = run(mockMvc, session, runRequest(threadId, "r-1", "写一条笔记"));
         String interruptId = lastEventOfType(first, "RUN_FINISHED")
                 .path("outcome").path("interrupts").path(0).path("id").asText();
 
-        String second = run(session, resumeRequest(threadId, "r-2", interruptId, true));
+        String second = run(mockMvc, session, resumeRequest(threadId, "r-2", interruptId, true));
 
         assertThat(Files.exists(note)).as("批准后工具真实执行（文件落盘）").isTrue();
         assertThat(Files.readString(note)).isEqualTo("已批准内容");
@@ -245,7 +244,7 @@ class McpHitlIntegrationTest extends PostgresTestSupport {
     @DisplayName("拒绝后真实 MCP 写工具不执行且 Agent 续跑")
     @Test
     void givenInterrupt_whenResumeDenied_thenRealMcpToolSkippedAndRunContinues() throws Exception {
-        MockHttpSession session = registerApproveAndLogin("mcp_hitl_carol");
+        MockHttpSession session = registerApproveAndLogin(mockMvc, userRepository, "mcp_hitl_carol");
         seedMcpConfig("mcp_hitl_carol");
         Path note = NOTE_DIR.resolve("carol.md");
         Files.deleteIfExists(note);
@@ -255,11 +254,11 @@ class McpHitlIntegrationTest extends PostgresTestSupport {
                 List.of(TextBlock.builder().text("用户拒绝，未写入。").build()));
         String threadId = "interrupt-" + UUID.randomUUID();
 
-        String first = run(session, runRequest(threadId, "r-1", "写一条笔记"));
+        String first = run(mockMvc, session, runRequest(threadId, "r-1", "写一条笔记"));
         String interruptId = lastEventOfType(first, "RUN_FINISHED")
                 .path("outcome").path("interrupts").path(0).path("id").asText();
 
-        String second = run(session, resumeRequest(threadId, "r-2", interruptId, false));
+        String second = run(mockMvc, session, resumeRequest(threadId, "r-2", interruptId, false));
 
         assertThat(Files.exists(note)).as("拒绝后工具不执行").isFalse();
         assertThat(second).contains("用户拒绝，未写入。");
@@ -270,13 +269,13 @@ class McpHitlIntegrationTest extends PostgresTestSupport {
     @DisplayName("readOnlyHint=true 的真实 MCP 工具不弹审批直接执行")
     @Test
     void givenRealMcpReadTool_whenRun_thenNoInterruptAndDirectExecution() throws Exception {
-        MockHttpSession session = registerApproveAndLogin("mcp_hitl_dave");
+        MockHttpSession session = registerApproveAndLogin(mockMvc, userRepository, "mcp_hitl_dave");
         seedMcpConfig("mcp_hitl_dave");
         MODEL.script(
                 List.of(toolCall("call_r_1", "read_note", Map.of())),
                 List.of(TextBlock.builder().text("笔记读取完成。").build()));
 
-        String body = run(session, runRequest("interrupt-" + UUID.randomUUID(), "r-1", "读一条笔记"));
+        String body = run(mockMvc, session, runRequest("interrupt-" + UUID.randomUUID(), "r-1", "读一条笔记"));
 
         assertThat(lastEventOfType(body, "RUN_FINISHED").path("outcome").isMissingNode()).isTrue();
         assertThat(body).contains("note-content");
@@ -287,14 +286,14 @@ class McpHitlIntegrationTest extends PostgresTestSupport {
     @DisplayName("HEADER 鉴权端点的工具调用请求携带自定义鉴权 header 到达 server")
     @Test
     void givenHeaderAuthEndpoint_whenCallTool_thenRequestCarriesCustomHeader() throws Exception {
-        MockHttpSession session = registerApproveAndLogin("mcp_hitl_eve");
+        MockHttpSession session = registerApproveAndLogin(mockMvc, userRepository, "mcp_hitl_eve");
         seedMcpConfig("mcp_hitl_eve", "HEADER", "X-Test-Token", "hitl-secret-123");
         MODEL.script(
                 List.of(toolCall("call_r_1", "read_note", Map.of())),
                 List.of(TextBlock.builder().text("笔记读取完成。").build()));
         CAPTURED_HEADERS.clear();
 
-        String body = run(session, runRequest("interrupt-" + UUID.randomUUID(), "r-1", "读一条笔记"));
+        String body = run(mockMvc, session, runRequest("interrupt-" + UUID.randomUUID(), "r-1", "读一条笔记"));
 
         // 工具真实执行 + Agent 续跑（同 read-tool 用例，只读不弹审批）
         assertThat(lastEventOfType(body, "RUN_FINISHED").path("outcome").isMissingNode()).isTrue();
@@ -310,14 +309,14 @@ class McpHitlIntegrationTest extends PostgresTestSupport {
     @DisplayName("BEARER 鉴权端点的工具调用请求携带 Authorization Bearer 到达 server")
     @Test
     void givenBearerAuthEndpoint_whenCallTool_thenRequestCarriesAuthorizationBearer() throws Exception {
-        MockHttpSession session = registerApproveAndLogin("mcp_hitl_frank");
+        MockHttpSession session = registerApproveAndLogin(mockMvc, userRepository, "mcp_hitl_frank");
         seedMcpConfig("mcp_hitl_frank", "BEARER", null, "hitl-bearer-token");
         MODEL.script(
                 List.of(toolCall("call_r_1", "read_note", Map.of())),
                 List.of(TextBlock.builder().text("笔记读取完成。").build()));
         CAPTURED_HEADERS.clear();
 
-        String body = run(session, runRequest("interrupt-" + UUID.randomUUID(), "r-1", "读一条笔记"));
+        String body = run(mockMvc, session, runRequest("interrupt-" + UUID.randomUUID(), "r-1", "读一条笔记"));
 
         // 工具真实执行 + Agent 续跑（同 read-tool 用例，只读不弹审批）
         assertThat(lastEventOfType(body, "RUN_FINISHED").path("outcome").isMissingNode()).isTrue();
@@ -395,79 +394,11 @@ class McpHitlIntegrationTest extends PostgresTestSupport {
         }
     }
 
-    // ———— 请求与 SSE 解析（与 AguiInterruptIntegrationTest 同构） ————
-
-    private String run(MockHttpSession session, String json) throws Exception {
-        MvcResult result = mockMvc.perform(post("/agui/run")
-                        .session(session)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(json))
-                .andExpect(request().asyncStarted())
-                .andReturn();
-        result.getAsyncResult(30_000);
-        mockMvc.perform(asyncDispatch(result)).andExpect(status().isOk());
-        return result.getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
-    }
-
-    private static List<JsonNode> parseEvents(String body) throws Exception {
-        List<JsonNode> events = new ArrayList<>();
-        for (String line : body.split("\n")) {
-            if (line.startsWith("data: ")) {
-                events.add(MAPPER.readTree(line.substring("data: ".length())));
-            }
-        }
-        return events;
-    }
-
-    private static JsonNode eventOfType(String body, String type) throws Exception {
-        JsonNode found = null;
-        for (JsonNode e : parseEvents(body)) {
-            if (type.equals(e.path("type").asText())) found = e;
-        }
-        return found;
-    }
-
-    private static JsonNode lastEventOfType(String body, String type) throws Exception {
-        JsonNode last = eventOfType(body, type);
-        assertThat(last).as("事件流应包含 %s", type).isNotNull();
-        return last;
-    }
-
-    private static String runRequest(String threadId, String runId, String text) {
-        return """
-                {"threadId":"%s","runId":"%s","state":{},"messages":[{"id":"%s","role":"user","content":"%s"}],"tools":[],"context":[],"forwardedProps":{}}
-                """
-                .formatted(threadId, runId, UUID.randomUUID(), text);
-    }
-
-    /** resume 轮请求：messages 留空（服务端 server-side-memory 持有会话历史）。 */
-    private static String resumeRequest(String threadId, String runId, String interruptId, boolean approved) {
-        return """
-                {"threadId":"%s","runId":"%s","state":{},"messages":[],"tools":[],"context":[],"forwardedProps":{},"resume":[{"interruptId":"%s","status":"resolved","payload":{"approved":%s}}]}
-                """
-                .formatted(threadId, runId, interruptId, approved);
-    }
+    // ———— 请求体构造（三段式 run/SSE 解析/登录骨架收敛至 testFixtures 的 AguiTestSupport） ————
 
     /** input 与 content 必须同时提供（ToolExecutor 参数校验读 content，见 AguiInterruptIntegrationTest 注释）。 */
     private static ToolUseBlock toolCall(String callId, String name, Map<String, Object> input) {
         return new ToolUseBlock(callId, name, input, MAPPER.valueToTree(input).toString(), Map.of());
-    }
-
-    private MockHttpSession registerApproveAndLogin(String username) throws Exception {
-        String password = "abc12345";
-        mockMvc.perform(post("/api/auth/register")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"username\":\"" + username + "\",\"password\":\"" + password + "\"}"))
-                .andExpect(status().isCreated());
-        var user = userRepository.findByUsername(username).orElseThrow();
-        userRepository.save(user.approve());
-
-        var login = mockMvc.perform(post("/api/auth/login")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"username\":\"" + username + "\",\"password\":\"" + password + "\"}"))
-                .andExpect(status().isOk())
-                .andReturn();
-        return (MockHttpSession) login.getRequest().getSession(false);
     }
 
     // ———— 测试替身（与 AguiInterruptIntegrationTest 同构） ————

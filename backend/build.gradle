@@ -101,6 +101,12 @@ dependencies {
     // ConcurrencyTestSupport：@Autowired JdbcTemplate 直插提交态种子
     testFixturesImplementation 'org.springframework:spring-beans'
     testFixturesImplementation 'org.springframework:spring-jdbc'
+    // AguiTestSupport：AGUI 集成测试共享请求/解析/登录骨架（MockMvc 三段式 + SSE 解析 + AssertJ）
+    testFixturesImplementation 'org.springframework:spring-web'
+    testFixturesImplementation 'com.fasterxml.jackson.core:jackson-databind'
+    testFixturesImplementation 'org.assertj:assertj-core'
+    // MockHttpServletResponse/Request 的公开签名引用 jakarta.servlet 类型，编译 testFixtures 需其在类路径
+    testFixturesImplementation 'jakarta.servlet:jakarta.servlet-api'
 
     // Descartes 变异引擎（extreme mutation 粗筛）：官方 1.3.4 基于 PIT 1.20.2 SPI 构建，
     // 经 ServiceLoader 作为 mutationEngine 切换使用；升级 PIT 前需先确认其适配（历史先例：

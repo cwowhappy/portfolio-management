@@ -1,9 +1,11 @@
 package com.portfolio.invest.agui;
 
+import static com.portfolio.invest.support.AguiTestSupport.registerApproveAndLogin;
+import static com.portfolio.invest.support.AguiTestSupport.run;
+import static com.portfolio.invest.support.AguiTestSupport.runRequest;
+import static com.portfolio.invest.support.AguiTestSupport.runWithAgentHeader;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.portfolio.invest.domain.user.UserRepository;
@@ -79,20 +81,10 @@ class AguiStreamIntegrationTest extends PostgresTestSupport {
     @DisplayName("认证用户发起对话返回完整AGUI事件流")
     @Test
     void givenAuthenticatedUser_whenRunConversation_thenFullAguiEventStreamReturned() throws Exception {
-        MockHttpSession session = registerApproveAndLogin("agui_alice");
+        MockHttpSession session = registerApproveAndLogin(mockMvc, userRepository, "agui_alice");
 
-        MvcResult result = mockMvc.perform(post("/agui/run")
-                        .session(session)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(runRequest("t-1", "r-1", "分析一下贵州茅台")))
-                .andExpect(request().asyncStarted())
-                .andReturn();
+        String body = run(mockMvc, session, runRequest("t-1", "r-1", "分析一下贵州茅台"));
 
-        // 阻塞到 SSE 流结束（emitter.complete() 释放异步锁），再收尾读取完整事件流
-        result.getAsyncResult(30_000);
-        mockMvc.perform(asyncDispatch(result)).andExpect(status().isOk());
-
-        String body = result.getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
         // AG-UI 生命周期事件齐全
         assertThat(body).contains("RUN_STARTED");
         assertThat(body).contains("TEXT_MESSAGE_START");
@@ -108,22 +100,11 @@ class AguiStreamIntegrationTest extends PostgresTestSupport {
     @DisplayName("请求未注册Agent返回流内错误事件而非500")
     @Test
     void givenUnregisteredAgent_whenRunConversation_thenInStreamErrorNot500() throws Exception {
-        MockHttpSession session = registerApproveAndLogin("agui_bob");
+        MockHttpSession session = registerApproveAndLogin(mockMvc, userRepository, "agui_bob");
 
         // AguiMvcController 在异步线程内捕获 AgentNotFoundException，
         // 降级为流内 error 事件 + RUN_FINISHED（HTTP 200），不会冒泡到 GlobalExceptionHandler
-        MvcResult result = mockMvc.perform(post("/agui/run")
-                        .session(session)
-                        .header("X-Agent-Id", "ghost-agent")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(runRequest("t-2", "r-2", "你好")))
-                .andExpect(request().asyncStarted())
-                .andReturn();
-
-        result.getAsyncResult(30_000);
-        mockMvc.perform(asyncDispatch(result)).andExpect(status().isOk());
-
-        String body = result.getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        String body = runWithAgentHeader(mockMvc, session, "ghost-agent", runRequest("t-2", "r-2", "你好"));
         assertThat(body).contains("error").contains("ghost-agent");
         assertThat(body).contains("RUN_FINISHED");
         assertThat(body).doesNotContain("TEXT_MESSAGE_START");
@@ -132,7 +113,7 @@ class AguiStreamIntegrationTest extends PostgresTestSupport {
     @DisplayName("非法请求体返回400与流内解析错误事件")
     @Test
     void givenInvalidRequestBody_whenRunConversation_thenStructuredErrorNotEventStream() throws Exception {
-        MockHttpSession session = registerApproveAndLogin("agui_carol");
+        MockHttpSession session = registerApproveAndLogin(mockMvc, userRepository, "agui_carol");
 
         // agentscope 2.0.3：请求体由 starter 内置 AguiRequestBodyParser 解析，非法 JSON 不再
         // 冒泡为 MVC 绑定异常（GlobalExceptionHandler 不介入），而是以 SSE 流内 RAW 事件返回
@@ -153,13 +134,13 @@ class AguiStreamIntegrationTest extends PostgresTestSupport {
     void givenSecondTurn_whenSendOnlyLatestMessage_thenAgentSeesPriorContext() throws Exception {
         // 录制清零：只看本用例的两轮调用（记忆用例不关心其它用例的历史录制）
         FixedReplyModel.RECORDED_CALLS.clear();
-        MockHttpSession session = registerApproveAndLogin("agui_memory");
+        MockHttpSession session = registerApproveAndLogin(mockMvc, userRepository, "agui_memory");
         // 同一 session 同一 threadId、不同 runId：两轮各自独立 run，会话连续性由服务端识别
         String threadId = "memory-" + UUID.randomUUID();
 
         // 第一轮告知姓名；第二轮 runRequest 天然只携带最新一条消息（不发历史）
-        String firstBody = runAgui(session, runRequest(threadId, "r-mem-1", "我叫小明，请记住"));
-        String secondBody = runAgui(session, runRequest(threadId, "r-mem-2", "我叫什么名字？"));
+        String firstBody = run(mockMvc, session, runRequest(threadId, "r-mem-1", "我叫小明，请记住"));
+        String secondBody = run(mockMvc, session, runRequest(threadId, "r-mem-2", "我叫什么名字？"));
 
         // 两轮均完整走完生命周期且无流内错误
         assertThat(firstBody).contains("RUN_FINISHED").doesNotContain("RUN_ERROR");
@@ -175,20 +156,7 @@ class AguiStreamIntegrationTest extends PostgresTestSupport {
         assertThat(joinText(secondTurnInput)).contains("我叫小明");
     }
 
-    // ———— 两轮记忆用例辅助（录制判读 + 三段式 run 收敛） ————
-
-    /** 三段式跑一轮 /agui/run（asyncStarted → getAsyncResult → asyncDispatch），返回完整 SSE 响应体。 */
-    private String runAgui(MockHttpSession session, String json) throws Exception {
-        MvcResult result = mockMvc.perform(post("/agui/run")
-                        .session(session)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(json))
-                .andExpect(request().asyncStarted())
-                .andReturn();
-        result.getAsyncResult(30_000);
-        mockMvc.perform(asyncDispatch(result)).andExpect(status().isOk());
-        return result.getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
-    }
+    // ———— 两轮记忆用例辅助（录制判读） ————
 
     /**
      * 推理轮的 Model 输入：剔除 harness 记忆归档/整合调用。该类调用以 {@code tools=null}
@@ -215,32 +183,6 @@ class AguiStreamIntegrationTest extends PostgresTestSupport {
                 .map(Msg::getTextContent)
                 .filter(Objects::nonNull)
                 .collect(Collectors.joining("\n"));
-    }
-
-    private MockHttpSession registerApproveAndLogin(String username) throws Exception {
-        String password = "abc12345";
-        mockMvc.perform(post("/api/auth/register")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"username\":\"" + username + "\",\"password\":\"" + password + "\"}"))
-                .andExpect(status().isCreated());
-        var user = userRepository.findByUsername(username).orElseThrow();
-        userRepository.save(user.approve());
-
-        var login = mockMvc.perform(post("/api/auth/login")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"username\":\"" + username + "\",\"password\":\"" + password + "\"}"))
-                .andExpect(status().isOk())
-                .andReturn();
-        // MockMvc 不会依据 JSESSIONID cookie 重建会话，需显式传递登录产生的 MockHttpSession
-        return (MockHttpSession) login.getRequest().getSession(false);
-    }
-
-    private static String runRequest(String threadId, String runId, String text) {
-        // AG-UI RunAgentInput 线格式（与 CopilotKit HttpAgent 发送的一致）
-        return """
-                {"threadId":"%s","runId":"%s","state":{},"messages":[{"id":"%s","role":"user","content":"%s"}],"tools":[],"context":[],"forwardedProps":{}}
-                """
-                .formatted(threadId, runId, UUID.randomUUID(), text);
     }
 
     /**
