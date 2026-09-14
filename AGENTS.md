@@ -4,10 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概览
 
-A 股投研对话助手（证券投资与分析系统）。AI Agent Web 服务：对话式投研问答（AG-UI 协议，Agent 调用 6 个行情数据工具并流式输出）+ 行情数据台 + 用户管理 + 会话持久化。
+A 股投研对话助手（证券投资与分析系统）。AI Agent Web 服务：对话式投研问答（AG-UI 协议，Agent 调用 7 个行情数据工具并流式输出）+ 行情数据台 + 用户管理 + 会话持久化。
 
-- **后端**：Spring Boot 4 + Spring Security 7 + Spring Data JPA + PostgreSQL 16（Flyway 管 schema）+ AgentScope Java 2.0.1 + DeepSeek
-- **前端**：Next.js 15 + React 19 + CopilotKit（AG-UI 前端）+ Tailwind 4
+- **后端**：Spring Boot 4 + Spring Security 7 + Spring Data JPA + PostgreSQL 16（Flyway 管 schema）+ AgentScope Java 2.0.3（core / openai 模型扩展 / agui starter / harness 四构件）+ DeepSeek
+- **前端**：Next.js 15 + React 19 + CopilotKit（AG-UI 前端）+ Tailwind 4 + echarts 6 + TanStack Table 9
 - **行情源**：东方财富公开接口（新浪/腾讯兜底）
 
 ## 常用命令
@@ -53,14 +53,22 @@ infrastructure ──→ {domain, application, config}
 
 | 包 | 职责 |
 |---|---|
-| `web/` | HTTP 接入层：`@RestController`（Auth/UserAdmin/Conversation/Market/Health）+ `GlobalExceptionHandler` 异常→HTTP 状态映射。只做路由/参数校验/异常翻译 |
+| `web/` | HTTP 接入层：12 个 `@RestController`（Auth/UserAdmin/Conversation/Market/Valuation/Screening/Portfolio/Allocation/Journal/McpConfig/SkillConfig/Health）+ `InvestAguiRuntimeContextResolver`（AG-UI 请求上下文）+ `GlobalExceptionHandler`（`@RestControllerAdvice`，异常→HTTP 状态映射）。只做路由/参数校验/异常翻译 |
 | `application/` | 用例编排与事务边界，`*ApplicationService` 结尾；持有对外 DTO |
 | `domain/` | **纯 POJO，零 Spring/JPA 注解**；实体/值对象/仓库接口（由 infrastructure 实现） |
-| `infrastructure/` | `persistence`（JPA 实体+仓库实现+Flyway）、`security`、`seed`、`market`（东方财富/新浪客户端 + 缓存/限流装饰器） |
-| `agent/` | 独立能力域：`InvestSystemPrompt`（提示词）、`InvestTools`（`@Tool` 数据工具）、`AgentConfig`（装配）。**不并入 DDD 分层**，消费 `application.market` 与 `domain.market` |
+| `infrastructure/` | `persistence`（JPA 实体+仓库实现+Flyway）、`security`、`seed`、`market`（东方财富/新浪客户端 + 缓存/限流装饰器）、`cache`（`TtlCache` + `CacheConfig`） |
+| `agent/` | 独立能力域：`InvestSystemPrompt`（提示词）、`InvestTools`（`@Tool` 数据工具）、`AgentConfig`（装配）、`HarnessAgentFactory`（按用户构建 HarnessAgent）、`UserToolkitFactory`（按用户装配内置工具 + 已启用 MCP 工具，写工具标记触发审批）、`McpClientPool`（MCP 客户端按 endpoint 复用）、`CurrentUserHolder`（请求级 userId ThreadLocal）、`chart/`（聊天图表 spec）、`AguiEventNonNullCodec` + `AguiWireJsonConfig`（AG-UI 事件序列化剥 null 字段）。**不并入 DDD 分层**，消费 `application`（market/valuation/skill）与 `domain`（market/valuation/mcp） |
 | `config/` | 仅配置属性（`InvestProperties`，`@ConfigurationProperties(prefix="invest")`），不得依赖任何业务包 |
 
-完整规则见 `docs/technology/conventions/01-后端DDD分包规范.md`（**新增后端代码前必读**）。规则由 `backend/src/test/java/com/portfolio/invest/architecture/PackageConventionsTest.java` 断言，违反即构建失败；新增能力域/域时需在该测试中登记依赖白名单。
+完整规则见 `docs/technology/conventions/01-后端DDD分包规范.md`（**新增后端代码前必读**）。规则由 ArchUnit 强制（3 个测试类、21 条规则：`PackageConventionsTest` / `CodingConventionsTest` / `TestSourceSetConventionsTest`，位于 `backend/src/test/java/com/portfolio/invest/architecture/`），违反即构建失败；新增能力域/域时需在 `PackageConventionsTest` 登记依赖白名单。
+
+### Agent 能力域现状
+
+- **HarnessAgent 按请求构建**：`HarnessAgentFactory.build(userId)` 按用户装配（skill 过滤、状态存储、上下文压缩、长期记忆）；`agentscope.agui.server-side-memory: true`——会话历史由服务端 `stateStore` 持久化，前端每轮只发最新一条用户消息。
+- **MCP 数据源（内置 provider，不可自定义 server）**：内置 provider 目录（妙想/Tushare/Wind，`V10__mcp.sql` seed），用户在设置页启用/停用 provider 与单个工具（`/api/mcp/**`，无新增 provider 端点），`UserToolkitFactory` 按用户装配进 Toolkit；MCP 工具 `readOnlyHint` 缺省或为 false 视为写工具，**触发 HITL 权限审批**（前端渲染审批卡片，见 ADR-0010）。
+- **内置 Skill**：`src/main/resources/skills/`（tushare_data、wind_finance），按用户启用集合过滤注入 Agent。
+
+细节见 `docs/technology/modules/`（模块技术文档，篇目索引见下方参考文档节）。
 
 ### 前端：Next.js 同源反代
 
@@ -79,7 +87,7 @@ infrastructure ──→ {domain, application, config}
 
 - **覆盖门槛 ≥80%**（`make test` 失败即不过）：后端 JaCoCo 聚合 `test`/`integrationTest`/`bdd` 三层 exec 后统一卡指令/分支双门槛（挂 `check`，聚焦跑单个 suite 不触发），前端 V8 语句/分支，collector pytest `--cov-fail-under=80`。改代码需补测试。
 - **后端测试四层**：`test`（单元+切片）/ `integrationTest`（Testcontainers 真实 PG）/ `bdd`（Cucumber 中文场景）/ `testFixtures`（共享 PG 容器基座 `PostgresTestSupport`），详见 `docs/technology/architecture/03-后端测试架构.md`。
-- **schema 由 Flyway 管**（`ddl-auto: none`），迁移在 `backend/src/main/resources/db/migration/`（V1–V9）。
+- **schema 由 Flyway 管**（`ddl-auto: none`），迁移在 `backend/src/main/resources/db/migration/`（V1–V11；V10=MCP 三表，V11=Skill 用户启用）。
 - **Jackson 2 而非 Jackson 3**：`spring-boot-starter-webmvc` 已排除 `starter-jackson` 改引 `spring-boot-jackson2`，因为 AgentScope AG-UI 模型基于 Jackson 2 注解。
 - **Testcontainers 禁用 Ryuk**（`TESTCONTAINERS_RYUK_DISABLED=true`）：兼容 Colima 等本地 Docker socket 无法挂载的场景，由 JUnit 扩展启停容器。
 - **同源 Cookie 会话，无 CORS**：后端 `same-site: lax`，前端同源反代透传 cookie，这是关闭 CSRF 的安全前提（ADR-0007）。
@@ -89,9 +97,10 @@ infrastructure ──→ {domain, application, config}
 
 - `README.md`：功能全览 + API 端点表 + 环境变量表 + 目录结构
 - `docs/technology/conventions/`（01 后端 DDD 分包 / 02 后端 / 03 前端 / 04 采集服务，改代码前必读对应规范）
-- `docs/technology/decisions/`（0001–0009）：Agent 框架、AG-UI 协议、行情源、会话模型、用户认证、后端分层等架构决策
+- `docs/technology/modules/`（模块技术文档，通用机制篇 01–08 + 业务域篇 09–13）：[01 Agent 实现](docs/technology/modules/01-Agent实现.md) / [02 行情数据服务](docs/technology/modules/02-行情数据服务.md) / [03 接口设计](docs/technology/modules/03-接口设计.md) / [04 工程与运维](docs/technology/modules/04-工程与运维.md) / [05 MCP数据源集成](docs/technology/modules/05-MCP数据源集成.md) / [06 Skill系统](docs/technology/modules/06-Skill系统.md) / [07 HITL人工审批](docs/technology/modules/07-HITL人工审批.md) / [08 聊天图表双通道](docs/technology/modules/08-聊天图表双通道.md) / [09 估值域](docs/technology/modules/09-估值域.md) / [10 筛选域](docs/technology/modules/10-筛选域.md) / [11 持仓域](docs/technology/modules/11-持仓域.md) / [12 资产配置域](docs/technology/modules/12-资产配置域.md) / [13 投研日志域](docs/technology/modules/13-投研日志域.md)
+- `docs/technology/decisions/`（0001–0011）：Agent 框架、AG-UI 协议、行情源、会话模型、用户认证、后端分层、MCP 工具权限审批、服务端会话状态等架构决策
 - `features/<feature>/`（特性需求/设计/计划，索引与「特性↔里程碑↔模块」映射见 `features/README.md`）
 - `docs/technology/`（技术文档）、`docs/function/`（产品功能）
-- `docs/plans/2026-08-27-产品落地计划.md`：里程碑级落地计划与进度跟踪（MS-00~MS-15）
+- `docs/plans/2026-08-27-产品落地计划.md`：里程碑级落地计划与进度跟踪（MS-00~MS-15 + 平台增强 MS-16~19）
 - `docs/README.md`：文档中心总导航
-- `docs/code-review-lessons.md`：代码审查经验沉淀（问题模式清单，评审/开发前参考）
+- `docs/reviews/code-review-lessons.md`：代码审查经验沉淀（问题模式清单，评审/开发前参考）

@@ -7,10 +7,10 @@
 | 目录 | 定位 | 入口 |
 |------|------|------|
 | [function/](function/) | 产品功能（M01–M14 + 进度看板），供产品/设计/测试/新人 | [README](function/README.md) |
-| [technology/](technology/) | 技术文档（架构/模块/规范/决策/储备） | [README](technology/README.md) |
-| [plans/](plans/) | 跨模块/版本级计划与早期设计（一期实施、产品落地计划等） | 见下 |
-| [reviews/](reviews/) | 代码审查一次性报告（留档） | 见下 |
-| [code-review-lessons.md](code-review-lessons.md) | 代码审查经验沉淀（滚动文档，评审/开发前参考） | — |
+| [technology/](technology/) | 技术文档（架构 / 模块 01–13 / 规范 / 决策 0001–0011 / 储备） | [README](technology/README.md) |
+| [plans/](plans/) | 跨模块/版本级计划（产品落地计划） | 见下 |
+| [reviews/](reviews/) | 代码审查一次性报告（留档）与经验沉淀 lessons | 见下 |
+| [archive/](archive/) | 历史归档（记录当时决策，不再随代码维护） | [README](archive/README.md) |
 
 ## 功能 vs 技术 vs 特性的关系
 
@@ -23,11 +23,7 @@
 
 | 文档 | 说明 |
 |------|------|
-| [2026-08-27-产品落地计划.md](plans/2026-08-27-产品落地计划.md) | 里程碑级（MS-00~MS-15）落地计划与进度跟踪（**跨模块权威**） |
-| [2026-08-18-一期实施计划.md](plans/2026-08-18-一期实施计划.md) | 一期实施计划 |
-| [2026-08-18-投资分析AI-Agent一期设计.md](plans/2026-08-18-投资分析AI-Agent一期设计.md) | 一期架构设计 |
-| [2026-08-19-前端迁移CopilotKit.md](plans/2026-08-19-前端迁移CopilotKit.md) | 前端 AG-UI 框架迁移记录 |
-| [2026-08-19-skill评估-test-driven-development.md](plans/2026-08-19-skill评估-test-driven-development.md) | superpowers skill 评估记录 |
+| [2026-08-27-产品落地计划.md](plans/2026-08-27-产品落地计划.md) | 里程碑级（MS-00~MS-15 + 平台增强 MS-16~19）落地计划与进度跟踪（**跨模块权威**） |
 
 ## reviews/ 目录
 
@@ -35,5 +31,7 @@
 |------|------|
 | [code-review.md](reviews/code-review.md) | 2026-08-19 首次代码审查报告 |
 | [code-review-2026-08-29.md](reviews/code-review-2026-08-29.md) | 2026-08-29 深度审查报告（含修复闭环） |
+| [code-review-2026-09-03.md](reviews/code-review-2026-09-03.md) | 2026-09-03 三端全量审查报告（双轴方法，13 处 P1） |
+| [code-review-lessons.md](reviews/code-review-lessons.md) | 代码审查经验沉淀（滚动文档，评审/开发前参考） |
 
-> 一次性审查报告归档于 reviews/；长期沉淀的**问题模式与方法论**见 [code-review-lessons.md](code-review-lessons.md)。
+> 一次性审查报告归档于 reviews/；长期沉淀的**问题模式与方法论**见 [code-review-lessons.md](reviews/code-review-lessons.md)。
