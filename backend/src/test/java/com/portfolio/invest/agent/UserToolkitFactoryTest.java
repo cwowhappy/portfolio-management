@@ -37,8 +37,8 @@ class UserToolkitFactoryTest {
                 .build();
     }
 
-    /** 标准装配环境：单 provider/endpoint/config，注入给定工具定义。 */
-    private Toolkit buildToolkitWith(McpSchema.Tool mcpTool, List<String> disabledTools) {
+    /** 标准装配环境：单 provider/endpoint/config，注入给定工具定义列表。 */
+    private Toolkit buildToolkitWith(List<McpSchema.Tool> mcpTools, List<String> disabledTools) {
         InvestTools investTools = mock(InvestTools.class);
         McpConfigRepository repository = mock(McpConfigRepository.class);
         McpClientPool clientPool = mock(McpClientPool.class);
@@ -52,7 +52,7 @@ class UserToolkitFactoryTest {
         when(repository.findByUserIdAndProviderId(1L, 2L)).thenReturn(Optional.of(config));
         when(repository.findEnabledEndpointsByProviderId(2L)).thenReturn(List.of(endpoint));
         when(clientPool.acquire(provider, endpoint, "token")).thenReturn(client);
-        when(client.listTools()).thenReturn(Mono.just(List.of(mcpTool)));
+        when(client.listTools()).thenReturn(Mono.just(mcpTools));
         when(client.getName()).thenReturn("tushare");
 
         return new UserToolkitFactory(investTools, repository, clientPool).build(1L);
@@ -61,7 +61,7 @@ class UserToolkitFactoryTest {
     @DisplayName("readOnlyHint=true 的 MCP 工具装配为只读（不触发审批）")
     @Test
     void givenReadOnlyHintTrue_whenBuild_thenToolReadOnly() {
-        Toolkit toolkit = buildToolkitWith(tool("trade_cal", annotations(true)), List.of());
+        Toolkit toolkit = buildToolkitWith(List.of(tool("trade_cal", annotations(true))), List.of());
         assertThat(toolkit.getTool("trade_cal")).isNotNull();
         assertThat(toolkit.getTool("trade_cal").isReadOnly()).isTrue();
     }
@@ -69,7 +69,7 @@ class UserToolkitFactoryTest {
     @DisplayName("未标 readOnlyHint 的 MCP 工具装配为写（触发审批）")
     @Test
     void givenNoAnnotations_whenBuild_thenToolWritable() {
-        Toolkit toolkit = buildToolkitWith(tool("write_note", null), List.of());
+        Toolkit toolkit = buildToolkitWith(List.of(tool("write_note", null)), List.of());
         assertThat(toolkit.getTool("write_note")).isNotNull();
         assertThat(toolkit.getTool("write_note").isReadOnly()).isFalse();
     }
@@ -77,7 +77,7 @@ class UserToolkitFactoryTest {
     @DisplayName("readOnlyHint=false 的 MCP 工具装配为写（触发审批）")
     @Test
     void givenReadOnlyHintFalse_whenBuild_thenToolWritable() {
-        Toolkit toolkit = buildToolkitWith(tool("write_note", annotations(false)), List.of());
+        Toolkit toolkit = buildToolkitWith(List.of(tool("write_note", annotations(false))), List.of());
         assertThat(toolkit.getTool("write_note")).isNotNull();
         assertThat(toolkit.getTool("write_note").isReadOnly()).isFalse();
     }
@@ -85,7 +85,19 @@ class UserToolkitFactoryTest {
     @DisplayName("被禁用的 MCP 工具不注册")
     @Test
     void givenDisabledTool_whenBuild_thenToolSkipped() {
-        Toolkit toolkit = buildToolkitWith(tool("trade_cal", null), List.of("trade_cal"));
+        Toolkit toolkit = buildToolkitWith(List.of(tool("trade_cal", null)), List.of("trade_cal"));
         assertThat(toolkit.getTool("trade_cal")).isNull();
+    }
+
+    @DisplayName("MCP 工具与内置同名：内置保留，MCP 版被跳过")
+    @Test
+    void givenMcpToolNamedAsBuiltin_whenBuild_thenBuiltinWinsAndMcpSkipped() {
+        // search_stock 与内置同名且无 readOnlyHint（若 MCP 覆盖则只读判定翻为 false）；mcp_extra 不重名作对照
+        Toolkit toolkit = buildToolkitWith(
+                List.of(tool("search_stock", null), tool("mcp_extra", annotations(true))), List.of());
+        assertThat(toolkit.getTool("mcp_extra")).as("不重名 MCP 工具正常注册（装配流程走通）").isNotNull();
+        assertThat(toolkit.getTool("search_stock").isReadOnly())
+                .as("同名时内置胜出（内置 search_stock 只读；被 MCP 覆盖则为写）")
+                .isTrue();
     }
 }

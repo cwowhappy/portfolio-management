@@ -29,7 +29,8 @@ public class UserToolkitFactory {
     public Toolkit build(Long userId) {
         Toolkit toolkit = new Toolkit();
         toolkit.registerTool(investTools);
-        Set<String> names = new HashSet<>();
+        // 预填内置工具名，防 MCP 同名工具静默覆盖内置（ToolRegistry.register 为 Map.put 后写覆盖）
+        Set<String> names = new HashSet<>(toolkit.getToolNames());
         for (McpProvider provider : repository.findEnabledProviders()) {
             McpUserConfig config = repository.findByUserIdAndProviderId(userId, provider.id()).orElse(null);
             if (config == null || !config.enabled()) continue;
