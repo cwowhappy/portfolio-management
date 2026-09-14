@@ -2,6 +2,7 @@ package com.portfolio.invest.agent;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.portfolio.invest.domain.mcp.AuthType;
@@ -99,5 +100,132 @@ class UserToolkitFactoryTest {
         assertThat(toolkit.getTool("search_stock").isReadOnly())
                 .as("同名时内置胜出（内置 search_stock 只读；被 MCP 覆盖则为写）")
                 .isTrue();
+    }
+
+    @DisplayName("用户配置缺失 → MCP 工具不注册，内置工具仍在")
+    @Test
+    void givenUserConfigMissing_whenBuild_thenMcpToolsSkippedAndBuiltinRemain() {
+        InvestTools investTools = mock(InvestTools.class);
+        McpConfigRepository repository = mock(McpConfigRepository.class);
+        McpClientPool clientPool = mock(McpClientPool.class);
+        McpClientWrapper client = mock(McpClientWrapper.class);
+
+        McpProvider provider = McpProvider.reconstitute(2L, "tushare", "Tushare", AuthType.BEARER, null, "token", true, null, NOW);
+        McpEndpoint endpoint = McpEndpoint.reconstitute(3L, 2L, null, "Tushare 数据", "https://api.tushare.pro/mcp/", true, NOW);
+
+        when(repository.findEnabledProviders()).thenReturn(List.of(provider));
+        when(repository.findByUserIdAndProviderId(1L, 2L)).thenReturn(Optional.empty());
+        // 端点与工具就绪：若未在「配置缺失」分支短路，trade_cal 将被注册（负断言因此有意义）
+        when(repository.findEnabledEndpointsByProviderId(2L)).thenReturn(List.of(endpoint));
+        when(clientPool.acquire(provider, endpoint, "token")).thenReturn(client);
+        when(client.listTools()).thenReturn(Mono.just(List.of(tool("trade_cal", annotations(true)))));
+
+        Toolkit toolkit = new UserToolkitFactory(investTools, repository, clientPool).build(1L);
+
+        assertThat(toolkit.getTool("trade_cal")).as("配置缺失 → MCP 工具不注册").isNull();
+        assertThat(toolkit.getTool("search_stock")).as("内置工具不受影响").isNotNull();
+        verifyNoInteractions(clientPool);
+    }
+
+    @DisplayName("用户配置停用 → MCP 工具不注册，内置工具仍在")
+    @Test
+    void givenUserConfigDisabled_whenBuild_thenMcpToolsSkipped() {
+        InvestTools investTools = mock(InvestTools.class);
+        McpConfigRepository repository = mock(McpConfigRepository.class);
+        McpClientPool clientPool = mock(McpClientPool.class);
+        McpClientWrapper client = mock(McpClientWrapper.class);
+
+        McpProvider provider = McpProvider.reconstitute(2L, "tushare", "Tushare", AuthType.BEARER, null, "token", true, null, NOW);
+        McpEndpoint endpoint = McpEndpoint.reconstitute(3L, 2L, null, "Tushare 数据", "https://api.tushare.pro/mcp/", true, NOW);
+        McpUserConfig config = McpUserConfig.reconstitute(9L, 1L, 2L, false, List.of(), 1, NOW, NOW);
+
+        when(repository.findEnabledProviders()).thenReturn(List.of(provider));
+        when(repository.findByUserIdAndProviderId(1L, 2L)).thenReturn(Optional.of(config));
+        // 端点与工具就绪：若未在「配置停用」分支短路，trade_cal 将被注册
+        when(repository.findEnabledEndpointsByProviderId(2L)).thenReturn(List.of(endpoint));
+        when(clientPool.acquire(provider, endpoint, "token")).thenReturn(client);
+        when(client.listTools()).thenReturn(Mono.just(List.of(tool("trade_cal", annotations(true)))));
+
+        Toolkit toolkit = new UserToolkitFactory(investTools, repository, clientPool).build(1L);
+
+        assertThat(toolkit.getTool("trade_cal")).as("配置停用 → MCP 工具不注册").isNull();
+        assertThat(toolkit.getTool("search_stock")).as("内置工具不受影响").isNotNull();
+        verifyNoInteractions(clientPool);
+    }
+
+    @DisplayName("provider 密钥缺失（需鉴权）→ 该 provider 工具全部跳过")
+    @Test
+    void givenAuthSecretMissing_whenBuild_thenToolsSkipped() {
+        InvestTools investTools = mock(InvestTools.class);
+        McpConfigRepository repository = mock(McpConfigRepository.class);
+        McpClientPool clientPool = mock(McpClientPool.class);
+        McpClientWrapper client = mock(McpClientWrapper.class);
+
+        // BEARER 但密钥为 null：配置存在且启用，证明跳过源于密钥守卫而非配置分支
+        McpProvider provider = McpProvider.reconstitute(2L, "tushare", "Tushare", AuthType.BEARER, null, null, true, null, NOW);
+        McpEndpoint endpoint = McpEndpoint.reconstitute(3L, 2L, null, "Tushare 数据", "https://api.tushare.pro/mcp/", true, NOW);
+        McpUserConfig config = McpUserConfig.reconstitute(9L, 1L, 2L, true, List.of(), 1, NOW, NOW);
+
+        when(repository.findEnabledProviders()).thenReturn(List.of(provider));
+        when(repository.findByUserIdAndProviderId(1L, 2L)).thenReturn(Optional.of(config));
+        // 端点与工具就绪（token 将为 null）：若未在「密钥缺失」分支短路，trade_cal 将被注册
+        when(repository.findEnabledEndpointsByProviderId(2L)).thenReturn(List.of(endpoint));
+        when(clientPool.acquire(provider, endpoint, null)).thenReturn(client);
+        when(client.listTools()).thenReturn(Mono.just(List.of(tool("trade_cal", annotations(true)))));
+
+        Toolkit toolkit = new UserToolkitFactory(investTools, repository, clientPool).build(1L);
+
+        assertThat(toolkit.getTool("trade_cal")).as("密钥缺失 → MCP 工具不注册").isNull();
+        assertThat(toolkit.getTool("search_stock")).as("内置工具不受影响").isNotNull();
+        verifyNoInteractions(clientPool);
+    }
+
+    @DisplayName("无启用端点 → 不获取客户端，内置工具仍在")
+    @Test
+    void givenEndpointDisabled_whenBuild_thenNoAcquire() {
+        InvestTools investTools = mock(InvestTools.class);
+        McpConfigRepository repository = mock(McpConfigRepository.class);
+        McpClientPool clientPool = mock(McpClientPool.class);
+
+        McpProvider provider = McpProvider.reconstitute(2L, "tushare", "Tushare", AuthType.BEARER, null, "token", true, null, NOW);
+        McpUserConfig config = McpUserConfig.reconstitute(9L, 1L, 2L, true, List.of(), 1, NOW, NOW);
+
+        when(repository.findEnabledProviders()).thenReturn(List.of(provider));
+        when(repository.findByUserIdAndProviderId(1L, 2L)).thenReturn(Optional.of(config));
+        when(repository.findEnabledEndpointsByProviderId(2L)).thenReturn(List.of());
+
+        Toolkit toolkit = new UserToolkitFactory(investTools, repository, clientPool).build(1L);
+
+        assertThat(toolkit.getTool("search_stock")).as("内置工具不受影响").isNotNull();
+        verifyNoInteractions(clientPool);
+    }
+
+    @DisplayName("单端点 listTools 失败 → 该端点跳过，其余端点照常注册")
+    @Test
+    void givenOneEndpointListToolsFails_whenBuild_thenThatEndpointSkippedAndOthersRegistered() {
+        InvestTools investTools = mock(InvestTools.class);
+        McpConfigRepository repository = mock(McpConfigRepository.class);
+        McpClientPool clientPool = mock(McpClientPool.class);
+        McpClientWrapper clientA = mock(McpClientWrapper.class);
+        McpClientWrapper clientB = mock(McpClientWrapper.class);
+
+        McpProvider provider = McpProvider.reconstitute(2L, "tushare", "Tushare", AuthType.BEARER, null, "token", true, null, NOW);
+        McpEndpoint endpointA = McpEndpoint.reconstitute(3L, 2L, null, "Tushare 主端点", "https://a.tushare.pro/mcp/", true, NOW);
+        McpEndpoint endpointB = McpEndpoint.reconstitute(4L, 2L, null, "Tushare 备端点", "https://b.tushare.pro/mcp/", true, NOW);
+        McpUserConfig config = McpUserConfig.reconstitute(9L, 1L, 2L, true, List.of(), 1, NOW, NOW);
+
+        when(repository.findEnabledProviders()).thenReturn(List.of(provider));
+        when(repository.findByUserIdAndProviderId(1L, 2L)).thenReturn(Optional.of(config));
+        when(repository.findEnabledEndpointsByProviderId(2L)).thenReturn(List.of(endpointA, endpointB));
+        when(clientPool.acquire(provider, endpointA, "token")).thenReturn(clientA);
+        when(clientPool.acquire(provider, endpointB, "token")).thenReturn(clientB);
+        when(clientA.listTools()).thenReturn(Mono.error(new IllegalStateException("端点 A 不可用")));
+        when(clientB.listTools()).thenReturn(Mono.just(List.of(tool("b_tool", annotations(true)))));
+        when(clientB.getName()).thenReturn("tushare-b");
+
+        Toolkit toolkit = new UserToolkitFactory(investTools, repository, clientPool).build(1L);
+
+        assertThat(toolkit.getTool("b_tool")).as("正常端点 B 的工具照常注册（单点失败不拖垮装配）").isNotNull();
+        assertThat(toolkit.getTool("search_stock")).as("内置工具不受影响").isNotNull();
     }
 }
