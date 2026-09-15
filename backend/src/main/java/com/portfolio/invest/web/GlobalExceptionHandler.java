@@ -98,6 +98,14 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(status).body(new ApiError(e.code(), e.getMessage()));
     }
 
+    @ExceptionHandler(com.portfolio.invest.domain.analytics.AnalyticsException.class)
+    public ResponseEntity<ApiError> analytics(com.portfolio.invest.domain.analytics.AnalyticsException e) {
+        HttpStatus status = switch (e.code()) {
+            default -> HttpStatus.BAD_REQUEST;
+        };
+        return ResponseEntity.status(status).body(new ApiError(e.code(), e.getMessage()));
+    }
+
     @ExceptionHandler(com.portfolio.invest.domain.screening.ScreeningException.class)
     public ResponseEntity<ApiError> screening(com.portfolio.invest.domain.screening.ScreeningException e) {
         HttpStatus status = switch (e.code()) {
