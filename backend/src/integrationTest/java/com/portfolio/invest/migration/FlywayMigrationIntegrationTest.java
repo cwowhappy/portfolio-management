@@ -30,7 +30,7 @@ class FlywayMigrationIntegrationTest extends PostgresTestSupport {
         List<String> versions = jdbcTemplate.queryForList(
                 "SELECT version FROM flyway_schema_history WHERE type = 'SQL' ORDER BY installed_rank",
                 String.class);
-        assertThat(versions).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12");
+        assertThat(versions).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13");
 
         Integer failed = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM flyway_schema_history WHERE success = false", Integer.class);
@@ -87,6 +87,21 @@ class FlywayMigrationIntegrationTest extends PostgresTestSupport {
         assertColumn("shenwan_industry_mapping", "stock_code", "character varying", false);
         assertColumn("shenwan_industry_mapping", "industry_code", "character varying", false);
         assertUniqueColumns("shenwan_industry_mapping", "stock_code");
+    }
+
+    @DisplayName("收益分析收盘价契约（V13）")
+    @Test
+    void whenSchemaMigrated_thenAnalyticsCloseTablesMatchContract() {
+        // V13①：个股估值日快照补收盘价列（可空，老行 NULL 由读侧 forward-fill）
+        assertColumn("stock_valuation_daily", "close", "numeric", true, 12, 4);
+
+        // V13②：指数收盘价历史表
+        assertPrimaryKey("index_close_history", "id");
+        assertColumn("index_close_history", "trading_day", "date", false);
+        assertColumn("index_close_history", "index_code", "character varying", false);
+        assertColumn("index_close_history", "index_name", "character varying", false);
+        assertColumn("index_close_history", "close", "numeric", false, 12, 4);
+        assertUniqueColumns("index_close_history", "trading_day,index_code");
     }
 
     private void assertColumn(String table, String column, String dataType, boolean nullable) {
