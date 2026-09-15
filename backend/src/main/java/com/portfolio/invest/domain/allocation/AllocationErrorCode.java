@@ -6,4 +6,5 @@ public final class AllocationErrorCode {
     public static final String NOT_FOUND = "NOT_FOUND";
     public static final String INVALID_WEIGHTS = "INVALID_WEIGHTS";
     public static final String INVALID_INPUT = "INVALID_INPUT";
+    public static final String INVALID_ANSWERS = "INVALID_ANSWERS";
 }
