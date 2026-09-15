@@ -217,10 +217,11 @@ public final class EvalRunner {
                     readResource("rubric/judge-prompt-template.md"),
                     Map.of("question", String.join("\n", question.turns()),
                             "answer", transcript.assistantText(),
-                            // 工具入参 + 返回摘要（judge 数值核对的唯一事实源；返回截断防图表全量刷屏）
+                            // 工具入参 + 返回摘要（judge 数值核对的唯一事实源；ChartSpec 由 forJudge
+                            // 剥离——emit 的全量 spec 模型看不见，非图表结果截 2000 防刷屏）
                             "tools", transcript.toolCalls().isEmpty() ? "（无工具调用）"
                                     : String.join("\n", transcript.toolCalls().stream()
-                                            .map(c -> c.forJudge(500)).toList())));
+                                            .map(c -> c.forJudge(2000)).toList())));
 
             boolean turnFailed = turns.stream().anyMatch(AguiDriver.SseTurn::failed);
             boolean dimsFail = dimensions.stream()

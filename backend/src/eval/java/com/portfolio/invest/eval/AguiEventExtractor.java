@@ -1,6 +1,8 @@
 package com.portfolio.invest.eval;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -14,6 +16,8 @@ import java.util.Map;
  */
 public final class AguiEventExtractor {
 
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
     private AguiEventExtractor() {}
 
     /** 单次工具调用观察：名字 + 全量入参文本（args delta 拼接）+ 结果文本（judge 数值核对的事实源）。 */
@@ -24,9 +28,27 @@ public final class AguiEventExtractor {
             return toolName + "(" + argsText + ")";
         }
 
-        /** judge 提示词用：调用与返回摘要（返回截断，图表 spec 等大段不全文透传）。 */
+        /**
+         * judge 提示词用：调用与返回摘要。emit 的全量 ChartSpec 从不进 LLM（InvestTools 双通道，
+         * LLM 只见文本摘要）——judge 材料对齐模型实际所见，spec 整体剥离、以占位符示意已出图
+         * （附 type/title 供 judge 判断「如图所示」类表述非虚构）；非图表结果截断防刷屏。
+         */
         public String forJudge(int maxResultChars) {
             String result = resultText == null ? "" : resultText;
+            if (result.contains("\"specVersion\"")) {
+                String type = null;
+                String title = null;
+                try {
+                    JsonNode spec = MAPPER.readTree(result);
+                    type = spec.path("type").asText(null);
+                    title = spec.path("title").asText(null);
+                } catch (IOException ignored) {
+                    // 解析失败退化为不带 type/title 的占位符
+                }
+                return signature() + " => [ChartSpec 已剥离：本调用已向前端输出图表"
+                        + (type == null ? "" : "（type=" + type + (title == null ? "" : "，" + title) + "）")
+                        + "，LLM 实际只见文本摘要]";
+            }
             String truncated = result.length() <= maxResultChars ? result : result.substring(0, maxResultChars) + "…";
             return signature() + " => " + truncated;
         }

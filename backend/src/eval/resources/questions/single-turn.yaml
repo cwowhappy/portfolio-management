@@ -12,7 +12,8 @@
     - 平安银行今天股价多少钱？
   expect:
     toolSequence: ["search_stock", "get_quote"]
-    toolSequenceMatch: exact
+    # prefix：评估点是「先 search 后查」的顺序，良性补充调用不该 FAIL（Task 15 修复）
+    toolSequenceMatch: prefix
     entityAlignment: {tool: "search_stock", paramContains: 平安银行}
     chartEvent: false
     disclaimer: true
@@ -47,7 +48,8 @@
     - 宁德时代现在什么价格？今天涨了多少？
   expect:
     toolSequence: ["search_stock", "get_quote"]
-    toolSequenceMatch: exact
+    # prefix：同 st-quote-pingan（Task 15 修复）
+    toolSequenceMatch: prefix
     entityAlignment: {tool: "search_stock", paramContains: 宁德时代}
     chartEvent: false
     disclaimer: true
@@ -82,7 +84,8 @@
     - 茅台今天的开盘价、最高价、最低价分别是多少？现在多少钱？
   expect:
     toolSequence: ["search_stock", "get_quote"]
-    toolSequenceMatch: exact
+    # prefix：同 st-quote-pingan（Task 15 修复）
+    toolSequenceMatch: prefix
     entityAlignment: {tool: "search_stock", paramContains: 茅台}
     chartEvent: false
     disclaimer: true
@@ -425,7 +428,8 @@
     - 现在A股整体估值水平怎么样？贵不贵？
   expect:
     toolSequence: ["get_valuation"]
-    toolSequenceMatch: exact
+    # prefix：评估点是「先查估值再答」，查完补充大盘/搜索等良性调用不该 FAIL（Task 15 修复）
+    toolSequenceMatch: prefix
     chartEvent: false
     disclaimer: true
     refusal: false
