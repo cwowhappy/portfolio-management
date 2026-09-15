@@ -16,8 +16,10 @@ import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
  * 题库装载：classpath {@code questions/*.yaml}（eval 源集资源目录），YAML 数组 → {@link EvalQuestion}。
  *
  * <p>schema 校验（装载即失败，fail-fast）：id 非空且全库唯一、category/mode 取值合法、turns
- * 非空、judge 引用的 rubric 资源存在、mode=stub 时至少一个 expect 维度；dataFidelity 锚点须与
- * 桩数据自洽（锚点串必须出现在桩数据 JSON 序列化里——防"期望 1700.5、桩里 1700.50"这类写错题）。
+ * 非空、judge 引用的 rubric 资源存在、expect 须至少声明一个断言维度（防全维 SKIP 即 PASS）；
+ * memoryFollowUp 的 turnIndex 须为 2..turns 数（多轮才谈记忆承接）、interrupt.toolName 必填且
+ * kind 仅支持 permission_confirm；dataFidelity 锚点须与桩数据自洽（锚点串必须出现在桩数据
+ * JSON 序列化里——防"期望 1700.5、桩里 1700.50"这类写错题）。
  */
 public final class QuestionLoader {
 
@@ -68,9 +70,39 @@ public final class QuestionLoader {
         require(q.judge() != null && !q.judge().isBlank(), file, q.id() + ": judge 引用缺失");
         require(QuestionLoader.class.getClassLoader().getResource("rubric/" + q.judge() + ".md") != null,
                 file, q.id() + ": judge 引用的 rubric 不存在: rubric/" + q.judge() + ".md");
-        require(!q.isStubMode() || q.expect() != null, file,
-                q.id() + ": mode=stub 的题必须声明 expect（至少一个维度）");
+        // 非全空校验（不限 stub：real 轨题也应带着结构断言进入题库）
+        require(q.expect() != null && !q.expect().declaredDimensions().isEmpty(), file,
+                q.id() + ": expect 须至少声明一个断言维度（防全维 SKIP 即 PASS）");
+        validateMemoryFollowUp(q, file);
+        validateInterrupt(q, file);
         validateFidelityAnchors(q, file);
+    }
+
+    /** 多轮记忆槽位：仅多轮题可声明；turnIndex 1 起、须 ≥ 2 且不越界；锚点至少其一。 */
+    private static void validateMemoryFollowUp(EvalQuestion q, String file) {
+        EvalQuestion.MemoryFollowUp followUp = q.expect().memoryFollowUp();
+        if (followUp == null) return;
+        require(q.turns().size() >= 2, file,
+                q.id() + ": memoryFollowUp 仅多轮题（turns ≥ 2）可声明");
+        require(followUp.turnIndex() != null && followUp.turnIndex() >= 2
+                        && followUp.turnIndex() <= q.turns().size(), file,
+                q.id() + ": memoryFollowUp.turnIndex 须在 2.." + q.turns().size()
+                        + "（1 起；第二轮及以后才谈承接）");
+        require(!(isBlank(followUp.toolContains()) && isBlank(followUp.paramContains())), file,
+                q.id() + ": memoryFollowUp 须声明 toolContains / paramContains 之一（或两者）");
+    }
+
+    /** HITL 槽位：toolName 必填（断言的目标写工具）；kind 当前仅 permission_confirm 一种。 */
+    private static void validateInterrupt(EvalQuestion q, String file) {
+        EvalQuestion.Interrupt interrupt = q.expect().interrupt();
+        if (interrupt == null) return;
+        require(!isBlank(interrupt.toolName()), file, q.id() + ": interrupt.toolName 缺失");
+        require(isBlank(interrupt.kind()) || "permission_confirm".equals(interrupt.kind()), file,
+                q.id() + ": interrupt.kind 当前仅支持 permission_confirm");
+    }
+
+    private static boolean isBlank(String s) {
+        return s == null || s.isBlank();
     }
 
     /** dataFidelity 锚点须能在桩数据 JSON 里找到（仅 stub 模式且有锚点时校验）。 */

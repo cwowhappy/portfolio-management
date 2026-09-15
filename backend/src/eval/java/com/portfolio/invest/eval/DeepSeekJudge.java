@@ -42,7 +42,7 @@ public final class DeepSeekJudge {
 
     /**
      * 评一次：rubricText=rubric 文件内容，templateText=judge 提示词模板，
-     * substitutions=模板占位符（{{question}}/{{answer}}/{{tools}}/{{turns}}）。
+     * substitutions=模板占位符（{{question}}/{{answer}}/{{tools}}，多轮题的 question 为逐轮拼接）。
      */
     public Verdict judge(String rubricId, String rubricText, String templateText,
                          java.util.Map<String, String> substitutions) {
@@ -74,10 +74,8 @@ public final class DeepSeekJudge {
             HttpResponse<String> response = http.sendAsync(request, HttpResponse.BodyHandlers.ofString())
                     .get(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS);
             if (response.statusCode() != 200) {
-                String snippet = response.body() == null ? "" : response.body();
                 return new Verdict(rubricId, false, 0, "", model, null,
-                        "judge HTTP " + response.statusCode() + ": "
-                                + snippet.replaceAll("\\s+", " ").substring(0, Math.min(300, snippet.length())));
+                        "judge HTTP " + response.statusCode() + ": " + snippet(response.body()));
             }
             JsonNode json = MAPPER.readTree(response.body());
             String respondedModel = json.path("model").asText(null);
@@ -87,6 +85,41 @@ public final class DeepSeekJudge {
             return new Verdict(rubricId, false, 0, "", model, null,
                     e.getClass().getSimpleName() + ": " + e.getMessage());
         }
+    }
+
+    /**
+     * 运行前探活（方案批次 4 concerns ③）：同客户端配置对端点发一次最小 chat（总限 10s，
+     * max_tokens=1 只验通不通）。返回 null=端点可用；非空=失败原因——runner 收到非空即打印
+     * 指引并以退出码 1 结束（同缺 key 语义：框架无法诊断时不白起 Testcontainers + 全上下文）。
+     */
+    public String probe() {
+        try {
+            ObjectNode body = MAPPER.createObjectNode();
+            body.put("model", model);
+            body.put("max_tokens", 1);
+            body.putArray("messages")
+                    .addObject().put("role", "user").put("content", "ping");
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(baseUrl + "/chat/completions"))
+                    .timeout(Duration.ofSeconds(10))
+                    .header("Authorization", "Bearer " + apiKey)
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(MAPPER.writeValueAsString(body)))
+                    .build();
+            HttpResponse<String> response = http.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                    .get(10, java.util.concurrent.TimeUnit.SECONDS);
+            if (response.statusCode() == 200) return null;
+            return "HTTP " + response.statusCode() + ": " + snippet(response.body());
+        } catch (Exception e) {
+            return e.getClass().getSimpleName() + ": " + e.getMessage();
+        }
+    }
+
+    /** 响应体片段（空白压平、截 300 字），诊断输出用。 */
+    private static String snippet(String body) {
+        String text = body == null ? "" : body;
+        String flat = text.replaceAll("\\s+", " ");
+        return flat.substring(0, Math.min(300, flat.length()));
     }
 
     /** 宽松解析：容忍代码围栏/前后缀文本，截取首个 {...} 块。 */

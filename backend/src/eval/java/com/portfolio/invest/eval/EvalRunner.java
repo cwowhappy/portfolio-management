@@ -21,25 +21,28 @@ import org.springframework.context.ConfigurableApplicationContext;
  *
  * <p>两模式：stub（默认，本批次实现）JVM 内 MockMvc 驱动 /agui/run；real 只留口子
  * （--real 本期打印未实现提示后正常退出）。报告恒生成、退出码恒 0（诊断不挂门槛；
- * 仅 DEEPSEEK_API_KEY 缺失与题库校验失败这类框架性错误退出 1）。顺序逐题、无并发、
- * 每题独立注册用户 + 独立 threadId（state 干净），单轮异步超时默认 120s（LLM 延迟）。
+ * 仅 DEEPSEEK_API_KEY 缺失、端点探活失败与题库校验失败这类框架性错误退出 1）。顺序逐题、
+ * 无并发、每题独立注册用户 + 独立 threadId（state 干净），单轮异步超时默认 120s（LLM 延迟）。
+ * mcp 类题自动懒启动内嵌桩 MCP server 并为该题用户 seed 扩展源配置（{@link EvalMcpSupport}）。
  */
 public final class EvalRunner {
 
-    /** 命令行参数（--real / --compare=&lt;path&gt; / --timeout-ms=&lt;n&gt;）。 */
-    record Options(boolean real, Path compare, long timeoutMs) {
+    /** 命令行参数（--list / --real / --compare=&lt;path&gt; / --timeout-ms=&lt;n&gt;）。 */
+    record Options(boolean list, boolean real, Path compare, long timeoutMs) {
 
         static Options parse(String[] args) {
+            boolean list = false;
             boolean real = false;
             Path compare = null;
             long timeoutMs = 120_000;
             for (String arg : args) {
-                if ("--real".equals(arg)) real = true;
+                if ("--list".equals(arg)) list = true;
+                else if ("--real".equals(arg)) real = true;
                 else if (arg.startsWith("--compare=")) compare = Path.of(arg.substring("--compare=".length()));
                 else if (arg.startsWith("--timeout-ms=")) timeoutMs = Long.parseLong(arg.substring("--timeout-ms=".length()));
-                else throw new IllegalArgumentException("未知参数: " + arg + "（支持 --real / --compare=<path> / --timeout-ms=<n>）");
+                else throw new IllegalArgumentException("未知参数: " + arg + "（支持 --list / --real / --compare=<path> / --timeout-ms=<n>）");
             }
-            return new Options(real, compare, timeoutMs);
+            return new Options(list, real, compare, timeoutMs);
         }
     }
 
@@ -49,6 +52,21 @@ public final class EvalRunner {
     }
 
     private int run(Options options) {
+        // —— --list：只装载校验题库并打印清单（干跑，不起 LLM、不连任何外部端点） ——
+        if (options.list()) {
+            List<EvalQuestion> questions = QuestionLoader.loadFromClasspath();
+            System.out.printf("%-34s %-12s %-6s %-5s %-28s %s%n",
+                    "id", "category", "mode", "turns", "judge", "expect 维度");
+            for (EvalQuestion q : questions) {
+                System.out.printf("%-34s %-12s %-6s %-5d %-28s %s%n",
+                        q.id(), q.category(), q.mode(), q.turns().size(), q.judge(),
+                        String.join(",", q.expect().declaredDimensions()));
+            }
+            System.out.printf("[eval] --list 干跑通过：装载 %d 题，schema 校验全部通过（未起 LLM）%n",
+                    questions.size());
+            return 0;
+        }
+
         // —— 环境解析：DEEPSEEK_API_KEY 进程环境变量优先，缺失回退仓库根 .env（指引退出 1） ——
         Path repoRoot = EnvSupport.repoRoot();
         Map<String, String> dotEnv = EnvSupport.loadDotEnv(repoRoot);
@@ -79,6 +97,17 @@ public final class EvalRunner {
         // —— 题库装载（schema 校验 fail-fast） ——
         List<EvalQuestion> questions = QuestionLoader.loadFromClasspath();
         System.out.printf("[eval] 题库装载 %d 题；模式=stub；被评模型=deepseek/%s%n", questions.size(), model);
+
+        // —— 运行前探活（同 judge 客户端，10s）：拥塞期白起 Testcontainers + 全上下文不值得 ——
+        DeepSeekJudge judge = new DeepSeekJudge(baseUrl, model, apiKey, options.timeoutMs());
+        String probeError = judge.probe();
+        if (probeError != null) {
+            System.err.println("模型端点不可用/拥塞（" + baseUrl + "，模型 " + model + "）: " + probeError);
+            System.err.println("可 DEEPSEEK_MODEL=<其他模型> 临时换模型（make eval-agent DEEPSEEK_MODEL=...），"
+                    + "或稍后重试——框架无法诊断时不启动评估上下文。");
+            return 1;
+        }
+        System.out.printf("[eval] 端点探活通过：%s（模型 %s）%n", baseUrl, model);
 
         // —— 上下文启动：Testcontainers PG + 完整生产装配 + 行情桩 + 真实 DeepSeek ——
         // 覆盖项必须走命令行参数（优先级高于 application.yml）；SpringApplicationBuilder.properties()
@@ -117,7 +146,6 @@ public final class EvalRunner {
 
             AguiDriver driver = new AguiDriver((org.springframework.web.context.WebApplicationContext) context,
                     context.getBean(UserRepository.class));
-            DeepSeekJudge judge = new DeepSeekJudge(baseUrl, model, apiKey, options.timeoutMs());
 
             List<QuestionOutcome> outcomes = new ArrayList<>();
             String judgeRespondedModel = null;
@@ -129,7 +157,7 @@ public final class EvalRunner {
                     System.out.printf("[eval] %-32s SKIPPED（real 轨预留）%n", question.id());
                     continue;
                 }
-                QuestionOutcome outcome = runOne(question, driver, stub, judge, options);
+                QuestionOutcome outcome = runOne(question, driver, stub, judge, options, context);
                 outcomes.add(outcome);
                 if (outcome.judge() != null && outcome.judge().respondedModel() != null) {
                     judgeRespondedModel = outcome.judge().respondedModel();
@@ -148,14 +176,19 @@ public final class EvalRunner {
             }
             System.out.printf("[eval] 报告已生成：%s%n[eval]           %s%n", written.json(), written.md());
         } finally {
+            EvalMcpSupport.shutdown(); // mcp 题才启动过；幂等，未启动时为 no-op
             context.close();
         }
         return 0;
     }
 
-    /** 单题执行：桩注入 → 独立用户/threadId → 逐轮 SSE → 断言器（结构分）→ judge（主观细项）。 */
+    /**
+     * 单题执行：桩注入 → 独立用户/threadId →（mcp 题为该用户 seed 扩展源）→ 逐轮 SSE →
+     * 断言器（结构分）→ judge（主观细项）。
+     */
     private QuestionOutcome runOne(EvalQuestion question, AguiDriver driver, EvalStubMarketService stub,
-                                   DeepSeekJudge judge, Options options) {
+                                   DeepSeekJudge judge, Options options,
+                                   ConfigurableApplicationContext context) {
         long start = System.currentTimeMillis();
         String safeId = question.id().replaceAll("[^a-zA-Z0-9_-]", "_").toLowerCase(Locale.ROOT);
         String suffix = UUID.randomUUID().toString().substring(0, 8);
@@ -164,6 +197,13 @@ public final class EvalRunner {
         try {
             stub.inject(question.stubData());
             var session = driver.registerApproveAndLogin(username);
+            if ("mcp".equals(question.category())) {
+                // UserToolkitFactory 每次运行按当前配置现查现装配——run 前 seed 即生效
+                Long userId = context.getBean(UserRepository.class)
+                        .findByUsername(username).orElseThrow().id();
+                EvalMcpSupport.enableForUser(context.getBean(org.springframework.jdbc.core.JdbcTemplate.class),
+                        userId);
+            }
             List<AguiDriver.SseTurn> turns = new ArrayList<>();
             for (int i = 0; i < question.turns().size(); i++) {
                 turns.add(driver.run(session, threadId, threadId + "-turn-" + (i + 1),
