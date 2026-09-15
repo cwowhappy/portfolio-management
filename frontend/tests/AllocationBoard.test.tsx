@@ -15,6 +15,9 @@ vi.mock("@/lib/allocationApi", async () => {
     updatePlan: vi.fn(),
     activatePlan: vi.fn(),
     deletePlan: vi.fn(),
+    fetchQuestionnaire: vi.fn(),
+    fetchAssessment: vi.fn(),
+    submitAssessment: vi.fn(),
   };
 });
 
@@ -29,6 +32,7 @@ beforeEach(() => {
   api.fetchTemplates.mockResolvedValue([]);
   api.fetchPlans.mockResolvedValue([plan(1, "平衡"), plan(2, "激进")]);
   api.fetchDeviation.mockResolvedValue({ slices: [] });
+  api.fetchAssessment.mockResolvedValue(undefined);
   api.activatePlan.mockResolvedValue(plan(1, "平衡"));
 });
 
