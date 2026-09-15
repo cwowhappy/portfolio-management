@@ -161,10 +161,11 @@ public final class ReportWriter {
 
     private ObjectNode compareNode(List<QuestionOutcome> outcomes, Path previous) {
         ObjectNode compare = MAPPER.createObjectNode();
-        compare.put("previousReport", previous.toString());
+        Path resolved = resolveComparePath(previous);
+        compare.put("previousReport", resolved.toString());
         JsonNode prev;
         try {
-            prev = MAPPER.readTree(previous.toFile());
+            prev = MAPPER.readTree(resolved.toFile());
         } catch (IOException e) {
             compare.put("error", "上次报告读取失败: " + e.getMessage());
             return compare;
@@ -209,6 +210,18 @@ public final class ReportWriter {
         return compare;
     }
 
+    /**
+     * {@code --compare} 路径解析：先按进程 cwd（Gradle JavaExec 固定为 backend/）取，miss 时
+     * 退回仓库根（{@link EnvSupport#repoRoot()}）再试一次——仓库根相对路径与绝对路径均可
+     * （绝对路径 resolve 时原样返回，天然只走第一支）。两处皆 miss 时保留原样交 readTree
+     * 报错，错误信息进 compare.error。
+     */
+    private static Path resolveComparePath(Path previous) {
+        if (Files.isRegularFile(previous)) return previous;
+        Path fromRoot = EnvSupport.repoRoot().resolve(previous);
+        return Files.isRegularFile(fromRoot) ? fromRoot : previous;
+    }
+
     private void addChange(ArrayNode changes, String id, String before, String after, String reason) {
         ObjectNode c = changes.addObject();
         c.put("id", id);
@@ -241,7 +254,9 @@ public final class ReportWriter {
                     .filter(d -> d.status() == AssertionEngine.Status.PASS).count();
             long evaluated = o.dimensions().stream()
                     .filter(d -> d.status() != AssertionEngine.Status.SKIPPED).count();
+            // judge 自身失败（error != null）渲染 ERR——score=0 是无结论占位，渲染 "0 ✗" 会误读成 judge 判了 fail
             String judgeCell = o.judge() == null ? "-"
+                    : o.judge().error() != null ? "ERR"
                     : o.judge().score() + (o.judge().pass() ? " ✓" : " ✗");
             String tokenCell = o.tokenUsage() != null && o.tokenUsage().outputTokens() != null
                     ? String.valueOf(o.tokenUsage().outputTokens()) : "-";

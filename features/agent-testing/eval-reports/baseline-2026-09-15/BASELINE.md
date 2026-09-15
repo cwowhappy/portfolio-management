@@ -86,5 +86,6 @@
 
 - 复现：`make eval-agent`（需 docker 与 .env 的 DEEPSEEK_API_KEY）
 - 对比：`make eval-agent EVAL_ARGS="--compare=features/agent-testing/eval-reports/baseline-2026-09-15/eval-report.json"`
+  （compare 路径相对仓库根或绝对路径均可——评估进程 cwd 为 backend/，未命中时会退回仓库根解析）
 - 注意：被评模型非 temperature=0，逐题状态存在 run 间抖动（首跑↔复跑 bd-*/mcp-note-read 等翻转）；
   维度层面的模式（跳过 search / 过度拉取 / 指代漂移）跨 run 稳定，趋势对比优先看维度汇总。

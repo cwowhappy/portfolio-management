@@ -204,7 +204,9 @@ tasks.named('test') {
 }
 
 tasks.named('check') {
-    dependsOn jacocoTestCoverageVerification, jacocoAggregatedReport
+    // eval 源集仅以编译防漂断挂进 check（断言器/题库/loader 与主线同步演化，改坏即编译失败）；
+    // 评估本身仍只经 evalAgent 手动跑——不入门禁、不跑 LLM，「评估不进 CI 门禁」的定位不变
+    dependsOn jacocoTestCoverageVerification, jacocoAggregatedReport, 'compileEvalJava'
 }
 
 // PIT 变异测试配置：非阻塞手动诊断，不设覆盖率/变异率门槛、不挂 check；

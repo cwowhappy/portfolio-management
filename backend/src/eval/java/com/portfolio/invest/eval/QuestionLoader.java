@@ -16,7 +16,8 @@ import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
  * 题库装载：classpath {@code questions/*.yaml}（eval 源集资源目录），YAML 数组 → {@link EvalQuestion}。
  *
  * <p>schema 校验（装载即失败，fail-fast）：id 非空且全库唯一、category/mode 取值合法、turns
- * 非空、judge 引用的 rubric 资源存在、expect 须至少声明一个断言维度（防全维 SKIP 即 PASS）；
+ * 非空、judge 引用的 rubric 资源存在、expect 须至少声明一个断言维度（防全维 SKIP 即 PASS）、
+ * toolSequenceMatch 须为 exact/prefix（防 typo 被断言引擎静默按 exact 断言）；
  * memoryFollowUp 的 turnIndex 须为 2..turns 数（多轮才谈记忆承接）、interrupt.toolName 必填且
  * kind 仅支持 permission_confirm；dataFidelity 锚点须与桩数据自洽（锚点串必须出现在桩数据
  * JSON 序列化里——防"期望 1700.5、桩里 1700.50"这类写错题）。
@@ -73,6 +74,10 @@ public final class QuestionLoader {
         // 非全空校验（不限 stub：real 轨题也应带着结构断言进入题库）
         require(q.expect() != null && !q.expect().declaredDimensions().isEmpty(), file,
                 q.id() + ": expect 须至少声明一个断言维度（防全维 SKIP 即 PASS）");
+        // 词表校验：断言引擎把非 "prefix" 一律按 exact 断言，typo（如 "prefx"）会静默变 exact 产假 FAIL
+        String match = q.expect().toolSequenceMatch();
+        require(isBlank(match) || "exact".equalsIgnoreCase(match) || "prefix".equalsIgnoreCase(match),
+                file, q.id() + ": toolSequenceMatch 仅支持 exact/prefix（当前值: \"" + match + "\"）");
         validateMemoryFollowUp(q, file);
         validateInterrupt(q, file);
         validateFidelityAnchors(q, file);
