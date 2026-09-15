@@ -104,6 +104,32 @@ class IndexValuationSource(Source):
         return pd.concat(frames, ignore_index=True)
 
 
+INDEX_CLOSE_CODES = {"000300": "沪深300", "000905": "中证500", "930950": "中证偏股基金指数"}
+
+_INDEX_CLOSE_TS = {"000300": "000300.SH", "000905": "000905.SH", "930950": "930950.CSI"}
+
+
+class IndexCloseSource(Source):
+    """基准指数收盘价历史：tushare index_daily 区间拉取（supports_range=True，供 backfill 复用）。"""
+
+    supports_range = True
+
+    def __init__(self, source_id, pro_factory):
+        self.source_id = source_id
+        self.pro_factory = pro_factory
+
+    def fetch(self, params):
+        pro = self.pro_factory()
+        start, end = _date_param(params, "start"), _date_param(params, "end")
+        frames = []
+        for code, name in INDEX_CLOSE_CODES.items():
+            df = pro.index_daily(ts_code=_INDEX_CLOSE_TS[code], start_date=start, end_date=end)
+            df = df.rename(columns={"trade_date": "trading_day"})
+            df["index_code"], df["index_name"] = code, name
+            frames.append(df[["trading_day", "index_code", "index_name", "close"]])
+        return pd.concat(frames, ignore_index=True)
+
+
 class IndustryUniverseSource(Source):
     """全A估值快照 + 申万行业映射的 JOIN 源。
 

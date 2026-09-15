@@ -219,3 +219,27 @@ def test_make_index_dividend_fetch_swallows_api_exception(mocker):
 
     fetch = make_index_dividend_fetch(pro_factory=boom_pro, default=0.0)
     assert fetch("000300", "20260801", "20260828") == 0.0
+
+
+# ---------------------------------------------------------------- MS-07 基准指数收盘价 index_close
+
+
+from collector.sources.plugins import IndexCloseSource
+
+
+def test_index_close_fetches_three_benchmarks(mocker):
+    pro = mocker.MagicMock()
+    pro.index_daily.return_value = pd.DataFrame({"trade_date": ["20260915", "20260914"], "close": [3900.12, 3890.5]})
+    src = IndexCloseSource("index_close", pro_factory=lambda: pro)
+    df = src.fetch({"start": "2026-09-01", "end": "2026-09-16"})
+
+    assert pro.index_daily.call_count == 3  # 三只基准各一次
+    pro.index_daily.assert_any_call(ts_code="000300.SH", start_date="20260901", end_date="20260916")
+    pro.index_daily.assert_any_call(ts_code="930950.CSI", start_date="20260901", end_date="20260916")
+    assert list(df.columns) == ["trading_day", "index_code", "index_name", "close"]
+    assert set(df["index_code"]) == {"000300", "000905", "930950"}
+    assert df[df["index_code"] == "000300"]["close"].tolist() == [3900.12, 3890.5]
+
+
+def test_index_close_supports_range_for_backfill():
+    assert IndexCloseSource.supports_range is True
