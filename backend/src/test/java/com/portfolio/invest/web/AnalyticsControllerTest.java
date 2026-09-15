@@ -66,7 +66,7 @@ class AnalyticsControllerTest {
     @Test
     void givenOverviewData_whenGetOverview_thenReturn200WithPayload() throws Exception {
         OverviewView view = new OverviewView(new BigDecimal("102500.0000"), new BigDecimal("0.0250"),
-                new BigDecimal("0.1236"), null, 366L, Map.of(
+                new BigDecimal("0.1236"), null, false, 366L, Map.of(
                 "000300", new OverviewView.BenchmarkComparison("000300", "沪深300",
                         new BigDecimal("0.1000"), new BigDecimal("-0.0750"))));
         when(service.overview(1L)).thenReturn(Optional.of(view));
@@ -74,6 +74,7 @@ class AnalyticsControllerTest {
         MvcResult result = mvc.perform(get("/api/analytics/overview").principal(auth()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.windowDays").value(366))
+                .andExpect(jsonPath("$.irrSimple").value(false))
                 .andExpect(jsonPath("$.benchmarks['000300'].indexName").value("沪深300"))
                 .andReturn();
 

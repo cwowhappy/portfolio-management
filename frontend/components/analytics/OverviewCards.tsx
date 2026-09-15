@@ -10,11 +10,12 @@ function amt(n: number): string {
 
 /** 收益总览卡：核心指标五卡 + 各基准同期收益/超额条。 */
 export default function OverviewCards({ overview }: { overview: AnalyticsOverview }) {
-  const cards = [
+  const cards: { label: string; value: string; note?: string }[] = [
     { label: "总资产", value: amt(overview.totalValue) },
     { label: "TWR 累计", value: pct(overview.twrCumulative) },
     { label: "TWR 年化", value: pct(overview.twrAnnualized) },
-    { label: "IRR", value: pct(overview.irr) },
+    // irrSimple=true：无外部现金流，IRR 退化为累计收益率（spec §三-B/§五-5），附小字标注口径
+    { label: "IRR", value: pct(overview.irr), note: overview.irrSimple ? "无现金流流水，IRR=累计收益" : undefined },
     { label: "窗口天数", value: `${overview.windowDays}` },
   ];
   return (
@@ -24,6 +25,7 @@ export default function OverviewCards({ overview }: { overview: AnalyticsOvervie
           <div key={c.label} className="rounded-2xl border border-[color:var(--color-line)] bg-[color:var(--color-panel)]/70 p-5 animate-rise">
             <div className="text-sm text-[color:var(--color-ink-dim)]">{c.label}</div>
             <div className="mt-2 text-2xl font-semibold tabular">{c.value}</div>
+            {c.note && <div className="mt-1 text-xs text-[color:var(--color-ink-dim)]">{c.note}</div>}
           </div>
         ))}
       </div>

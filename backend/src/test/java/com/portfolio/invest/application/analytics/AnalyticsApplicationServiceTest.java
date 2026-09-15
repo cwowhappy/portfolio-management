@@ -6,6 +6,8 @@ import com.portfolio.invest.domain.analytics.StockClosePort;
 import com.portfolio.invest.domain.portfolio.CashTransaction;
 import com.portfolio.invest.domain.portfolio.CashTransactionType;
 import com.portfolio.invest.domain.portfolio.CostMethod;
+import com.portfolio.invest.domain.portfolio.Dividend;
+import com.portfolio.invest.domain.portfolio.DividendType;
 import com.portfolio.invest.domain.portfolio.GroupType;
 import com.portfolio.invest.domain.portfolio.HoldingGroup;
 import com.portfolio.invest.domain.portfolio.Portfolio;
@@ -41,9 +43,11 @@ class AnalyticsApplicationServiceTest {
     private static final LocalDate JAN_06 = LocalDate.of(2026, 1, 6);
     private static final LocalDate JAN_07 = LocalDate.of(2026, 1, 7);
     private static final LocalDate JAN_08 = LocalDate.of(2026, 1, 8);
+    private static final LocalDate FEB_05 = LocalDate.of(2026, 2, 5);
     private static final BigDecimal TEN = new BigDecimal("10");
     private static final BigDecimal ELEVEN = new BigDecimal("11");
     private static final BigDecimal TWELVE = new BigDecimal("12");
+    private static final BigDecimal ONE = new BigDecimal("1");
 
     private final PortfolioRepository repo = mock(PortfolioRepository.class);
     private final StockClosePort stockClose = mock(StockClosePort.class);
@@ -87,6 +91,73 @@ class AnalyticsApplicationServiceTest {
                 within(new BigDecimal("0.000001")));
         assertThat(ov.get().windowDays()).isEqualTo(2);
         assertThat(ov.get().benchmarks()).isEmpty();
+        // 有外部现金流 → 走真实 XIRR，非退化口径；5 天 20% 的年化远超二分上界 10 → 无解为 null（前端「—」）
+        assertThat(ov.get().irrSimple()).isFalse();
+        assertThat(ov.get().irr()).isNull();
+    }
+
+    @DisplayName("无外部现金流：IRR 退化为累计收益率并标注口径（spec §三-B/§五-5）")
+    @Test
+    void givenNoExternalCashFlows_whenOverview_thenIrrDegradesToCumulativeWithFlag() {
+        // 只记买入不记转入（无外部现金流的最小真实形态）：investorFlows 空 → XIRR 只剩终值一笔
+        // 无从求解，spec 规定退化为累计收益率并在响应中标注口径（irrSimple=true，前端小字提示）。
+        // 手算：买入后现金 −1000 → totalValue 序列 [0, 100, 200]（收盘 10→11→12），
+        // 首日 V=0 无收益可言被跳过 → TWR 累计 = 200/100 − 1 = 1.0 → 退化 irr = 1.0。
+        when(repo.findPortfolioByUserId(1L)).thenReturn(Optional.of(
+                Portfolio.reconstitute(9L, 1L, CostMethod.WEIGHTED_AVG, Instant.now(), Instant.now())));
+        when(repo.findGroupsByPortfolioId(9L)).thenReturn(List.of());
+        Position pos = Position.create(9L, null, "600519", "贵州茅台", Instant.now());
+        when(repo.findPositionsByPortfolioId(9L)).thenReturn(List.of(pos));
+        when(repo.findTradesByPositionId(pos.id())).thenReturn(List.of(
+                new Trade(1L, pos.id(), TradeType.BUY, JAN_05,
+                        TEN, new BigDecimal("100"), BigDecimal.ZERO, Instant.now())));
+        when(repo.findDividendsByPositionId(pos.id())).thenReturn(List.of());
+        when(stockClose.closes(eq("600519"), any(), any())).thenReturn(stockCloses());
+        when(indexClose.closes(anyString(), any(), any())).thenReturn(new TreeMap<>());
+        when(marketData.quoteBatch(anyList())).thenReturn(Map.of());
+
+        Optional<OverviewView> ov = service.overview(1L);
+        assertThat(ov).isPresent();
+        assertThat(ov.get().irrSimple()).isTrue();
+        assertThat(ov.get().irr()).isEqualByComparingTo(ov.get().twrCumulative());
+        assertThat(ov.get().irr()).isCloseTo(new BigDecimal("1.0"), within(new BigDecimal("0.000001")));
+    }
+
+    @DisplayName("同日 SELL+现金分红：先交易后分红（对齐 M08 写侧）——realizedPnl 与直接 Position 聚合一致")
+    @Test
+    void givenSameDaySellAndCashDividend_whenTradeStats_thenMatchesWriteSidePositionReplay() {
+        // 01-05 买100@10；02-05 卖100@12 且同日除息现金分红 1 元/股。
+        // M08 写侧「先交易后分红」：卖出时数量仍 100 → realizedPnl=(12−10)×100=200；
+        // 分红作用于卖出后余量 0 → 金额 0。若序颠倒（分红先行降成本至 900）realizedPnl
+        // 将虚增至 300——本用例防住该回归。
+        when(repo.findPortfolioByUserId(1L)).thenReturn(Optional.of(
+                Portfolio.reconstitute(9L, 1L, CostMethod.WEIGHTED_AVG, Instant.now(), Instant.now())));
+        when(repo.findGroupsByPortfolioId(9L)).thenReturn(List.of());
+        Position pos = Position.create(9L, null, "600519", "贵州茅台", Instant.now());
+        when(repo.findPositionsByPortfolioId(9L)).thenReturn(List.of(pos));
+        when(repo.findTradesByPositionId(pos.id())).thenReturn(List.of(
+                new Trade(1L, pos.id(), TradeType.BUY, JAN_05,
+                        TEN, new BigDecimal("100"), BigDecimal.ZERO, Instant.now()),
+                new Trade(2L, pos.id(), TradeType.SELL, FEB_05,
+                        TWELVE, new BigDecimal("100"), BigDecimal.ZERO, Instant.now())));
+        when(repo.findDividendsByPositionId(pos.id())).thenReturn(List.of(
+                new Dividend(1L, pos.id(), DividendType.CASH, FEB_05, ONE, null, Instant.now())));
+        when(marketData.quoteBatch(anyList())).thenReturn(Map.of());
+
+        // 直接 Position 聚合（写侧事实源等价重放）：买 → 卖 → 同日分红按卖出后余量计金额
+        Position afterBuySell = Position.create(9L, null, "600519", "贵州茅台", Instant.now())
+                .applyBuy(TEN, new BigDecimal("100"), BigDecimal.ZERO)
+                .applySell(TWELVE, new BigDecimal("100"), BigDecimal.ZERO);
+        Position writeSide = afterBuySell.applyCashDividend(ONE.multiply(afterBuySell.quantity()));
+
+        Optional<TradeStatsView> stats = service.tradeStats(1L);
+        assertThat(stats).isPresent();
+        TradeStatsView v = stats.get();
+        assertThat(v.sellCount()).isEqualTo(1);
+        assertThat(new BigDecimal(v.avgWin())).isEqualByComparingTo(writeSide.realizedPnl());
+        assertThat(v.avgWin()).isEqualTo("200.0000");
+        assertThat(v.winRate()).isEqualTo("1.0000");
+        assertThat(v.avgHoldingDays()).isEqualTo("31.0000");
     }
 
     @DisplayName("nav：组合窗口 01-05~01-07，基准序列截齐——窗口前日期被剔除、无数据基准不出现")

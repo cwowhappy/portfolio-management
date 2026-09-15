@@ -9,7 +9,8 @@ const hasAdminSeed = !!(process.env.ADMIN_USERNAME && process.env.ADMIN_PASSWORD
 // - 不做「现金转入」：买入不校验现金余额（先例 portfolio.spec.ts 直接买入），
 //   总资产 = 市值 + 负现金，仅断言四块渲染不校验数值符号；
 // - 断言不依赖 close 回填：首事件日 = 今日，窗口 [今日,今日]，序列仅今日 quoteBatch
-//   实时价单点 → TWR/年化为 0、IRR 无解显示「—」，均属预期短序列形态。
+//   实时价单点 → TWR/年化为 0；无现金流水 → IRR 退化口径（=累计收益 0%，附小字标注），
+//   均属预期短序列形态。
 test.describe("/analytics 收益分析", () => {
   test.skip(!hasAdminSeed, "未配置 ADMIN_USERNAME/ADMIN_PASSWORD（无种子管理员），跳过收益分析用例");
 

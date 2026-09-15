@@ -8,7 +8,8 @@ public record OverviewView(
         BigDecimal totalValue,
         BigDecimal twrCumulative,
         BigDecimal twrAnnualized,
-        BigDecimal irr /* nullable：无现金流/无解时为 null，前端标「无现金流，退化口径」 */,
+        BigDecimal irr /* nullable：无解时为 null，前端显示「—」 */,
+        boolean irrSimple /* true=无外部现金流退化口径（irr=累计收益率，spec §三-B/§五-5） */,
         long windowDays,
         Map<String, BenchmarkComparison> benchmarks) {
 

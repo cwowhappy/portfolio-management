@@ -279,7 +279,7 @@ export const BenchmarkComparisonSchema = z.object({
 });
 export const AnalyticsOverviewSchema = z.object({
   totalValue: z.number(), twrCumulative: z.number(), twrAnnualized: z.number(),
-  irr: z.number().nullable(), windowDays: z.number(),
+  irr: z.number().nullable(), irrSimple: z.boolean(), windowDays: z.number(),
   benchmarks: z.record(BenchmarkComparisonSchema),
 });
 export const NavPointSchema = z.object({ date: z.string(), totalValue: z.number() });

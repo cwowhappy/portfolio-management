@@ -50,10 +50,10 @@ public class AnalyticsApplicationService {
     /** 三只基准（与 collector INDEX_CLOSE_CODES 同源）；LinkedHashMap 保展示序。 */
     private static final Map<String, String> BENCHMARKS = benchmarks();
 
-    /** 同日事件稳定序：BUY(0) → 现金/送股股息(1) → SELL(2)。 */
+    /** 同日事件稳定序：BUY(0) → SELL(1) → 现金/送股股息(2)——对齐 M08 写侧「先交易后分红」（单一事实源）。 */
     private static final int RANK_BUY = 0;
-    private static final int RANK_DIVIDEND = 1;
-    private static final int RANK_SELL = 2;
+    private static final int RANK_SELL = 1;
+    private static final int RANK_DIVIDEND = 2;
 
     private static final Comparator<TimedEvent> EVENT_ORDER = Comparator
             .comparing(TimedEvent::date)
@@ -74,7 +74,7 @@ public class AnalyticsApplicationService {
         this.marketData = marketData;
     }
 
-    /** 总览卡：TWR 累计/年化、IRR（无现金流/无解 → null）、总资产、三基准同期收益与超额。 */
+    /** 总览卡：TWR 累计/年化、IRR（无解 → null；无外部现金流 → 退化累计收益并标注）、总资产、三基准同期收益与超额。 */
     public Optional<OverviewView> overview(Long userId) {
         Optional<Replay> replay = replay(userId);
         if (replay.isEmpty()) {
@@ -89,10 +89,15 @@ public class AnalyticsApplicationService {
         long windowDays = ChronoUnit.DAYS.between(first.tradeDate(), last.tradeDate());
         BigDecimal cumulative = TwrCalculator.cumulative(new NavSeries(pts), replay.get().externalFlows());
         BigDecimal annualized = TwrCalculator.annualized(cumulative, windowDays);
-        // XIRR：投资者视角现金流（出资 −、回收 +）+ 终值；无外部现金流时只剩终值一笔 → xirr empty → null
+        // XIRR：投资者视角现金流（出资 −、回收 +）+ 终值；无外部现金流时只剩终值一笔无从求解，
+        // 按 spec §三-B/§五-5 退化为累计收益率并标注口径（irrSimple，前端小字提示）
         List<DatedAmount> xirrFlows = new ArrayList<>(replay.get().investorFlows());
         xirrFlows.add(new DatedAmount(last.tradeDate(), last.totalValue()));
         BigDecimal irr = IrrCalculator.xirr(xirrFlows).map(AnalyticsApplicationService::round4).orElse(null);
+        boolean irrSimple = replay.get().investorFlows().isEmpty();
+        if (irrSimple) {
+            irr = round4(cumulative);
+        }
         Map<String, OverviewView.BenchmarkComparison> benchmarks = new LinkedHashMap<>();
         for (var e : benchmarkTwr(first.tradeDate(), last.tradeDate()).entrySet()) {
             benchmarks.put(e.getKey(), new OverviewView.BenchmarkComparison(
@@ -100,7 +105,7 @@ public class AnalyticsApplicationService {
                     round4(cumulative.subtract(e.getValue()))));
         }
         return Optional.of(new OverviewView(round4(last.totalValue()), round4(cumulative),
-                round4(annualized), irr, windowDays, benchmarks));
+                round4(annualized), irr, irrSimple, windowDays, benchmarks));
     }
 
     /** 走势图：组合 totalValue 绝对值日序列 + 三基准收盘序列（截齐到组合窗口，归一化留前端）。 */
@@ -251,11 +256,11 @@ public class AnalyticsApplicationService {
                     stockEvents.add(new StockEvent(t.tradeDate(), pos.stockCode(), t.quantity()));
                     cashEvents.add(new CashEvent(t.tradeDate(),
                             t.price().multiply(t.quantity()).add(fee).negate()));
-                    buys.add(new TradeStatsCalculator.BuyLot(t.tradeDate(), t.quantity()));
+                    buys.add(new TradeStatsCalculator.BuyLot(pos.stockCode(), t.tradeDate(), t.quantity()));
                 } else {
                     BigDecimal realizedBefore = agg.realizedPnl();
                     agg = agg.applySell(t.price(), t.quantity(), fee);
-                    sells.add(new TradeStatsCalculator.SellLot(t.tradeDate(), t.quantity(),
+                    sells.add(new TradeStatsCalculator.SellLot(pos.stockCode(), t.tradeDate(), t.quantity(),
                             agg.realizedPnl().subtract(realizedBefore)));
                     stockEvents.add(new StockEvent(t.tradeDate(), pos.stockCode(), t.quantity().negate()));
                     cashEvents.add(new CashEvent(t.tradeDate(),

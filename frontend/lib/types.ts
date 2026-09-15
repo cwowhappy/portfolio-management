@@ -325,6 +325,7 @@ export interface TimelineEventView {
 export interface BenchmarkComparison { indexCode: string; indexName: string; twr: number; excess: number }
 export interface AnalyticsOverview {
   totalValue: number; twrCumulative: number; twrAnnualized: number; irr: number | null;
+  irrSimple: boolean; // true=无外部现金流退化口径（irr=累计收益率，spec §三-B）
   windowDays: number; benchmarks: Record<string, BenchmarkComparison>;
 }
 export interface NavPoint { date: string; totalValue: number }

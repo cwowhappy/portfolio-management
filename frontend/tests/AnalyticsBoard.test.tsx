@@ -19,7 +19,7 @@ const api = vi.mocked(analyticsApi);
 beforeEach(() => {
   vi.clearAllMocks();
   api.fetchOverview.mockResolvedValue({
-    totalValue: 1200, twrCumulative: 0.2, twrAnnualized: 0.44, irr: null, windowDays: 2,
+    totalValue: 1200, twrCumulative: 0.2, twrAnnualized: 0.44, irr: null, irrSimple: false, windowDays: 2,
     benchmarks: { "000300": { indexCode: "000300", indexName: "沪深300", twr: 0.05, excess: 0.15 } },
   });
   api.fetchNav.mockResolvedValue({
@@ -49,6 +49,19 @@ describe("AnalyticsBoard", () => {
     expect(within(screen.getByTestId("analytics-overview")).getByText(/1,200/)).toBeTruthy();
     expect(within(screen.getByTestId("annual-table")).getByText(/2026/)).toBeTruthy(); // 年度表年份行
     expect(screen.getByTestId("analytics-overview").textContent).toContain("—"); // irr null → 「—」
+  });
+
+  it("irrSimple 退化口径：展示数值并附小字「无现金流流水，IRR=累计收益」", async () => {
+    api.fetchOverview.mockResolvedValue({
+      totalValue: 1200, twrCumulative: 0.5, twrAnnualized: 0.44, irr: 0.5, irrSimple: true, windowDays: 2,
+      benchmarks: {},
+    });
+    render(<AnalyticsBoard />);
+    await waitFor(() => expect(screen.getByTestId("analytics-overview")).toBeTruthy());
+    const overview = screen.getByTestId("analytics-overview");
+    // IRR 卡展示退化数值（50.00%，与 TWR 累计同值）而非「—」，并标注口径
+    expect(within(overview).getAllByText("50.00%").length).toBe(2);
+    expect(within(overview).getByText("无现金流流水，IRR=累计收益")).toBeTruthy();
   });
 
   it("盈亏比为 null 时显示「—」", async () => {
