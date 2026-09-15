@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
-import { activatePlan, createPlan, fetchDeviation, fetchTemplates } from "@/lib/allocationApi";
+import { activatePlan, createPlan, fetchDeviation, fetchPlans, fetchTemplates, submitAssessment } from "@/lib/allocationApi";
 
 const planJson = { id: 5, name: "平衡", source: "TEMPLATE", weights: [{ assetClass: "STOCK", weight: 60 }, { assetClass: "BOND", weight: 40 }], active: false };
 
@@ -56,5 +56,37 @@ describe("allocationApi", () => {
   it("响应不符合 schema 时抛校验错误", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ slices: [{ assetClass: "CRYPTO" }] }) }));
     await expect(fetchDeviation()).rejects.toThrow();
+  });
+});
+
+describe("assessment api", () => {
+  it("submitAssessment POST 答卷并按 schema 解析 AssessmentView", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true, status: 200,
+      json: async () => ({
+        totalScore: 35, profile: "GROWTH", profileName: "成长",
+        weights: [{ assetClass: "STOCK", weight: 65 }],
+        answers: { Q1: "A" }, assessedAt: "2026-09-15T00:00:00Z",
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const view = await submitAssessment([{ questionId: "Q1", optionId: "A" }]);
+    expect(view.profileName).toBe("成长");
+    expect(view.totalScore).toBe(35);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/api/allocation/assessment");
+    expect(init.method).toBe("POST");
+    expect(init.body).toBe(JSON.stringify({ answers: [{ questionId: "Q1", optionId: "A" }] }));
+  });
+
+  it("PlanSourceSchema 接受 ASSESSMENT", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true, status: 200,
+      json: async () => [{ id: 1, name: "测评推荐·成长", source: "ASSESSMENT", weights: [], active: false }],
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const plans = await fetchPlans();
+    expect(plans[0]!.source).toBe("ASSESSMENT");
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/allocation/plans");
   });
 });

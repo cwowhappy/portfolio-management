@@ -193,7 +193,7 @@ export const ConcentrationSchema = z.object({ holdings: z.array(ConcentrationHol
 // —— 资产配置（/api/allocation/**，与后端 AllocationController 的 DTO 对齐）——
 
 export const AssetClassSchema = z.enum(["STOCK", "BOND", "GOLD", "CASH", "REITS"]);
-export const PlanSourceSchema = z.enum(["TEMPLATE", "CUSTOM"]);
+export const PlanSourceSchema = z.enum(["TEMPLATE", "CUSTOM", "ASSESSMENT"]);
 export const WeightViewSchema = z.object({ assetClass: AssetClassSchema, weight: z.number() });
 export const TemplateViewSchema = z.object({ id: z.string(), name: z.string(), weights: z.array(WeightViewSchema) });
 export const PlanViewSchema = z.object({
@@ -204,6 +204,17 @@ export const DeviationSliceSchema = z.object({
   assetClass: AssetClassSchema, targetWeight: z.number(), actualWeight: z.number(), deviation: z.number(),
 });
 export const DeviationViewSchema = z.object({ slices: z.array(DeviationSliceSchema) });
+
+export const RiskProfileSchema = z.enum(["CONSERVATIVE", "STABLE", "BALANCED", "GROWTH", "AGGRESSIVE"]);
+export const OptionViewSchema = z.object({ id: z.string(), text: z.string() });
+export const QuestionViewSchema = z.object({
+  id: z.string(), dimension: z.string(), text: z.string(), options: z.array(OptionViewSchema),
+});
+export const QuestionnaireViewSchema = z.object({ questions: z.array(QuestionViewSchema) });
+export const AssessmentViewSchema = z.object({
+  totalScore: z.number(), profile: RiskProfileSchema, profileName: z.string(),
+  weights: z.array(WeightViewSchema), answers: z.record(z.string()), assessedAt: z.string(),
+});
 
 // —— 价值筛选（/api/screening/**，与后端 ScreeningController 的 DTO 对齐）——
 
