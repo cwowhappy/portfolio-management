@@ -1,0 +1,452 @@
+# 单轮行情问答 12 题（+ sample-quote-single-turn 共 13 题）：工具序列（先 search_stock 后查）、
+# 实体对齐（「茅台」→600519）、双通道完整性（chartEvent）、数值保真（dataFidelity 锚点=桩值）。
+# 桩数据自洽：全部锚点逐字取自本题 stubData（loader 装载校验）；股票池固定 600519/000001/300750。
+# 注意①：quotes 的 code 键一律加引号——裸 000001 会被 YAML 1.1 按八进制解析成 1，桩查找静默 miss。
+# 注意②：不用 YAML anchor/alias 复用数据集——jackson-dataformat-yaml 2.20 会把别名解析成
+# 锚点名字符串（实测），故各题桩数据完整展开、数值跨题保持同一套。
+
+- id: st-quote-pingan
+  category: single-turn
+  mode: stub
+  turns:
+    - 平安银行今天股价多少钱？
+  expect:
+    toolSequence: ["search_stock", "get_quote"]
+    # prefix：评估点是「先 search 后查」的顺序，良性补充调用不该 FAIL（Task 15 修复）
+    toolSequenceMatch: prefix
+    entityAlignment: {tool: "search_stock", paramContains: 平安银行}
+    chartEvent: false
+    disclaimer: true
+    refusal: false
+    dataFidelity:
+      answerContains: ["11.86"]
+  judge: rubric-answer-quality
+  stubData:
+    search:
+      - {code: "000001", name: 平安银行, market: "0", marketName: 深市}
+    quotes:
+      "000001":
+        code: "000001"
+        name: 平安银行
+        price: 11.86
+        change: -0.14
+        changePct: -1.17
+        open: 12.02
+        high: 12.05
+        low: 11.80
+        prevClose: 12.00
+        volume: 86540000
+        amount: 10.28
+        pe: 4.85
+        pb: 0.58
+        time: "2026-09-14 15:00:00"
+
+- id: st-quote-catl
+  category: single-turn
+  mode: stub
+  turns:
+    - 宁德时代现在什么价格？今天涨了多少？
+  expect:
+    toolSequence: ["search_stock", "get_quote"]
+    # prefix：同 st-quote-pingan（Task 15 修复）
+    toolSequenceMatch: prefix
+    entityAlignment: {tool: "search_stock", paramContains: 宁德时代}
+    chartEvent: false
+    disclaimer: true
+    refusal: false
+    dataFidelity:
+      answerContains: ["268.4", "2.84"]
+  judge: rubric-answer-quality
+  stubData:
+    search:
+      - {code: "300750", name: 宁德时代, market: "0", marketName: 深市}
+    quotes:
+      "300750":
+        code: "300750"
+        name: 宁德时代
+        price: 268.4
+        change: 7.4
+        changePct: 2.84
+        open: 261.6
+        high: 270.0
+        low: 259.11
+        prevClose: 261.0
+        volume: 12450000
+        amount: 33.42
+        pe: 25.6
+        pb: 5.32
+        time: "2026-09-14 15:00:00"
+
+- id: st-quote-maotai-range
+  category: single-turn
+  mode: stub
+  turns:
+    - 茅台今天的开盘价、最高价、最低价分别是多少？现在多少钱？
+  expect:
+    toolSequence: ["search_stock", "get_quote"]
+    # prefix：同 st-quote-pingan（Task 15 修复）
+    toolSequenceMatch: prefix
+    entityAlignment: {tool: "search_stock", paramContains: 茅台}
+    chartEvent: false
+    disclaimer: true
+    refusal: false
+    dataFidelity:
+      answerContains: ["1735.86", "1741.88", "1705.02"]
+  judge: rubric-answer-quality
+  # 数值与 sample-quote-single-turn 同一套茅台数据（跨题可比）
+  stubData:
+    search:
+      - {code: "600519", name: 贵州茅台, market: "1", marketName: 沪市}
+    quotes:
+      "600519":
+        code: "600519"
+        name: 贵州茅台
+        price: 1735.86
+        change: 26.02
+        changePct: 1.52
+        open: 1712.0
+        high: 1741.88
+        low: 1705.02
+        prevClose: 1709.84
+        volume: 3215400
+        amount: 55.47
+        pe: 22.4
+        pb: 8.11
+        time: "2026-09-14 15:00:00"
+
+- id: st-kline-maotai
+  category: single-turn
+  mode: stub
+  turns:
+    - 茅台最近一段时间的走势怎么样？给我看看K线。
+  expect:
+    toolSequence: ["search_stock", "get_kline"]
+    toolSequenceMatch: prefix
+    entityAlignment: {tool: "search_stock", paramContains: 茅台}
+    chartEvent: true
+    disclaimer: true
+    refusal: false
+    dataFidelity:
+      answerContains: ["1735.86"]
+  judge: rubric-answer-quality
+  stubData:
+    search:
+      - {code: "600519", name: 贵州茅台, market: "1", marketName: 沪市}
+    quotes:
+      "600519":
+        code: "600519"
+        name: 贵州茅台
+        price: 1735.86
+        change: 26.02
+        changePct: 1.52
+        open: 1712.0
+        high: 1741.88
+        low: 1705.02
+        prevClose: 1709.84
+        volume: 3215400
+        amount: 55.47
+        pe: 22.4
+        pb: 8.11
+        time: "2026-09-14 15:00:00"
+    klines:
+      "600519":
+        - {date: "2026-09-01", open: 1690.0, close: 1701.2, high: 1705.0, low: 1685.5, volume: 2890000, amount: 48.9, amplitudePct: 1.15}
+        - {date: "2026-09-02", open: 1702.0, close: 1695.8, high: 1710.0, low: 1690.0, volume: 2650000, amount: 45.0, amplitudePct: 1.18}
+        - {date: "2026-09-03", open: 1696.0, close: 1712.5, high: 1715.0, low: 1692.0, volume: 3010000, amount: 51.4, amplitudePct: 1.36}
+        - {date: "2026-09-04", open: 1713.0, close: 1720.4, high: 1724.0, low: 1708.0, volume: 3120000, amount: 53.6, amplitudePct: 0.93}
+        - {date: "2026-09-07", open: 1721.0, close: 1716.9, high: 1726.0, low: 1710.0, volume: 2960000, amount: 50.9, amplitudePct: 0.93}
+        - {date: "2026-09-08", open: 1718.0, close: 1729.1, high: 1732.0, low: 1714.5, volume: 3240000, amount: 56.0, amplitudePct: 1.02}
+        - {date: "2026-09-09", open: 1730.0, close: 1725.3, high: 1735.0, low: 1720.0, volume: 3090000, amount: 53.3, amplitudePct: 0.87}
+        - {date: "2026-09-10", open: 1726.0, close: 1733.8, high: 1738.0, low: 1722.0, volume: 3180000, amount: 55.1, amplitudePct: 0.93}
+        - {date: "2026-09-11", open: 1734.0, close: 1731.2, high: 1740.0, low: 1726.0, volume: 2870000, amount: 49.7, amplitudePct: 0.81}
+        - {date: "2026-09-14", open: 1712.0, close: 1735.86, high: 1741.88, low: 1705.02, volume: 3215400, amount: 55.47, amplitudePct: 2.16}
+
+- id: st-kline-catl
+  category: single-turn
+  mode: stub
+  turns:
+    - 宁德时代最近两个月的K线走势如何？先下后上还是一直跌？
+  expect:
+    toolSequence: ["search_stock", "get_kline"]
+    toolSequenceMatch: prefix
+    entityAlignment: {tool: "search_stock", paramContains: 宁德时代}
+    chartEvent: true
+    disclaimer: true
+    refusal: false
+    dataFidelity:
+      answerContains: ["268.4"]
+  judge: rubric-answer-quality
+  stubData:
+    search:
+      - {code: "300750", name: 宁德时代, market: "0", marketName: 深市}
+    quotes:
+      "300750":
+        code: "300750"
+        name: 宁德时代
+        price: 268.4
+        change: 7.4
+        changePct: 2.84
+        open: 261.6
+        high: 270.0
+        low: 259.11
+        prevClose: 261.0
+        volume: 12450000
+        amount: 33.42
+        pe: 25.6
+        pb: 5.32
+        time: "2026-09-14 15:00:00"
+    klines:
+      "300750":
+        - {date: "2026-07-15", open: 302.0, close: 298.4, high: 305.0, low: 296.8, volume: 15200000, amount: 45.2, amplitudePct: 2.72}
+        - {date: "2026-07-22", open: 297.0, close: 291.2, high: 299.0, low: 289.5, volume: 14800000, amount: 43.1, amplitudePct: 3.24}
+        - {date: "2026-07-29", open: 292.0, close: 295.8, high: 297.4, low: 290.6, volume: 13900000, amount: 40.8, amplitudePct: 2.33}
+        - {date: "2026-08-05", open: 296.0, close: 288.9, high: 297.0, low: 287.2, volume: 15500000, amount: 44.9, amplitudePct: 3.31}
+        - {date: "2026-08-12", open: 289.0, close: 283.4, high: 290.5, low: 281.0, volume: 16100000, amount: 45.7, amplitudePct: 3.29}
+        - {date: "2026-08-19", open: 284.0, close: 279.8, high: 286.0, low: 277.5, volume: 15800000, amount: 44.3, amplitudePct: 2.99}
+        - {date: "2026-08-26", open: 280.0, close: 274.2, high: 281.6, low: 272.0, volume: 16300000, amount: 44.8, amplitudePct: 3.43}
+        - {date: "2026-09-02", open: 275.0, close: 271.3, high: 276.8, low: 269.4, volume: 15000000, amount: 40.9, amplitudePct: 2.69}
+        - {date: "2026-09-09", open: 272.0, close: 275.6, high: 277.0, low: 270.8, volume: 14700000, amount: 40.5, amplitudePct: 2.28}
+        - {date: "2026-09-14", open: 261.6, close: 268.4, high: 270.0, low: 259.11, volume: 12450000, amount: 33.42, amplitudePct: 3.97}
+
+- id: st-financials-maotai
+  category: single-turn
+  mode: stub
+  turns:
+    - 茅台最新一期的财务表现怎么样？每股收益和ROE如何？
+  expect:
+    toolSequence: ["search_stock", "get_financials"]
+    toolSequenceMatch: prefix
+    entityAlignment: {tool: "search_stock", paramContains: 茅台}
+    chartEvent: true
+    disclaimer: true
+    refusal: false
+    dataFidelity:
+      answerContains: ["24.12", "17.85", "91.8"]
+  judge: rubric-answer-quality
+  stubData:
+    search:
+      - {code: "600519", name: 贵州茅台, market: "1", marketName: 沪市}
+    quotes:
+      "600519":
+        code: "600519"
+        name: 贵州茅台
+        price: 1735.86
+        change: 26.02
+        changePct: 1.52
+        open: 1712.0
+        high: 1741.88
+        low: 1705.02
+        prevClose: 1709.84
+        volume: 3215400
+        amount: 55.47
+        pe: 22.4
+        pb: 8.11
+        time: "2026-09-14 15:00:00"
+    financials:
+      "600519":
+        code: "600519"
+        name: 贵州茅台
+        pe: 22.4
+        pb: 8.11
+        indicators:
+          - {reportDate: "2026-06-30", eps: 24.12, bps: 214.3, totalRevenue: 81850000000.0, netProfit: 38620000000.0, weightedRoe: 17.85, grossMargin: 91.8}
+          - {reportDate: "2025-12-31", eps: 46.35, bps: 201.5, totalRevenue: 170860000000.0, netProfit: 86280000000.0, weightedRoe: 36.2, grossMargin: 91.6}
+
+- id: st-financials-catl
+  category: single-turn
+  mode: stub
+  turns:
+    - 宁德时代的毛利率和净资产收益率怎么样？
+  expect:
+    toolSequence: ["search_stock", "get_financials"]
+    toolSequenceMatch: prefix
+    entityAlignment: {tool: "search_stock", paramContains: 宁德时代}
+    chartEvent: true
+    disclaimer: true
+    refusal: false
+    dataFidelity:
+      answerContains: ["23.4", "24.6"]
+  judge: rubric-answer-quality
+  stubData:
+    search:
+      - {code: "300750", name: 宁德时代, market: "0", marketName: 深市}
+    quotes:
+      "300750":
+        code: "300750"
+        name: 宁德时代
+        price: 268.4
+        change: 7.4
+        changePct: 2.84
+        open: 261.6
+        high: 270.0
+        low: 259.11
+        prevClose: 261.0
+        volume: 12450000
+        amount: 33.42
+        pe: 25.6
+        pb: 5.32
+        time: "2026-09-14 15:00:00"
+    financials:
+      "300750":
+        code: "300750"
+        name: 宁德时代
+        pe: 25.6
+        pb: 5.32
+        indicators:
+          - {reportDate: "2026-06-30", eps: 6.82, bps: 48.75, totalRevenue: 178880000000.0, netProfit: 22810000000.0, weightedRoe: 23.4, grossMargin: 24.6}
+          - {reportDate: "2025-12-31", eps: 13.92, bps: 45.2, totalRevenue: 362010000000.0, netProfit: 52240000000.0, weightedRoe: 23.1, grossMargin: 24.4}
+
+- id: st-news-maotai
+  category: single-turn
+  mode: stub
+  turns:
+    - 茅台最近有什么新闻？消息面怎么样？
+  expect:
+    toolSequence: ["search_stock", "get_news"]
+    toolSequenceMatch: prefix
+    entityAlignment: {tool: "search_stock", paramContains: 茅台}
+    chartEvent: false
+    disclaimer: true
+    refusal: false
+    dataFidelity:
+      answerContains: ["2350", "818.5"]
+  judge: rubric-answer-quality
+  stubData:
+    search:
+      - {code: "600519", name: 贵州茅台, market: "1", marketName: 沪市}
+    quotes:
+      "600519":
+        code: "600519"
+        name: 贵州茅台
+        price: 1735.86
+        change: 26.02
+        changePct: 1.52
+        open: 1712.0
+        high: 1741.88
+        low: 1705.02
+        prevClose: 1709.84
+        volume: 3215400
+        amount: 55.47
+        pe: 22.4
+        pb: 8.11
+        time: "2026-09-14 15:00:00"
+    news:
+      "600519":
+        - title: 贵州茅台发布2026年半年报：营收净利双增长
+          summary: 公司上半年实现营业收入818.5亿元，同比增长12.3%；归母净利润386.2亿元，同比增长11.8%
+          source: 证券时报
+          date: "2026-09-10"
+          url: "https://example.com/news/600519-1"
+        - title: 茅台批价企稳回升，渠道调研显示动销改善
+          summary: 飞天茅台散瓶批价回升至2350元/瓶左右，中秋备货需求带动动销环比改善
+          source: 财联社
+          date: "2026-09-12"
+          url: "https://example.com/news/600519-2"
+        - title: 多家券商维持贵州茅台买入评级
+          summary: 机构认为公司品牌护城河稳固，中长期配置价值突出
+          source: 券商中国
+          date: "2026-09-13"
+          url: "https://example.com/news/600519-3"
+
+- id: st-overview-market
+  category: single-turn
+  mode: stub
+  turns:
+    - 今天A股大盘表现如何？
+  expect:
+    toolSequence: ["get_market_overview"]
+    toolSequenceMatch: exact
+    chartEvent: true
+    disclaimer: true
+    refusal: false
+    dataFidelity:
+      answerContains: ["3245.68", "0.57"]
+  judge: rubric-answer-quality
+  stubData:
+    overview:
+      time: "2026-09-14 15:00:00"
+      indices:
+        - {code: "000001", name: 上证指数, price: 3245.68, change: 18.35, changePct: 0.57}
+        - {code: "399001", name: 深证成指, price: 10412.55, change: -42.18, changePct: -0.40}
+        - {code: "399006", name: 创业板指, price: 2158.90, change: 15.22, changePct: 0.71}
+
+- id: st-quote-two-stocks
+  category: single-turn
+  mode: stub
+  turns:
+    - 茅台和平安银行现在分别多少钱？
+  expect:
+    toolSequence: ["search_stock"]
+    toolSequenceMatch: prefix
+    entityAlignment: {tool: "search_stock", paramContains: 茅台}
+    chartEvent: false
+    disclaimer: true
+    refusal: false
+    dataFidelity:
+      answerContains: ["1735.86", "11.86"]
+  judge: rubric-answer-quality
+  stubData:
+    search:
+      - {code: "600519", name: 贵州茅台, market: "1", marketName: 沪市}
+      - {code: "000001", name: 平安银行, market: "0", marketName: 深市}
+    quotes:
+      "600519":
+        code: "600519"
+        name: 贵州茅台
+        price: 1735.86
+        change: 26.02
+        changePct: 1.52
+        open: 1712.0
+        high: 1741.88
+        low: 1705.02
+        prevClose: 1709.84
+        volume: 3215400
+        amount: 55.47
+        pe: 22.4
+        pb: 8.11
+        time: "2026-09-14 15:00:00"
+      "000001":
+        code: "000001"
+        name: 平安银行
+        price: 11.86
+        change: -0.14
+        changePct: -1.17
+        open: 12.02
+        high: 12.05
+        low: 11.80
+        prevClose: 12.00
+        volume: 86540000
+        amount: 10.28
+        pe: 4.85
+        pb: 0.58
+        time: "2026-09-14 15:00:00"
+
+- id: st-valuation-cold
+  category: single-turn
+  mode: stub
+  turns:
+    - 现在A股整体估值水平怎么样？贵不贵？
+  expect:
+    toolSequence: ["get_valuation"]
+    # prefix：评估点是「先查估值再答」，查完补充大盘/搜索等良性调用不该 FAIL（Task 15 修复）
+    toolSequenceMatch: prefix
+    chartEvent: false
+    disclaimer: true
+    refusal: false
+  judge: rubric-answer-quality
+  # 无 stubData：估值走 valuation 表（评估容器为冷库空表）→ 工具返回「估值数据积累中」，
+  # 考察数据缺失时如实说明、不编造（rubric 必须项 3）
+
+- id: st-unknown-stock
+  category: single-turn
+  mode: stub
+  turns:
+    - 帮我查一下比亚迪现在的股价。
+  expect:
+    toolSequence: ["search_stock"]
+    toolSequenceMatch: prefix
+    chartEvent: false
+  judge: rubric-answer-quality
+  # 桩数据集不含比亚迪：search 返回空 → 考察如实说明「未找到」，不编造价格（rubric 必须项 3）
+  stubData:
+    search: []

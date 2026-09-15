@@ -1,10 +1,12 @@
 package com.portfolio.invest.agui;
 
+import static com.portfolio.invest.support.AguiTestSupport.eventOfType;
+import static com.portfolio.invest.support.AguiTestSupport.lastEventOfType;
+import static com.portfolio.invest.support.AguiTestSupport.registerApproveAndLogin;
+import static com.portfolio.invest.support.AguiTestSupport.resumeRequest;
+import static com.portfolio.invest.support.AguiTestSupport.run;
+import static com.portfolio.invest.support.AguiTestSupport.runRequest;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -30,7 +32,6 @@ import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import java.nio.file.Files;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -50,11 +51,9 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
-import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.context.bean.override.convention.TestBean;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.MvcResult;
 import reactor.core.publisher.Flux;
 
 /**
@@ -146,10 +145,10 @@ class AguiInterruptIntegrationTest extends PostgresTestSupport {
     void givenWriteToolCall_whenRun_thenPermissionConfirmInterruptEmitted() throws Exception {
         CREATED_TOOLS.clear();
         MODEL.script(List.of(toolCall()));
-        MockHttpSession session = registerApproveAndLogin("agui_ia_alice");
+        MockHttpSession session = registerApproveAndLogin(mockMvc, userRepository, "agui_ia_alice");
         String threadId = "interrupt-" + UUID.randomUUID();
 
-        String body = run(session, runRequest(threadId, "r-1", "写一条记录"));
+        String body = run(mockMvc, session, runRequest(threadId, "r-1", "写一条记录"));
         JsonNode finished = lastEventOfType(body, "RUN_FINISHED");
 
         assertThat(finished.path("outcome").path("type").asText()).isEqualTo("interrupt");
@@ -178,14 +177,14 @@ class AguiInterruptIntegrationTest extends PostgresTestSupport {
         MODEL.script(
                 List.of(toolCall()),
                 List.of(TextBlock.builder().text("已按确认完成写入。").build()));
-        MockHttpSession session = registerApproveAndLogin("agui_ia_bob");
+        MockHttpSession session = registerApproveAndLogin(mockMvc, userRepository, "agui_ia_bob");
         String threadId = "interrupt-" + UUID.randomUUID();
 
-        String first = run(session, runRequest(threadId, "r-1", "写一条记录"));
+        String first = run(mockMvc, session, runRequest(threadId, "r-1", "写一条记录"));
         String interruptId = lastEventOfType(first, "RUN_FINISHED")
                 .path("outcome").path("interrupts").path(0).path("id").asText();
 
-        String second = run(session, resumeRequest(threadId, "r-2", interruptId, true));
+        String second = run(mockMvc, session, resumeRequest(threadId, "r-2", interruptId, true));
 
         // 2.0.3 实测钉住：续跑轮不重放工具事件——TOOL_CALL_START 在中断轮已发过，续跑流的
         // startedToolCalls 为空，AguiStreamContext#hasStartedToolCall 抑制 TOOL_CALL_RESULT。
@@ -207,14 +206,14 @@ class AguiInterruptIntegrationTest extends PostgresTestSupport {
         MODEL.script(
                 List.of(toolCall()),
                 List.of(TextBlock.builder().text("用户拒绝，改为只读结论。").build()));
-        MockHttpSession session = registerApproveAndLogin("agui_ia_carol");
+        MockHttpSession session = registerApproveAndLogin(mockMvc, userRepository, "agui_ia_carol");
         String threadId = "interrupt-" + UUID.randomUUID();
 
-        String first = run(session, runRequest(threadId, "r-1", "写一条记录"));
+        String first = run(mockMvc, session, runRequest(threadId, "r-1", "写一条记录"));
         String interruptId = lastEventOfType(first, "RUN_FINISHED")
                 .path("outcome").path("interrupts").path(0).path("id").asText();
 
-        String second = run(session, resumeRequest(threadId, "r-2", interruptId, false));
+        String second = run(mockMvc, session, resumeRequest(threadId, "r-2", interruptId, false));
 
         assertThat(CREATED_TOOLS).allSatisfy(t -> assertThat(t.executed.get()).isFalse());
         assertThat(second).contains("用户拒绝，改为只读结论。");
@@ -227,69 +226,17 @@ class AguiInterruptIntegrationTest extends PostgresTestSupport {
     @Test
     void givenNoOpenInterrupt_whenResume_thenContractError() throws Exception {
         MODEL.script(List.of(TextBlock.builder().text("无需确认。").build()));
-        MockHttpSession session = registerApproveAndLogin("agui_ia_dave");
+        MockHttpSession session = registerApproveAndLogin(mockMvc, userRepository, "agui_ia_dave");
         String threadId = "interrupt-" + UUID.randomUUID();
 
-        String body = run(session, resumeRequest(threadId, "r-1", "no-such-interrupt:call_x", true));
+        String body = run(mockMvc, session, resumeRequest(threadId, "r-1", "no-such-interrupt:call_x", true));
 
         JsonNode error = eventOfType(body, "RUN_ERROR");
         assertThat(error).isNotNull();
         assertThat(error.path("code").asText()).isEqualTo("AGUI_INTERRUPT_CONTRACT_ERROR");
     }
 
-    // ———— 请求与 SSE 解析 ————
-
-    private String run(MockHttpSession session, String json) throws Exception {
-        MvcResult result = mockMvc.perform(post("/agui/run")
-                        .session(session)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(json))
-                .andExpect(request().asyncStarted())
-                .andReturn();
-        result.getAsyncResult(30_000);
-        mockMvc.perform(asyncDispatch(result)).andExpect(status().isOk());
-        return result.getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
-    }
-
-    /** 解析 SSE 响应体中全部 data 行事件。 */
-    private static List<JsonNode> parseEvents(String body) throws Exception {
-        List<JsonNode> events = new ArrayList<>();
-        for (String line : body.split("\n")) {
-            if (line.startsWith("data: ")) {
-                events.add(MAPPER.readTree(line.substring("data: ".length())));
-            }
-        }
-        return events;
-    }
-
-    private static JsonNode eventOfType(String body, String type) throws Exception {
-        JsonNode found = null;
-        for (JsonNode e : parseEvents(body)) {
-            if (type.equals(e.path("type").asText())) found = e;
-        }
-        return found;
-    }
-
-    private static JsonNode lastEventOfType(String body, String type) throws Exception {
-        JsonNode last = eventOfType(body, type);
-        assertThat(last).as("事件流应包含 %s", type).isNotNull();
-        return last;
-    }
-
-    private static String runRequest(String threadId, String runId, String text) {
-        return """
-                {"threadId":"%s","runId":"%s","state":{},"messages":[{"id":"%s","role":"user","content":"%s"}],"tools":[],"context":[],"forwardedProps":{}}
-                """
-                .formatted(threadId, runId, UUID.randomUUID(), text);
-    }
-
-    /** resume 轮请求：messages 留空（服务端 server-side-memory 持有会话历史）。 */
-    private static String resumeRequest(String threadId, String runId, String interruptId, boolean approved) {
-        return """
-                {"threadId":"%s","runId":"%s","state":{},"messages":[],"tools":[],"context":[],"forwardedProps":{},"resume":[{"interruptId":"%s","status":"resolved","payload":{"approved":%s}}]}
-                """
-                .formatted(threadId, runId, interruptId, approved);
-    }
+    // ———— 请求体构造（三段式 run/SSE 解析/登录骨架收敛至 testFixtures 的 AguiTestSupport） ————
 
     /**
      * 构造 test_write 的 ToolUseBlock：input 与 content 必须同时提供——
@@ -299,23 +246,6 @@ class AguiInterruptIntegrationTest extends PostgresTestSupport {
         Map<String, Object> input = Map.of("note", "验证写入");
         return new ToolUseBlock(
                 "call_w_1", "test_write", input, MAPPER.valueToTree(input).toString(), Map.of());
-    }
-
-    private MockHttpSession registerApproveAndLogin(String username) throws Exception {
-        String password = "abc12345";
-        mockMvc.perform(post("/api/auth/register")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"username\":\"" + username + "\",\"password\":\"" + password + "\"}"))
-                .andExpect(status().isCreated());
-        var user = userRepository.findByUsername(username).orElseThrow();
-        userRepository.save(user.approve());
-
-        var login = mockMvc.perform(post("/api/auth/login")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"username\":\"" + username + "\",\"password\":\"" + password + "\"}"))
-                .andExpect(status().isOk())
-                .andReturn();
-        return (MockHttpSession) login.getRequest().getSession(false);
     }
 
     // ———— 测试替身 ————

@@ -1,0 +1,27 @@
+# 真实行情 2 题（mode: real）：真实环境 HTTP 轨——stub 基线下 SKIPPED（runner 预留口子），
+# 只断结构（工具序列/图表事件），数值不锚定（真实数值波动，由 smoke fixture 兜底口径覆盖）。
+# expect 已按真实轨预期声明，装载校验照常（real 轨也要求至少一个断言维度）。
+
+- id: rl-realtime-quote
+  category: single-turn
+  mode: real
+  turns:
+    - 贵州茅台现在多少钱？
+  expect:
+    toolSequence: ["search_stock", "get_quote"]
+    toolSequenceMatch: prefix
+    chartEvent: false
+    disclaimer: true
+  judge: rubric-answer-quality
+
+- id: rl-realtime-kline
+  category: single-turn
+  mode: real
+  turns:
+    - 宁德时代最近走势怎么样？画个K线图看看。
+  expect:
+    toolSequence: ["search_stock", "get_kline"]
+    toolSequenceMatch: prefix
+    chartEvent: true
+    disclaimer: true
+  judge: rubric-answer-quality

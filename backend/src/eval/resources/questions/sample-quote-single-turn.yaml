@@ -1,0 +1,40 @@
+# 样例题 1：单轮行情查询（stub 模式）——工具链 search_stock → get_quote + 桩数值保真
+# 桩数据自洽：dataFidelity 锚点 1735.86 / 1.52 均取自下方 quotes.600519 的 price/changePct
+# （装载器校验锚点必须出现在桩数据 JSON 里，防"期望与桩不一致"的坏题）
+- id: sample-quote-single-turn
+  category: single-turn
+  mode: stub
+  turns:
+    - 茅台现在多少钱？
+  expect:
+    toolSequence: [search_stock, get_quote]
+    # prefix：与其余 st-quote-* 一致——search→quote 后允许追加调用（如补 search 佐证），exact 只留给排他性即评估点的题（mcp 两题）
+    toolSequenceMatch: prefix
+    entityAlignment:
+      tool: search_stock
+      paramContains: 茅台
+    chartEvent: false
+    disclaimer: true
+    refusal: false
+    dataFidelity:
+      answerContains: ["1735.86", "1.52"]
+  judge: rubric-answer-quality
+  stubData:
+    search:
+      - {code: "600519", name: 贵州茅台, market: "1", marketName: 沪市}
+    quotes:
+      600519:
+        code: "600519"
+        name: 贵州茅台
+        price: 1735.86
+        change: 26.02
+        changePct: 1.52
+        open: 1712.0
+        high: 1741.88
+        low: 1705.02
+        prevClose: 1709.84
+        volume: 3215400
+        amount: 55.47
+        pe: 22.4
+        pb: 8.11
+        time: "2026-09-14 15:00:00"

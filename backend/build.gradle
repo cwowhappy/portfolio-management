@@ -52,6 +52,22 @@ repositories {
     mavenCentral()
 }
 
+// Agent 效果评估源集（方案 §5.4 批次 4）：独立 main（JavaExec 直跑），非测试套件——
+// 无 Test 任务即不产生 exec 数据，jacocoAggregatedReport 的 executionData/sourceSets
+// 也不含它（见下方聚合报告配置），与 test/integrationTest/bdd 天然隔离。
+// 自建源集须显式接主线：main 的类与依赖（implementation）+ 下方 evalImplementation 专属依赖
+sourceSets {
+    eval {
+        // src/eval/java 与 src/eval/resources 是源集名 eval 的约定默认路径，勿再显式 srcDir（会重复注册触发 processEvalResources duplicate 报错）
+        compileClasspath += sourceSets.main.output
+        runtimeClasspath += sourceSets.main.output
+    }
+}
+configurations {
+    evalImplementation.extendsFrom implementation
+    evalRuntimeOnly.extendsFrom runtimeOnly
+}
+
 dependencies {
     // Boot 4 官方新名（原 spring-boot-starter-web）
     implementation('org.springframework.boot:spring-boot-starter-webmvc') {
@@ -101,11 +117,29 @@ dependencies {
     // ConcurrencyTestSupport：@Autowired JdbcTemplate 直插提交态种子
     testFixturesImplementation 'org.springframework:spring-beans'
     testFixturesImplementation 'org.springframework:spring-jdbc'
+    // AguiTestSupport：AGUI 集成测试共享请求/解析/登录骨架（MockMvc 三段式 + SSE 解析 + AssertJ）
+    testFixturesImplementation 'org.springframework:spring-web'
+    testFixturesImplementation 'com.fasterxml.jackson.core:jackson-databind'
+    testFixturesImplementation 'org.assertj:assertj-core'
+    // MockHttpServletResponse/Request 的公开签名引用 jakarta.servlet 类型，编译 testFixtures 需其在类路径
+    testFixturesImplementation 'jakarta.servlet:jakarta.servlet-api'
 
     // Descartes 变异引擎（extreme mutation 粗筛）：官方 1.3.4 基于 PIT 1.20.2 SPI 构建，
     // 经 ServiceLoader 作为 mutationEngine 切换使用；升级 PIT 前需先确认其适配（历史先例：
     // Descartes 连 PIT minor 升级都不兼容，STAMP-project/pitest-descartes#149）
     pitest 'eu.stamp-project:descartes:1.3.4'
+
+    // eval 源集（Agent 效果评估，方案 §5.4 批次 4）：MockMvc 驱动器 + Testcontainers PG +
+    // YAML 题库 + LLM-judge。注意：不进 test/integrationTest/bdd，不被 check / JaCoCo 聚合 /
+    // ArchUnit 触及（三者只挂既有源集，天然隔离）
+    evalImplementation('org.springframework.boot:spring-boot-starter-webmvc-test') {
+        // 同 test/integrationTest 源集：排除传递引入的 Jackson 3，评估类路径与生产对齐（统一 Jackson 2）
+        exclude group: 'org.springframework.boot', module: 'spring-boot-starter-jackson'
+    }
+    evalImplementation 'org.testcontainers:testcontainers-postgresql'
+    evalImplementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-yaml'
+    // 预留：real 轨/HITL 题型扩展时的替身 scripting 需要（本批次桩模式未用，按方案依赖清单装配）
+    evalImplementation 'org.mockito:mockito-core'
 }
 
 testing {
@@ -170,11 +204,14 @@ tasks.named('test') {
 }
 
 tasks.named('check') {
-    dependsOn jacocoTestCoverageVerification, jacocoAggregatedReport
+    // eval 源集仅以编译防漂断挂进 check（断言器/题库/loader 与主线同步演化，改坏即编译失败）；
+    // 评估本身仍只经 evalAgent 手动跑——不入门禁、不跑 LLM，「评估不进 CI 门禁」的定位不变
+    dependsOn jacocoTestCoverageVerification, jacocoAggregatedReport, 'compileEvalJava'
 }
 
 // PIT 变异测试配置：非阻塞手动诊断，不设覆盖率/变异率门槛、不挂 check；
-// 只变异核心域三类（成本盈亏引擎 / 估值应用服务 / 行情解析器），控制单次运行时长
+// 变异核心域三类（成本盈亏引擎 / 估值应用服务 / 行情解析器）+ agent 纯逻辑三类
+// （InvestTools / UserToolkitFactory / ChartSpecs，2026-09-15 测试方案批次 3 扩入），控制单次运行时长
 pitest {
     // 1.20.2：与 Descartes 1.3.4 的 SPI 基线对齐（降级自 1.30.0）。注意该版本早于 JUnit 6，
     // minion 驱动 platform 6 引擎属超纲组合，靠下方 launcher 对齐 6.0.3 工作；升级前回归验证
@@ -184,6 +221,10 @@ pitest {
             'com.portfolio.invest.domain.portfolio.Position',
             'com.portfolio.invest.application.valuation.*',
             'com.portfolio.invest.domain.market.MarketDataParser',
+            // agent 纯逻辑三类（2026-09-15 测试方案批次 3 扩入）
+            'com.portfolio.invest.agent.InvestTools',
+            'com.portfolio.invest.agent.UserToolkitFactory',
+            'com.portfolio.invest.agent.chart.ChartSpecs',
     ]
     // 显式限定测试类：默认按包通配会把被测主类本身当成测试容器，导致 "tests did not pass" 误报
     targetTests = [
@@ -191,6 +232,9 @@ pitest {
             'com.portfolio.invest.application.valuation.ValuationApplicationServiceTest',
             'com.portfolio.invest.domain.market.MarketDataParserTest',
             'com.portfolio.invest.domain.market.MarketDataParserEdgeCasesTest',
+            'com.portfolio.invest.agent.InvestToolsTest',
+            'com.portfolio.invest.agent.UserToolkitFactoryTest',
+            'com.portfolio.invest.agent.chart.ChartSpecsTest',
     ]
     threads = 4
     // 关闭插件自动向 testRuntimeOnly 注入带版本的 junit-platform-launcher：
@@ -239,6 +283,54 @@ tasks.register('pitestDescartes', info.solidsoft.gradle.pitest.PitestTask) {
     useAdditionalClasspathFile = true
     additionalClasspathFile = layout.buildDirectory.file('pitClasspathDescartes')
     shouldRunAfter(tasks.named('test'))
+}
+
+// Agent 效果评估入口（方案 §5.4 批次 4）：真实 DeepSeek 诊断仪——不挂 check、无通过率门槛，
+// 报告恒生成、退出码恒 0（缺 DEEPSEEK_API_KEY 的指引性退出 1 除外）。入口 `make eval-agent`
+tasks.register('evalAgent', JavaExec) {
+    group = 'verification'
+    description = 'Agent 效果评估（真实 LLM 诊断，不挂门禁）'
+    classpath = sourceSets.eval.runtimeClasspath
+    mainClass = 'com.portfolio.invest.eval.EvalRunner'
+    // 可选参数透传：./gradlew evalAgent -PevalArgs="--compare=/path/to/prev.json"
+    if (project.hasProperty('evalArgs')) {
+        args(project.property('evalArgs').toString().split('\\s+') as List)
+    }
+    // 同 tasks.withType(Test) 的两处环境前提：本地 Colima 挂不进 Ryuk；remember-me key 无兜底
+    environment 'TESTCONTAINERS_RYUK_DISABLED', 'true'
+    environment 'REMEMBER_ME_KEY', 'eval-remember-me-key'
+    // agentscope 的 DeepSeekModelProvider 在 context 未显式给 key 时回退 System.getenv("DEEPSEEK_API_KEY")，
+    // 该值无法在 JVM 内注入——必须在进程启动前落到环境变量。取值优先级：
+    //   ① -PevalDeepseekModel / -PevalDeepseekBaseUrl（调用方显式指定，Makefile 已透传）
+    //   ② 构建（daemon）进程环境变量
+    //   ③ 仓库根 .env
+    // 三者解析出的最终值无条件写入子进程 env（覆盖 daemon 继承值——daemon 复用时会固化启动时的
+    // 旧环境，"VAR=x make eval-agent" 的临时覆盖若只改 daemon 外环境会被旧值压掉，故须显式盖写）
+    doFirst {
+        def fromEnvFile = [:]
+        def rootEnv = rootProject.file('.env')
+        if (rootEnv.exists()) {
+            rootEnv.eachLine { line ->
+                def trimmed = line.trim()
+                if (!trimmed || trimmed.startsWith('#')) return
+                def m = (trimmed =~ /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/)
+                if (!m.matches()) return
+                fromEnvFile[m[0][1]] = m[0][2].trim().replaceAll(/^["']|["']$/, '')
+            }
+        }
+        def pick = { String projectProp, String envKey ->
+            if (project.hasProperty(projectProp)) return project.property(projectProp).toString()
+            if (System.getenv(envKey)?.trim()) return System.getenv(envKey).trim()
+            return fromEnvFile[envKey]
+        }
+        ['DEEPSEEK_MODEL'  : pick('evalDeepseekModel', 'DEEPSEEK_MODEL'),
+         'DEEPSEEK_BASE_URL': pick('evalDeepseekBaseUrl', 'DEEPSEEK_BASE_URL')].each { k, v ->
+            if (v?.trim()) environment k, v
+        }
+        // key 不走 -P（避免出现在命令行/进程列表）：daemon env → .env
+        def apiKey = System.getenv('DEEPSEEK_API_KEY')?.trim() ?: fromEnvFile['DEEPSEEK_API_KEY']
+        if (apiKey) environment 'DEEPSEEK_API_KEY', apiKey
+    }
 }
 
 // test 单任务报告：供聚焦测试（--tests X）快速查看，不触发其他 suite

@@ -1,0 +1,146 @@
+# MCP 扩展源 6 题（全部 stub 模式）：runner 为 mcp 类题懒启动内嵌桩 MCP server
+# （EvalMcpSupport，write_note/read_note/get_research_report，McpHitl 同款）并为该题用户
+# seed 扩展源配置。含 2 题 HITL 写工具中断（permission_confirm）与内置/MCP 兜底分工。
+
+- id: mcp-hitl-note-quote
+  category: mcp
+  mode: stub
+  turns:
+    - 帮我把贵州茅台今天的行情记到笔记里，文件名叫 maotai.md。
+  expect:
+    entityAlignment: {tool: "write_note", paramContains: 茅台}
+    interrupt: {toolName: "write_note", kind: "permission_confirm"}
+    chartEvent: false
+  judge: rubric-hitl-interrupt
+  # HITL：写笔记触发权限审批中断，run 停在等批准处（中断存在 + toolCallId 匹配 + 未执行）；
+  # judge 评中断前行为（不伪造已写入、参数贴合请求）
+  stubData:
+    search:
+      - {code: "600519", name: 贵州茅台, market: "1", marketName: 沪市}
+    quotes:
+      "600519":
+        code: "600519"
+        name: 贵州茅台
+        price: 1735.86
+        change: 26.02
+        changePct: 1.52
+        open: 1712.0
+        high: 1741.88
+        low: 1705.02
+        prevClose: 1709.84
+        volume: 3215400
+        amount: 55.47
+        pe: 22.4
+        pb: 8.11
+        time: "2026-09-14 15:00:00"
+
+- id: mcp-hitl-note-trend
+  category: mcp
+  mode: stub
+  turns:
+    - 把平安银行最近的行情表现总结成一条笔记保存下来。
+  expect:
+    entityAlignment: {tool: "write_note", paramContains: 平安银行}
+    interrupt: {toolName: "write_note", kind: "permission_confirm"}
+    chartEvent: false
+  judge: rubric-hitl-interrupt
+  stubData:
+    search:
+      - {code: "000001", name: 平安银行, market: "0", marketName: 深市}
+    quotes:
+      "000001":
+        code: "000001"
+        name: 平安银行
+        price: 11.86
+        change: -0.14
+        changePct: -1.17
+        open: 12.02
+        high: 12.05
+        low: 11.80
+        prevClose: 12.00
+        volume: 86540000
+        amount: 10.28
+        pe: 4.85
+        pb: 0.58
+        time: "2026-09-14 15:00:00"
+
+- id: mcp-note-read
+  category: mcp
+  mode: stub
+  turns:
+    - 我的笔记里记了什么？帮我读一下笔记。
+  expect:
+    toolSequence: ["read_note"]
+    toolSequenceMatch: exact
+    chartEvent: false
+  judge: rubric-answer-quality
+  # 只读工具（readOnlyHint=true）不弹审批直接执行；read_note 返回评估桩固定内容
+
+- id: mcp-research-maotai
+  category: mcp
+  mode: stub
+  turns:
+    - 我启用了研报扩展源，帮我看看贵州茅台最新的卖方研报观点。
+  expect:
+    toolSequence: ["search_stock"]
+    toolSequenceMatch: prefix
+    entityAlignment: {tool: "get_research_report", paramContains: "600519"}
+    chartEvent: false
+    disclaimer: true
+  judge: rubric-answer-quality
+  # 兜底分工①：研报领域内置工具不覆盖 → 扩展源 get_research_report 兜底（先 search_stock 拿代码）
+  stubData:
+    search:
+      - {code: "600519", name: 贵州茅台, market: "1", marketName: 沪市}
+
+- id: mcp-research-catl
+  category: mcp
+  mode: stub
+  turns:
+    - 用研报扩展源查一下宁德时代最近的研报观点。
+  expect:
+    toolSequence: ["search_stock"]
+    toolSequenceMatch: prefix
+    entityAlignment: {tool: "get_research_report", paramContains: "300750"}
+    chartEvent: false
+    disclaimer: true
+  judge: rubric-answer-quality
+  stubData:
+    search:
+      - {code: "300750", name: 宁德时代, market: "0", marketName: 深市}
+
+- id: mcp-prefer-builtin
+  category: mcp
+  mode: stub
+  turns:
+    - 我配置了扩展数据源。贵州茅台现在多少钱？
+  expect:
+    toolSequence: ["search_stock", "get_quote"]
+    toolSequenceMatch: exact
+    entityAlignment: {tool: "search_stock", paramContains: 茅台}
+    chartEvent: false
+    disclaimer: true
+    refusal: false
+    dataFidelity:
+      answerContains: ["1735.86"]
+  judge: rubric-answer-quality
+  # 兜底分工②：核心行情问题即使配置了扩展源也须内置优先（exact 序列不含 MCP 工具）
+  stubData:
+    search:
+      - {code: "600519", name: 贵州茅台, market: "1", marketName: 沪市}
+    quotes:
+      "600519":
+        code: "600519"
+        name: 贵州茅台
+        price: 1735.86
+        change: 26.02
+        changePct: 1.52
+        open: 1712.0
+        high: 1741.88
+        low: 1705.02
+        prevClose: 1709.84
+        volume: 3215400
+        amount: 55.47
+        pe: 22.4
+        pb: 8.11
+        time: "2026-09-14 15:00:00"
