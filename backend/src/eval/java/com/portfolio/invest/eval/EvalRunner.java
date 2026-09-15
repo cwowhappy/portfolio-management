@@ -211,6 +211,10 @@ public final class EvalRunner {
             }
             AguiEventExtractor.Transcript transcript = AguiEventExtractor.extract(turns);
             List<AssertionEngine.DimensionResult> dimensions = AssertionEngine.evaluate(question, transcript);
+            // LLM 实际所见的 TOOL 输出（state 落盘读回）：图表类调用 SSE 只有全量 ChartSpec，
+            // 其摘要被双通道 skipSet 跳过——judge 数值核对的事实源须取模型真正看到的文本
+            Map<String, String> llmSeen = AguiEventExtractor.llmToolOutputs(
+                    Path.of("build", "eval-agent", "state"), threadId);
 
             DeepSeekJudge.Verdict verdict = judge.judge(question.judge(),
                     readResource("rubric/" + question.judge() + ".md"),
@@ -218,10 +222,10 @@ public final class EvalRunner {
                     Map.of("question", String.join("\n", question.turns()),
                             "answer", transcript.assistantText(),
                             // 工具入参 + 返回摘要（judge 数值核对的唯一事实源；ChartSpec 由 forJudge
-                            // 剥离——emit 的全量 spec 模型看不见，非图表结果截 2000 防刷屏）
+                            // 剥离、换 state 里的 LLM 所见摘要；非图表结果截 2000 防刷屏）
                             "tools", transcript.toolCalls().isEmpty() ? "（无工具调用）"
                                     : String.join("\n", transcript.toolCalls().stream()
-                                            .map(c -> c.forJudge(2000)).toList())));
+                                            .map(c -> c.forJudge(2000, llmSeen.get(c.toolCallId()))).toList())));
 
             boolean turnFailed = turns.stream().anyMatch(AguiDriver.SseTurn::failed);
             boolean dimsFail = dimensions.stream()

@@ -30,10 +30,12 @@ public final class AguiEventExtractor {
 
         /**
          * judge 提示词用：调用与返回摘要。emit 的全量 ChartSpec 从不进 LLM（InvestTools 双通道，
-         * LLM 只见文本摘要）——judge 材料对齐模型实际所见，spec 整体剥离、以占位符示意已出图
-         * （附 type/title 供 judge 判断「如图所示」类表述非虚构）；非图表结果截断防刷屏。
+         * LLM 只见文本摘要）——judge 材料对齐模型实际所见：spec 整体剥离，改示
+         * {@code llmSeenText}（从 harness state 落盘读回的 LLM 实际所见摘要，见
+         * {@link #llmToolOutputs}）；缺失时退化为仅示意已出图的占位符。非图表调用的 SSE 结果
+         * 即 LLM 所见（双通道同文），截断防刷屏。
          */
-        public String forJudge(int maxResultChars) {
+        public String forJudge(int maxResultChars, String llmSeenText) {
             String result = resultText == null ? "" : resultText;
             if (result.contains("\"specVersion\"")) {
                 String type = null;
@@ -45,12 +47,18 @@ public final class AguiEventExtractor {
                 } catch (IOException ignored) {
                     // 解析失败退化为不带 type/title 的占位符
                 }
+                String seen = llmSeenText == null || llmSeenText.isBlank() ? "" : "，LLM 实际只见文本摘要: " + llmSeenText;
                 return signature() + " => [ChartSpec 已剥离：本调用已向前端输出图表"
                         + (type == null ? "" : "（type=" + type + (title == null ? "" : "，" + title) + "）")
-                        + "，LLM 实际只见文本摘要]";
+                        + seen + "]";
             }
             String truncated = result.length() <= maxResultChars ? result : result.substring(0, maxResultChars) + "…";
             return signature() + " => " + truncated;
+        }
+
+        /** 兼容入口（无 LLM 所见证据时的退化形态）。 */
+        public String forJudge(int maxResultChars) {
+            return forJudge(maxResultChars, null);
         }
     }
 
@@ -76,6 +84,46 @@ public final class AguiEventExtractor {
         public List<String> toolNames() {
             return toolCalls.stream().map(ToolObservation::toolName).toList();
         }
+    }
+
+    /**
+     * 从 harness state 落盘读回 LLM 实际所见的 TOOL 输出（toolCallId → 输出文本），供 judge
+     * 材料对齐模型实际所见。双通道下 emit 的全量 ChartSpec 只走 SSE、其返回摘要被 skipSet
+     * 跳过——图表类调用「模型看到了什么」只在 state（AguiChartIntegrationTest 同一事实源）。
+     * 路径约定 {@code <stateRoot>/<userId>/<threadId>/agent_state.json}（runner 已把 state-root
+     * 重定向到 build/）；文件缺失/解析失败返回空 Map（退化占位，不致错）。
+     */
+    public static Map<String, String> llmToolOutputs(java.nio.file.Path stateRoot, String threadId) {
+        Map<String, String> outputs = new LinkedHashMap<>();
+        if (stateRoot == null || threadId == null || !java.nio.file.Files.isDirectory(stateRoot)) {
+            return outputs;
+        }
+        try (var files = java.nio.file.Files.find(stateRoot, 3,
+                (p, at) -> p.getFileName().toString().equals("agent_state.json")
+                        && p.getParent() != null && threadId.equals(p.getParent().getFileName().toString()))) {
+            files.findFirst().ifPresent(file -> {
+                try {
+                    JsonNode context = MAPPER.readTree(file.toFile()).path("context");
+                    for (JsonNode message : context) {
+                        if (!"TOOL".equals(message.path("role").asText(""))) continue;
+                        for (JsonNode block : message.path("content")) {
+                            if (!"tool_result".equals(block.path("type").asText(""))) continue;
+                            StringBuilder text = new StringBuilder();
+                            for (JsonNode out : block.path("output")) {
+                                if ("text".equals(out.path("type").asText(""))) text.append(out.path("text").asText(""));
+                            }
+                            String id = block.path("id").asText(null);
+                            if (id != null && !text.isEmpty()) outputs.put(id, text.toString());
+                        }
+                    }
+                } catch (IOException ignored) {
+                    // 单文件解析失败按无证据处理
+                }
+            });
+        } catch (IOException e) {
+            // 目录遍历失败按无证据处理（退化占位，不致错）
+        }
+        return outputs;
     }
 
     public static Transcript extract(List<AguiDriver.SseTurn> turns) {
