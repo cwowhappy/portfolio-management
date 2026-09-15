@@ -218,6 +218,8 @@ def _field_columns():
                 "total_mv": {"from": "total_mv", "type": "numeric"},
                 "circ_mv": {"from": "circ_mv", "type": "numeric"},
                 "turnover_rate": {"from": "turnover_rate", "type": "numeric"},
+                "trading_day": {"from": "trading_day", "type": "str"},
+                "close": {"from": "close", "type": "numeric"},
             }
         ),
         "field_mapping_stock_financial": FieldMappingConverter(

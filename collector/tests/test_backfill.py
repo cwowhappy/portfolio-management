@@ -59,3 +59,10 @@ def test_index_valuation_plugin_wired_with_dividend_fetch():
     plugin = regs["source"].plugins["index_valuation"]
     assert isinstance(plugin, IndexValuationSource)
     assert plugin.dividend_fetch is not None
+
+
+def test_stock_valuation_daily_backfill_allowed():
+    # supports_range=True 后，backfill 不再拒绝该任务
+    from collector.sources.plugins import StockValuationDailySource
+
+    assert StockValuationDailySource.supports_range is True

@@ -33,6 +33,7 @@ def _fake_daily_basic():
             "total_mv": [210000.0, 58000.0, 1000.0, 500.0],  # 万元
             "circ_mv": [210000.0, 58000.0, 1000.0, 500.0],
             "turnover_rate": [0.35, 0.62, 0.10, 0.05],
+            "close": [1500.0, 128.0, 10.0, 2.0],
         }
     )
 
@@ -52,6 +53,7 @@ def test_stock_valuation_daily_filters_st_and_bse(monkeypatch):
     codes = set(df["stock_code"])
     assert codes == {"600519", "000858"}  # 剔除北交所 830000 与 ST 600001
     assert list(df.columns) == [
+        "trading_day",
         "stock_code",
         "stock_name",
         "pe_ttm",
@@ -60,11 +62,15 @@ def test_stock_valuation_daily_filters_st_and_bse(monkeypatch):
         "total_mv",
         "circ_mv",
         "turnover_rate",
+        "close",
     ]
+    # 仅 date 参数走单日增量：trading_day 来自 date 参数归一化，不再由 executor 兜底注入
+    assert set(df["trading_day"]) == {"20260827"}
     # total_mv 万元 → 元：210000.0 万元 * 10000 = 2.1e9 元
     row = df[df["stock_code"] == "600519"].iloc[0]
     assert row["total_mv"] == pytest.approx(2100000000.0)
     assert row["stock_name"] == "贵州茅台"
+    assert row["close"] == pytest.approx(1500.0)  # MS-07：收盘价随快照落列
 
 
 def test_stock_financial_normalizes_and_backfills(monkeypatch):

@@ -283,33 +283,65 @@ class IndexConstituentSource(Source):
 
 
 class StockValuationDailySource(Source):
-    """全 A 个股估值日快照：tushare daily_basic 按交易日批量 + stock_basic 过滤 ST/退市/北交所。"""
+    """全 A 个股估值日快照：tushare daily_basic 按交易日批量 + stock_basic 过滤 ST/退市/北交所。
+    含收盘价 close 列（MS-07）；supports_range=True 时按交易日历逐日拉取，供历史回填。"""
 
-    supports_range = False
+    STOCK_DAILY_MIN_INTERVAL = 0.35  # daily_basic 客户端限速（≈171 次/分钟），对照 FINANCIAL_MIN_INTERVAL
 
-    def __init__(self, source_id, pro_factory):
+    supports_range = True
+
+    def __init__(self, source_id, pro_factory, limiter=None):
         self.source_id = source_id
         self.pro_factory = pro_factory
+        self.limiter = limiter if limiter is not None else RateLimiter(min_interval=self.STOCK_DAILY_MIN_INTERVAL)
 
     def _valid_universe(self, pro):
         basic = pro.stock_basic(list_status="L", fields="ts_code,name")
         basic = basic[basic["ts_code"].str.endswith((".SH", ".SZ"))]  # 剔除北交所/老三板
         return basic[~basic["name"].str.contains("ST|退", na=False)]
 
-    def fetch(self, params):
-        pro = self.pro_factory()
-        day = _date_param(params, "date")
-        universe = self._valid_universe(pro)
+    def _fetch_day(self, pro, universe, day):
         daily = pro.daily_basic(trade_date=day)
-        df = daily.merge(universe, on="ts_code", how="inner")
-        df = df.copy()
+        df = daily.merge(universe, on="ts_code", how="inner").copy()
         df["stock_code"] = df["ts_code"].str.split(".").str[0]
         df["stock_name"] = df["name"]
         df["dividend_yield"] = df["dv_ttm"]
-        df["total_mv"] = df["total_mv"] * 10000  # 万元 → 元
+        df["total_mv"] = df["total_mv"] * 10000
         df["circ_mv"] = df["circ_mv"] * 10000
-        return df[
-            ["stock_code", "stock_name", "pe_ttm", "pb", "dividend_yield", "total_mv", "circ_mv", "turnover_rate"]
+        return df
+
+    def _open_days(self, pro, start, end):
+        cal = pro.trade_cal(exchange="SSE", start_date=start, end_date=end, is_open="1")
+        return sorted(cal["cal_date"].tolist())
+
+    def fetch(self, params):
+        pro = self.pro_factory()
+        start, end = _date_param(params, "start"), _date_param(params, "end")
+        universe = self._valid_universe(pro)
+        if "start" in params or "end" in params or "date" not in params:
+            days = self._open_days(pro, start, end)
+        else:
+            days = [start]  # 仅 date 参数：单日增量（start 已回退为 date）
+        frames = []
+        for day in days:
+            self.limiter.wait()
+            df = self._fetch_day(pro, universe, day)
+            df.insert(0, "trading_day", day)
+            frames.append(df)
+        out = pd.concat(frames, ignore_index=True)
+        return out[
+            [
+                "trading_day",
+                "stock_code",
+                "stock_name",
+                "pe_ttm",
+                "pb",
+                "dividend_yield",
+                "total_mv",
+                "circ_mv",
+                "turnover_rate",
+                "close",
+            ]
         ]
 
 
