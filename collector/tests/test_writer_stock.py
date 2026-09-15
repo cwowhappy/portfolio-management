@@ -4,7 +4,7 @@ from collector.store.writer import Store
 
 
 def test_upsert_stock_valuation_daily_idempotent(pg_conn):
-    """冲突键 (trading_day, stock_code)，同主键重复 upsert 后仍为一行。"""
+    """冲突键 (trading_day, stock_code)，同主键重复 upsert 后仍为一行；close 列（V13）随写并被更新。"""
     store = Store()
     day = dt.date(2026, 8, 27)
     row = {
@@ -17,6 +17,7 @@ def test_upsert_stock_valuation_daily_idempotent(pg_conn):
         "total_mv": 2100000000000.0,
         "circ_mv": 2100000000000.0,
         "turnover_rate": 0.35,
+        "close": 1500.0,
     }
     store.upsert(pg_conn, "stock_valuation_daily", [row])
     store.upsert(pg_conn, "stock_valuation_daily", [row])  # 幂等
@@ -24,6 +25,10 @@ def test_upsert_stock_valuation_daily_idempotent(pg_conn):
         "SELECT count(*) FROM stock_valuation_daily WHERE trading_day=%s AND stock_code=%s", (day, "600519")
     ).fetchone()[0]
     assert count == 1
+    close = pg_conn.execute(
+        "SELECT close FROM stock_valuation_daily WHERE trading_day=%s AND stock_code=%s", (day, "600519")
+    ).fetchone()[0]
+    assert float(close) == 1500.0  # close 列真实落库（非静默丢弃）
 
 
 def test_upsert_stock_financial_idempotent(pg_conn):
