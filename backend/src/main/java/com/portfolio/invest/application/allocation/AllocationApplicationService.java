@@ -9,6 +9,8 @@ import com.portfolio.invest.domain.allocation.AllocationPlan;
 import com.portfolio.invest.domain.allocation.AllocationPlanRepository;
 import com.portfolio.invest.domain.allocation.AllocationTemplate;
 import com.portfolio.invest.domain.allocation.AssetClass;
+import com.portfolio.invest.domain.allocation.RiskAssessment;
+import com.portfolio.invest.domain.allocation.RiskAssessmentRepository;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -17,6 +19,7 @@ import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,11 +28,14 @@ public class AllocationApplicationService {
 
     private final AllocationPlanRepository repository;
     private final PortfolioApplicationService portfolioService;
+    private final RiskAssessmentRepository assessmentRepository;
 
     public AllocationApplicationService(AllocationPlanRepository repository,
-                                        PortfolioApplicationService portfolioService) {
+                                        PortfolioApplicationService portfolioService,
+                                        RiskAssessmentRepository assessmentRepository) {
         this.repository = repository;
         this.portfolioService = portfolioService;
+        this.assessmentRepository = assessmentRepository;
     }
 
     public List<TemplateView> templates() {
@@ -82,6 +88,26 @@ public class AllocationApplicationService {
             slices.add(new DeviationView.DeviationSlice(ac, target, actualWeight, actualWeight.subtract(target)));
         }
         return new DeviationView(slices);
+    }
+
+    public QuestionnaireView questionnaire() {
+        return QuestionnaireView.fromBuiltin();
+    }
+
+    public Optional<AssessmentView> latestAssessment(Long userId) {
+        return assessmentRepository.findByUserId(userId).map(AssessmentView::from);
+    }
+
+    @Transactional
+    public AssessmentView submitAssessment(Long userId, SubmitAssessmentCommand cmd) {
+        Map<String, String> answers = new LinkedHashMap<>();
+        for (AnswerInput in : cmd.answers()) {
+            if (answers.putIfAbsent(in.questionId(), in.optionId()) != null) {
+                throw new AllocationException(AllocationErrorCode.INVALID_INPUT, "题目重复作答");
+            }
+        }
+        RiskAssessment graded = RiskAssessment.grade(userId, answers, Instant.now());
+        return AssessmentView.from(assessmentRepository.save(graded));
     }
 
     private AllocationPlan requirePlan(Long userId, Long planId) {

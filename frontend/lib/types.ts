@@ -228,12 +228,21 @@ export interface Concentration { holdings: ConcentrationHolding[]; top5Ratio: nu
 // —— 资产配置 ——
 
 export type AssetClass = "STOCK" | "BOND" | "GOLD" | "CASH" | "REITS";
-export type PlanSource = "TEMPLATE" | "CUSTOM";
+export type PlanSource = "TEMPLATE" | "CUSTOM" | "ASSESSMENT";
 export interface WeightView { assetClass: AssetClass; weight: number; }
 export interface TemplateView { id: string; name: string; weights: WeightView[]; }
 export interface PlanView { id: number; name: string; source: PlanSource; weights: WeightView[]; active: boolean; }
 export interface DeviationSlice { assetClass: AssetClass; targetWeight: number; actualWeight: number; deviation: number; }
 export interface DeviationView { slices: DeviationSlice[]; }
+
+export type RiskProfile = "CONSERVATIVE" | "STABLE" | "BALANCED" | "GROWTH" | "AGGRESSIVE";
+export interface OptionView { id: string; text: string; }
+export interface QuestionView { id: string; dimension: string; text: string; options: OptionView[]; }
+export interface QuestionnaireView { questions: QuestionView[]; }
+export interface AssessmentView {
+  totalScore: number; profile: RiskProfile; profileName: string;
+  weights: WeightView[]; answers: Record<string, string>; assessedAt: string;
+}
 
 // —— 价值筛选（/api/screening/**，与后端 ScreeningController 的 DTO 对齐）——
 

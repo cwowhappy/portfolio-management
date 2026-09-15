@@ -1,9 +1,12 @@
 package com.portfolio.invest.web;
 
 import com.portfolio.invest.application.allocation.AllocationApplicationService;
+import com.portfolio.invest.application.allocation.AssessmentView;
 import com.portfolio.invest.application.allocation.CreatePlanCommand;
 import com.portfolio.invest.application.allocation.DeviationView;
 import com.portfolio.invest.application.allocation.PlanView;
+import com.portfolio.invest.application.allocation.QuestionnaireView;
+import com.portfolio.invest.application.allocation.SubmitAssessmentCommand;
 import com.portfolio.invest.application.allocation.TemplateView;
 import com.portfolio.invest.application.allocation.UpdatePlanCommand;
 import com.portfolio.invest.infrastructure.security.AuthenticatedUser;
@@ -66,6 +69,23 @@ public class AllocationController {
     @GetMapping("/deviation")
     public DeviationView deviation(Authentication auth) {
         return service.deviation(currentUserId(auth));
+    }
+
+    @GetMapping("/assessment/questionnaire")
+    public QuestionnaireView questionnaire() {
+        return service.questionnaire();
+    }
+
+    @GetMapping("/assessment")
+    public ResponseEntity<AssessmentView> latestAssessment(Authentication auth) {
+        return service.latestAssessment(currentUserId(auth))
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.noContent().build());
+    }
+
+    @PostMapping("/assessment")
+    public AssessmentView submitAssessment(Authentication auth, @Valid @RequestBody SubmitAssessmentCommand cmd) {
+        return service.submitAssessment(currentUserId(auth), cmd);
     }
 
     private static Long currentUserId(Authentication auth) {

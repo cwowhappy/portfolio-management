@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { fetchTemplates, fetchPlans, fetchDeviation } from "@/lib/allocationApi";
-import type { TemplateView, PlanView, DeviationView } from "@/lib/types";
+import { fetchTemplates, fetchPlans, fetchDeviation, fetchAssessment } from "@/lib/allocationApi";
+import type { TemplateView, PlanView, DeviationView, AssessmentView } from "@/lib/types";
+import AssessmentCard from "./AssessmentCard";
 import DeviationChart from "./DeviationChart";
 import PlanEditor from "./PlanEditor";
 import PlanList from "./PlanList";
@@ -11,16 +12,17 @@ export default function AllocationBoard() {
   const [templates, setTemplates] = useState<TemplateView[]>([]);
   const [plans, setPlans] = useState<PlanView[]>([]);
   const [deviation, setDeviation] = useState<DeviationView | null>(null);
+  const [assessment, setAssessment] = useState<AssessmentView | null>(null);
   const [editing, setEditing] = useState<PlanView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const requestSeqRef = useRef(0);
 
   const reload = useCallback(() => {
     const seq = ++requestSeqRef.current;
-    Promise.all([fetchTemplates(), fetchPlans(), fetchDeviation()])
-      .then(([t, p, d]) => {
+    Promise.all([fetchTemplates(), fetchPlans(), fetchDeviation(), fetchAssessment()])
+      .then(([t, p, d, a]) => {
         if (seq !== requestSeqRef.current) return; // 已有更新的 reload，丢弃过期响应
-        setTemplates(t); setPlans(p); setDeviation(d);
+        setTemplates(t); setPlans(p); setDeviation(d); setAssessment(a ?? null);
       })
       .catch((e) => {
         if (seq !== requestSeqRef.current) return;
@@ -37,6 +39,7 @@ export default function AllocationBoard() {
       <div className="flex items-center justify-between">
         <h1 className="font-[family-name:var(--font-display)] text-2xl">资产配置</h1>
       </div>
+      <AssessmentCard assessment={assessment} onChanged={reload} />
       <DeviationChart deviation={deviation} />
       <PlanEditor key={editing?.id ?? "new"} templates={templates} editing={editing} onSaved={() => { setEditing(null); reload(); }} />
       <PlanList plans={plans} onChanged={reload} onEdit={setEditing} />

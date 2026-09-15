@@ -1,11 +1,11 @@
 import { z } from "zod";
 import {
-  DeviationViewSchema, PlanViewSchema, TemplateViewSchema,
+  AssessmentViewSchema, DeviationViewSchema, PlanViewSchema, QuestionnaireViewSchema, TemplateViewSchema,
 } from "./schemas";
 import type {
-  AssetClass, DeviationView, PlanSource, PlanView, TemplateView, WeightView,
+  AssetClass, AssessmentView, DeviationView, PlanSource, PlanView, QuestionnaireView, TemplateView, WeightView,
 } from "./types";
-import { request } from "./http";
+import { get, request } from "./http";
 
 export const ASSET_CLASSES: AssetClass[] = ["STOCK", "BOND", "GOLD", "CASH", "REITS"];
 export const ASSET_CLASS_LABELS: Record<AssetClass, string> = {
@@ -22,3 +22,10 @@ export const activatePlan = (planId: number) =>
   request<PlanView>(`/api/allocation/plans/${planId}/activate`, "POST", undefined, PlanViewSchema);
 export const deletePlan = (planId: number) => request<void>(`/api/allocation/plans/${planId}`, "DELETE");
 export const fetchDeviation = () => request<DeviationView>("/api/allocation/deviation", "GET", undefined, DeviationViewSchema);
+
+export const fetchQuestionnaire = () =>
+  get<QuestionnaireView>("/api/allocation/assessment/questionnaire", QuestionnaireViewSchema);
+export const fetchAssessment = () =>
+  request<AssessmentView | undefined>("/api/allocation/assessment", "GET", undefined, AssessmentViewSchema);
+export const submitAssessment = (answers: { questionId: string; optionId: string }[]) =>
+  request<AssessmentView>("/api/allocation/assessment", "POST", { answers }, AssessmentViewSchema);

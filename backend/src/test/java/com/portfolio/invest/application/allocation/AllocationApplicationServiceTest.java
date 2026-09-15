@@ -9,12 +9,16 @@ import com.portfolio.invest.domain.allocation.AllocationPlan;
 import com.portfolio.invest.domain.allocation.AllocationPlanRepository;
 import com.portfolio.invest.domain.allocation.AssetClass;
 import com.portfolio.invest.domain.allocation.PlanSource;
+import com.portfolio.invest.domain.allocation.RiskAssessmentRepository;
+import com.portfolio.invest.domain.allocation.RiskProfile;
+import com.portfolio.invest.domain.allocation.RiskQuestion;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -31,11 +35,12 @@ class AllocationApplicationServiceTest {
 
     private final AllocationPlanRepository repo = mock(AllocationPlanRepository.class);
     private final PortfolioApplicationService portfolio = mock(PortfolioApplicationService.class);
+    private final RiskAssessmentRepository assessmentRepository = mock(RiskAssessmentRepository.class);
     private AllocationApplicationService service;
 
     @BeforeEach
     void setUp() {
-        service = new AllocationApplicationService(repo, portfolio);
+        service = new AllocationApplicationService(repo, portfolio, assessmentRepository);
     }
 
     private static List<WeightInput> w60_40() {
@@ -159,5 +164,53 @@ class AllocationApplicationServiceTest {
         assertThat(bond.targetWeight()).isEqualByComparingTo("40");
         assertThat(bond.actualWeight()).isEqualByComparingTo("0");
         assertThat(bond.deviation()).isEqualByComparingTo("-40");
+    }
+
+    @DisplayName("问卷视图来自内置题库：8 题且选项不含分值")
+    @Test
+    void whenQuestionnaire_thenBuiltin8QuestionsWithoutScores() {
+        var view = service.questionnaire();
+
+        assertThat(view.questions()).hasSize(8);
+        assertThat(view.questions().get(0).id()).isEqualTo("Q1");
+        assertThat(view.questions().get(0).options()).hasSize(5);
+        // 选项视图不暴露分值（评分在后端）
+        assertThat(view.questions().get(0).options().get(0).text()).isEqualTo("30 岁及以下");
+    }
+
+    @DisplayName("提交答卷：评分定档并保存，返回推荐权重")
+    @Test
+    void whenSubmitAssessment_thenGradeAndSave() {
+        var answers = Arrays.stream(RiskQuestion.values())
+                .map(q -> new AnswerInput(q.name(), "C"))
+                .toList();
+        when(assessmentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        var view = service.submitAssessment(42L, new SubmitAssessmentCommand(answers));
+
+        assertThat(view.totalScore()).isEqualTo(24);
+        assertThat(view.profile()).isEqualTo(RiskProfile.BALANCED);
+        assertThat(view.profileName()).isEqualTo("平衡");
+        assertThat(view.weights()).hasSize(4); // 平衡档无 REITS
+        verify(assessmentRepository).save(any());
+    }
+
+    @DisplayName("提交答卷：题目重复作答拒绝")
+    @Test
+    void whenDuplicateQuestion_thenReject() {
+        var answers = List.of(
+                new AnswerInput("Q1", "A"),
+                new AnswerInput("Q1", "B"));
+
+        assertThatThrownBy(() -> service.submitAssessment(42L, new SubmitAssessmentCommand(answers)))
+                .isInstanceOf(AllocationException.class);
+    }
+
+    @DisplayName("最新结果：无记录返回空")
+    @Test
+    void whenNoAssessment_thenEmpty() {
+        when(assessmentRepository.findByUserId(42L)).thenReturn(Optional.empty());
+
+        assertThat(service.latestAssessment(42L)).isEmpty();
     }
 }

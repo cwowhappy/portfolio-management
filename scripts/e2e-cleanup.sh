@@ -12,6 +12,7 @@ export PGPASSWORD="${POSTGRES_PASSWORD:-invest}"
 psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" -v ON_ERROR_STOP=1 <<'SQL'
 DELETE FROM conversation     WHERE user_id IN (SELECT id FROM app_user WHERE username LIKE 'e2e\_%');
 DELETE FROM allocation_plan WHERE user_id IN (SELECT id FROM app_user WHERE username LIKE 'e2e\_%');
+DELETE FROM risk_assessment WHERE user_id IN (SELECT id FROM app_user WHERE username LIKE 'e2e\_%');
 DELETE FROM journal_entry    WHERE user_id IN (SELECT id FROM app_user WHERE username LIKE 'e2e\_%');
 DELETE FROM portfolio        WHERE user_id IN (SELECT id FROM app_user WHERE username LIKE 'e2e\_%');
 DELETE FROM mcp_user_config  WHERE user_id IN (SELECT id FROM app_user WHERE username LIKE 'e2e\_%');
