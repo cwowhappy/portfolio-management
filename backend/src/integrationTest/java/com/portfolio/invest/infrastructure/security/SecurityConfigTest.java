@@ -33,4 +33,19 @@ class SecurityConfigTest extends PostgresTestSupport {
                         .content("{\"messages\":[]}"))
                 .andExpect(status().isUnauthorized());
     }
+
+    @DisplayName("匿名访问自选返回401（/api/watchlist 不在公开清单）")
+    @Test
+    void givenAnonymousUser_whenGetWatchlist_thenUnauthorized() throws Exception {
+        mockMvc.perform(get("/api/watchlist"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @DisplayName("筛选搜索保持公开（/api/screening 前缀）")
+    @Test
+    void givenAnonymousUser_whenGetScreeningSearch_thenPublicOrBadRequest() throws Exception {
+        // search 缺参 q → 400（已过安全层，非 401，证明公开）
+        mockMvc.perform(get("/api/screening/stocks/search"))
+                .andExpect(status().isBadRequest());
+    }
 }

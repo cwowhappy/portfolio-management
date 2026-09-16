@@ -112,7 +112,9 @@ public class GlobalExceptionHandler {
             case com.portfolio.invest.domain.screening.ScreeningErrorCode.NO_CONDITION,
                  com.portfolio.invest.domain.screening.ScreeningErrorCode.INVALID_SORT,
                  com.portfolio.invest.domain.screening.ScreeningErrorCode.INVALID_LIMIT,
-                 com.portfolio.invest.domain.screening.ScreeningErrorCode.INVALID_INDEX -> HttpStatus.BAD_REQUEST;
+                 com.portfolio.invest.domain.screening.ScreeningErrorCode.INVALID_INDEX,
+                 com.portfolio.invest.domain.screening.ScreeningErrorCode.WATCHLIST_LIMIT_EXCEEDED,
+                 com.portfolio.invest.domain.screening.ScreeningErrorCode.INVALID_STOCK -> HttpStatus.BAD_REQUEST;
             default -> {
                 log.warn("未识别的筛选错误码 {}，按 400 处理: {}", e.code(), e.getMessage());
                 yield HttpStatus.BAD_REQUEST;
