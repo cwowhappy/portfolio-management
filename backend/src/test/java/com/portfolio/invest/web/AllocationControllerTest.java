@@ -6,6 +6,7 @@ import com.portfolio.invest.application.allocation.CreatePlanCommand;
 import com.portfolio.invest.application.allocation.DeviationView;
 import com.portfolio.invest.application.allocation.PlanView;
 import com.portfolio.invest.application.allocation.QuestionnaireView;
+import com.portfolio.invest.application.allocation.RebalanceView;
 import com.portfolio.invest.application.allocation.SubmitAssessmentCommand;
 import com.portfolio.invest.application.allocation.TemplateView;
 import com.portfolio.invest.application.allocation.UpdatePlanCommand;
@@ -35,6 +36,7 @@ import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -111,6 +113,36 @@ class AllocationControllerTest {
         mvc.perform(get("/api/allocation/deviation").principal(auth()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.slices[0].assetClass").value("STOCK"));
+    }
+
+    @DisplayName("再平衡返回200含提醒与建议")
+    @Test
+    void whenGetRebalance_thenReturn200WithAlert() throws Exception {
+        when(service.rebalance(1L)).thenReturn(new RebalanceView(true, new BigDecimal("10000"), false,
+                List.of(new RebalanceView.Item(AssetClass.STOCK, new BigDecimal("25"), BigDecimal.ZERO,
+                        new BigDecimal("-25"), new BigDecimal("2500"), BigDecimal.ZERO,
+                        new BigDecimal("2500"), true)),
+                new RebalanceView.TimeTriggerView(RebalanceFrequency.OFF, null, null, 0, false),
+                true));
+        mvc.perform(get("/api/allocation/rebalance").principal(auth()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.hasActivePlan").value(true))
+                .andExpect(jsonPath("$.anyAlert").value(true))
+                .andExpect(jsonPath("$.items[0].suggestedAmount").value(2500))
+                .andExpect(jsonPath("$.timeTrigger.frequency").value("OFF"));
+    }
+
+    @DisplayName("ack返回204；无生效方案404")
+    @Test
+    void whenAckRebalance_then204Or404() throws Exception {
+        mvc.perform(post("/api/allocation/rebalance/ack").principal(auth()))
+                .andExpect(status().isNoContent());
+
+        doThrow(new AllocationException(AllocationErrorCode.NOT_FOUND, "无生效方案"))
+                .when(service).acknowledgeRebalance(1L);
+        mvc.perform(post("/api/allocation/rebalance/ack").principal(auth()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("NOT_FOUND"));
     }
 
     @DisplayName("非本人方案映射404")
