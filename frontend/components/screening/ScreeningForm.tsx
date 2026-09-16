@@ -71,6 +71,19 @@ export default function ScreeningForm({ params, industries, onChange, onSubmit, 
             ))}
           </select>
         </label>
+        <label className="flex items-center gap-2 text-sm">
+          <span className="text-[color:var(--color-ink-dim)]">指数范围</span>
+          <select
+            className="rounded-lg border border-[color:var(--color-line)] bg-[color:var(--color-panel)] px-2 py-1"
+            aria-label="指数范围"
+            value={params.indexCode ?? ""}
+            onChange={(e) => onChange("indexCode", e.target.value)}
+          >
+            <option value="">全部</option>
+            <option value="000300">沪深300</option>
+            <option value="000905">中证500</option>
+          </select>
+        </label>
         <button type="submit" disabled={loading} className="rounded-lg bg-[color:var(--color-up)] px-4 py-1.5 text-sm text-white disabled:opacity-50">
           {loading ? "筛选中…" : "筛选"}
         </button>
