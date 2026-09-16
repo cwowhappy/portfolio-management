@@ -5,6 +5,7 @@ import { Providers } from "./providers";
 import { AuthProvider } from "@/lib/auth";
 import { AuthNav } from "@/components/auth/AuthNav";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import AllocationAlertDot from "@/components/nav/AllocationAlertDot";
 
 export const metadata: Metadata = {
   title: "九和 · A股投研助手",
@@ -67,9 +68,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </Link>
               <Link
                 href="/allocation"
-                className="rounded-md px-3 py-1.5 text-[color:var(--color-ink-dim)] transition-colors hover:bg-[color:var(--color-panel)] hover:text-[color:var(--color-ink)]"
+                className="relative rounded-md px-3 py-1.5 text-[color:var(--color-ink-dim)] transition-colors hover:bg-[color:var(--color-panel)] hover:text-[color:var(--color-ink)]"
               >
                 配置
+                <AllocationAlertDot />
               </Link>
               <Link
                 href="/journal"
