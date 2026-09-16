@@ -24,7 +24,7 @@ vi.mock("@/lib/allocationApi", async () => {
 const api = vi.mocked(allocationApi);
 
 const plan = (id: number, name: string): PlanView => ({
-  id, name, source: "CUSTOM", weights: [], active: false,
+  id, name, source: "CUSTOM", weights: [], active: false, rebalanceFrequency: "OFF", lastRebalancedAt: null,
 });
 
 beforeEach(() => {

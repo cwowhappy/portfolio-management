@@ -6,7 +6,6 @@ import com.portfolio.invest.application.screening.WatchlistItemView;
 import com.portfolio.invest.infrastructure.security.AuthenticatedUser;
 import jakarta.validation.Valid;
 import java.util.List;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -40,7 +39,8 @@ public class WatchlistController {
     @PostMapping
     public ResponseEntity<Void> add(Authentication auth, @Valid @RequestBody AddWatchlistCommand cmd) {
         service.add(currentUserId(auth), cmd.stockCode().trim());
-        return ResponseEntity.status(HttpStatus.CREATED).build();
+        // 204（而非 201）：幂等添加语义——重复添加亦成功，响应无体
+        return ResponseEntity.noContent().build();
     }
 
     @DeleteMapping("/{stockCode}")
