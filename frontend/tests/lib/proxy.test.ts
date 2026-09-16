@@ -10,12 +10,16 @@ function upstream(opts: {
   body?: string;
   contentType?: string | null;
   setCookies?: string[];
+  contentDisposition?: string | null;
 }): Response {
   const headers = new Headers();
   if (opts.contentType !== null && opts.contentType !== undefined) {
     headers.set("content-type", opts.contentType);
   }
   for (const sc of opts.setCookies ?? []) headers.append("set-cookie", sc);
+  if (opts.contentDisposition !== null && opts.contentDisposition !== undefined) {
+    headers.set("content-disposition", opts.contentDisposition);
+  }
   return new Response(opts.body ?? "{}", { status: opts.status ?? 200, headers });
 }
 
@@ -29,6 +33,21 @@ describe("反代中继（lib/proxy）", () => {
   it("透传上游 Content-Type", async () => {
     const res = await relay(upstream({ contentType: "application/json;charset=UTF-8" }));
     expect(res.headers.get("content-type")).toContain("application/json");
+  });
+
+  it("上游带 Content-Disposition 时原样透传（CSV 下载附件头）", async () => {
+    const res = await relay(upstream({
+      contentType: "text/csv;charset=UTF-8",
+      contentDisposition: 'attachment; filename="screening-20260916-120000.csv"',
+      body: "csv-bytes",
+    }));
+    expect(res.headers.get("content-disposition")).toBe('attachment; filename="screening-20260916-120000.csv"');
+    expect(res.headers.get("content-type")).toBe("text/csv;charset=UTF-8");
+  });
+
+  it("上游无 Content-Disposition 时不设置该头", async () => {
+    const res = await relay(upstream({ contentType: "application/json" }));
+    expect(res.headers.get("content-disposition")).toBeNull();
   });
 
   it("上游无 Content-Type 时默认 JSON", async () => {
