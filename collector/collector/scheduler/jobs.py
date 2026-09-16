@@ -27,6 +27,7 @@ from collector.scheduler.calendar import TradingCalendar
 from collector.scheduler.runner import TaskRunner
 from collector.sources.plugins import (
     AllASpotBackupSource,
+    IndexCloseSource,
     IndexConstituentSource,
     IndexValuationSource,
     IndustryUniverseSource,
@@ -217,6 +218,8 @@ def _field_columns():
                 "total_mv": {"from": "total_mv", "type": "numeric"},
                 "circ_mv": {"from": "circ_mv", "type": "numeric"},
                 "turnover_rate": {"from": "turnover_rate", "type": "numeric"},
+                "trading_day": {"from": "trading_day", "type": "str"},
+                "close": {"from": "close", "type": "numeric"},
             }
         ),
         "field_mapping_stock_financial": FieldMappingConverter(
@@ -230,6 +233,14 @@ def _field_columns():
                 "current_ratio": {"from": "current_ratio", "type": "numeric"},
                 "revenue_yoy": {"from": "revenue_yoy", "type": "numeric"},
                 "netprofit_yoy": {"from": "netprofit_yoy", "type": "numeric"},
+            }
+        ),
+        "field_mapping_index_close": FieldMappingConverter(
+            {
+                "trading_day": {"from": "trading_day", "type": "str"},
+                "index_code": {"from": "index_code", "type": "str"},
+                "index_name": {"from": "index_name", "type": "str"},
+                "close": {"from": "close", "type": "numeric"},
             }
         ),
     }
@@ -259,6 +270,7 @@ def build_registries(config):
             "all_a_spot_backup": AllASpotBackupSource("all_a_spot_backup", pro_factory=pro),
             "stock_valuation_daily": StockValuationDailySource("stock_valuation_daily", pro_factory=pro),
             "stock_financial": StockFinancialSource("stock_financial", pro_factory=pro),
+            "index_close": IndexCloseSource("index_close", pro_factory=pro),
         },
     )
     converter_reg = ConverterRegistry(plugins=_field_columns())

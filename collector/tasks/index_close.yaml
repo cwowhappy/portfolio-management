@@ -1,0 +1,14 @@
+task_code: index_close
+task_name: 基准指数收盘价
+source_ids:
+  - { source_id: index_close, type: plugin, class: index_close }
+converter: field_mapping_index_close
+calc: null
+validator:
+  - { check: min_rows, value: 3, level: hard }
+target_table: index_close_history
+schedule: { type: cron, cron: "40 15 * * 1-5" }
+enabled: true
+trading_day_gated: true
+retry_max: 3
+retry_backoff: exponential

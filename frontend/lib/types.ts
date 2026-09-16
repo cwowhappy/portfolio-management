@@ -317,3 +317,27 @@ export interface TimelineEventView {
   refId: number | null;
   refType: string;
 }
+
+// —— 收益分析（/api/analytics/**，与后端 AnalyticsController 的 View 对齐）——
+// 偏差说明：后端 OverviewView.benchmarks 是 Map<String, BenchmarkComparison>（JSON 对象、
+// key=indexCode），brief 里的 BenchmarkComparison[] 数组与真实序列化不符，此处按后端修正。
+
+export interface BenchmarkComparison { indexCode: string; indexName: string; twr: number; excess: number }
+export interface AnalyticsOverview {
+  totalValue: number; twrCumulative: number; twrAnnualized: number; irr: number | null;
+  irrSimple: boolean; // true=无外部现金流退化口径（irr=累计收益率，spec §三-B）
+  windowDays: number; benchmarks: Record<string, BenchmarkComparison>;
+}
+export interface NavPoint { date: string; totalValue: number }
+export interface IndexPoint { date: string; close: number }
+export interface AnalyticsNav {
+  windowStart: string; windowEnd: string;
+  points: NavPoint[]; benchmarks: Record<string, IndexPoint[]>;
+}
+export interface AnnualReturnRow {
+  year: number; portfolioTwr: number; benchmarkTwr: Record<string, number>; excess: Record<string, number>;
+}
+export interface TradeStatsView {
+  sellCount: number; winCount: number; winRate: string; avgWin: string; avgLoss: string;
+  profitFactor: string | null; avgHoldingDays: string; bestPnl: string; worstPnl: string;
+}

@@ -1,7 +1,7 @@
-"""T3 落库铁律：六张业务目标表的真实 PG 幂等 upsert（valuation_snapshot 见 test_writer.py）。
+"""T3 落库铁律：七张业务目标表的真实 PG 幂等 upsert（valuation_snapshot 见 test_writer.py）。
 
 每张表：同主键重复 upsert → 不产生重复行、行数仍为 1、非键字段被更新为新值。
-upsert 键与各表 DDL（后端 Flyway V3/V4）对齐，见 collector/store/writer.py。
+upsert 键与各表 DDL（后端 Flyway V3/V4/V7/V13）对齐，见 collector/store/writer.py。
 """
 
 import datetime as dt
@@ -93,6 +93,19 @@ def test_index_constituent_upsert_idempotent(pg_conn):
     assert len(rows) == 1
     assert rows[0][0] == "贵州茅台"
     assert float(rows[0][1]) == 6.5
+
+
+def test_index_close_history_upsert_idempotent(pg_conn):
+    """冲突键 (trading_day, index_code)，更新 close（MS-07 基准指数收盘价，Flyway V13）。"""
+    store = Store()
+    rec = {"trading_day": DAY, "index_code": "000300", "index_name": "沪深300", "close": 3900.12}
+    store.upsert(pg_conn, "index_close_history", [rec])
+    store.upsert(pg_conn, "index_close_history", [{**rec, "close": 3910.5}])
+    rows = pg_conn.execute(
+        "SELECT close FROM index_close_history WHERE trading_day=%s AND index_code=%s", (DAY, "000300")
+    ).fetchall()
+    assert len(rows) == 1
+    assert float(rows[0][0]) == 3910.5
 
 
 def test_index_constituent_replaces_members_on_rerun(pg_conn):

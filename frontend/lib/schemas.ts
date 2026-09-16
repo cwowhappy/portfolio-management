@@ -271,3 +271,29 @@ export const TimelineEventViewSchema = z.object({
   refId: z.number().nullable(),
   refType: z.string(),
 });
+
+// —— 收益分析（/api/analytics/**，与后端 AnalyticsController 的 View 对齐）——
+
+export const BenchmarkComparisonSchema = z.object({
+  indexCode: z.string(), indexName: z.string(), twr: z.number(), excess: z.number(),
+});
+export const AnalyticsOverviewSchema = z.object({
+  totalValue: z.number(), twrCumulative: z.number(), twrAnnualized: z.number(),
+  irr: z.number().nullable(), irrSimple: z.boolean(), windowDays: z.number(),
+  benchmarks: z.record(BenchmarkComparisonSchema),
+});
+export const NavPointSchema = z.object({ date: z.string(), totalValue: z.number() });
+export const IndexPointSchema = z.object({ date: z.string(), close: z.number() });
+export const AnalyticsNavSchema = z.object({
+  windowStart: z.string(), windowEnd: z.string(),
+  points: z.array(NavPointSchema), benchmarks: z.record(z.array(IndexPointSchema)),
+});
+export const AnnualReturnRowSchema = z.object({
+  year: z.number(), portfolioTwr: z.number(),
+  benchmarkTwr: z.record(z.number()), excess: z.record(z.number()),
+});
+export const TradeStatsViewSchema = z.object({
+  sellCount: z.number(), winCount: z.number(), winRate: z.string(), avgWin: z.string(),
+  avgLoss: z.string(), profitFactor: z.string().nullable(), avgHoldingDays: z.string(),
+  bestPnl: z.string(), worstPnl: z.string(),
+});

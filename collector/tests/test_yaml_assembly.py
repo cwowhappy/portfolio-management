@@ -19,6 +19,7 @@ TASKS_DIR = Path(__file__).resolve().parent.parent / "tasks"
 
 EXPECTED_TASKS = {
     "all_a_valuation",
+    "index_close",
     "index_constituent",
     "index_valuation",
     "industry_valuation",

@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 
 // 反代路由只依赖 fetch 与 Response，直接测试其代理/降级行为与 no-store 头。
 
+import { GET as analyticsGet } from "@/app/api/analytics/[...path]/route";
 import { GET as marketGet } from "@/app/api/market/[...path]/route";
 import { GET as screeningGet } from "@/app/api/screening/[...path]/route";
 import { GET as healthGet } from "@/app/api/agent/health/route";
@@ -31,6 +32,53 @@ function reqWithNextUrl(url: string, init?: RequestInit): NextRequest {
   Object.defineProperty(r, "nextUrl", { value: new URL(url) });
   return r;
 }
+
+describe("analytics 反代路由", () => {
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    vi.stubGlobal("fetch", fetchMock);
+    fetchMock.mockReset();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("把 path 拼到后端 URL 并透传状态码与 Cookie（四端点均 GET）", async () => {
+    fetchMock.mockResolvedValue(
+      new Response('{"totalValue":1}', { status: 200, headers: { "Content-Type": "application/json" } }),
+    );
+    const res = await analyticsGet(
+      new Request("http://localhost:3000/api/analytics/overview", {
+        headers: { Cookie: "JSESSIONID=abc" },
+      }),
+      { params: Promise.resolve({ path: ["overview"] }) },
+    );
+    expect(res.status).toBe(200);
+    expect(fetchMock.mock.calls[0][0]).toBe("http://localhost:8080/api/analytics/overview");
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect((init.headers as Record<string, string>).Cookie).toBe("JSESSIONID=abc");
+  });
+
+  it("无数据 204 透传为空体 204（空态走块级 fallback）", async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
+    const res = await analyticsGet(req("http://localhost:3000/api/analytics/trade-stats"), {
+      params: Promise.resolve({ path: ["trade-stats"] }),
+    });
+    expect(res.status).toBe(204);
+    expect(await res.text()).toBe("");
+  });
+
+  it("下游不可达返回 502（relay 统一兜底）", async () => {
+    fetchMock.mockRejectedValue(new Error("ECONNREFUSED"));
+    const res = await analyticsGet(req("http://localhost:3000/api/analytics/nav"), {
+      params: Promise.resolve({ path: ["nav"] }),
+    });
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ message: "无法连接后端服务" });
+  });
+});
 
 describe("market 反代路由", () => {
   const fetchMock = vi.fn();

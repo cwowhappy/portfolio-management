@@ -219,3 +219,81 @@ def test_make_index_dividend_fetch_swallows_api_exception(mocker):
 
     fetch = make_index_dividend_fetch(pro_factory=boom_pro, default=0.0)
     assert fetch("000300", "20260801", "20260828") == 0.0
+
+
+# ---------------------------------------------------------------- MS-07 基准指数收盘价 index_close
+
+
+from collector.sources.plugins import IndexCloseSource
+
+
+def test_index_close_fetches_three_benchmarks(mocker):
+    pro = mocker.MagicMock()
+    pro.index_daily.return_value = pd.DataFrame({"trade_date": ["20260915", "20260914"], "close": [3900.12, 3890.5]})
+    src = IndexCloseSource("index_close", pro_factory=lambda: pro)
+    df = src.fetch({"start": "2026-09-01", "end": "2026-09-16"})
+
+    assert pro.index_daily.call_count == 3  # 三只基准各一次
+    pro.index_daily.assert_any_call(ts_code="000300.SH", start_date="20260901", end_date="20260916")
+    pro.index_daily.assert_any_call(ts_code="930950.CSI", start_date="20260901", end_date="20260916")
+    assert list(df.columns) == ["trading_day", "index_code", "index_name", "close"]
+    assert set(df["index_code"]) == {"000300", "000905", "930950"}
+    assert df[df["index_code"] == "000300"]["close"].tolist() == [3900.12, 3890.5]
+
+
+def test_index_close_supports_range_for_backfill():
+    assert IndexCloseSource.supports_range is True
+
+
+# ---------------------------------------------------------------- MS-07 个股估值日快照 close + 区间回填
+
+from collector.sources.plugins import StockValuationDailySource
+
+
+class _NoWaitLimiter:
+    def wait(self):
+        pass
+
+
+def _svd_pro(single_day):
+    class FakePro:
+        def trade_cal(self, exchange=None, start_date=None, end_date=None, is_open=None):
+            import pandas as pd
+
+            return pd.DataFrame({"cal_date": ["20260914", "20260915"], "is_open": ["1", "1"]})
+
+        def stock_basic(self, list_status=None, fields=None):
+            import pandas as pd
+
+            return pd.DataFrame({"ts_code": ["600519.SH"], "name": ["贵州茅台"]})
+
+        def daily_basic(self, trade_date=None):
+            import pandas as pd
+
+            return pd.DataFrame(
+                {
+                    "ts_code": ["600519.SH"],
+                    "pe_ttm": [30.0],
+                    "pb": [9.0],
+                    "dv_ttm": [1.0],
+                    "total_mv": [1000.0],
+                    "circ_mv": [900.0],
+                    "turnover_rate": [0.5],
+                    "close": [1500.0],
+                }
+            )
+
+    return FakePro()
+
+
+def test_stock_valuation_daily_includes_close():
+    src = StockValuationDailySource("svd", pro_factory=lambda: _svd_pro(True))
+    df = src.fetch({"date": "2026-09-15"})
+    assert "close" in df.columns
+    assert df["close"].tolist() == [1500.0]
+
+
+def test_stock_valuation_daily_range_loops_open_days():
+    src = StockValuationDailySource("svd", pro_factory=lambda: _svd_pro(True), limiter=_NoWaitLimiter())
+    df = src.fetch({"start": "2026-09-14", "end": "2026-09-15"})
+    assert len(df) == 2  # 两个开市日各一行
