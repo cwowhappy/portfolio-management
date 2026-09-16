@@ -47,5 +47,8 @@ class SecurityConfigTest extends PostgresTestSupport {
         // search 缺参 q → 400（已过安全层，非 401，证明公开）
         mockMvc.perform(get("/api/screening/stocks/search"))
                 .andExpect(status().isBadRequest());
+        // export 无条件 → 400（同上，安全层放行；CSV 端点公开）
+        mockMvc.perform(get("/api/screening/stocks/export"))
+                .andExpect(status().isBadRequest());
     }
 }
