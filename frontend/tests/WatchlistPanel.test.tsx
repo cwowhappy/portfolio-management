@@ -54,10 +54,16 @@ describe("WatchlistPanel", () => {
     await waitFor(() => expect(api.fetchWatchlist).toHaveBeenCalledTimes(2));
   });
 
-  it("接口失败（未登录 401 语义）显示登录引导", async () => {
-    api.fetchWatchlist.mockRejectedValue(new Error("请求失败"));
-    render(<WatchlistPanel />);
+  it("匿名（authenticated=false）显示登录引导且不请求", async () => {
+    render(<WatchlistPanel authenticated={false} />);
     expect(await screen.findByText(/登录后可查看自选/)).toBeTruthy();
+    expect(api.fetchWatchlist).not.toHaveBeenCalled();
+  });
+
+  it("接口失败显示错误文案（不误判为未登录）", async () => {
+    api.fetchWatchlist.mockRejectedValue(new Error("服务器开小差"));
+    render(<WatchlistPanel />);
+    expect(await screen.findByText(/服务器开小差/)).toBeTruthy();
   });
 
   it("空列表显示暂无自选", async () => {

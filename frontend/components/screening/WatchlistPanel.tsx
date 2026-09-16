@@ -6,8 +6,9 @@ import type { StockSearchHit, WatchlistItemView } from "@/lib/types";
 
 const fmtMv = (v: number | null) => (v == null ? "—" : (v / 1e8).toFixed(1));
 
-/** 自选观察面板：搜索添加（代码/名称候选）+ 列表（实时现价 + 收盘快照口径）+ 移除。 */
-export default function WatchlistPanel() {
+/** 自选观察面板：搜索添加（代码/名称候选）+ 列表（实时现价 + 收盘快照口径）+ 移除。
+ *  authenticated=false（匿名）时直接展示登录引导，不发起需登录的请求。 */
+export default function WatchlistPanel({ authenticated = true }: { authenticated?: boolean }) {
   const [rows, setRows] = useState<WatchlistItemView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -24,10 +25,7 @@ export default function WatchlistPanel() {
       });
   }, []);
 
-  useEffect(() => { void reload(); }, [reload]);
-
-  // 未登录（401 语义）：提示引导而不是裸错误
-  const anonymous = error != null && rows?.length === 0 && /登录|401|请求失败/.test(error);
+  useEffect(() => { if (authenticated) void reload(); }, [authenticated, reload]);
 
   const onQueryChange = (q: string) => {
     setQuery(q);
@@ -61,7 +59,7 @@ export default function WatchlistPanel() {
     <div data-testid="watchlist-panel" className="rounded-2xl border border-[color:var(--color-line)] bg-[color:var(--color-panel)]/70 p-5 space-y-3">
       <div className="text-[15px] font-[family-name:var(--font-display)]">自选观察</div>
 
-      {anonymous ? (
+      {!authenticated ? (
         <div className="text-sm text-[color:var(--color-ink-dim)]">登录后可查看自选（右上角登录，或从筛选结果点 ⭐ 加入）</div>
       ) : (
         <>

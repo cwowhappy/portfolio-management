@@ -111,7 +111,7 @@ export default function ScreenerBoard() {
       </div>
 
       {tab === "watchlist" ? (
-        <WatchlistPanel />
+        <WatchlistPanel authenticated={!!user} />
       ) : (
         <>
           <ScreeningForm params={params} industries={industries} onChange={updateParam} onSubmit={() => submit()} loading={loading} />

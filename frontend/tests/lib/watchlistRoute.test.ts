@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DELETE, GET, POST } from "@/app/api/watchlist/[...path]/route";
+import { DELETE, GET, POST } from "@/app/api/watchlist/[[...path]]/route";
 import type { NextRequest } from "next/server";
 
 function req(url: string, init?: RequestInit): NextRequest {
