@@ -30,14 +30,15 @@ public record RebalanceView(
                 .map(i -> new Item(i.assetClass(), i.targetWeight(), i.actualWeight(), i.deviation(),
                         i.targetAmount(), i.currentAmount(), i.suggestedAmount(), i.thresholdBreached()))
                 .toList();
-        TimeTriggerView timeTrigger = null;
-        if (plan.rebalanceFrequency() != null && plan.rebalanceFrequency() != RebalanceFrequency.OFF) {
-            Instant anchor = plan.lastRebalancedAt();
-            Instant due = anchor == null ? null : anchor.plus(
-                    java.time.Duration.ofDays(plan.rebalanceFrequency().days()));
-            timeTrigger = new TimeTriggerView(plan.rebalanceFrequency(), anchor, due,
-                    result.timeTrigger().daysOverdue(), result.timeTrigger().triggered());
-        }
+        // 始终吐 timeTrigger（含 OFF）：前端「上次再平衡」锚点展示不依赖频率开关；
+        // OFF 时 dueDate 为 null、triggered 恒 false（calculator 已保证）。
+        RebalanceFrequency frequency = plan.rebalanceFrequency() == null
+                ? RebalanceFrequency.OFF : plan.rebalanceFrequency();
+        Instant anchor = plan.lastRebalancedAt();
+        Instant due = anchor == null || frequency == RebalanceFrequency.OFF ? null
+                : anchor.plus(java.time.Duration.ofDays(frequency.days()));
+        TimeTriggerView timeTrigger = new TimeTriggerView(frequency, anchor, due,
+                result.timeTrigger().daysOverdue(), result.timeTrigger().triggered());
         return new RebalanceView(true, totalAssets, result.suppressed(), items, timeTrigger, result.anyAlert());
     }
 }

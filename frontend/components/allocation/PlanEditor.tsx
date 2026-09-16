@@ -1,12 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { ASSET_CLASSES, ASSET_CLASS_LABELS, createPlan, updatePlan } from "@/lib/allocationApi";
-import type { AssetClass, PlanSource, PlanView, TemplateView } from "@/lib/types";
+import { ASSET_CLASSES, ASSET_CLASS_LABELS, REBALANCE_FREQUENCY_LABELS, createPlan, updatePlan } from "@/lib/allocationApi";
+import type { AssetClass, PlanSource, PlanView, RebalanceFrequency, TemplateView } from "@/lib/types";
+
+const FREQUENCIES = Object.keys(REBALANCE_FREQUENCY_LABELS) as RebalanceFrequency[];
 
 export default function PlanEditor({ templates, editing, onSaved }: { templates: TemplateView[]; editing: PlanView | null; onSaved: () => void }) {
   const [name, setName] = useState(editing?.name ?? "");
   const [source, setSource] = useState<PlanSource>(editing?.source ?? "CUSTOM");
+  const [frequency, setFrequency] = useState<RebalanceFrequency>(editing?.rebalanceFrequency ?? "OFF");
   const [weights, setWeights] = useState<Record<AssetClass, number>>(() => {
     const init: Record<AssetClass, number> = { STOCK: 0, BOND: 0, GOLD: 0, CASH: 0, REITS: 0 };
     editing?.weights.forEach((w) => { init[w.assetClass] = w.weight; });
@@ -36,9 +39,9 @@ export default function PlanEditor({ templates, editing, onSaved }: { templates:
     if (Math.abs(sum - 100) > 1e-6) { setError(`权重之和需为 100%（当前 ${sum}%）`); return; }
     try {
       if (editing) {
-        await updatePlan(editing.id, { name: name.trim() || editing.name, weights: list });
+        await updatePlan(editing.id, { name: name.trim() || editing.name, weights: list, rebalanceFrequency: frequency });
       } else {
-        await createPlan({ name: name.trim() || "未命名方案", source, weights: list });
+        await createPlan({ name: name.trim() || "未命名方案", source, weights: list, rebalanceFrequency: frequency });
       }
       onSaved();
     } catch (e) {
@@ -66,6 +69,20 @@ export default function PlanEditor({ templates, editing, onSaved }: { templates:
         ))}
       </div>
       <div className="text-sm text-[color:var(--color-ink-faint)] mb-3">权重合计：{sum}%</div>
+      <label className="block text-sm mb-3">
+        再平衡频率
+        <select
+          className="mt-1 ml-2 rounded-md border border-[color:var(--color-line)] px-2 py-1 bg-[color:var(--color-bg)]"
+          aria-label="再平衡频率"
+          value={frequency}
+          onChange={(e) => setFrequency(e.target.value as RebalanceFrequency)}
+        >
+          {FREQUENCIES.map((f) => (
+            <option key={f} value={f}>{REBALANCE_FREQUENCY_LABELS[f]}</option>
+          ))}
+        </select>
+        <span className="ml-2 text-xs text-[color:var(--color-ink-faint)]">（时间提醒周期；偏离 ±5pp 提醒不受此开关影响）</span>
+      </label>
       {error && <div className="text-sm text-[color:var(--color-down)] mb-3">{error}</div>}
       <button className="rounded-md px-4 py-1.5 text-sm bg-[color:var(--color-ink)] text-[color:var(--color-bg)]" onClick={save}>{editing ? "保存修改" : "保存方案"}</button>
     </div>
