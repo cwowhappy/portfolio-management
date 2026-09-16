@@ -62,6 +62,11 @@ export async function relay(
     for (const sc of cookies) {
       headers.append("Set-Cookie", sc);
     }
+    // CSV 下载等附件响应：透传 Content-Disposition（JSON 端点上游不设此头，无回归面）
+    const disposition = upstream.headers.get("content-disposition");
+    if (disposition) {
+      headers.set("Content-Disposition", disposition);
+    }
     // 204/205/304 等状态不允许携带响应体（否则 Response 构造抛错），需置空 body
     const status = upstream.status;
     const responseBody = status === 204 || status === 205 || status === 304 ? null : text;

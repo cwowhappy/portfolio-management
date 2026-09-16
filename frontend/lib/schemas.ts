@@ -196,14 +196,30 @@ export const AssetClassSchema = z.enum(["STOCK", "BOND", "GOLD", "CASH", "REITS"
 export const PlanSourceSchema = z.enum(["TEMPLATE", "CUSTOM", "ASSESSMENT"]);
 export const WeightViewSchema = z.object({ assetClass: AssetClassSchema, weight: z.number() });
 export const TemplateViewSchema = z.object({ id: z.string(), name: z.string(), weights: z.array(WeightViewSchema) });
+export const RebalanceFrequencySchema = z.enum(["OFF", "QUARTERLY", "SEMIANNUAL"]);
 export const PlanViewSchema = z.object({
   id: z.number(), name: z.string(), source: PlanSourceSchema,
   weights: z.array(WeightViewSchema), active: z.boolean(),
+  rebalanceFrequency: RebalanceFrequencySchema, lastRebalancedAt: z.string().nullable(),
 });
 export const DeviationSliceSchema = z.object({
   assetClass: AssetClassSchema, targetWeight: z.number(), actualWeight: z.number(), deviation: z.number(),
 });
 export const DeviationViewSchema = z.object({ slices: z.array(DeviationSliceSchema) });
+export const RebalanceItemSchema = z.object({
+  assetClass: AssetClassSchema, targetWeight: z.number(), actualWeight: z.number(), deviation: z.number(),
+  targetAmount: z.number(), currentAmount: z.number(), suggestedAmount: z.number(),
+  thresholdBreached: z.boolean(),
+});
+export const RebalanceTimeTriggerSchema = z.object({
+  frequency: RebalanceFrequencySchema, anchorDate: z.string().nullable(), dueDate: z.string().nullable(),
+  daysOverdue: z.number(), triggered: z.boolean(),
+});
+export const RebalanceViewSchema = z.object({
+  hasActivePlan: z.boolean(), totalAssets: z.number(), suppressed: z.boolean(),
+  items: z.array(RebalanceItemSchema), timeTrigger: RebalanceTimeTriggerSchema.nullable(),
+  anyAlert: z.boolean(),
+});
 
 export const RiskProfileSchema = z.enum(["CONSERVATIVE", "STABLE", "BALANCED", "GROWTH", "AGGRESSIVE"]);
 export const OptionViewSchema = z.object({ id: z.string(), text: z.string() });
@@ -235,6 +251,29 @@ export const ScreeningStockSchema = z.object({
   netprofitYoy: z.number().nullable(),
   totalMv: z.number().nullable(),
   turnoverRate: z.number().nullable(),
+});
+
+// —— 自选观察（/api/watchlist/**，与后端 WatchlistController 的 DTO 对齐）——
+
+export const WatchlistItemViewSchema = z.object({
+  stockCode: z.string(),
+  stockName: z.string().nullable(),
+  industryName: z.string().nullable(),
+  price: z.number().nullable(),
+  peTtm: z.number().nullable(),
+  pb: z.number().nullable(),
+  dividendYield: z.number().nullable(),
+  totalMv: z.number().nullable(),
+  addedAt: z.string(),
+});
+
+export const StockSearchHitSchema = z.object({
+  stockCode: z.string(),
+  stockName: z.string(),
+  industryName: z.string().nullable(),
+  peTtm: z.number().nullable(),
+  pb: z.number().nullable(),
+  totalMv: z.number().nullable(),
 });
 
 // —— 投资决策记录（/api/journal/**，与后端 JournalController 的 DTO 对齐）——

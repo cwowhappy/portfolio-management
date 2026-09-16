@@ -19,11 +19,15 @@ public final class AllocationPlan {
     private final boolean active;
     private final Instant createdAt;
     private final Instant updatedAt;
+    private final RebalanceFrequency rebalanceFrequency;
+    private final Instant lastRebalancedAt;
     private final Long version;
 
     private AllocationPlan(Long id, Long userId, String name, PlanSource source,
                            Map<AssetClass, BigDecimal> weights, boolean active,
-                           Instant createdAt, Instant updatedAt, Long version) {
+                           Instant createdAt, Instant updatedAt,
+                           RebalanceFrequency rebalanceFrequency, Instant lastRebalancedAt,
+                           Long version) {
         this.id = id;
         this.userId = userId;
         this.name = name;
@@ -32,13 +36,22 @@ public final class AllocationPlan {
         this.active = active;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
+        this.rebalanceFrequency = rebalanceFrequency;
+        this.lastRebalancedAt = lastRebalancedAt;
         this.version = version;
     }
 
     public static AllocationPlan create(Long userId, String name, PlanSource source,
                                         Map<AssetClass, BigDecimal> weights, Instant now) {
+        return create(userId, name, source, weights, RebalanceFrequency.OFF, now);
+    }
+
+    public static AllocationPlan create(Long userId, String name, PlanSource source,
+                                        Map<AssetClass, BigDecimal> weights,
+                                        RebalanceFrequency rebalanceFrequency, Instant now) {
         validateWeights(weights);
-        return new AllocationPlan(null, userId, name, source, weights, false, now, now, null);
+        return new AllocationPlan(null, userId, name, source, weights, false,
+                now, now, rebalanceFrequency, null, null);
     }
 
     public static AllocationPlan reconstitute(Long id, Long userId, String name, PlanSource source,
@@ -50,24 +63,50 @@ public final class AllocationPlan {
     public static AllocationPlan reconstitute(Long id, Long userId, String name, PlanSource source,
                                               Map<AssetClass, BigDecimal> weights, boolean active,
                                               Instant createdAt, Instant updatedAt, Long version) {
-        return new AllocationPlan(id, userId, name, source, weights, active, createdAt, updatedAt, version);
+        return reconstitute(id, userId, name, source, weights, active, createdAt, updatedAt,
+                version, RebalanceFrequency.OFF, null);
+    }
+
+    public static AllocationPlan reconstitute(Long id, Long userId, String name, PlanSource source,
+                                              Map<AssetClass, BigDecimal> weights, boolean active,
+                                              Instant createdAt, Instant updatedAt, Long version,
+                                              RebalanceFrequency rebalanceFrequency, Instant lastRebalancedAt) {
+        return new AllocationPlan(id, userId, name, source, weights, active, createdAt, updatedAt,
+                rebalanceFrequency, lastRebalancedAt, version);
     }
 
     public AllocationPlan rename(String newName) {
-        return new AllocationPlan(id, userId, newName, source, weights, active, createdAt, Instant.now(), version);
+        return new AllocationPlan(id, userId, newName, source, weights, active, createdAt, Instant.now(),
+                rebalanceFrequency, lastRebalancedAt, version);
     }
 
     public AllocationPlan updateWeights(Map<AssetClass, BigDecimal> newWeights) {
         validateWeights(newWeights);
-        return new AllocationPlan(id, userId, name, source, newWeights, active, createdAt, Instant.now(), version);
+        return new AllocationPlan(id, userId, name, source, newWeights, active, createdAt, Instant.now(),
+                rebalanceFrequency, lastRebalancedAt, version);
     }
 
+    /** 激活即视为一次配置确认：锚点随之重置（时间提醒不从旧锚点起算）。 */
     public AllocationPlan activate() {
-        return new AllocationPlan(id, userId, name, source, weights, true, createdAt, Instant.now(), version);
+        Instant now = Instant.now();
+        return new AllocationPlan(id, userId, name, source, weights, true, createdAt, now,
+                rebalanceFrequency, now, version);
     }
 
     public AllocationPlan deactivate() {
-        return new AllocationPlan(id, userId, name, source, weights, false, createdAt, Instant.now(), version);
+        return new AllocationPlan(id, userId, name, source, weights, false, createdAt, Instant.now(),
+                rebalanceFrequency, lastRebalancedAt, version);
+    }
+
+    /** ack「已完成再平衡」：重置时间提醒锚点（编辑权重不重置，见 updateWeights）。 */
+    public AllocationPlan markRebalanced(Instant now) {
+        return new AllocationPlan(id, userId, name, source, weights, active, createdAt, now,
+                rebalanceFrequency, now, version);
+    }
+
+    public AllocationPlan withFrequency(RebalanceFrequency newFrequency) {
+        return new AllocationPlan(id, userId, name, source, weights, active, createdAt, Instant.now(),
+                newFrequency, lastRebalancedAt, version);
     }
 
     public static void validateWeights(Map<AssetClass, BigDecimal> weights) {
@@ -94,5 +133,7 @@ public final class AllocationPlan {
     public boolean active() { return active; }
     public Instant createdAt() { return createdAt; }
     public Instant updatedAt() { return updatedAt; }
+    public RebalanceFrequency rebalanceFrequency() { return rebalanceFrequency; }
+    public Instant lastRebalancedAt() { return lastRebalancedAt; }
     public Long version() { return version; }
 }

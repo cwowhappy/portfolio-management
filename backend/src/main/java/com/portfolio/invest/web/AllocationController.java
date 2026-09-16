@@ -6,6 +6,7 @@ import com.portfolio.invest.application.allocation.CreatePlanCommand;
 import com.portfolio.invest.application.allocation.DeviationView;
 import com.portfolio.invest.application.allocation.PlanView;
 import com.portfolio.invest.application.allocation.QuestionnaireView;
+import com.portfolio.invest.application.allocation.RebalanceView;
 import com.portfolio.invest.application.allocation.SubmitAssessmentCommand;
 import com.portfolio.invest.application.allocation.TemplateView;
 import com.portfolio.invest.application.allocation.UpdatePlanCommand;
@@ -69,6 +70,17 @@ public class AllocationController {
     @GetMapping("/deviation")
     public DeviationView deviation(Authentication auth) {
         return service.deviation(currentUserId(auth));
+    }
+
+    @GetMapping("/rebalance")
+    public RebalanceView rebalance(Authentication auth) {
+        return service.rebalance(currentUserId(auth));
+    }
+
+    @PostMapping("/rebalance/ack")
+    public ResponseEntity<Void> acknowledgeRebalance(Authentication auth) {
+        service.acknowledgeRebalance(currentUserId(auth));
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/assessment/questionnaire")

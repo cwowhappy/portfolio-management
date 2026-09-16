@@ -30,7 +30,7 @@ class FlywayMigrationIntegrationTest extends PostgresTestSupport {
         List<String> versions = jdbcTemplate.queryForList(
                 "SELECT version FROM flyway_schema_history WHERE type = 'SQL' ORDER BY installed_rank",
                 String.class);
-        assertThat(versions).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13");
+        assertThat(versions).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14");
 
         Integer failed = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM flyway_schema_history WHERE success = false", Integer.class);
@@ -102,6 +102,21 @@ class FlywayMigrationIntegrationTest extends PostgresTestSupport {
         assertColumn("index_close_history", "index_name", "character varying", false);
         assertColumn("index_close_history", "close", "numeric", false, 12, 4);
         assertUniqueColumns("index_close_history", "trading_day,index_code");
+    }
+
+    @DisplayName("再平衡与自选契约（V14）")
+    @Test
+    void whenSchemaMigrated_thenRebalanceAndWatchlistTablesMatchContract() {
+        // V14①：allocation_plan 再平衡频率与锚点（锚点可空：OFF 或从未 ack）
+        assertColumn("allocation_plan", "rebalance_frequency", "character varying", false);
+        assertColumn("allocation_plan", "last_rebalanced_at", "timestamp with time zone", true);
+
+        // V14②：自选观察列表（domain/screening 消费，登录用户隔离）
+        assertPrimaryKey("watchlist_item", "id");
+        assertColumn("watchlist_item", "user_id", "bigint", false);
+        assertColumn("watchlist_item", "stock_code", "character varying", false);
+        assertColumn("watchlist_item", "added_at", "timestamp with time zone", false);
+        assertUniqueColumns("watchlist_item", "user_id,stock_code");
     }
 
     private void assertColumn(String table, String column, String dataType, boolean nullable) {

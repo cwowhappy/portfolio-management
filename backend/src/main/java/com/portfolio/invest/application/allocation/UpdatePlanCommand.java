@@ -1,5 +1,6 @@
 package com.portfolio.invest.application.allocation;
 
+import com.portfolio.invest.domain.allocation.RebalanceFrequency;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -8,5 +9,6 @@ import java.util.List;
 
 public record UpdatePlanCommand(
         @NotBlank String name,
-        @NotNull @Size(min = 1) @Valid List<WeightInput> weights
+        @NotNull @Size(min = 1) @Valid List<WeightInput> weights,
+        RebalanceFrequency rebalanceFrequency
 ) {}

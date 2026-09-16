@@ -50,7 +50,7 @@ public class ScreeningSteps {
     @当("用户按 PE-TTM 小于 {bigdecimal} 且 ROE 大于 {bigdecimal} 筛选")
     public void 组合筛选(BigDecimal peMax, BigDecimal roeMin) {
         var criteria = new ScreeningCriteria(peMax, null, null, roeMin, null, null, null, null,
-                null, null, null, null, null, "pe_ttm", SortDirection.ASC, 200);
+                null, null, null, null, null, null, "pe_ttm", SortDirection.ASC, 200);
         ctx.setScreeningResults(screeningService.screen(criteria));
     }
 
@@ -58,7 +58,7 @@ public class ScreeningSteps {
     public void 无条件筛选() {
         try {
             screeningService.screen(new ScreeningCriteria(null, null, null, null, null, null, null,
-                    null, null, null, null, null, null, "pe_ttm", SortDirection.ASC, 200));
+                    null, null, null, null, null, null, null, "pe_ttm", SortDirection.ASC, 200));
             ctx.setScreeningError(null);
         } catch (ScreeningException e) {
             ctx.setScreeningError(e);

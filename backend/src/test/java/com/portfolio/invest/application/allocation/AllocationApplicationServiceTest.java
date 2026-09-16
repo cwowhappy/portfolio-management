@@ -9,6 +9,7 @@ import com.portfolio.invest.domain.allocation.AllocationPlan;
 import com.portfolio.invest.domain.allocation.AllocationPlanRepository;
 import com.portfolio.invest.domain.allocation.AssetClass;
 import com.portfolio.invest.domain.allocation.PlanSource;
+import com.portfolio.invest.domain.allocation.RebalanceFrequency;
 import com.portfolio.invest.domain.allocation.RiskAssessmentRepository;
 import com.portfolio.invest.domain.allocation.RiskProfile;
 import com.portfolio.invest.domain.allocation.RiskQuestion;
@@ -51,7 +52,7 @@ class AllocationApplicationServiceTest {
     private static AllocationPlan activePlan() {
         return AllocationPlan.reconstitute(10L, 1L, "平衡", PlanSource.TEMPLATE,
                 Map.of(AssetClass.STOCK, new BigDecimal("60"), AssetClass.BOND, new BigDecimal("40")),
-                true, Instant.now(), Instant.now());
+                true, Instant.now(), Instant.now(), null, RebalanceFrequency.OFF, null);
     }
 
     @DisplayName("模板列表返回四个")
@@ -65,7 +66,7 @@ class AllocationApplicationServiceTest {
     @Test
     void whenCreatePlan_thenSaveAndReturn() {
         when(repo.save(any())).thenAnswer(inv -> inv.getArgument(0));
-        var view = service.createPlan(1L, new CreatePlanCommand("平衡", PlanSource.TEMPLATE, w60_40()));
+        var view = service.createPlan(1L, new CreatePlanCommand("平衡", PlanSource.TEMPLATE, w60_40(), null));
         assertThat(view.name()).isEqualTo("平衡");
         assertThat(view.source()).isEqualTo(PlanSource.TEMPLATE);
         assertThat(view.weights()).hasSize(2);
@@ -76,7 +77,7 @@ class AllocationApplicationServiceTest {
     void givenDuplicateWeights_whenCreatePlan_thenThrowInvalidInput() {
         var dup = List.of(new WeightInput(AssetClass.STOCK, new BigDecimal("60")),
                 new WeightInput(AssetClass.STOCK, new BigDecimal("40")));
-        assertThatThrownBy(() -> service.createPlan(1L, new CreatePlanCommand("x", PlanSource.CUSTOM, dup)))
+        assertThatThrownBy(() -> service.createPlan(1L, new CreatePlanCommand("x", PlanSource.CUSTOM, dup, null)))
                 .isInstanceOfSatisfying(AllocationException.class,
                         e -> assertThat(e.code()).isEqualTo(AllocationErrorCode.INVALID_INPUT));
     }
@@ -113,7 +114,7 @@ class AllocationApplicationServiceTest {
 
         var view = service.updatePlan(1L, 10L, new UpdatePlanCommand("稳健", List.of(
                 new WeightInput(AssetClass.STOCK, new BigDecimal("40")),
-                new WeightInput(AssetClass.BOND, new BigDecimal("60")))));
+                new WeightInput(AssetClass.BOND, new BigDecimal("60"))), null));
 
         assertThat(view.name()).isEqualTo("稳健");
         assertThat(view.weights()).hasSize(2);
@@ -212,5 +213,72 @@ class AllocationApplicationServiceTest {
         when(assessmentRepository.findByUserId(42L)).thenReturn(Optional.empty());
 
         assertThat(service.latestAssessment(42L)).isEmpty();
+    }
+
+    @DisplayName("无生效方案返回空态视图")
+    @Test
+    void givenNoActivePlan_whenRebalance_thenEmptyView() {
+        when(repo.findActiveByUserId(1L)).thenReturn(Optional.empty());
+        var view = service.rebalance(1L);
+        assertThat(view.hasActivePlan()).isFalse();
+        assertThat(view.anyAlert()).isFalse();
+    }
+
+    @DisplayName("全现金 10000 vs 永久组合：阈值触发且建议金额守恒")
+    @Test
+    void givenCashOnlyAndPermanentPlan_whenRebalance_thenAlertAndConservedAmounts() {
+        when(repo.findActiveByUserId(1L)).thenReturn(Optional.of(
+                AllocationPlan.reconstitute(10L, 1L, "永久", PlanSource.TEMPLATE,
+                        Map.of(AssetClass.STOCK, new BigDecimal("25"), AssetClass.BOND, new BigDecimal("25"),
+                                AssetClass.GOLD, new BigDecimal("25"), AssetClass.CASH, new BigDecimal("25")),
+                        true, Instant.now(), Instant.now(), null, RebalanceFrequency.OFF, null)));
+        when(portfolio.allocation(1L)).thenReturn(new AssetAllocationView(List.of(
+                new AssetAllocationView.Slice(AllocationSliceCategory.EQUITY, new BigDecimal("0"), new BigDecimal("0")),
+                new AssetAllocationView.Slice(AllocationSliceCategory.CASH, new BigDecimal("10000"), new BigDecimal("100")))));
+
+        var view = service.rebalance(1L);
+
+        assertThat(view.hasActivePlan()).isTrue();
+        assertThat(view.totalAssets()).isEqualByComparingTo("10000");
+        assertThat(view.anyAlert()).isTrue();
+        var stock = view.items().stream().filter(i -> i.assetClass() == AssetClass.STOCK).findFirst().orElseThrow();
+        assertThat(stock.suggestedAmount()).isEqualByComparingTo("2500");
+        BigDecimal sum = view.items().stream().map(RebalanceView.Item::suggestedAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        assertThat(sum).isCloseTo(BigDecimal.ZERO, org.assertj.core.data.Offset.offset(new BigDecimal("0.01")));
+    }
+
+    @DisplayName("ack 重置锚点并保存；无生效方案 404")
+    @Test
+    void givenActivePlan_whenAcknowledge_thenMarkAndSave() {
+        var plan = AllocationPlan.reconstitute(10L, 1L, "平衡", PlanSource.CUSTOM,
+                Map.of(AssetClass.STOCK, new BigDecimal("60"), AssetClass.BOND, new BigDecimal("40")),
+                true, Instant.now(), Instant.now(), null, RebalanceFrequency.QUARTERLY,
+                Instant.now().minus(java.time.Duration.ofDays(100)));
+        when(repo.findActiveByUserId(1L)).thenReturn(Optional.of(plan));
+        when(repo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        service.acknowledgeRebalance(1L);
+
+        verify(repo).save(argThat(p -> p.lastRebalancedAt() != null
+                && p.lastRebalancedAt().isAfter(plan.lastRebalancedAt())));
+
+        when(repo.findActiveByUserId(1L)).thenReturn(Optional.empty());
+        assertThatThrownBy(() -> service.acknowledgeRebalance(1L))
+                .isInstanceOfSatisfying(AllocationException.class,
+                        e -> assertThat(e.code()).isEqualTo(AllocationErrorCode.NOT_FOUND));
+    }
+
+    @DisplayName("创建与更新方案携带频率；null 频率归一为 OFF")
+    @Test
+    void givenFrequencyInCommand_whenCreateAndUpdate_thenCarried() {
+        when(repo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        var created = service.createPlan(1L, new CreatePlanCommand("稳健", PlanSource.CUSTOM,
+                w60_40(), RebalanceFrequency.SEMIANNUAL));
+        assertThat(created.rebalanceFrequency()).isEqualTo(RebalanceFrequency.SEMIANNUAL);
+
+        when(repo.findByIdAndUserId(10L, 1L)).thenReturn(Optional.of(activePlan()));
+        var updated = service.updatePlan(1L, 10L, new UpdatePlanCommand("稳健", w60_40(), null)); // null → OFF
+        assertThat(updated.rebalanceFrequency()).isEqualTo(RebalanceFrequency.OFF);
     }
 }

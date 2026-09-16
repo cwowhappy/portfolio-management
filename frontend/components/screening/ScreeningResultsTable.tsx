@@ -18,11 +18,13 @@ const COLUMNS: { key: keyof ScreeningStock; label: string; sortKey: string }[] =
   { key: "turnoverRate", label: "换手率", sortKey: "turnover_rate" },
 ];
 
-export default function ScreeningResultsTable({ results, sortBy, sortDirection, onSort }: {
+export default function ScreeningResultsTable({ results, sortBy, sortDirection, onSort, watchlistCodes, onToggleWatchlist }: {
   results: ScreeningStock[];
   sortBy: string;
   sortDirection: "ASC" | "DESC";
   onSort: (sortKey: string) => void;
+  watchlistCodes?: Set<string>;
+  onToggleWatchlist?: (stockCode: string) => void;
 }) {
   const fmtMv = (v: number | null) => (v == null ? "—" : (v / 1e8).toFixed(1));
   return (
@@ -31,6 +33,7 @@ export default function ScreeningResultsTable({ results, sortBy, sortDirection, 
       <table className="w-full text-sm">
         <thead className="text-[color:var(--color-ink-dim)]">
           <tr>
+            <th className="w-8 py-1" aria-label="自选" />
             {COLUMNS.map((c) => (
               <th key={c.key} className={`text-right py-1 ${c.sortKey ? "cursor-pointer" : ""}`}
                   onClick={() => c.sortKey && onSort(c.sortKey)}>
@@ -42,6 +45,18 @@ export default function ScreeningResultsTable({ results, sortBy, sortDirection, 
         <tbody className="tabular">
           {results.map((r) => (
             <tr key={r.stockCode} className="border-t border-[color:var(--color-line-soft)]">
+              <td className="py-2 text-center">
+                {onToggleWatchlist && (
+                  <button
+                    type="button"
+                    className="text-base leading-none"
+                    aria-label={watchlistCodes?.has(r.stockCode) ? `移除自选 ${r.stockCode}` : `加自选 ${r.stockCode}`}
+                    onClick={() => onToggleWatchlist(r.stockCode)}
+                  >
+                    {watchlistCodes?.has(r.stockCode) ? "★" : "☆"}
+                  </button>
+                )}
+              </td>
               <td className="text-left py-2">{r.stockName}<span className="ml-1 text-[color:var(--color-ink-faint)]">{r.stockCode}</span></td>
               <td className="text-right">{r.peTtm ?? "—"}</td>
               <td className="text-right">{r.pb ?? "—"}</td>

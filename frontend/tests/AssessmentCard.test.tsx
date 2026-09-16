@@ -43,7 +43,7 @@ describe("AssessmentCard", () => {
 
   it("按推荐创建方案：source=ASSESSMENT、权重与推荐一致，成功后刷新", async () => {
     const onChanged = vi.fn();
-    api.createPlan.mockResolvedValue({ id: 9, name: "测评推荐·成长", source: "ASSESSMENT", weights: [], active: false });
+    api.createPlan.mockResolvedValue({ id: 9, name: "测评推荐·成长", source: "ASSESSMENT", weights: [], active: false, rebalanceFrequency: "OFF", lastRebalancedAt: null });
     render(<AssessmentCard assessment={growth} onChanged={onChanged} />);
 
     fireEvent.click(screen.getByRole("button", { name: "按推荐创建方案" }));

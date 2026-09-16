@@ -1,7 +1,7 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
-import { activatePlan, createPlan, fetchDeviation, fetchPlans, fetchTemplates, submitAssessment } from "@/lib/allocationApi";
+import { activatePlan, ackRebalance, createPlan, fetchDeviation, fetchPlans, fetchRebalance, fetchTemplates, submitAssessment } from "@/lib/allocationApi";
 
-const planJson = { id: 5, name: "平衡", source: "TEMPLATE", weights: [{ assetClass: "STOCK", weight: 60 }, { assetClass: "BOND", weight: 40 }], active: false };
+const planJson = { id: 5, name: "平衡", source: "TEMPLATE", weights: [{ assetClass: "STOCK", weight: 60 }, { assetClass: "BOND", weight: 40 }], active: false, rebalanceFrequency: "OFF", lastRebalancedAt: null };
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -53,6 +53,29 @@ describe("allocationApi", () => {
     expect(fetchMock.mock.calls[0][0]).toBe("/api/allocation/deviation");
   });
 
+  it("fetchRebalance 解析再平衡视图；ackRebalance 走 POST 204", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true, status: 200,
+      json: async () => ({
+        hasActivePlan: true, totalAssets: 10000, suppressed: false, anyAlert: true,
+        items: [{ assetClass: "STOCK", targetWeight: 25, actualWeight: 0, deviation: -25,
+          targetAmount: 2500, currentAmount: 0, suggestedAmount: 2500, thresholdBreached: true }],
+        timeTrigger: null,
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const v = await fetchRebalance();
+    expect(v.anyAlert).toBe(true);
+    expect(v.items[0].suggestedAmount).toBe(2500);
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/allocation/rebalance");
+
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 204, json: async () => ({}), text: async () => "" });
+    await ackRebalance();
+    const [url, init] = fetchMock.mock.lastCall as [string, RequestInit];
+    expect(url).toBe("/api/allocation/rebalance/ack");
+    expect(init.method).toBe("POST");
+  });
+
   it("响应不符合 schema 时抛校验错误", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ slices: [{ assetClass: "CRYPTO" }] }) }));
     await expect(fetchDeviation()).rejects.toThrow();
@@ -82,7 +105,7 @@ describe("assessment api", () => {
   it("PlanSourceSchema 接受 ASSESSMENT", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true, status: 200,
-      json: async () => [{ id: 1, name: "测评推荐·成长", source: "ASSESSMENT", weights: [], active: false }],
+      json: async () => [{ id: 1, name: "测评推荐·成长", source: "ASSESSMENT", weights: [], active: false, rebalanceFrequency: "OFF", lastRebalancedAt: null }],
     });
     vi.stubGlobal("fetch", fetchMock);
     const plans = await fetchPlans();

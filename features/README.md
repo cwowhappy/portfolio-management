@@ -11,7 +11,8 @@ features/
 ├── <feature>/             ← 一个特性（对应一个或多个里程碑 MS）
 │   ├── 01-requirement/    需求规格说明.md（需求 + 关键决策）
 │   ├── 02-design/         设计规格说明.md（可选，仅需独立设计时）
-│   └── 02-plan/ 或 03-plan/  P1/P2/P3 分阶段实施计划（无独立设计用 02-plan，有则用 03-plan）
+│   ├── 02-plan/ 或 03-plan/  P1/P2/P3 分阶段实施计划（无独立设计用 02-plan，有则用 03-plan）
+│   └── 03-retrospective/ 或 04-retrospective/  交付复盘/总结.md（可选，交付后回填）
 ├── plans/                 ← 跨特性工程/质量计划（测试体系加固、CodeReview 修复、2026-09-12-文档体系全面更新.md）
 └── README.md
 ```
@@ -27,6 +28,7 @@ features/
 | [value-screening](value-screening/) | MS-05 | M09 价值投资筛选器、M10 行业研究中心 | `/screener` `/industry` |
 | [journal](journal/) | MS-06 | M11 投资决策记录 | `/journal` |
 | [analytics](analytics/) | MS-07（已交付 2026-09-16，PR #35） | M12 收益与风险分析 | `/analytics` |
+| [rebalancing-screening](rebalancing-screening/) | MS-08（已交付 2026-09-17） | M07 资产组合配置、M09 价值投资筛选器 | `/allocation` `/screener`（扩展） |
 | [collector-design-optimize](collector-design-optimize/) | 跨 MS-01/05（重构） | M14 系统与工程 | — |
 | [mcp-integration](mcp-integration/) | MS-16（已交付 2026-09-07，PR #19） | M03 对话式投研问答、M14 系统与工程 | `/settings/mcp` |
 | [skill-integration](skill-integration/) | MS-17（已交付 2026-09-08，PR #20） | M03 对话式投研问答、M14 系统与工程 | `/settings/skills` |

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { fetchScreenedStocks } from "@/lib/screeningApi";
+import { buildExportHref, fetchScreenedStocks } from "@/lib/screeningApi";
 
 const STOCKS = [
   { stockCode: "601398", stockName: "工商银行", industryCode: "801780", industryName: "银行",
@@ -28,4 +28,19 @@ describe("screeningApi", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 400 }));
     await expect(fetchScreenedStocks({ peTtmMax: 20 })).rejects.toThrow();
   });
+
+  it("indexCode 随筛选请求携带", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => STOCKS });
+    vi.stubGlobal("fetch", fetchMock);
+    await fetchScreenedStocks({ peTtmMax: 20, indexCode: "000300", sortBy: "pe_ttm", sortDirection: "ASC", limit: 200 });
+    const url = fetchMock.mock.calls[0][0] as string;
+    expect(url).toContain("indexCode=000300");
+    expect(url).toContain("peTtmMax=20");
+  });
+
+  it("buildExportHref 与筛选同参生成导出 URL", () => {
+    const href = buildExportHref({ peTtmMax: 20, indexCode: "000300", sortBy: "pe_ttm", sortDirection: "ASC", limit: 200 });
+    expect(href).toBe("/api/screening/stocks/export?peTtmMax=20&indexCode=000300&sortBy=pe_ttm&sortDirection=ASC&limit=200");
+  });
 });
+

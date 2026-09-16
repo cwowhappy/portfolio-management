@@ -3,6 +3,7 @@ package com.portfolio.invest.infrastructure.persistence;
 import com.portfolio.invest.domain.screening.ScreeningCriteria;
 import com.portfolio.invest.domain.screening.ScreeningRepository;
 import com.portfolio.invest.domain.screening.SortDirection;
+import com.portfolio.invest.domain.screening.StockSearchHit;
 import com.portfolio.invest.domain.screening.StockScreeningResult;
 import com.portfolio.invest.support.PostgresTestSupport;
 import org.junit.jupiter.api.DisplayName;
@@ -20,6 +21,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 
 import java.math.BigDecimal;
 import java.sql.Date;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -57,6 +59,11 @@ class ScreeningRepositoryImplTest {
                 code, name, industryCode, industryName);
     }
 
+    private void seedConstituent(String indexCode, String code) {
+        jdbcTemplate.update("INSERT INTO index_constituent(index_code, stock_code, stock_name, weight) VALUES (?,?,?,?)",
+                indexCode, code, "", new BigDecimal("1.0"));
+    }
+
     @DisplayName("按PE与ROE组合筛选")
     @Test
     @Transactional
@@ -70,7 +77,7 @@ class ScreeningRepositoryImplTest {
 
         var criteria = new ScreeningCriteria(new BigDecimal("20"), null, null,
                 new BigDecimal("15"), null, null, null, null, null, null, null, null,
-                null, "pe_ttm", SortDirection.ASC, 200);
+                null, null, "pe_ttm", SortDirection.ASC, 200);
 
         var results = screeningRepository.findStocks(criteria);
         assertThat(results).extracting(StockScreeningResult::stockCode).containsExactly("601398");
@@ -87,7 +94,7 @@ class ScreeningRepositoryImplTest {
         seedMapping("601398", "工商银行", "801780", "银行");
 
         var criteria = new ScreeningCriteria(null, null, null, null, null, null, null, null,
-                null, null, null, null, "801780", "pe_ttm", SortDirection.ASC, 200);
+                null, null, null, null, "801780", null, "pe_ttm", SortDirection.ASC, 200);
 
         var results = screeningRepository.findStocks(criteria);
         assertThat(results).extracting(StockScreeningResult::stockCode).containsExactly("601398");
@@ -102,9 +109,54 @@ class ScreeningRepositoryImplTest {
         seedValuation("000858", "五粮液", "18.2", "0.62");
 
         var criteria = new ScreeningCriteria(new BigDecimal("30"), null, null, null, null, null,
-                null, null, null, null, null, null, null, "pe_ttm", SortDirection.DESC, 2);
+                null, null, null, null, null, null, null, null, "pe_ttm", SortDirection.DESC, 2);
 
         var results = screeningRepository.findStocks(criteria);
         assertThat(results).extracting(StockScreeningResult::stockCode).containsExactly("600519", "000858");
+    }
+
+    @DisplayName("指数限定：只返回该指数成分股")
+    @Test
+    @Transactional
+    void givenIndexConstituents_whenFilterByIndex_thenOnlyMembersReturned() {
+        seedValuation("600519", "贵州茅台", "22.5", "0.35");
+        seedValuation("601398", "工商银行", "5.6", "0.18");
+        seedValuation("000858", "五粮液", "18.2", "0.62");
+        seedConstituent("000300", "600519");
+        seedConstituent("000300", "601398");
+        // 000858 不属任何指数
+
+        var criteria = new ScreeningCriteria(new BigDecimal("30"), null, null, null, null, null,
+                null, null, null, null, null, null, null, "000300", "pe_ttm", SortDirection.ASC, 200);
+
+        var results = screeningRepository.findStocks(criteria);
+        assertThat(results).extracting(StockScreeningResult::stockCode)
+                .containsExactlyInAnyOrder("600519", "601398");
+    }
+
+    @DisplayName("按代码集查询：只返回最新快照日命中行")
+    @Test
+    @Transactional
+    void givenSeededStocks_whenFindStocksByCodes_thenReturnOnlyRequested() {
+        seedValuation("600519", "贵州茅台", "22.5", "0.35");
+        seedValuation("601398", "工商银行", "5.6", "0.18");
+        var results = screeningRepository.findStocksByCodes(List.of("600519", "999999"));
+        assertThat(results).extracting(StockScreeningResult::stockCode).containsExactly("600519");
+        assertThat(screeningRepository.findStocksByCodes(List.of())).isEmpty();
+    }
+
+    @DisplayName("搜索：代码前缀与名称包含")
+    @Test
+    @Transactional
+    void givenSeededStocks_whenSearch_thenMatchCodePrefixAndNameContains() {
+        seedValuation("600519", "贵州茅台", "22.5", "0.35");
+        seedValuation("601398", "工商银行", "5.6", "0.18");
+        seedMapping("600519", "贵州茅台", "801120", "食品饮料");
+
+        assertThat(screeningRepository.searchLatestSnapshot("600", 10))
+                .extracting(StockSearchHit::stockCode).containsExactly("600519");
+        assertThat(screeningRepository.searchLatestSnapshot("茅台", 10))
+                .extracting(StockSearchHit::stockCode).containsExactly("600519");
+        assertThat(screeningRepository.searchLatestSnapshot("茅台", 10).get(0).industryName()).isEqualTo("食品饮料");
     }
 }

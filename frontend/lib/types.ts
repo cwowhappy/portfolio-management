@@ -229,11 +229,39 @@ export interface Concentration { holdings: ConcentrationHolding[]; top5Ratio: nu
 
 export type AssetClass = "STOCK" | "BOND" | "GOLD" | "CASH" | "REITS";
 export type PlanSource = "TEMPLATE" | "CUSTOM" | "ASSESSMENT";
+export type RebalanceFrequency = "OFF" | "QUARTERLY" | "SEMIANNUAL";
 export interface WeightView { assetClass: AssetClass; weight: number; }
 export interface TemplateView { id: string; name: string; weights: WeightView[]; }
-export interface PlanView { id: number; name: string; source: PlanSource; weights: WeightView[]; active: boolean; }
+export interface PlanView {
+  id: number; name: string; source: PlanSource; weights: WeightView[]; active: boolean;
+  rebalanceFrequency: RebalanceFrequency; lastRebalancedAt: string | null;
+}
 export interface DeviationSlice { assetClass: AssetClass; targetWeight: number; actualWeight: number; deviation: number; }
 export interface DeviationView { slices: DeviationSlice[]; }
+export interface RebalanceItem {
+  assetClass: AssetClass; targetWeight: number; actualWeight: number; deviation: number;
+  targetAmount: number; currentAmount: number; suggestedAmount: number; thresholdBreached: boolean;
+}
+export interface RebalanceTimeTrigger {
+  frequency: RebalanceFrequency; anchorDate: string | null; dueDate: string | null;
+  daysOverdue: number; triggered: boolean;
+}
+export interface RebalanceView {
+  hasActivePlan: boolean; totalAssets: number; suppressed: boolean; anyAlert: boolean;
+  items: RebalanceItem[]; timeTrigger: RebalanceTimeTrigger | null;
+}
+
+// —— 自选观察（/api/watchlist/**）——
+
+export interface WatchlistItemView {
+  stockCode: string; stockName: string | null; industryName: string | null; price: number | null;
+  peTtm: number | null; pb: number | null; dividendYield: number | null; totalMv: number | null;
+  addedAt: string;
+}
+export interface StockSearchHit {
+  stockCode: string; stockName: string; industryName: string | null;
+  peTtm: number | null; pb: number | null; totalMv: number | null;
+}
 
 export type RiskProfile = "CONSERVATIVE" | "STABLE" | "BALANCED" | "GROWTH" | "AGGRESSIVE";
 export interface OptionView { id: string; text: string; }
@@ -280,6 +308,8 @@ export interface ScreeningParams {
   totalMvMin?: number;
   turnoverRateMin?: number;
   industryCode?: string;
+  /** 指数成分股范围（000300 沪深300 / 000905 中证500，白名单在后端） */
+  indexCode?: string;
   sortBy?: string;
   sortDirection?: "ASC" | "DESC";
   limit?: number;

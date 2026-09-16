@@ -9,6 +9,8 @@ import com.portfolio.invest.domain.allocation.AllocationPlan;
 import com.portfolio.invest.domain.allocation.AllocationPlanRepository;
 import com.portfolio.invest.domain.allocation.AllocationTemplate;
 import com.portfolio.invest.domain.allocation.AssetClass;
+import com.portfolio.invest.domain.allocation.RebalanceCalculator;
+import com.portfolio.invest.domain.allocation.RebalanceFrequency;
 import com.portfolio.invest.domain.allocation.RiskAssessment;
 import com.portfolio.invest.domain.allocation.RiskAssessmentRepository;
 import java.math.BigDecimal;
@@ -49,7 +51,7 @@ public class AllocationApplicationService {
     @Transactional
     public PlanView createPlan(Long userId, CreatePlanCommand cmd) {
         AllocationPlan plan = AllocationPlan.create(userId, cmd.name().trim(), cmd.source(),
-                toWeights(cmd.weights()), Instant.now());
+                toWeights(cmd.weights()), normalizeFrequency(cmd.rebalanceFrequency()), Instant.now());
         return PlanView.from(repository.save(plan));
     }
 
@@ -57,7 +59,8 @@ public class AllocationApplicationService {
     public PlanView updatePlan(Long userId, Long planId, UpdatePlanCommand cmd) {
         AllocationPlan plan = requirePlan(userId, planId)
                 .rename(cmd.name().trim())
-                .updateWeights(toWeights(cmd.weights()));
+                .updateWeights(toWeights(cmd.weights()))
+                .withFrequency(normalizeFrequency(cmd.rebalanceFrequency()));
         return PlanView.from(repository.save(plan));
     }
 
@@ -88,6 +91,31 @@ public class AllocationApplicationService {
             slices.add(new DeviationView.DeviationSlice(ac, target, actualWeight, actualWeight.subtract(target)));
         }
         return new DeviationView(slices);
+    }
+
+    /** 再平衡读侧计算：生效方案 × 持仓聚合 → 提醒状态 + 逐类买卖金额建议（页内卡与导航红点共用）。 */
+    public RebalanceView rebalance(Long userId) {
+        var active = repository.findActiveByUserId(userId);
+        if (active.isEmpty()) {
+            return RebalanceView.empty();
+        }
+        AllocationPlan plan = active.get();
+        var view = portfolioService.allocation(userId);
+        Map<AssetClass, BigDecimal> actual = mapHoldings(view);
+        BigDecimal totalAssets = view.slices().stream()
+                .map(AssetAllocationView.Slice::marketValue)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        var result = RebalanceCalculator.calculate(plan.weights(), actual, totalAssets,
+                plan.rebalanceFrequency(), plan.lastRebalancedAt(), Instant.now());
+        return RebalanceView.from(plan, result, totalAssets);
+    }
+
+    /** ack「已完成再平衡」：重置时间提醒锚点（幂等，重复 ack 仅刷新时间）。 */
+    @Transactional
+    public void acknowledgeRebalance(Long userId) {
+        AllocationPlan plan = repository.findActiveByUserId(userId)
+                .orElseThrow(() -> new AllocationException(AllocationErrorCode.NOT_FOUND, "无生效方案"));
+        repository.save(plan.markRebalanced(Instant.now()));
     }
 
     public QuestionnaireView questionnaire() {
@@ -123,6 +151,11 @@ public class AllocationApplicationService {
             }
         }
         return m;
+    }
+
+    /** 命令频率缺省（前端未传/存量调用）归一为 OFF。 */
+    private static RebalanceFrequency normalizeFrequency(RebalanceFrequency frequency) {
+        return frequency == null ? RebalanceFrequency.OFF : frequency;
     }
 
     /** 持仓侧只有「权益/现金」两片，映射到资产大类；其余类别在偏离度中记 0。 */
