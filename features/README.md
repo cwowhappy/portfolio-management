@@ -27,6 +27,7 @@ features/
 | [value-screening](value-screening/) | MS-05 | M09 价值投资筛选器、M10 行业研究中心 | `/screener` `/industry` |
 | [journal](journal/) | MS-06 | M11 投资决策记录 | `/journal` |
 | [analytics](analytics/) | MS-07（已交付 2026-09-16，PR #35） | M12 收益与风险分析 | `/analytics` |
+| [rebalancing-screening](rebalancing-screening/) | MS-08（进行中） | M07 资产组合配置、M09 价值投资筛选器 | `/allocation` `/screener`（扩展） |
 | [collector-design-optimize](collector-design-optimize/) | 跨 MS-01/05（重构） | M14 系统与工程 | — |
 | [mcp-integration](mcp-integration/) | MS-16（已交付 2026-09-07，PR #19） | M03 对话式投研问答、M14 系统与工程 | `/settings/mcp` |
 | [skill-integration](skill-integration/) | MS-17（已交付 2026-09-08，PR #20） | M03 对话式投研问答、M14 系统与工程 | `/settings/skills` |
