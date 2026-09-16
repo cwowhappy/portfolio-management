@@ -40,15 +40,18 @@ export default function ScreenerBoard() {
     fetchValuationIndustries("pe").then(setIndustries).catch(() => {});
   }, []);
 
-  // 登录后拉一次自选代码集合（⭐ 实心判断）；未登录保持空集合
+  // 登录后拉一次自选代码集合（⭐ 实心判断）；未登录保持空集合。
+  // setState 全部在 promise 回调里（避开 effect 内同步 setState 的 cascading render 警告）
   const reloadWatchlist = useCallback(() => {
-    if (!user) {
-      setWatchlistCodes(new Set());
-      return;
-    }
-    fetchWatchlist()
-      .then((rows) => setWatchlistCodes(new Set(rows.map((r) => r.stockCode))))
-      .catch(() => {});
+    return Promise.resolve().then(() => {
+      if (!user) {
+        setWatchlistCodes(new Set());
+        return;
+      }
+      return fetchWatchlist()
+        .then((rows) => setWatchlistCodes(new Set(rows.map((r) => r.stockCode))))
+        .catch(() => {});
+    });
   }, [user]);
 
   useEffect(() => { reloadWatchlist(); }, [reloadWatchlist]);
