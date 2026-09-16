@@ -31,7 +31,7 @@ public class AllocationSteps {
                 .map(e -> new WeightInput(e.getKey(), e.getValue()))
                 .toList();
         var view = allocationService.createPlan(ctx.getUserId(),
-                new CreatePlanCommand(planName, PlanSource.TEMPLATE, weights));
+                new CreatePlanCommand(planName, PlanSource.TEMPLATE, weights, null));
         ctx.setPlanId(view.id());
     }
 

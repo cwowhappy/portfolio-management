@@ -3,6 +3,7 @@ package com.portfolio.invest.infrastructure.persistence;
 import com.portfolio.invest.domain.allocation.AllocationPlan;
 import com.portfolio.invest.domain.allocation.AssetClass;
 import com.portfolio.invest.domain.allocation.PlanSource;
+import com.portfolio.invest.domain.allocation.RebalanceFrequency;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -43,6 +44,13 @@ public class AllocationPlanJpaEntity {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "rebalance_frequency", nullable = false, length = 16)
+    private RebalanceFrequency rebalanceFrequency;
+
+    @Column(name = "last_rebalanced_at")
+    private Instant lastRebalancedAt;
+
     @Version
     @Column(name = "version", nullable = false)
     private Long version;
@@ -58,12 +66,15 @@ public class AllocationPlanJpaEntity {
         e.active = p.active();
         e.createdAt = p.createdAt();
         e.updatedAt = p.updatedAt();
+        e.rebalanceFrequency = p.rebalanceFrequency();
+        e.lastRebalancedAt = p.lastRebalancedAt();
         e.version = p.version();
         return e;
     }
 
     public AllocationPlan toDomain(Map<AssetClass, BigDecimal> weights) {
-        return AllocationPlan.reconstitute(id, userId, name, source, weights, active, createdAt, updatedAt, version);
+        return AllocationPlan.reconstitute(id, userId, name, source, weights, active, createdAt, updatedAt,
+                version, rebalanceFrequency, lastRebalancedAt);
     }
 
     Long getId() { return id; }

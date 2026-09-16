@@ -14,6 +14,7 @@ import com.portfolio.invest.domain.allocation.AllocationErrorCode;
 import com.portfolio.invest.domain.allocation.AllocationException;
 import com.portfolio.invest.domain.allocation.AssetClass;
 import com.portfolio.invest.domain.allocation.PlanSource;
+import com.portfolio.invest.domain.allocation.RebalanceFrequency;
 import com.portfolio.invest.domain.allocation.RiskProfile;
 import com.portfolio.invest.domain.user.User;
 import com.portfolio.invest.domain.user.UserRole;
@@ -78,7 +79,8 @@ class AllocationControllerTest {
     void whenCreatePlan_thenReturn201() throws Exception {
         when(service.createPlan(eq(1L), any(CreatePlanCommand.class)))
                 .thenReturn(new PlanView(5L, "平衡", PlanSource.TEMPLATE,
-                        List.of(new WeightView(AssetClass.STOCK, new BigDecimal("60"))), false));
+                        List.of(new WeightView(AssetClass.STOCK, new BigDecimal("60"))), false,
+                        RebalanceFrequency.OFF, null));
         mvc.perform(post("/api/allocation/plans").principal(auth())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"平衡\",\"source\":\"TEMPLATE\",\"weights\":[{\"assetClass\":\"STOCK\",\"weight\":60},{\"assetClass\":\"BOND\",\"weight\":40}]}"))
@@ -91,7 +93,8 @@ class AllocationControllerTest {
     void whenUpdatePlan_thenReturn200() throws Exception {
         when(service.updatePlan(eq(1L), eq(5L), any(UpdatePlanCommand.class)))
                 .thenReturn(new PlanView(5L, "稳健", PlanSource.CUSTOM,
-                        List.of(new WeightView(AssetClass.STOCK, new BigDecimal("40"))), true));
+                        List.of(new WeightView(AssetClass.STOCK, new BigDecimal("40"))), true,
+                        RebalanceFrequency.OFF, null));
         mvc.perform(put("/api/allocation/plans/5").principal(auth())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"稳健\",\"weights\":[{\"assetClass\":\"STOCK\",\"weight\":40},{\"assetClass\":\"BOND\",\"weight\":60}]}"))
