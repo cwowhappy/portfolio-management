@@ -7,4 +7,5 @@ public final class ScreeningErrorCode {
     public static final String NO_CONDITION = "SCREENING_NO_CONDITION";
     public static final String INVALID_SORT = "SCREENING_INVALID_SORT";
     public static final String INVALID_LIMIT = "SCREENING_INVALID_LIMIT";
+    public static final String INVALID_INDEX = "SCREENING_INVALID_INDEX";
 }

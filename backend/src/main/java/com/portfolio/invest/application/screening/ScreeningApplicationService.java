@@ -66,7 +66,7 @@ public class ScreeningApplicationService {
                 .add(String.valueOf(c.debtToAssetsMax())).add(String.valueOf(c.currentRatioMin()))
                 .add(String.valueOf(c.revenueYoyMin())).add(String.valueOf(c.netprofitYoyMin()))
                 .add(String.valueOf(c.totalMvMin())).add(String.valueOf(c.turnoverRateMin()))
-                .add(String.valueOf(c.industryCode())).add(c.sortBy())
+                .add(String.valueOf(c.industryCode())).add(String.valueOf(c.indexCode())).add(c.sortBy())
                 .add(String.valueOf(c.sortDirection())).add(String.valueOf(c.limit()));
         return "screening:stocks:" + joiner;
     }

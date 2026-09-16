@@ -33,7 +33,7 @@ class ScreeningApplicationServiceTest {
 
     private ScreeningCriteria criteria(BigDecimal peMax) {
         return new ScreeningCriteria(peMax, null, null, null, null, null, null, null,
-                null, null, null, null, null, "pe_ttm", SortDirection.ASC, 200);
+                null, null, null, null, null, null, "pe_ttm", SortDirection.ASC, 200);
     }
 
     @DisplayName("空条件抛出异常")
@@ -48,7 +48,7 @@ class ScreeningApplicationServiceTest {
     @Test
     void givenInvalidSortField_whenScreen_thenThrowException() {
         var c = new ScreeningCriteria(new BigDecimal("20"), null, null, null, null, null,
-                null, null, null, null, null, null, null, "bogus", SortDirection.ASC, 200);
+                null, null, null, null, null, null, null, null, "bogus", SortDirection.ASC, 200);
         ScreeningException ex = catchThrowableOfType(() -> service.screen(c), ScreeningException.class);
         assertThat(ex).isNotNull().hasMessageContaining("不支持的排序字段");
         assertThat(ex.code()).isEqualTo(ScreeningErrorCode.INVALID_SORT);
@@ -58,7 +58,7 @@ class ScreeningApplicationServiceTest {
     @Test
     void givenLimitOutOfRange_whenScreen_thenThrowException() {
         var c = new ScreeningCriteria(new BigDecimal("20"), null, null, null, null, null,
-                null, null, null, null, null, null, null, "pe_ttm", SortDirection.ASC, 500);
+                null, null, null, null, null, null, null, null, "pe_ttm", SortDirection.ASC, 500);
         ScreeningException ex = catchThrowableOfType(() -> service.screen(c), ScreeningException.class);
         assertThat(ex).isNotNull().hasMessageContaining("结果上限");
         assertThat(ex.code()).isEqualTo(ScreeningErrorCode.INVALID_LIMIT);
@@ -93,5 +93,39 @@ class ScreeningApplicationServiceTest {
 
         verify(repo, times(1)).findStocks(c);
         verify(cache).put(anyString(), eq(results), any(Duration.class));
+    }
+
+    @DisplayName("indexCode 白名单外抛出异常")
+    @Test
+    void givenIndexCodeNotWhitelisted_whenScreen_thenThrowInvalidIndex() {
+        // 白名单校验在 record 紧凑构造器，构造行即抛——构造须在捕获块内
+        ScreeningException ex = catchThrowableOfType(() -> new ScreeningCriteria(
+                new BigDecimal("20"), null, null, null, null, null, null, null,
+                null, null, null, null, null, "000016", "pe_ttm", SortDirection.ASC, 200),
+                ScreeningException.class);
+        assertThat(ex.code()).isEqualTo(ScreeningErrorCode.INVALID_INDEX);
+    }
+
+    @DisplayName("单独指数限定算一个条件（浏览成分股是合法查询）")
+    @Test
+    void givenIndexCodeOnly_whenScreen_thenNotTreatedAsEmptyCondition() {
+        var c = new ScreeningCriteria(null, null, null, null, null, null, null, null,
+                null, null, null, null, null, "000300", "pe_ttm", SortDirection.ASC, 200);
+        service.screen(c); // 不抛 NO_CONDITION 即通过（委托 mock 仓库）
+        verify(repo).findStocks(c);
+    }
+
+    @DisplayName("缓存键纳入 indexCode：仅指数不同不误命中")
+    @Test
+    void givenDifferentIndexCode_whenScreen_thenCacheKeysDiffer() {
+        var c1 = new ScreeningCriteria(null, null, null, null, null, null, null, null,
+                null, null, null, null, null, "000300", "pe_ttm", SortDirection.ASC, 200);
+        var c2 = new ScreeningCriteria(null, null, null, null, null, null, null, null,
+                null, null, null, null, null, "000905", "pe_ttm", SortDirection.ASC, 200);
+        when(repo.findStocks(any())).thenReturn(List.of());
+        service.screen(c1);
+        service.screen(c2);
+        verify(cache).put(org.mockito.ArgumentMatchers.contains("000300"), any(), any(Duration.class));
+        verify(cache).put(org.mockito.ArgumentMatchers.contains("000905"), any(), any(Duration.class));
     }
 }

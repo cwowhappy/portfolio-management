@@ -65,6 +65,7 @@ public class ScreeningRepositoryImpl implements ScreeningRepository {
         and(sql, args, "d.total_mv >= ?", c.totalMvMin());
         and(sql, args, "d.turnover_rate >= ?", c.turnoverRateMin());
         and(sql, args, "m.industry_code = ?", c.industryCode());
+        and(sql, args, "d.stock_code IN (SELECT stock_code FROM index_constituent WHERE index_code = ?)", c.indexCode());
 
         sql.append(" ORDER BY ").append(SORT_COLUMNS.get(c.sortBy())).append(" ")
                 .append(c.sortDirection().name()).append(" NULLS LAST LIMIT ?");

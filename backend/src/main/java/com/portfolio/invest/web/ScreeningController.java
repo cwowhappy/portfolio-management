@@ -42,13 +42,14 @@ public class ScreeningController {
             @RequestParam(required = false) BigDecimal totalMvMin,
             @RequestParam(required = false) BigDecimal turnoverRateMin,
             @RequestParam(required = false) String industryCode,
+            @RequestParam(required = false) String indexCode,
             @RequestParam(defaultValue = "pe_ttm") String sortBy,
             @RequestParam(defaultValue = "ASC") SortDirection sortDirection,
             @RequestParam(defaultValue = "200") int limit) {
         var criteria = new ScreeningCriteria(
                 peTtmMax, pbMax, dividendYieldMin, roeMin, roaMin, grossMarginMin,
                 debtToAssetsMax, currentRatioMin, revenueYoyMin, netprofitYoyMin,
-                totalMvMin, turnoverRateMin, industryCode, sortBy, sortDirection, limit);
+                totalMvMin, turnoverRateMin, industryCode, indexCode, sortBy, sortDirection, limit);
         return screeningApplicationService.screen(criteria);
     }
 }
