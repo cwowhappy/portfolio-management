@@ -3,6 +3,7 @@ package com.portfolio.invest.infrastructure.persistence;
 import com.portfolio.invest.domain.screening.ScreeningCriteria;
 import com.portfolio.invest.domain.screening.ScreeningRepository;
 import com.portfolio.invest.domain.screening.SortDirection;
+import com.portfolio.invest.domain.screening.StockSearchHit;
 import com.portfolio.invest.domain.screening.StockScreeningResult;
 import com.portfolio.invest.support.PostgresTestSupport;
 import org.junit.jupiter.api.DisplayName;
@@ -20,6 +21,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 
 import java.math.BigDecimal;
 import java.sql.Date;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -130,5 +132,31 @@ class ScreeningRepositoryImplTest {
         var results = screeningRepository.findStocks(criteria);
         assertThat(results).extracting(StockScreeningResult::stockCode)
                 .containsExactlyInAnyOrder("600519", "601398");
+    }
+
+    @DisplayName("按代码集查询：只返回最新快照日命中行")
+    @Test
+    @Transactional
+    void givenSeededStocks_whenFindStocksByCodes_thenReturnOnlyRequested() {
+        seedValuation("600519", "贵州茅台", "22.5", "0.35");
+        seedValuation("601398", "工商银行", "5.6", "0.18");
+        var results = screeningRepository.findStocksByCodes(List.of("600519", "999999"));
+        assertThat(results).extracting(StockScreeningResult::stockCode).containsExactly("600519");
+        assertThat(screeningRepository.findStocksByCodes(List.of())).isEmpty();
+    }
+
+    @DisplayName("搜索：代码前缀与名称包含")
+    @Test
+    @Transactional
+    void givenSeededStocks_whenSearch_thenMatchCodePrefixAndNameContains() {
+        seedValuation("600519", "贵州茅台", "22.5", "0.35");
+        seedValuation("601398", "工商银行", "5.6", "0.18");
+        seedMapping("600519", "贵州茅台", "801120", "食品饮料");
+
+        assertThat(screeningRepository.searchLatestSnapshot("600", 10))
+                .extracting(StockSearchHit::stockCode).containsExactly("600519");
+        assertThat(screeningRepository.searchLatestSnapshot("茅台", 10))
+                .extracting(StockSearchHit::stockCode).containsExactly("600519");
+        assertThat(screeningRepository.searchLatestSnapshot("茅台", 10).get(0).industryName()).isEqualTo("食品饮料");
     }
 }

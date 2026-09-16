@@ -2,6 +2,7 @@ package com.portfolio.invest.infrastructure.persistence;
 
 import com.portfolio.invest.domain.screening.ScreeningCriteria;
 import com.portfolio.invest.domain.screening.ScreeningRepository;
+import com.portfolio.invest.domain.screening.StockSearchHit;
 import com.portfolio.invest.domain.screening.StockScreeningResult;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -71,16 +72,45 @@ public class ScreeningRepositoryImpl implements ScreeningRepository {
                 .append(c.sortDirection().name()).append(" NULLS LAST LIMIT ?");
         args.add(c.limit());
 
-        return jdbc.query(sql.toString(), (rs, i) -> new StockScreeningResult(
-                rs.getString("stock_code"), rs.getString("stock_name"),
-                rs.getString("industry_code"), rs.getString("industry_name"),
-                rs.getBigDecimal("pe_ttm"), rs.getBigDecimal("pb"), rs.getBigDecimal("dividend_yield"),
-                rs.getBigDecimal("roe"), rs.getBigDecimal("roa"), rs.getBigDecimal("gross_margin"),
-                rs.getBigDecimal("debt_to_assets"), rs.getBigDecimal("current_ratio"),
-                rs.getBigDecimal("revenue_yoy"), rs.getBigDecimal("netprofit_yoy"),
-                rs.getBigDecimal("total_mv"), rs.getBigDecimal("turnover_rate")),
-                args.toArray());
+        return jdbc.query(sql.toString(), ROW_MAPPER, args.toArray());
     }
+
+    @Override
+    public List<StockScreeningResult> findStocksByCodes(List<String> codes) {
+        if (codes == null || codes.isEmpty()) {
+            return List.of();
+        }
+        String placeholders = String.join(",", java.util.Collections.nCopies(codes.size(), "?"));
+        String sql = BASE_SQL + " AND d.stock_code IN (" + placeholders + ") ORDER BY d.stock_code";
+        return jdbc.query(sql, ROW_MAPPER, codes.toArray());
+    }
+
+    @Override
+    public List<StockSearchHit> searchLatestSnapshot(String keyword, int limit) {
+        String sql = """
+                SELECT d.stock_code, d.stock_name, m.industry_name, d.pe_ttm, d.pb, d.total_mv
+                FROM stock_valuation_daily d
+                LEFT JOIN shenwan_industry_mapping m ON d.stock_code = m.stock_code
+                WHERE d.trading_day = (SELECT max(trading_day) FROM stock_valuation_daily)
+                  AND (d.stock_code LIKE ? OR d.stock_name LIKE ?)
+                ORDER BY d.stock_code LIMIT ?
+                """;
+        return jdbc.query(sql, (rs, i) -> new StockSearchHit(
+                        rs.getString("stock_code"), rs.getString("stock_name"), rs.getString("industry_name"),
+                        rs.getBigDecimal("pe_ttm"), rs.getBigDecimal("pb"), rs.getBigDecimal("total_mv")),
+                keyword + "%", "%" + keyword + "%", limit);
+    }
+
+    /** 全维度行映射（findStocks / findStocksByCodes 共用）。 */
+    private static final org.springframework.jdbc.core.RowMapper<StockScreeningResult> ROW_MAPPER = (rs, i) ->
+            new StockScreeningResult(
+                    rs.getString("stock_code"), rs.getString("stock_name"),
+                    rs.getString("industry_code"), rs.getString("industry_name"),
+                    rs.getBigDecimal("pe_ttm"), rs.getBigDecimal("pb"), rs.getBigDecimal("dividend_yield"),
+                    rs.getBigDecimal("roe"), rs.getBigDecimal("roa"), rs.getBigDecimal("gross_margin"),
+                    rs.getBigDecimal("debt_to_assets"), rs.getBigDecimal("current_ratio"),
+                    rs.getBigDecimal("revenue_yoy"), rs.getBigDecimal("netprofit_yoy"),
+                    rs.getBigDecimal("total_mv"), rs.getBigDecimal("turnover_rate"));
 
     private void and(StringBuilder sql, List<Object> args, String clause, Object value) {
         if (value != null) {

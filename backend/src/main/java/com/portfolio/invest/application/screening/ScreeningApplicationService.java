@@ -6,6 +6,7 @@ import com.portfolio.invest.domain.screening.ScreeningCriteria;
 import com.portfolio.invest.domain.screening.ScreeningErrorCode;
 import com.portfolio.invest.domain.screening.ScreeningException;
 import com.portfolio.invest.domain.screening.ScreeningRepository;
+import com.portfolio.invest.domain.screening.StockSearchHit;
 import com.portfolio.invest.domain.screening.StockScreeningResult;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -55,6 +56,11 @@ public class ScreeningApplicationService {
         List<StockScreeningResult> result = repository.findStocks(criteria);
         cache.put(key, result, cacheTtl);
         return result;
+    }
+
+    /** 最新快照日代码/名称搜索（自选搜索框候选；薄委托，同 screen 属公开读）。 */
+    public List<StockSearchHit> search(String keyword, int limit) {
+        return repository.searchLatestSnapshot(keyword, limit);
     }
 
     /** 匿名公开端点的宽扫结果按完整查询条件为 key 缓存，避免同一筛选反复对全市场宽扫。 */

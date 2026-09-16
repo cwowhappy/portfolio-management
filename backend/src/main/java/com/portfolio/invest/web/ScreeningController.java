@@ -2,7 +2,10 @@ package com.portfolio.invest.web;
 
 import com.portfolio.invest.application.screening.ScreeningApplicationService;
 import com.portfolio.invest.domain.screening.ScreeningCriteria;
+import com.portfolio.invest.domain.screening.ScreeningErrorCode;
+import com.portfolio.invest.domain.screening.ScreeningException;
 import com.portfolio.invest.domain.screening.SortDirection;
+import com.portfolio.invest.domain.screening.StockSearchHit;
 import com.portfolio.invest.domain.screening.StockScreeningResult;
 import java.math.BigDecimal;
 import java.util.List;
@@ -51,5 +54,15 @@ public class ScreeningController {
                 debtToAssetsMax, currentRatioMin, revenueYoyMin, netprofitYoyMin,
                 totalMvMin, turnoverRateMin, industryCode, indexCode, sortBy, sortDirection, limit);
         return screeningApplicationService.screen(criteria);
+    }
+
+    /** 股票搜索候选（自选手动添加用；公开只读）。 */
+    @GetMapping("/stocks/search")
+    public List<StockSearchHit> search(@RequestParam String q,
+                                       @RequestParam(defaultValue = "10") int limit) {
+        if (q == null || q.isBlank()) {
+            throw new ScreeningException(ScreeningErrorCode.NO_CONDITION, "搜索词不能为空");
+        }
+        return screeningApplicationService.search(q.trim(), Math.min(Math.max(limit, 1), 20));
     }
 }
