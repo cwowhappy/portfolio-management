@@ -1,6 +1,6 @@
 # 后端分包规范（backend package conventions）
 
-- 状态：已确认（2026-08-18，2026-08-21 更新为 DDD 分层，2026-09-12 对齐现状：分层域扩至 10 个）
+- 状态：已确认（2026-08-18，2026-08-21 更新为 DDD 分层，2026-09-12 对齐现状：分层域扩至 10 个，2026-09-18 登记 industry 域：扩至 11 个）
 - 适用范围：`backend` 单模块 Spring Boot 应用，根包 `com.portfolio.invest`
 - 强制方式：ArchUnit 架构测试（`PackageConventionsTest`），违反即构建失败
 - 相关文档：[ADR-0001 Agent 框架选型](../decisions/0001-agent-framework.md) · [ADR-0002 交互协议](../decisions/0002-interaction-protocol.md) · [ADR-0003 行情数据源](../decisions/0003-market-data-source.md) · [ADR-0009 后端分层 DDD](../decisions/0009-backend-ddd-layering.md)
@@ -12,7 +12,7 @@
 （domain/application/infrastructure），两者并存：
 
 - **独立能力域**（`agent`）：以 Agent 装配为产出的能力域，保持单层内聚、自成一体；
-- **DDD 分层域**（`user`、`conversation`、`market`、`valuation`、`portfolio`、`journal`、`allocation`、`screening`、`skill`、`mcp`，共 10 个）：涉及持久化/多源编排的信息处理域，
+- **DDD 分层域**（`user`、`conversation`、`market`、`valuation`、`portfolio`、`journal`、`allocation`、`screening`、`skill`、`mcp`、`industry`，共 11 个）：涉及持久化/多源编排的信息处理域，
   拆为纯领域（`domain.*`）、用例编排（`application.*`）、基础设施实现（`infrastructure.*`）三层，
   领域规则可脱离 Spring/JPA 单独测试。
 
@@ -38,17 +38,17 @@ com.portfolio.invest                    # 根包：仅启动类
 - **理由**：与 Spring Boot 官方建议一致——主类置于根包，使 `@ComponentScan` 无需额外配置即可覆盖全部子包；根包不放业务代码，避免业务类挂在"无名分"的位置、规避扫描边界歧义。
 
 ### web（接入层）
-- **作用**：HTTP 边界。`@RestController` 共 12 个（Auth/UserAdmin/Conversation/Market/Health/Valuation/Portfolio/Journal/Allocation/Screening/McpConfig/SkillConfig）、`@RestControllerAdvice`（`GlobalExceptionHandler` 异常→HTTP 状态映射）、`@Component`（`InvestAguiRuntimeContextResolver`：AG-UI 运行时上下文解析）、Web 专属响应体（`ApiError`）与出入参 DTO（`web.dto`）。
+- **作用**：HTTP 边界。`@RestController` 共 13 个（Auth/UserAdmin/Conversation/Market/Health/Valuation/Portfolio/Journal/Allocation/Screening/McpConfig/SkillConfig/Industry）、`@RestControllerAdvice`（`GlobalExceptionHandler` 异常→HTTP 状态映射）、`@Component`（`InvestAguiRuntimeContextResolver`：AG-UI 运行时上下文解析）、Web 专属响应体（`ApiError`）与出入参 DTO（`web.dto`）。
 - **定位**：系统最外层，**只能被调用、不能调用别人的业务逻辑实现**——只做路由、参数校验、把用例服务/领域异常翻译成 HTTP 语义；不承载业务规则、不直接访问外部数据源。
 - **理由**：接入层与业务解耦后，协议演进（REST→gRPC/消息）不影响业务；顶层不被依赖是分层架构的根规则。
 
 ### application（应用层）
-- **作用**：用例编排与事务边界，12 个子包——`auth`（`AuthApplicationService`：注册/登录/登出/me）、`useradmin`（`UserAdminApplicationService`：审核/停用/重置密码）、`conversation`（`ConversationApplicationService`：会话/消息）、`market`（`MarketDataService` 接口 + `OrchestratingMarketDataService` 等实现：行情主源/兜底编排）、`valuation`（`ValuationApplicationService`）、`portfolio`（`PortfolioApplicationService`/`PortfolioCreationService`）、`journal`（`JournalApplicationService`）、`allocation`（`AllocationApplicationService`）、`screening`（`ScreeningApplicationService`）、`mcp`（`McpConfigApplicationService`）、`skill`（`SkillApplicationService`）、`cache`（`ApplicationCache` 端口：应用层缓存抽象，由 infrastructure.cache 实现）。持有对外 DTO。
+- **作用**：用例编排与事务边界，13 个子包——`auth`（`AuthApplicationService`：注册/登录/登出/me）、`useradmin`（`UserAdminApplicationService`：审核/停用/重置密码）、`conversation`（`ConversationApplicationService`：会话/消息）、`market`（`MarketDataService` 接口 + `OrchestratingMarketDataService` 等实现：行情主源/兜底编排）、`valuation`（`ValuationApplicationService`）、`portfolio`（`PortfolioApplicationService`/`PortfolioCreationService`）、`journal`（`JournalApplicationService`）、`allocation`（`AllocationApplicationService`）、`screening`（`ScreeningApplicationService`）、`industry`（`IndustryApplicationService`：行业榜单/行业成员两读端点）、`mcp`（`McpConfigApplicationService`）、`skill`（`SkillApplicationService`）、`cache`（`ApplicationCache` 端口：应用层缓存抽象，由 infrastructure.cache 实现）。持有对外 DTO。
 - **定位**：依赖 `domain`（仓库接口 + 领域规则），是 `web` 与 `agent` 调用的门面；不包含具体数据访问实现（仓库由 infrastructure 实现）。
 - **理由**：把"干什么"（用例）与"怎么做"（基础设施）分离；多用例可编排同一领域，事务边界收敛在此层。
 
 ### domain（领域层）
-- **作用**：纯业务，10 个子包——`user`（User/UserRole/UserStatus/UserRepository 接口）、`conversation`（Conversation/ChatMessage/ConversationRepository 接口）、`market`（Quote/KlineBar 等值对象、StockRef、MarketDataParser、MarketDataException、MarketDataSource 端口）、`valuation`（ValuationSnapshot/Percentile 等值对象、ValuationRepository 端口）、`portfolio`（Portfolio/Position/Trade/HoldingGroup 聚合、PortfolioRepository 端口）、`journal`（JournalEntry、JournalEntryRepository 端口）、`allocation`（AllocationPlan/AllocationTemplate、AllocationPlanRepository 端口）、`screening`（ScreeningCriteria/StockScreeningResult、ScreeningRepository 端口）、`skill`（SkillUserConfig、SkillConfigRepository 端口）、`mcp`（McpEndpoint/McpProvider/McpUserConfig、McpConfigRepository 端口）。
+- **作用**：纯业务，11 个子包——`user`（User/UserRole/UserStatus/UserRepository 接口）、`conversation`（Conversation/ChatMessage/ConversationRepository 接口）、`market`（Quote/KlineBar 等值对象、StockRef、MarketDataParser、MarketDataException、MarketDataSource 端口）、`valuation`（ValuationSnapshot/Percentile 等值对象、ValuationRepository 端口）、`portfolio`（Portfolio/Position/Trade/HoldingGroup 聚合、PortfolioRepository 端口）、`journal`（JournalEntry、JournalEntryRepository 端口）、`allocation`（AllocationPlan/AllocationTemplate、AllocationPlanRepository 端口）、`screening`（ScreeningCriteria/StockScreeningResult、ScreeningRepository 端口）、`skill`（SkillUserConfig、SkillConfigRepository 端口）、`mcp`（McpEndpoint/McpProvider/McpUserConfig、McpConfigRepository 端口）、`industry`（行业研究中心读侧：IndustryValuationRow/IndustryValuationPoint/IndustryStock/IndustryProsperitySnapshot 读模型值对象、WindowedPercentile/Prosperity 纯函数、IndustryRepository 端口；无聚合根，纯读模型，表 industry_valuation 与估值域共享——跨域读先例同 shenwan_industry_mapping）。
 - **定位**：**零 Spring/JPA 依赖**的纯 POJO；定义仓库/端口接口但由 infrastructure 实现；承载状态机、密码策略、归属校验等业务规则。
 - **理由**：领域规则可脱离 DB 单测（受益于纯 domain + infra 映射）；依赖方向最底层，被所有上层安全引用。
 
