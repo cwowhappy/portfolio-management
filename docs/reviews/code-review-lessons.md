@@ -105,7 +105,7 @@
 
 ### 一、需求规格说明（要点）
 
-> 完整版见 `features/asset-allocation/01-requirement/需求规格说明.md`，此处只列关键决策。
+> 完整版见 `features/asset-allocation/01-需求规格/需求规格说明.md`，此处只列关键决策。
 
 - **范围**：MS-04 = F01 模板库 + F02 自定义方案；F03 风险测评本里程碑后置（相对产品落地计划原文 F01/F02/F03 有收窄，已在「需求澄清汇总」显式记录）。
 - **资产类别**：固定 5 大类枚举（股票/债券/黄金/现金/REITs），不分地域——与 M08 持仓「权益/现金」两片对齐，模板（永久组合/全天候）天然需要债券/黄金。
@@ -115,7 +115,7 @@
 
 ### 二、技术规格说明（要点）
 
-> 完整版见 `features/asset-allocation/02-plan/`，此处只列架构决策。
+> 完整版见 `features/asset-allocation/03-实施计划/`，此处只列架构决策。
 
 - **领域**：`AssetClass` 枚举、`AllocationPlan` 不可变聚合根（`validateWeights` 非负且和=100 精确）、`AllocationTemplate` 4 模板、`AllocationException/ErrorCode`。纯 POJO，零 Spring/JPA（ArchUnit 强制）。
 - **持久化**：Flyway V6 两表归一化（`allocation_plan` + `allocation_plan_weight`），JPA 扁平实体 + `AllocationPlanRepositoryImpl`（`save` = 存 plan → 删旧权重 → 插新权重）。

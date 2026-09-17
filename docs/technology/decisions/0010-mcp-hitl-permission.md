@@ -2,7 +2,7 @@
 
 - 状态：已接受（2026-09-08）
 - 决策者：项目负责人
-- 相关：[mcp-hitl 需求规格](../../../features/mcp-hitl/01-requirement/需求规格说明.md)、[AGUI HITL 调研](../research/copilotkit/agui-hitl.md)
+- 相关：[mcp-hitl 需求规格](../../../features/mcp-hitl/01-需求规格/需求规格说明.md)、[AGUI HITL 调研](../research/copilotkit/agui-hitl.md)
 
 ## 背景
 

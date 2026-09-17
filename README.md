@@ -3,7 +3,7 @@
 > **AI Agent Web 服务** —— A股投研对话助手（2026-09）
 
 架构设计：[docs/technology/architecture/01-系统架构.md](docs/technology/architecture/01-系统架构.md) ·
-用户管理设计：[features/user-management/01-requirement/需求规格说明.md](features/user-management/01-requirement/需求规格说明.md) ·
+用户管理设计：[features/user-management/01-需求规格/需求规格说明.md](features/user-management/01-需求规格/需求规格说明.md) ·
 决策记录：[docs/technology/decisions/](docs/technology/decisions/) ·
 后端分包规范：[docs/technology/conventions/01-后端DDD分包规范.md](docs/technology/conventions/01-后端DDD分包规范.md)（ArchUnit 强制，DDD 分层）·
 产品功能：[docs/function/](docs/function/) ·

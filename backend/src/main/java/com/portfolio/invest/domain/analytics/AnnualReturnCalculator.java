@@ -8,7 +8,7 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.TreeSet;
 
-/** 年度收益：年内日 TWR 几何链接（spec 02-design §2.3）。 */
+/** 年度收益：年内日 TWR 几何链接（spec 02-设计规格 §2.3）。 */
 public final class AnnualReturnCalculator {
 
     private AnnualReturnCalculator() {}

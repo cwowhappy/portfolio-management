@@ -3,7 +3,7 @@
 - 状态：已接受（2026-09-12 补记；机制 2026-09-06 落地 feature/mcp-integration 分支，2026-09-07 随 PR #19 合入 main 生效）
 - 决策者：项目负责人
 - 取代：[ADR-0008 会话持久化：前端工作内存 + 服务端存储](0008-conversation-persistence.md) 的**内存模型部分**（表结构与消息 REST 仍有效，见 0008 头部标注）
-- 相关：[mcp-integration P3 实施计划](../../../features/mcp-integration/03-plan/P3-mcp前端设置页与收尾.md)、[ADR-0010 MCP 工具权限审批](0010-mcp-hitl-permission.md)
+- 相关：[mcp-integration P3 实施计划](../../../features/mcp-integration/03-实施计划/P3-mcp前端设置页与收尾.md)、[ADR-0010 MCP 工具权限审批](0010-mcp-hitl-permission.md)
 
 ## 背景
 

@@ -1,21 +1,32 @@
 # features · 特性开发文档
 
-> 本目录收集**开发新特性**过程中的需求、设计、计划文档。产品功能现状见 [docs/function/](../docs/function/)，技术实现见 [docs/technology/](../docs/technology/)，里程碑级落地进度见 [docs/plans/2026-08-27-产品落地计划.md](../docs/plans/2026-08-27-产品落地计划.md)。
+> 本目录收集**开发新特性**全生命周期的文档：需求、设计、计划、复盘与调研。产品功能现状见 [docs/function/](../docs/function/)，技术实现见 [docs/technology/](../docs/technology/)，里程碑级落地进度见 [docs/plans/2026-08-27-产品落地计划.md](../docs/plans/2026-08-27-产品落地计划.md)。
 
-## 目录结构
+## 目录规范（固定编号，2026-09-17 起）
 
-每个特性一个子目录，内部按「需求 → （设计）→ 计划」组织：
+每个特性一个子目录（英文 kebab-case），内部按**固定编号分层**——编号不随上层存在与否变化，各层**按需创建**、不预建空目录：
 
-```
-features/
-├── <feature>/             ← 一个特性（对应一个或多个里程碑 MS）
-│   ├── 01-requirement/    需求规格说明.md（需求 + 关键决策）
-│   ├── 02-design/         设计规格说明.md（可选，仅需独立设计时）
-│   ├── 02-plan/ 或 03-plan/  P1/P2/P3 分阶段实施计划（无独立设计用 02-plan，有则用 03-plan）
-│   └── 03-retrospective/ 或 04-retrospective/  交付复盘/总结.md（可选，交付后回填）
-├── plans/                 ← 跨特性工程/质量计划（测试体系加固、CodeReview 修复、2026-09-12-文档体系全面更新.md）
-└── README.md
-```
+| 编号 | 目录 | 内容与命名 | 存在性 |
+|:---:|---|---|:---:|
+| 01 | `01-需求规格/` | `需求规格说明.md`（背景目标 + 澄清决策汇总 + 功能需求 + NFR + 验收标准 + YAGNI） | 必有 |
+| 02 | `02-设计规格/` | `设计规格说明.md`（架构/数据模型/接口契约/测试策略，代码引用须 file:line 锚定） | 可选（仅需独立设计时） |
+| 03 | `03-实施计划/` | `P<N>-<主题>.md` 分阶段任务级计划（TDD 步骤 + Interfaces 产销块） | 必有 |
+| 04–07 | — | **预留**（未定义，勿占用） | — |
+| 08 | `08-复盘总结/` | `复盘总结.md`（交付结果/经验/不足/优化建议/计划偏差清单），交付合并后回填 | 可选 |
+| 09 | `09-调研报告/` | 特性过程中的调研/探测报告（如数据源可得性探测、技术选型调研），`<日期>-<主题>.md` | 可选 |
+
+- **附属目录**（非文档产物的夹具/评估等，如 `fixtures/`、`eval-reports/`）：语义命名、无编号，需在本 README 索引行或特性内文档注明用途。
+- **跨特性工程计划**：`features/plans/YYYY-MM-DD-<主题>.md`（不属于任何单一特性）。
+
+## 状态标注与交付回填
+
+- 索引表「里程碑」列三态格式：`MS-XX（进行中）` / `MS-XX（已交付 YYYY-MM-DD，PR #N）` / `跨 MS-XX~YY（<性质>，<状态>）`。
+- **交付回填 checklist**（PR 合并后依序执行）：
+  1. 模块文档（docs/function/modules/）功能点置 ✅ + 交付说明；
+  2. [功能模块概览](../docs/function/00-功能模块概览.md) 看板（已完成/待开发/进度）；
+  3. [产品落地计划](../docs/plans/2026-08-27-产品落地计划.md)：里程碑节状态 + 基线表 + 变更记录行 + 风险表；
+  4. 本 README 索引行补「已交付 日期 + PR #N」；
+  5. `08-复盘总结/复盘总结.md` 回填（含计划偏差清单）。
 
 ## 特性目录索引（目录 ↔ 里程碑 ↔ 功能模块）
 
@@ -40,25 +51,34 @@ features/
 
 ## 开发流程（superpowers 工作流）
 
-1. **brainstorming**（头脑风暴/需求澄清）→ 需求规格，落入 `<feature>/01-requirement/`
-2. **writing-plans**（编写实施计划）→ 分阶段计划 P1/P2/P3，落入 `<feature>/02-plan/`（或 `03-plan/`）
+1. **brainstorming**（头脑风暴/需求澄清）→ 需求规格，落入 `<feature>/01-需求规格/`
+2. **writing-plans**（编写实施计划）→ 分阶段计划 P1/P2/P3，落入 `<feature>/03-实施计划/`
 3. **executing-plans / subagent-driven-development**（执行计划）→ 产物为代码
 4. **test-driven-development**（红-绿-重构）→ 随实现进行
 5. **requesting-code-review / receiving-code-review**（代码审查）
 6. **verification-before-completion**（完成前验证）
 7. **finishing-a-development-branch**（收尾合并）
 
-> 仅「需求/设计/计划」阶段产出持久化文档收于本目录；实现、测试、审查的产物为代码/提交/评审意见，不入本目录。
+> 仅文档阶段产出持久化收于本目录；实现、测试、审查的产物为代码/提交/评审意见，不入本目录。
 
 ## 命名约定
 
 - 特性目录：英文 kebab-case，与功能模块/里程碑的对应见上方索引表。
-- 需求：`<feature>/01-requirement/需求规格说明.md`
-- 设计：`<feature>/02-design/设计规格说明.md`（可选）
-- 计划：`<feature>/02-plan/P<N>-<主题>.md`（无独立设计时），或 `<feature>/03-plan/...`（有独立设计时）
-- 跨特性工程计划：`plans/YYYY-MM-DD-<主题>.md`
+- 各层文件命名见「目录规范」表；调研报告用 `<日期>-<主题>.md`。
+- 跨特性工程计划：`plans/YYYY-MM-DD-<主题>.md`。
 
 ## 维护约定
 
-- 新增特性：在 `features/` 下建 `<feature>/` 目录，按「需求 → （设计）→ 计划」填充，并在上方索引表登记「目录 ↔ 里程碑 ↔ 模块」映射。
-- 特性交付后：同步更新 [产品落地计划](../docs/plans/2026-08-27-产品落地计划.md) 的里程碑状态，与 [功能模块概览](../docs/function/00-功能模块概览.md) 的看板。
+- 新增特性：在 `features/` 下建 `<feature>/` 目录，按「01 需求 →（02 设计）→ 03 计划」填充，并在上方索引表登记「目录 ↔ 里程碑 ↔ 模块」映射。
+- 特性交付后：按「状态标注与交付回填」checklist 执行。
+
+## 附：存量目录对照（迁移样例）
+
+2026-09-17 全量迁移至固定编号（`git mv` 保历史；旧引用含 docs/ 与代码注释同步修复）：
+
+| 特性 | 迁移前 | 迁移后 |
+|---|---|---|
+| 常规（如 analytics） | 01-requirement / 02-design / 03-plan | 01-需求规格 / 02-设计规格 / 03-实施计划 |
+| 无设计层（如 journal 原态） | 01-requirement / 02-plan / 03-retrospective | 01-需求规格 / 03-实施计划 / 08-复盘总结 |
+| 交付含复盘（rebalancing-screening） | 01/02-design/03-plan/04-retrospective | 01-需求规格 / 02-设计规格 / 03-实施计划 / 08-复盘总结 |
+| 附属目录（chat-rich-content、agent-testing） | fixtures/ · eval-reports/ | 保持原名（语义命名无编号） |

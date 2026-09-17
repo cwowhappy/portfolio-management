@@ -8,7 +8,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 
-/** XIRR：ACT/365 贴现、二分求根（spec 02-design §2.3）。 */
+/** XIRR：ACT/365 贴现、二分求根（spec 02-设计规格 §2.3）。 */
 public final class IrrCalculator {
 
     private static final MathContext MC = new MathContext(24, RoundingMode.HALF_UP);

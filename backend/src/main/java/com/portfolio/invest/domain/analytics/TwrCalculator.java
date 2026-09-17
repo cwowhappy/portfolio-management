@@ -8,7 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
-/** TWR：日频子周期几何链接 Π(1+R_t)−1，R_t=(V_t−F_t)/V_{t−1}−1（现金流日初到账），spec 02-design §2.3。 */
+/** TWR：日频子周期几何链接 Π(1+R_t)−1，R_t=(V_t−F_t)/V_{t−1}−1（现金流日初到账），spec 02-设计规格 §2.3。 */
 public final class TwrCalculator {
 
     private static final MathContext MC = new MathContext(20, RoundingMode.HALF_UP);
