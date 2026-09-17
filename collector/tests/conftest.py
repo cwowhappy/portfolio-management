@@ -25,11 +25,13 @@ FLYWAY_DIR = COLLECTOR_DIR.parent / "backend" / "src" / "main" / "resources" / "
 # V3 建旧 treasury_yield 等表，V4 建曲线/成分股表并 DROP 旧 treasury_yield，顺序不可颠倒；
 # V7 建个股基本面两表（stock_valuation_daily / stock_financial）；
 # V13 补 stock_valuation_daily.close 列并建 index_close_history（MS-07），排在最后
+# V15 补 stock_financial.revenue 营收列（MS-09）。
 FLYWAY_SQL_FILES = (
     "V3__valuation.sql",
     "V4__valuation_curve.sql",
     "V7__stock_fundamental.sql",
     "V13__analytics_close.sql",
+    "V15__stock_financial_revenue.sql",
 )
 
 # 13 张表：4 运维（alembic）+ 9 业务目标（Flyway V3/V4/V7/V13；旧 treasury_yield 已被 V4 删除）
