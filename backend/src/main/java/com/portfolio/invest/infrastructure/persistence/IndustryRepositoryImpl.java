@@ -21,6 +21,20 @@ public class IndustryRepositoryImpl implements IndustryRepository {
             "revenue", "f.revenue",
             "roe", "f.roe");
 
+    /** 个股 8 季窗口 CTE（T5 成员排名 / T6 行业景气共用）：近 4 季与前 4 季 ROE 均值 + 最新季营收同比；不足 5 季时 roe_prior 为 NULL。 */
+    private static final String PER_STOCK_CTE = """
+            WITH per_stock AS (
+                SELECT stock_code,
+                       AVG(roe) FILTER (WHERE rn <= 4) AS roe_recent,
+                       AVG(roe) FILTER (WHERE rn BETWEEN 5 AND 8) AS roe_prior,
+                       MAX(revenue_yoy) FILTER (WHERE rn = 1) AS revenue_yoy
+                FROM (SELECT stock_code, roe, revenue_yoy,
+                             ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY report_date DESC) AS rn
+                      FROM stock_financial) t
+                GROUP BY stock_code
+            )
+            """;
+
     private final JdbcTemplate jdbc;
 
     public IndustryRepositoryImpl(JdbcTemplate jdbc) {
@@ -62,17 +76,7 @@ public class IndustryRepositoryImpl implements IndustryRepository {
     @Override
     public List<IndustryStock> findIndustryStocks(String industryCode, String sortBy, String direction, int limit) {
         // 文本块每行尾部空白会被剥离，ORDER BY 后的空格须由拼接串显式提供
-        var sql = """
-                WITH per_stock AS (
-                    SELECT stock_code,
-                           AVG(roe) FILTER (WHERE rn <= 4) AS roe_recent,
-                           AVG(roe) FILTER (WHERE rn BETWEEN 5 AND 8) AS roe_prior,
-                           MAX(revenue_yoy) FILTER (WHERE rn = 1) AS revenue_yoy
-                    FROM (SELECT stock_code, roe, revenue_yoy,
-                                 ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY report_date DESC) AS rn
-                          FROM stock_financial) t
-                    GROUP BY stock_code
-                )
+        var sql = PER_STOCK_CTE + """
                 SELECT d.stock_code, d.stock_name, d.total_mv, d.pe_ttm, d.pb, d.dividend_yield,
                        f.roe, f.revenue, f.report_date AS revenue_report_date,
                        (p.roe_recent - p.roe_prior) AS roe_delta, p.revenue_yoy
@@ -98,7 +102,16 @@ public class IndustryRepositoryImpl implements IndustryRepository {
 
     @Override
     public List<IndustryProsperitySnapshot> findIndustryProsperity() {
-        // Task 6 实现
-        throw new UnsupportedOperationException("Task 5/6 实现");
+        var sql = PER_STOCK_CTE + """
+                SELECT m.industry_code,
+                       PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY (p.roe_recent - p.roe_prior)) AS roe_delta_median,
+                       PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY p.revenue_yoy) AS revenue_yoy_median,
+                       COUNT(p.stock_code) FILTER (WHERE p.roe_recent IS NOT NULL AND p.roe_prior IS NOT NULL) AS sample_size
+                FROM per_stock p JOIN shenwan_industry_mapping m ON m.stock_code = p.stock_code
+                GROUP BY m.industry_code
+                """;
+        return jdbc.query(sql, (rs, i) -> new IndustryProsperitySnapshot(
+                rs.getString("industry_code"), rs.getBigDecimal("roe_delta_median"),
+                rs.getBigDecimal("revenue_yoy_median"), rs.getLong("sample_size")));
     }
 }

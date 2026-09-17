@@ -78,4 +78,31 @@ class IndustryRepositoryImplTest {
         // 601398 仅 2 季 ROE（不足 8 季→roe_delta null→不标注）；600519 仅 1 季，同样 null
         assertThat(stocks).allSatisfy(s -> assertThat(s.prosperity()).isNull());
     }
+
+    @DisplayName("行业景气聚合：8 季窗口 ROEΔ/营收增速中位数 + 样本数")
+    @Test
+    @Transactional
+    @Sql(statements = {
+        // 两只成员股：A（000001）近 4 季 roe=12、前 4 季 roe=10 → ROEΔ=+2、revenue_yoy=15；
+        // B（000002）8 季同值 → ROEΔ=0、revenue_yoy=5 → 中位数 {1, 10}，样本 2
+        // （brief 原种子 rn1..4 混入 10 会算出 recent=10.5→Δ=0.5，与注释意图 Δ=2 矛盾——按意图改为近 4 季同 12）
+        "INSERT INTO stock_financial (report_date, stock_code, roe, revenue_yoy) VALUES"
+                + " ('2025-06-30','000001',12.0,15.0),('2025-03-31','000001',12.0,15.0),"   // rn1..2
+                + " ('2024-12-31','000001',12.0,15.0),('2024-09-30','000001',12.0,15.0),"   // rn3..4：recent=12
+                + " ('2024-06-30','000001',10.0,15.0),('2024-03-31','000001',10.0,15.0),"   // rn5..6
+                + " ('2023-12-31','000001',10.0,15.0),('2023-09-30','000001',10.0,15.0),"   // rn7..8：prior=10
+                + " ('2025-06-30','000002',6.0,5.0),('2025-03-31','000002',6.0,5.0),"
+                + " ('2024-12-31','000002',6.0,5.0),('2024-09-30','000002',6.0,5.0),"
+                + " ('2024-06-30','000002',6.0,5.0),('2024-03-31','000002',6.0,5.0),"
+                + " ('2023-12-31','000002',6.0,5.0),('2023-09-30','000002',6.0,5.0)",
+        "INSERT INTO shenwan_industry_mapping (stock_code, stock_name, industry_code, industry_name) VALUES"
+                + " ('000001','平安银行','801780','银行'),('000002','万科A','801780','银行')"
+    }, executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
+    void givenSeededIndustryMembers_whenFindIndustryProsperity_thenMediansAggregated() {
+        var snaps = repository.findIndustryProsperity();
+        var bank = snaps.stream().filter(s -> s.industryCode().equals("801780")).findFirst().orElseThrow();
+        assertThat(bank.roeDeltaMedian()).isEqualByComparingTo("1"); // median(2,0)=1
+        assertThat(bank.revenueYoyMedian()).isEqualByComparingTo("10"); // median(15,5)=10
+        assertThat(bank.sampleSize()).isEqualTo(2);
+    }
 }
