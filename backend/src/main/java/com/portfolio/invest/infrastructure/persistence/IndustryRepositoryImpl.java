@@ -21,12 +21,14 @@ public class IndustryRepositoryImpl implements IndustryRepository {
             "revenue", "f.revenue",
             "roe", "f.roe");
 
-    /** 个股 8 季窗口 CTE（T5 成员排名 / T6 行业景气共用）：近 4 季与前 4 季 ROE 均值 + 最新季营收同比；不足 5 季时 roe_prior 为 NULL。 */
+    /** 个股 8 季窗口 CTE（T5 成员排名 / T6 行业景气共用）：近 4 季与前 4 季 ROE 均值 + 最新季营收同比。两桶各要求桶内 COUNT(roe)=4 才输出均值，否则 NULL——ROE 不足 8 季（或桶内 roe 缺值）的个股不标注、不计入 ROEΔ 中位数与 sample_size（规格 §三.C）。 */
     private static final String PER_STOCK_CTE = """
             WITH per_stock AS (
                 SELECT stock_code,
-                       AVG(roe) FILTER (WHERE rn <= 4) AS roe_recent,
-                       AVG(roe) FILTER (WHERE rn BETWEEN 5 AND 8) AS roe_prior,
+                       CASE WHEN COUNT(roe) FILTER (WHERE rn <= 4) = 4
+                            THEN AVG(roe) FILTER (WHERE rn <= 4) END AS roe_recent,
+                       CASE WHEN COUNT(roe) FILTER (WHERE rn BETWEEN 5 AND 8) = 4
+                            THEN AVG(roe) FILTER (WHERE rn BETWEEN 5 AND 8) END AS roe_prior,
                        MAX(revenue_yoy) FILTER (WHERE rn = 1) AS revenue_yoy
                 FROM (SELECT stock_code, roe, revenue_yoy,
                              ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY report_date DESC) AS rn

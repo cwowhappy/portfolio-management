@@ -2,6 +2,7 @@ package com.portfolio.invest.domain.industry;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.portfolio.invest.domain.valuation.Percentile;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
@@ -26,9 +27,34 @@ class WindowedPercentileTest {
         // 250 个值中 100 个严格小于 → 100/250 = 40.00
         assertThat(WindowedPercentile.of(current, series(250, 100, current)))
                 .isEqualByComparingTo("40.00");
-        // 249+1=250 个值中 1 个小于 → 1/250 = 0.40（除不尽验证 HALF_UP 到 2 位）
+        // 250 个值中 1 个严格小于 → 1/250：250 因子只含 2/5、商可整除，0.40 非舍入所得（除不尽的 HALF_UP 真进位见下方用例）
         assertThat(WindowedPercentile.of(current, series(250, 1, current)))
                 .isEqualByComparingTo("0.40");
+    }
+
+    @DisplayName("除不尽商真实触发 HALF_UP 进位到 2 位")
+    @Test
+    void givenNonTerminatingRatio_whenPercentile_thenHalfUpRoundsToTwoDigits() {
+        var current = new BigDecimal("50");
+        // 251 个值中 1 个严格小于：100×1/251 = 0.39840…（251 为素数，除不尽）→ HALF_UP 进位 0.39→0.40（DOWN 将得 0.39）
+        assertThat(WindowedPercentile.of(current, series(251, 1, current)))
+                .isEqualByComparingTo("0.40");
+        // 300 个值中 137 个严格小于：100×137/300 = 45.6666…（300 含因子 3，除不尽）→ HALF_UP 进位 45.66→45.67
+        assertThat(WindowedPercentile.of(current, series(300, 137, current)))
+                .isEqualByComparingTo("45.67");
+    }
+
+    @DisplayName("同输入与估值域 Percentile 输出逐值相等（分位语义锚定）")
+    @Test
+    void givenSameNonNullSeries_whenWindowedAndValuationPercentileCompared_thenOutputsEqual() {
+        // 测试源集无跨域 import 守护（主代码域间零依赖口径不变）；Percentile.of 不剔 null（会 NPE），锚定用无 null 序列
+        var current = new BigDecimal("50");
+        assertThat(WindowedPercentile.of(current, series(250, 100, current)))
+                .isEqualByComparingTo(Percentile.of(current, series(250, 100, current)));
+        assertThat(WindowedPercentile.of(current, series(251, 1, current)))
+                .isEqualByComparingTo(Percentile.of(current, series(251, 1, current)));
+        assertThat(WindowedPercentile.of(current, series(300, 137, current)))
+                .isEqualByComparingTo(Percentile.of(current, series(300, 137, current)));
     }
 
     @DisplayName("样本不足250或输入缺失返回null")
