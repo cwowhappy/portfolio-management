@@ -233,6 +233,7 @@ def _field_columns():
                 "current_ratio": {"from": "current_ratio", "type": "numeric"},
                 "revenue_yoy": {"from": "revenue_yoy", "type": "numeric"},
                 "netprofit_yoy": {"from": "netprofit_yoy", "type": "numeric"},
+                "revenue": {"from": "revenue", "type": "numeric"},
             }
         ),
         "field_mapping_index_close": FieldMappingConverter(
