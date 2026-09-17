@@ -54,4 +54,28 @@ class IndustryRepositoryImplTest {
         assertThat(repository.existsIndustry("801780")).isTrue();
         assertThat(repository.existsIndustry("999999")).isFalse();
     }
+
+    @DisplayName("行业成员排名：最新交易日 + DISTINCT ON 最新报告期财务 + 不足8季不标注景气")
+    @Test
+    @Transactional
+    @Sql(statements = {
+        "INSERT INTO stock_valuation_daily (trading_day, stock_code, stock_name, pe_ttm, pb, dividend_yield, total_mv) VALUES"
+                + " ('2026-01-02','601398','工商银行',6.0,0.6,5.0,200000000000),"
+                + "        ('2026-01-02','600519','贵州茅台',25.0,8.0,3.0,180000000000),"
+                + "        ('2026-01-01','601398','工商银行',6.1,0.61,5.0,190000000000)", // 非最新日，应被过滤
+        "INSERT INTO stock_financial (report_date, stock_code, roe, revenue) VALUES"
+                + " ('2025-12-31','601398',11.0,400000000000),('2025-09-30','601398',10.0,300000000000),"
+                + " ('2025-12-31','600519',30.0,170000000000)",
+        "INSERT INTO shenwan_industry_mapping (stock_code, stock_name, industry_code, industry_name) VALUES"
+                + " ('601398','工商银行','801780','银行'),('600519','贵州茅台','801780','银行')"
+    }, executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
+    void givenSeededIndustryMembers_whenFindIndustryStocks_thenLatestFinancialsRanked() {
+        var stocks = repository.findIndustryStocks("801780", "total_mv", "DESC", 1000);
+        assertThat(stocks).hasSize(2);
+        assertThat(stocks.get(0).stockCode()).isEqualTo("601398"); // 市值降序
+        assertThat(stocks.get(0).revenue()).isEqualByComparingTo("400000000000"); // DISTINCT ON 最新报告期
+        assertThat(stocks.get(0).revenueReportDate()).isEqualTo(LocalDate.of(2025, 12, 31));
+        // 601398 仅 2 季 ROE（不足 8 季→roe_delta null→不标注）；600519 仅 1 季，同样 null
+        assertThat(stocks).allSatisfy(s -> assertThat(s.prosperity()).isNull());
+    }
 }

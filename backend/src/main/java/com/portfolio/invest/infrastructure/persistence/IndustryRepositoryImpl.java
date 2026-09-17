@@ -5,13 +5,21 @@ import com.portfolio.invest.domain.industry.IndustryRepository;
 import com.portfolio.invest.domain.industry.IndustryStock;
 import com.portfolio.invest.domain.industry.IndustryValuationPoint;
 import com.portfolio.invest.domain.industry.IndustryValuationRow;
+import com.portfolio.invest.domain.industry.Prosperity;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 @Repository
 public class IndustryRepositoryImpl implements IndustryRepository {
+
+    /** sortBy 白名单（M10-F03）：非白名单键 get 返回 null 会拼出非法 SQL——防御性故障，入参由应用层（Task 7）校验拦截。 */
+    private static final Map<String, String> SORT_COLUMNS = Map.of(
+            "total_mv", "d.total_mv",
+            "revenue", "f.revenue",
+            "roe", "f.roe");
 
     private final JdbcTemplate jdbc;
 
@@ -53,8 +61,39 @@ public class IndustryRepositoryImpl implements IndustryRepository {
 
     @Override
     public List<IndustryStock> findIndustryStocks(String industryCode, String sortBy, String direction, int limit) {
-        // Task 5 实现
-        throw new UnsupportedOperationException("Task 5/6 实现");
+        // 文本块每行尾部空白会被剥离，ORDER BY 后的空格须由拼接串显式提供
+        var sql = """
+                WITH per_stock AS (
+                    SELECT stock_code,
+                           AVG(roe) FILTER (WHERE rn <= 4) AS roe_recent,
+                           AVG(roe) FILTER (WHERE rn BETWEEN 5 AND 8) AS roe_prior,
+                           MAX(revenue_yoy) FILTER (WHERE rn = 1) AS revenue_yoy
+                    FROM (SELECT stock_code, roe, revenue_yoy,
+                                 ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY report_date DESC) AS rn
+                          FROM stock_financial) t
+                    GROUP BY stock_code
+                )
+                SELECT d.stock_code, d.stock_name, d.total_mv, d.pe_ttm, d.pb, d.dividend_yield,
+                       f.roe, f.revenue, f.report_date AS revenue_report_date,
+                       (p.roe_recent - p.roe_prior) AS roe_delta, p.revenue_yoy
+                FROM stock_valuation_daily d
+                LEFT JOIN (
+                    SELECT DISTINCT ON (stock_code) stock_code, roe, revenue, report_date
+                    FROM stock_financial ORDER BY stock_code, report_date DESC
+                ) f ON d.stock_code = f.stock_code
+                LEFT JOIN per_stock p ON d.stock_code = p.stock_code
+                JOIN shenwan_industry_mapping m ON d.stock_code = m.stock_code
+                WHERE d.trading_day = (SELECT max(trading_day) FROM stock_valuation_daily)
+                  AND m.industry_code = ?
+                ORDER BY""" + " " + SORT_COLUMNS.get(sortBy) + " " + direction + " NULLS LAST LIMIT ?";
+        return jdbc.query(sql, (rs, i) -> new IndustryStock(
+                rs.getString("stock_code"), rs.getString("stock_name"),
+                rs.getBigDecimal("total_mv"), rs.getBigDecimal("revenue"),
+                rs.getDate("revenue_report_date") == null ? null : rs.getDate("revenue_report_date").toLocalDate(),
+                rs.getBigDecimal("roe"), rs.getBigDecimal("pe_ttm"), rs.getBigDecimal("pb"),
+                rs.getBigDecimal("dividend_yield"),
+                Prosperity.of(rs.getBigDecimal("roe_delta"), rs.getBigDecimal("revenue_yoy"))),
+                industryCode, limit);
     }
 
     @Override
