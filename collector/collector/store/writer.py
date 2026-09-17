@@ -51,13 +51,13 @@ UPSERT_SQL = {
     """,
     "stock_financial": """
         INSERT INTO stock_financial (
-            report_date, stock_code, roe, roa, gross_margin, debt_to_assets, current_ratio, revenue_yoy, netprofit_yoy
+            report_date, stock_code, roe, roa, gross_margin, debt_to_assets, current_ratio, revenue_yoy, netprofit_yoy, revenue
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (report_date, stock_code) DO UPDATE SET
           roe=EXCLUDED.roe, roa=EXCLUDED.roa, gross_margin=EXCLUDED.gross_margin,
           debt_to_assets=EXCLUDED.debt_to_assets, current_ratio=EXCLUDED.current_ratio,
-          revenue_yoy=EXCLUDED.revenue_yoy, netprofit_yoy=EXCLUDED.netprofit_yoy
+          revenue_yoy=EXCLUDED.revenue_yoy, netprofit_yoy=EXCLUDED.netprofit_yoy, revenue=EXCLUDED.revenue
     """,
     "index_close_history": """
         INSERT INTO index_close_history (trading_day, index_code, index_name, close)
@@ -95,6 +95,7 @@ TABLE_COLUMNS = {
         "current_ratio",
         "revenue_yoy",
         "netprofit_yoy",
+        "revenue",
     ],
     "index_close_history": ["trading_day", "index_code", "index_name", "close"],
 }
