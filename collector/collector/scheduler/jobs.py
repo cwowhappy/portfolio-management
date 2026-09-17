@@ -31,6 +31,7 @@ from collector.sources.plugins import (
     IndexConstituentSource,
     IndexValuationSource,
     IndustryUniverseSource,
+    IndustryValuationBackfillSource,
     ShenwanMappingSource,
     StockFinancialSource,
     StockValuationDailySource,
@@ -208,6 +209,15 @@ def _field_columns():
                 "dividend_yield": {"from": "dividend_yield", "type": "numeric"},
             }
         ),
+        "field_mapping_industry_history": FieldMappingConverter(
+            {
+                "trading_day": {"from": "trading_day", "type": "str"},
+                "industry_code": {"from": "industry_code", "type": "str"},
+                "industry_name": {"from": "industry_name", "type": "str"},
+                "pe": {"from": "pe", "type": "numeric"},
+                "pb": {"from": "pb", "type": "numeric"},
+            }
+        ),
         "field_mapping_stock_valuation": FieldMappingConverter(
             {
                 "stock_code": {"from": "stock_code", "type": "str"},
@@ -272,6 +282,9 @@ def build_registries(config):
             "stock_valuation_daily": StockValuationDailySource("stock_valuation_daily", pro_factory=pro),
             "stock_financial": StockFinancialSource("stock_financial", pro_factory=pro),
             "index_close": IndexCloseSource("index_close", pro_factory=pro),
+            "industry_valuation_backfill": IndustryValuationBackfillSource(
+                "industry_valuation_backfill", conn_factory=conn_factory
+            ),
         },
     )
     converter_reg = ConverterRegistry(plugins=_field_columns())

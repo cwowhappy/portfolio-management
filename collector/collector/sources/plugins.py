@@ -586,3 +586,44 @@ def make_index_dividend_fetch(pro_factory, default=0.0):
         return default if value is None else value
 
     return fetch
+
+
+class IndustryValuationBackfillSource(Source):
+    """行业估值历史重算：从库内 stock_valuation_daily × 申万映射重算缺失日期的行业加权 PE/PB。
+
+    仅产出早于 industry_valuation 现存最早快照日（且早于当日）的日期——与每日增量任务
+    日期不相交，writer upsert 的 SET 不会触碰既有行的 roe/股息率；稳态（无缺失）返回空帧。
+    口径与 IndustryValuationCalc 逐值一致（记录级过滤 pe>0 且市值非空；pe/pb 同以 Σ(total_mv)
+    为分母，pb 缺失行只跳过分子——calc 的 pb 分母是无条件 Σcap，见 snapshot.py:45-46,62，
+    非 roe/股息率的条件分母），由 tests/test_industry_valuation_backfill.py 双实现一致性测试锚定。
+    supports_range=False：常规调度即自愈，不走 backfill CLI（backfill.py D3 会拒绝）。
+    """
+
+    supports_range = False
+
+    _SQL = """
+        SELECT d.trading_day, m.industry_code, MAX(m.industry_name) AS industry_name,
+               SUM(d.pe_ttm * d.total_mv) / NULLIF(SUM(d.total_mv), 0) AS pe,
+               SUM(d.pb * d.total_mv) / NULLIF(SUM(d.total_mv), 0) AS pb
+        FROM stock_valuation_daily d
+        JOIN shenwan_industry_mapping m ON m.stock_code = d.stock_code
+        WHERE d.pe_ttm > 0 AND d.total_mv IS NOT NULL
+          AND d.trading_day < CURRENT_DATE
+          AND d.trading_day < COALESCE((SELECT MIN(trading_day) FROM industry_valuation), '2999-12-31')
+        GROUP BY d.trading_day, m.industry_code
+        ORDER BY d.trading_day
+    """
+
+    def __init__(self, source_id, conn_factory):
+        self.source_id = source_id
+        self.conn_factory = conn_factory
+
+    def fetch(self, params):
+        with self.conn_factory() as conn, conn.cursor() as cur:
+            cur.execute(self._SQL)
+            rows = cur.fetchall()
+        out = pd.DataFrame(rows, columns=["trading_day", "industry_code", "industry_name", "pe", "pb"])
+        # psycopg 把 DATE 列还原为 date 对象；统一转 ISO 字符串使 field_mapping_industry_history
+        # （type:str）直通——输出契约（trading_day 为 'YYYY-MM-DD' 字符串）由集成测试锚定。
+        out["trading_day"] = out["trading_day"].astype(str)
+        return out
