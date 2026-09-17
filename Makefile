@@ -80,7 +80,7 @@ smoke:
 	bash scripts/smoke.sh
 
 ## 估值数据采集（Python collector）
-.PHONY: collect collect-test collect-run collect-backfill
+.PHONY: collect collect-test collect-run collect-backfill industry-stock-backfill
 
 ## 列任务
 collect:
@@ -93,6 +93,10 @@ collect-run:
 ## 按区间回填历史（TASK=<task_code> START=YYYY-MM-DD END=YYYY-MM-DD）
 collect-backfill:
 	cd collector && python -m collector.cli backfill $(TASK) --start $(START) --end $(END)
+
+## MS-09：5 年个股估值分段回填（半年一段 × 10 次调用 collect-backfill，规避单事务全量写）
+industry-stock-backfill:
+	python3 -c "import subprocess, datetime as dt; end = dt.date.today(); [subprocess.run(['make', 'collect-backfill', 'TASK=stock_valuation_daily', 'START=' + (s := (end - dt.timedelta(days=183 * (i + 1)))).isoformat(), 'END=' + (e := (end - dt.timedelta(days=183 * i))).isoformat()], check=True) for i in range(10)]"
 
 ## 运行 collector 静态检查 + 测试（覆盖率 >= 80%）
 collect-test:

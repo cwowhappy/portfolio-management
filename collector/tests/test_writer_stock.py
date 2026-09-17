@@ -1,5 +1,7 @@
 import datetime as dt
 
+import pytest
+
 from collector.store.writer import Store
 
 
@@ -52,3 +54,25 @@ def test_upsert_stock_financial_idempotent(pg_conn):
         (dt.date(2026, 6, 30), "600519"),
     ).fetchone()[0]
     assert count == 1
+
+
+def test_upsert_stock_financial_with_revenue(pg_conn):
+    """V15 后 revenue 列可写入并可回读（MS-09）。"""
+    store = Store()
+    record = {
+        "report_date": "20260630",
+        "stock_code": "600519",
+        "roe": 30.0,
+        "roa": 20.0,
+        "gross_margin": 91.0,
+        "debt_to_assets": 20.0,
+        "current_ratio": 4.0,
+        "revenue_yoy": 15.0,
+        "netprofit_yoy": 15.0,
+        "revenue": 1_234_567_890.0,
+    }
+    written = store.upsert(pg_conn, "stock_financial", [record])
+    assert written == 1
+    with pg_conn.cursor() as cur:
+        cur.execute("SELECT revenue FROM stock_financial WHERE stock_code = %s", ("600519",))
+        assert cur.fetchone()[0] == pytest.approx(1_234_567_890.0)

@@ -371,3 +371,23 @@ export interface TradeStatsView {
   sellCount: number; winCount: number; winRate: string; avgWin: string; avgLoss: string;
   profitFactor: string | null; avgHoldingDays: string; bestPnl: string; worstPnl: string;
 }
+
+// —— 行业研究（/api/industry/**，与后端 IndustryController 的 DTO 对齐）——
+
+export type Prosperity = "UP" | "FLAT" | "DOWN";
+
+export interface IndustryBoardItem {
+  industryCode: string;
+  industryName: string;
+  pe: number | null; pb: number | null; roe: number | null; dividendYield: number | null;
+  pePercentile: number | null; pbPercentile: number | null;
+  prosperity: Prosperity | null;
+  prosperityInputs: { roeDeltaMedian: number | null; revenueYoyMedian: number | null; sampleSize: number } | null;
+}
+
+export interface IndustryStock {
+  stockCode: string; stockName: string;
+  totalMv: number | null; revenue: number | null; revenueReportDate: string | null;
+  roe: number | null; peTtm: number | null; pb: number | null; dividendYield: number | null;
+  prosperity: Prosperity | null;
+}

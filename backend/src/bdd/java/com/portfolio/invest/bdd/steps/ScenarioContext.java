@@ -1,6 +1,8 @@
 package com.portfolio.invest.bdd.steps;
 
 import com.portfolio.invest.application.portfolio.PortfolioOverviewView;
+import com.portfolio.invest.domain.industry.IndustryException;
+import com.portfolio.invest.domain.industry.IndustryStock;
 import com.portfolio.invest.domain.screening.ScreeningException;
 import com.portfolio.invest.domain.screening.StockScreeningResult;
 import io.cucumber.spring.ScenarioScope;
@@ -42,6 +44,8 @@ public class ScenarioContext {
     private final List<PortfolioOverviewView> overviews = new ArrayList<>();
     private List<StockScreeningResult> screeningResults;
     private ScreeningException screeningError;
+    private List<IndustryStock> industryResults;
+    private IndustryException industryError;
 
     public String getUsername() {
         return username;
@@ -197,5 +201,21 @@ public class ScenarioContext {
 
     public void setScreeningError(ScreeningException screeningError) {
         this.screeningError = screeningError;
+    }
+
+    public List<IndustryStock> getIndustryResults() {
+        return industryResults;
+    }
+
+    public void setIndustryResults(List<IndustryStock> industryResults) {
+        this.industryResults = industryResults;
+    }
+
+    public IndustryException getIndustryError() {
+        return industryError;
+    }
+
+    public void setIndustryError(IndustryException industryError) {
+        this.industryError = industryError;
     }
 }

@@ -12,6 +12,14 @@ from collector.sources.ratelimit import RateLimiter
 # fina_indicator 上游限 200 次/分钟，取 0.35s（≈171 次/分钟）留安全余量，避免逐股并发触发限流。
 FINANCIAL_MIN_INTERVAL = 0.35
 
+# income（利润表）并入营收的实测口径（09-调研报告/2026-09-17-income接口校准.md）：
+# 缺省查询只回 report_type='1'（合并报表），客户端仍显式过滤防上游缺省行为变化；
+# revenue 单位为元（600519/601398 2024 年报 1e11 量级实测），换算系数 1.0；
+# ann_date/update_flag 必取：同 end_date 多行的真实来源是 update_flag 0/1 并存，去重与溯源必需。
+INCOME_MERGED_REPORT_TYPE = "1"
+INCOME_REVENUE_SCALE = 1.0
+INCOME_FIELDS = "ts_code,end_date,report_type,revenue,ann_date,update_flag"
+
 INDEX_CODES = {"000016": "上证50", "000300": "沪深300", "000905": "中证500", "399006": "创业板指", "000688": "科创50"}
 
 _DATE_COMPACT = re.compile(r"\d{8}")
@@ -365,7 +373,8 @@ def _last_n_periods(n):
 
 
 class StockFinancialSource(Source):
-    """全 A 个股财务指标季数据：tushare fina_indicator 按报告期批量，回填近 3 年（12 季）。"""
+    """全 A 个股财务指标季数据：tushare fina_indicator 按报告期批量，回填近 3 年（12 季）；
+    income 合并口径营收按 end_date 左并入（MS-09），无匹配期营收留 NaN。"""
 
     supports_range = False
 
@@ -392,6 +401,34 @@ class StockFinancialSource(Source):
             df = df[df["end_date"] >= cutoff]
             if df.empty:
                 return None
+            df = df[
+                [
+                    "ts_code",
+                    "end_date",
+                    "roe",
+                    "roa",
+                    "grossprofit_margin",
+                    "debt_to_assets",
+                    "current_ratio",
+                    "or_yoy",
+                    "netprofit_yoy",
+                ]
+            ]
+            # income 并入营收（MS-09）：同为逐股接口。start_date/end_date 是公告日窗口不可靠
+            # （调研实测），禁止传参限窗，报告期窗口由客户端按 end_date >= cutoff 截断（fina 同款）。
+            self.limiter.wait()
+            income_df = pro.income(ts_code=ts_code, fields=INCOME_FIELDS)
+            if income_df is not None and not income_df.empty:
+                income_df = income_df[income_df["report_type"] == INCOME_MERGED_REPORT_TYPE]
+                income_df = income_df[income_df["end_date"] >= cutoff]
+                # 同 end_date 多行的真实来源是 update_flag 0/1 并存：按 (update_flag, ann_date)
+                # 排序后每组取末行 = update_flag 最大者、并列时 ann_date 更晚者（调研报告定稿规则）。
+                income_df = income_df.sort_values(["update_flag", "ann_date"])
+                income_df = income_df.drop_duplicates(subset=["end_date"], keep="last")
+                income_df = income_df.assign(revenue=income_df["revenue"] * INCOME_REVENUE_SCALE)
+                df = df.merge(income_df[["end_date", "revenue"]], on="end_date", how="left")
+            if "revenue" not in df.columns:
+                df["revenue"] = float("nan")  # income 无数据/无匹配：营收留空，不阻断其余指标
             return df[
                 [
                     "ts_code",
@@ -403,6 +440,7 @@ class StockFinancialSource(Source):
                     "current_ratio",
                     "or_yoy",
                     "netprofit_yoy",
+                    "revenue",
                 ]
             ]
 
@@ -422,6 +460,7 @@ class StockFinancialSource(Source):
                     "current_ratio",
                     "revenue_yoy",
                     "netprofit_yoy",
+                    "revenue",
                 ]
             )
         result = pd.concat(frames, ignore_index=True)
@@ -444,6 +483,7 @@ class StockFinancialSource(Source):
                 "current_ratio",
                 "revenue_yoy",
                 "netprofit_yoy",
+                "revenue",
             ]
         ]
 
@@ -546,3 +586,44 @@ def make_index_dividend_fetch(pro_factory, default=0.0):
         return default if value is None else value
 
     return fetch
+
+
+class IndustryValuationBackfillSource(Source):
+    """行业估值历史重算：从库内 stock_valuation_daily × 申万映射重算缺失日期的行业加权 PE/PB。
+
+    仅产出早于 industry_valuation 现存最早快照日（且早于当日）的日期——与每日增量任务
+    日期不相交，writer upsert 的 SET 不会触碰既有行的 roe/股息率；稳态（无缺失）返回空帧。
+    口径与 IndustryValuationCalc 逐值一致（记录级过滤 pe>0 且市值非空；pe/pb 同以 Σ(total_mv)
+    为分母，pb 缺失行只跳过分子——calc 的 pb 分母是无条件 Σcap，见 snapshot.py:45-46,62，
+    非 roe/股息率的条件分母），由 tests/test_industry_valuation_backfill.py 双实现一致性测试锚定。
+    supports_range=False：常规调度即自愈，不走 backfill CLI（backfill.py D3 会拒绝）。
+    """
+
+    supports_range = False
+
+    _SQL = """
+        SELECT d.trading_day, m.industry_code, MAX(m.industry_name) AS industry_name,
+               SUM(d.pe_ttm * d.total_mv) / NULLIF(SUM(d.total_mv), 0) AS pe,
+               SUM(d.pb * d.total_mv) / NULLIF(SUM(d.total_mv), 0) AS pb
+        FROM stock_valuation_daily d
+        JOIN shenwan_industry_mapping m ON m.stock_code = d.stock_code
+        WHERE d.pe_ttm > 0 AND d.total_mv IS NOT NULL
+          AND d.trading_day < CURRENT_DATE
+          AND d.trading_day < COALESCE((SELECT MIN(trading_day) FROM industry_valuation), '2999-12-31')
+        GROUP BY d.trading_day, m.industry_code
+        ORDER BY d.trading_day
+    """
+
+    def __init__(self, source_id, conn_factory):
+        self.source_id = source_id
+        self.conn_factory = conn_factory
+
+    def fetch(self, params):
+        with self.conn_factory() as conn, conn.cursor() as cur:
+            cur.execute(self._SQL)
+            rows = cur.fetchall()
+        out = pd.DataFrame(rows, columns=["trading_day", "industry_code", "industry_name", "pe", "pb"])
+        # psycopg 把 DATE 列还原为 date 对象；统一转 ISO 字符串使 field_mapping_industry_history
+        # （type:str）直通——输出契约（trading_day 为 'YYYY-MM-DD' 字符串）由集成测试锚定。
+        out["trading_day"] = out["trading_day"].astype(str)
+        return out
