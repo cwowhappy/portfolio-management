@@ -9,7 +9,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** 交易统计：胜率/盈亏比/平均持有天数/最佳最差（加权平均口径，spec 02-design §2.3）。 */
+/** 交易统计：胜率/盈亏比/平均持有天数/最佳最差（加权平均口径，spec 02-设计规格 §2.3）。 */
 public final class TradeStatsCalculator {
 
     private TradeStatsCalculator() {}

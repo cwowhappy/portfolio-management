@@ -2,7 +2,7 @@
 
 > MCP 写工具的对话内权限审批（Human-in-the-Loop）：readOnlyHint 判定、AG-UI interrupt 审批卡片、批准/拒绝后续跑。
 > 决策记录见 [ADR-0010](../decisions/0010-mcp-hitl-permission.md)；MCP 工具装配见 [05-MCP数据源集成.md](05-MCP数据源集成.md)；AG-UI 事件全景见 [../research/04-AGUI事件全景与三场景技术方案.md](../research/04-AGUI事件全景与三场景技术方案.md)。
-> 对应代码：`backend/src/main/java/com/portfolio/invest/agent/UserToolkitFactory.java`（readOnly 判定）、`frontend/components/chat/InterruptApprovalCard.tsx`（审批卡片）、`frontend/components/chat/ThreadArea.tsx`（useInterrupt 挂载）、`backend/src/main/java/com/portfolio/invest/infrastructure/seed/HitlE2eSeedRunner.java`（e2e 种子）、`frontend/e2e/hitl.spec.ts`；协议勘误见 [mcp-hitl 验证记录](../../../features/mcp-hitl/03-plan/验证记录.md)。
+> 对应代码：`backend/src/main/java/com/portfolio/invest/agent/UserToolkitFactory.java`（readOnly 判定）、`frontend/components/chat/InterruptApprovalCard.tsx`（审批卡片）、`frontend/components/chat/ThreadArea.tsx`（useInterrupt 挂载）、`backend/src/main/java/com/portfolio/invest/infrastructure/seed/HitlE2eSeedRunner.java`（e2e 种子）、`frontend/e2e/hitl.spec.ts`；协议勘误见 [mcp-hitl 验证记录](../../../features/mcp-hitl/03-实施计划/验证记录.md)。
 
 ## 1. 概述
 
@@ -68,7 +68,7 @@ agentscope 权限确认中断的 `expiresAt` 序列化为 `null`，而前端 `@a
 | e2e | `frontend/e2e/hitl.spec.ts` | 真实浏览器→真实后端→真实 MCP server 全链路（#25 回归钉），`E2E_HITL_MCP_URL` 未配置整组跳过：①批准落盘 + 拒绝不落盘；②两卡并列→逐张批准即时反馈→全部应答后续跑落盘两行（v2 钉子：断言「已批准，等待其余确认…」可见） |
 | 种子 | `HitlE2eSeedRunner` | 见 §3；e2e 前置经 `PUT /api/mcp/configs/{id}` 为用户启用 `hitl-e2e` provider |
 
-协议勘误（AgentScope 2.0.1 时代 interrupt 以 RAW 透传、resume 契约错误等四条实测结论，2.0.3 升级后全部消解）正式沉淀于 [features/mcp-hitl/03-plan/验证记录.md](../../../features/mcp-hitl/03-plan/验证记录.md)。
+协议勘误（AgentScope 2.0.1 时代 interrupt 以 RAW 透传、resume 契约错误等四条实测结论，2.0.3 升级后全部消解）正式沉淀于 [features/mcp-hitl/03-实施计划/验证记录.md](../../../features/mcp-hitl/03-实施计划/验证记录.md)。
 
 ## 5. 已知限制
 

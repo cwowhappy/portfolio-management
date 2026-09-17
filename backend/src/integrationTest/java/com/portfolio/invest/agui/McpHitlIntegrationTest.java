@@ -62,7 +62,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import reactor.core.publisher.Flux;
 
 /**
- * /agui/run 真实 MCP 工具权限审批端到端（mcp-hitl 验收项，features/mcp-hitl/02-design §二）。
+ * /agui/run 真实 MCP 工具权限审批端到端（mcp-hitl 验收项，features/mcp-hitl/02-设计规格 §二）。
  *
  * <p>与 AguiInterruptIntegrationTest 的差别：不用 WriteGateTool 复刻 ASK 语义，而是内嵌真实
  * MCP server（官方 SDK streamable HTTP，classpath 已有 mcp-core 0.17.2）提供 write_note

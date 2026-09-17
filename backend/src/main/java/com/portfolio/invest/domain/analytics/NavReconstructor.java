@@ -8,7 +8,7 @@ import java.util.Map;
 import java.util.SortedMap;
 import java.util.TreeSet;
 
-/** 每日净值重建：流水事件 × 收盘价 → 逐交易日总资产序列（读侧重算，spec 02-design §2.2）。 */
+/** 每日净值重建：流水事件 × 收盘价 → 逐交易日总资产序列（读侧重算，spec 02-设计规格 §2.2）。 */
 public final class NavReconstructor {
 
     private NavReconstructor() {}

@@ -1,6 +1,6 @@
 # AG-UI
 
-> 项目勘误指针：本篇为官方文档摘录（vendored，见 [README](README.md)）；文中与项目实测有出入处（尤其下方 2.0.1 版本警告块），以 [features/mcp-hitl/03-plan/验证记录.md](../../../../features/mcp-hitl/03-plan/验证记录.md)（P0 协议勘误正式沉淀）为准。
+> 项目勘误指针：本篇为官方文档摘录（vendored，见 [README](README.md)）；文中与项目实测有出入处（尤其下方 2.0.1 版本警告块），以 [features/mcp-hitl/03-实施计划/验证记录.md](../../../../features/mcp-hitl/03-实施计划/验证记录.md)（P0 协议勘误正式沉淀）为准。
 
 ## Compatibility Notes
 
