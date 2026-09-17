@@ -427,10 +427,10 @@ def test_backfill_source_only_missing_dates(pg_conn):
 
 
 def test_backfill_source_matches_calc(pg_conn):
-    """SQL 重算与 IndustryValuationCalc 同输入逐值相等（双实现一致性，含 pb 条件加权边界）。"""
+    """SQL 重算与 IndustryValuationCalc 同输入逐值相等（双实现一致性，含 pb 缺失边界：分子跳过、分母照计——calc 的 pb 分母无条件 Σcap）。"""
     rows = [
         ("600519", "801780", "银行", 10.0, 1.5, 100.0),
-        ("601398", "801780", "银行", 20.0, None, 100.0),   # pb 缺失：pb 加权分母只计 100
+        ("601398", "801780", "银行", 20.0, None, 100.0),   # pb 缺失：分子跳过、分母照计（calc 的 pb 分母无条件 Σcap）
         ("000001", "801780", "银行", -5.0, 1.0, 50.0),     # pe<=0：整行剔除（calc 口径 snapshot.py:25-27）
     ]
     _seed_day(pg_conn, "2026-02-02", rows)
@@ -464,7 +464,7 @@ class IndustryValuationBackfillSource(Source):
 
     仅产出早于 industry_valuation 现存最早快照日（且早于当日）的日期——与每日增量任务
     日期不相交，writer upsert 的 SET 不会触碰既有行的 roe/股息率；稳态（无缺失）返回空帧。
-    口径与 IndustryValuationCalc 一致（记录级过滤 pe>0 且市值非空；pb 条件加权），
+    口径与 IndustryValuationCalc 一致（记录级过滤 pe>0 且市值非空；pb 分子跳过缺失、分母无条件 Σcap），
     由 tests/test_industry_valuation_backfill.py 双实现一致性测试锚定。
     supports_range=False：常规调度即自愈，不走 backfill CLI（backfill.py D3 会拒绝）。
     """
@@ -474,7 +474,7 @@ class IndustryValuationBackfillSource(Source):
     _SQL = """
         SELECT d.trading_day, m.industry_code, MAX(m.industry_name) AS industry_name,
                SUM(d.pe_ttm * d.total_mv) / NULLIF(SUM(d.total_mv), 0) AS pe,
-               SUM(d.pb * d.total_mv) / NULLIF(SUM(CASE WHEN d.pb IS NOT NULL THEN d.total_mv END), 0) AS pb
+               SUM(d.pb * d.total_mv) / NULLIF(SUM(d.total_mv), 0) AS pb
         FROM stock_valuation_daily d
         JOIN shenwan_industry_mapping m ON m.stock_code = d.stock_code
         WHERE d.pe_ttm > 0 AND d.total_mv IS NOT NULL

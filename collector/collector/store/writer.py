@@ -51,7 +51,8 @@ UPSERT_SQL = {
     """,
     "stock_financial": """
         INSERT INTO stock_financial (
-            report_date, stock_code, roe, roa, gross_margin, debt_to_assets, current_ratio, revenue_yoy, netprofit_yoy, revenue
+            report_date, stock_code, roe, roa, gross_margin, debt_to_assets, current_ratio,
+            revenue_yoy, netprofit_yoy, revenue
         )
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (report_date, stock_code) DO UPDATE SET

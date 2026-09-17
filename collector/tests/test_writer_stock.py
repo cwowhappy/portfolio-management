@@ -60,9 +60,16 @@ def test_upsert_stock_financial_with_revenue(pg_conn):
     """V15 后 revenue 列可写入并可回读（MS-09）。"""
     store = Store()
     record = {
-        "report_date": "20260630", "stock_code": "600519", "roe": 30.0, "roa": 20.0,
-        "gross_margin": 91.0, "debt_to_assets": 20.0, "current_ratio": 4.0,
-        "revenue_yoy": 15.0, "netprofit_yoy": 15.0, "revenue": 1_234_567_890.0,
+        "report_date": "20260630",
+        "stock_code": "600519",
+        "roe": 30.0,
+        "roa": 20.0,
+        "gross_margin": 91.0,
+        "debt_to_assets": 20.0,
+        "current_ratio": 4.0,
+        "revenue_yoy": 15.0,
+        "netprofit_yoy": 15.0,
+        "revenue": 1_234_567_890.0,
     }
     written = store.upsert(pg_conn, "stock_financial", [record])
     assert written == 1
