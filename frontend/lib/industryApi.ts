@@ -10,7 +10,7 @@ export function fetchIndustryBoard(): Promise<IndustryBoardItem[]> {
 
 export function fetchIndustryStocks(
   industryCode: string,
-  params: { sortBy?: string; sortDirection?: "ASC" | "DESC"; limit?: number } = {},
+  params: { sortBy?: "total_mv" | "revenue" | "roe"; sortDirection?: "ASC" | "DESC"; limit?: number } = {},
 ): Promise<IndustryStock[]> {
   const qs = new URLSearchParams();
   if (params.sortBy) qs.set("sortBy", params.sortBy);
