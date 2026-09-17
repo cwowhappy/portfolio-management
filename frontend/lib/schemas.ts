@@ -336,3 +336,39 @@ export const TradeStatsViewSchema = z.object({
   avgLoss: z.string(), profitFactor: z.string().nullable(), avgHoldingDays: z.string(),
   bestPnl: z.string(), worstPnl: z.string(),
 });
+
+// —— 行业研究（/api/industry/**，与后端 IndustryController 的 DTO 对齐）——
+
+export const ProsperitySchema = z.enum(["UP", "FLAT", "DOWN"]);
+
+export const IndustryBoardItemSchema = z.object({
+  industryCode: z.string(),
+  industryName: z.string(),
+  pe: z.number().nullable(),
+  pb: z.number().nullable(),
+  roe: z.number().nullable(),
+  dividendYield: z.number().nullable(),
+  pePercentile: z.number().nullable(),
+  pbPercentile: z.number().nullable(),
+  prosperity: ProsperitySchema.nullable(),
+  prosperityInputs: z
+    .object({
+      roeDeltaMedian: z.number().nullable(),
+      revenueYoyMedian: z.number().nullable(),
+      sampleSize: z.number(),
+    })
+    .nullable(),
+});
+
+export const IndustryStockSchema = z.object({
+  stockCode: z.string(),
+  stockName: z.string(),
+  totalMv: z.number().nullable(),
+  revenue: z.number().nullable(),
+  revenueReportDate: z.string().nullable(),
+  roe: z.number().nullable(),
+  peTtm: z.number().nullable(),
+  pb: z.number().nullable(),
+  dividendYield: z.number().nullable(),
+  prosperity: ProsperitySchema.nullable(),
+});
