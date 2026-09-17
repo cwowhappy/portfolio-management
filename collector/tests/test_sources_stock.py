@@ -82,6 +82,9 @@ def test_stock_financial_normalizes_and_backfills(monkeypatch):
             assert ts_code is not None
             return _financial_stock_frame(ts_code)
 
+        def income(self, ts_code=None, start_date=None, end_date=None, fields=None):
+            return pd.DataFrame()  # 无 income 数据：revenue 全 NaN（MS-09）
+
         def stock_basic(self, list_status=None, fields=None):
             return _financial_stock_basic()
 
@@ -98,6 +101,7 @@ def test_stock_financial_normalizes_and_backfills(monkeypatch):
         "current_ratio",
         "revenue_yoy",
         "netprofit_yoy",
+        "revenue",
     }
     assert set(df["stock_code"]) == {"600519", "000858"}  # 剔除 ST/退市/北交所
     assert set(df["report_date"].unique()) == {"20260331", "20260630"}
@@ -132,6 +136,7 @@ def test_stock_financial_all_empty_returns_empty_frame(monkeypatch):
         "current_ratio",
         "revenue_yoy",
         "netprofit_yoy",
+        "revenue",
     ]
     assert sorted(fetched) == ["000858.SZ", "600519.SH"]  # 每个有效股都请求过
 
@@ -147,6 +152,9 @@ def test_stock_financial_mixed_empty_concats_valid_frames(monkeypatch):
             if ts_code == "600003.SH":
                 return pd.DataFrame()
             return _financial_stock_frame(ts_code)
+
+        def income(self, ts_code=None, start_date=None, end_date=None, fields=None):
+            return pd.DataFrame()  # 无 income 数据：revenue 全 NaN（MS-09）
 
         def stock_basic(self, list_status=None, fields=None):
             return pd.DataFrame(
@@ -169,6 +177,7 @@ def test_stock_financial_mixed_empty_concats_valid_frames(monkeypatch):
         "current_ratio",
         "revenue_yoy",
         "netprofit_yoy",
+        "revenue",
     ]
     assert set(df["report_date"].unique()) == {"20260331", "20260630"}
     assert set(df["stock_code"]) == {"600519"}  # None/空股被跳过
@@ -202,6 +211,9 @@ def test_stock_financial_filters_st_retired_and_bse(monkeypatch):
             fetched.append(ts_code)
             return _financial_stock_frame(ts_code)
 
+        def income(self, ts_code=None, start_date=None, end_date=None, fields=None):
+            return pd.DataFrame()  # 无 income 数据：revenue 全 NaN（MS-09）
+
         def stock_basic(self, list_status=None, fields=None):
             return _financial_stock_basic()  # 含 ST/退市/北交所
 
@@ -220,6 +232,9 @@ def test_stock_financial_applies_rate_limiter_before_each_stock(monkeypatch):
         def fina_indicator(self, ts_code=None):
             return _financial_stock_frame(ts_code)
 
+        def income(self, ts_code=None, start_date=None, end_date=None, fields=None):
+            return pd.DataFrame()  # income 同为逐股接口（MS-09），每次上游调用前都须限速
+
         def stock_basic(self, list_status=None, fields=None):
             return _financial_stock_basic()
 
@@ -232,7 +247,104 @@ def test_stock_financial_applies_rate_limiter_before_each_stock(monkeypatch):
     src = plugins.StockFinancialSource("sf", pro_factory=lambda: FakePro(), limiter=_FakeLimiter())
     src.fetch({})
 
-    assert len(waits) == 2  # 2 个有效股，每个都先限速再请求
+    assert len(waits) == 4  # 2 个有效股 × (fina_indicator + income)，每次请求前都先限速
+
+
+def _income_frame(ts_code):
+    """income 探测样例（09-调研报告/2026-09-17-income接口校准.md 实测口径）：
+    缺省查询只回 report_type='1'（合并报表），revenue 单位元；同一 end_date 的多行
+    来自 update_flag 0/1 并存（而非 report_type 差异），ann_date 供并列去重溯源。"""
+    rows = [
+        # 20260630：update_flag=0 陈旧行；两条 flag=1 行靠 ann_date 分先后，去重须取 ann_date 更晚者
+        {
+            "ts_code": ts_code,
+            "end_date": "20260630",
+            "report_type": "1",
+            "revenue": 7_000_000.0,
+            "ann_date": "20260801",
+            "update_flag": "0",
+        },
+        {
+            "ts_code": ts_code,
+            "end_date": "20260630",
+            "report_type": "1",
+            "revenue": 7_500_000.0,
+            "ann_date": "20260820",
+            "update_flag": "1",
+        },
+        {
+            "ts_code": ts_code,
+            "end_date": "20260630",
+            "report_type": "1",
+            "revenue": 8_000_000.0,
+            "ann_date": "20260829",
+            "update_flag": "1",
+        },
+    ]
+    if ts_code == "600519.SH":
+        # 20260331 仅 600519 有 income 数据（000858 该期走 NaN 路径）；
+        # report_type='6'（母公司）是实测观察到的低值污染源，ann_date 给更晚以钉死客户端过滤
+        rows += [
+            {
+                "ts_code": ts_code,
+                "end_date": "20260331",
+                "report_type": "1",
+                "revenue": 4_000_000.0,
+                "ann_date": "20260429",
+                "update_flag": "1",
+            },
+            {
+                "ts_code": ts_code,
+                "end_date": "20260331",
+                "report_type": "6",
+                "revenue": 3_000_000.0,
+                "ann_date": "20260520",
+                "update_flag": "1",
+            },
+        ]
+    return pd.DataFrame(rows)
+
+
+def test_stock_financial_merges_income_revenue(monkeypatch):
+    """income 并入营收（MS-09）：合并口径过滤 + update_flag/ann_date 去重 + 元单位直通 + 无匹配留 NaN。"""
+    monkeypatch.setattr(plugins, "_last_n_periods", lambda n: ["20260331", "20260630"])
+    # 裁决定稿的实测契约：fields 必含去重所需的 ann_date/update_flag；revenue 单位为元 → 系数 1.0
+    assert plugins.INCOME_FIELDS == "ts_code,end_date,report_type,revenue,ann_date,update_flag"
+    assert plugins.INCOME_REVENUE_SCALE == 1.0
+
+    income_fetched = []
+
+    class FakePro:
+        def fina_indicator(self, ts_code=None):
+            assert ts_code is not None
+            return _financial_stock_frame(ts_code)
+
+        def income(self, ts_code=None, start_date=None, end_date=None, fields=None):
+            assert ts_code is not None
+            # 调研实测：income 的 start/end 是公告日窗口不可靠，禁止传参限窗（客户端按 end_date 截断）
+            assert start_date is None and end_date is None
+            income_fetched.append(ts_code)
+            return _income_frame(ts_code)
+
+        def stock_basic(self, list_status=None, fields=None):
+            return _financial_stock_basic()
+
+    src = plugins.StockFinancialSource("sf", pro_factory=lambda: FakePro())
+    df = src.fetch({})
+
+    assert "revenue" in df.columns
+    assert sorted(income_fetched) == ["000858.SZ", "600519.SH"]  # 每个有效股都拉了 income
+    # 20260630：去重取 update_flag 最大、并列 ann_date 更晚的行（8M）；0 行（7M）与并列早行（7.5M）均不污染
+    row = df[(df["stock_code"] == "600519") & (df["report_date"] == "20260630")].iloc[0]
+    assert row["revenue"] == pytest.approx(8_000_000.0 * 1.0)
+    row_858 = df[(df["stock_code"] == "000858") & (df["report_date"] == "20260630")].iloc[0]
+    assert row_858["revenue"] == pytest.approx(8_000_000.0 * 1.0)
+    # 20260331：母公司口径行（report_type='6'，ann_date 更晚）被客户端过滤，只取合并口径 4M
+    row_q1 = df[(df["stock_code"] == "600519") & (df["report_date"] == "20260331")].iloc[0]
+    assert row_q1["revenue"] == pytest.approx(4_000_000.0 * 1.0)
+    # fina_indicator 有、income 无匹配（000858 的 20260331）：revenue 为 NaN，不阻断其余列
+    row_q1_858 = df[(df["stock_code"] == "000858") & (df["report_date"] == "20260331")].iloc[0]
+    assert pd.isna(row_q1_858["revenue"])
 
 
 def test_last_n_periods_quarter_ends(monkeypatch):
