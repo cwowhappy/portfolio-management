@@ -91,6 +91,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               >
                 行业
               </Link>
+              <Link
+                href="/wiki"
+                className="rounded-md px-3 py-1.5 text-[color:var(--color-ink-dim)] transition-colors hover:bg-[color:var(--color-panel)] hover:text-[color:var(--color-ink)]"
+              >
+                知识库
+              </Link>
               <a
                 href="https://github.com"
                 target="_blank"
