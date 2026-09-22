@@ -98,4 +98,19 @@ describe("EntryEditor 表单校验", () => {
     await clickSave();
     await vi.waitFor(() => expect(api.createEntry).toHaveBeenCalled());
   });
+
+  it("保存请求在途时按钮禁用，连点仅发一次请求", async () => {
+    let resolveSave!: () => void;
+    api.createEntry.mockReturnValue(new Promise<void>((res) => { resolveSave = res; }) as never);
+    render(<EntryEditor editing={null} onSaved={() => {}} onCancel={() => {}} />);
+    await fillBase("连点备忘", "内容");
+    fireEvent.change(screen.getByPlaceholderText("股票代码（如 600519）"), { target: { value: "600519" } });
+    await clickSave();
+    expect((screen.getByRole("button", { name: "保存记录" }) as HTMLButtonElement).disabled).toBe(true);
+    await clickSave(); // 在途再点不触发
+    resolveSave();
+    await vi.waitFor(() => expect(api.createEntry).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() =>
+      expect((screen.getByRole("button", { name: "保存记录" }) as HTMLButtonElement).disabled).toBe(false));
+  });
 });

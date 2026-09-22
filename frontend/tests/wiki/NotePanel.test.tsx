@@ -69,4 +69,19 @@ describe("NotePanel", () => {
       expect((screen.getByTestId("wiki-note-content") as HTMLTextAreaElement).value).toBe("");
     });
   });
+
+  it("保存请求在途时按钮禁用，连点仅发一次请求", async () => {
+    let resolveSave!: (v: WikiEntryView) => void;
+    const pending = new Promise<WikiEntryView>((res) => { resolveSave = res; });
+    const createSpy = vi.spyOn(wikiApi, "createWikiEntry").mockReturnValue(pending);
+    render(<NotePanel type="BOOK_NOTE" entries={[]} onChanged={() => {}} />);
+    fireEvent.change(screen.getByTestId("wiki-note-title"), { target: { value: "连点笔记" } });
+    fireEvent.change(screen.getByTestId("wiki-note-content"), { target: { value: "内容" } });
+    fireEvent.click(screen.getByTestId("wiki-note-save"));
+    await waitFor(() => expect((screen.getByTestId("wiki-note-save") as HTMLButtonElement).disabled).toBe(true));
+    fireEvent.click(screen.getByTestId("wiki-note-save")); // 在途再点不触发
+    resolveSave(entries[0]);
+    await waitFor(() => expect(createSpy).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect((screen.getByTestId("wiki-note-save") as HTMLButtonElement).disabled).toBe(false));
+  });
 });

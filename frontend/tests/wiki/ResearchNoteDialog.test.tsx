@@ -48,4 +48,20 @@ describe("ResearchNoteDialog", () => {
     fireEvent.click(screen.getByTestId("research-note-save"));
     expect(createSpy).not.toHaveBeenCalled();
   });
+
+  it("保存请求在途时按钮禁用，连点仅发一次请求", async () => {
+    let resolveSave!: (v: wikiReturn) => void;
+    const pending = new Promise<wikiReturn>((res) => { resolveSave = res; });
+    const createSpy = vi.spyOn(wikiApi, "createWikiEntry").mockReturnValue(pending);
+    render(<ResearchNoteDialog industryCode="801120" industryName="白酒" />);
+    fireEvent.click(screen.getByTestId("research-note-open"));
+    fireEvent.change(screen.getByTestId("research-note-content"), { target: { value: "结论" } });
+    fireEvent.click(screen.getByTestId("research-note-save"));
+    await waitFor(() => expect((screen.getByTestId("research-note-save") as HTMLButtonElement).disabled).toBe(true));
+    fireEvent.click(screen.getByTestId("research-note-save")); // 在途再点不触发
+    resolveSave(saved);
+    await waitFor(() => expect(createSpy).toHaveBeenCalledTimes(1));
+    // 保存成功切换到「已保存」视图（保存按钮随之卸载）即完成信号
+    await waitFor(() => expect(screen.getByTestId("research-note-view-link")).toBeTruthy());
+  });
 });
