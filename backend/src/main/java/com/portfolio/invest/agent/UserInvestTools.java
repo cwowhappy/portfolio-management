@@ -57,6 +57,29 @@ public class UserInvestTools {
         });
     }
 
+    @Tool(
+            name = "suggest_allocation",
+            description = "资产配置建议：读取用户风险测评结果（无则引导先完成测评），给出推荐配置（保守/平衡/进取三档内置权重）与当前资产分布对照表及偏离。用户问「我该怎么配置/建议仓位/资产怎么配」时调用。推荐权重来自 M07 问卷评分模型，非本工具编造。",
+            readOnly = true,
+            concurrencySafe = true)
+    public ToolResultBlock suggestAllocation(ToolEmitter emitter) {
+        return runBlock(() -> {
+            var assessment = allocation.latestAssessment(userId);
+            if (assessment.isEmpty()) {
+                return ToolResultBlock.text(
+                        "尚未完成风险测评。请先到配置页完成 M07 风险测评问卷，我再基于你的风险画像给出配置建议（不凭空编造建议）。");
+            }
+            var a = assessment.get();
+            var current = portfolio.allocation(userId);
+            var deviation = allocation.deviation(userId);
+            emitter.emit(ToolResultBlock.builder()
+                    .output(TextBlock.builder().text(mapper.writeValueAsString(
+                            ChartSpecs.allocationDeviationTable(a.profileName(), a.weights(), current))).build())
+                    .build());
+            return ToolResultBlock.text(ChartSpecs.allocationSummary(a, deviation));
+        });
+    }
+
     /** 与 InvestTools 同款兜底：失败不 emit，返回错误 JSON 文本（前端 ChartCard 嗅探降级）。 */
     private ToolResultBlock runBlock(BlockSupplier supplier) {
         try {
