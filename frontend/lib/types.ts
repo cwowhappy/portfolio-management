@@ -391,3 +391,33 @@ export interface IndustryStock {
   roe: number | null; peTtm: number | null; pb: number | null; dividendYield: number | null;
   prosperity: Prosperity | null;
 }
+
+// —— 投资知识库（/api/wiki/**，与后端 WikiController 的 View 对齐）——
+
+export type WikiEntryType = "BOOK_NOTE" | "CONCEPT" | "RESEARCH_NOTE";
+export type PrincipleMetric =
+  | "SINGLE_POSITION_RATIO"
+  | "INDUSTRY_POSITION_RATIO"
+  | "STOCK_PE_MAX"
+  | "STOCK_PB_MAX";
+
+export interface WikiEntryView {
+  id: number;
+  type: WikiEntryType;
+  title: string;
+  content: string;
+  category: string | null;
+  industryCode: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PrincipleRuleView {
+  id: number;
+  metric: PrincipleMetric;
+  threshold: number;
+  enabled: boolean;
+  description: string | null;
+  createdAt: string;
+  updatedAt: string;
+}

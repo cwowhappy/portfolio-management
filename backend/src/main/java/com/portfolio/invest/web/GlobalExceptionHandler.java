@@ -133,6 +133,16 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(status).body(new ApiError(e.code(), e.getMessage()));
     }
 
+    @ExceptionHandler(com.portfolio.invest.domain.wiki.WikiException.class)
+    public ResponseEntity<ApiError> wiki(com.portfolio.invest.domain.wiki.WikiException e) {
+        HttpStatus status = switch (e.code()) {
+            case com.portfolio.invest.domain.wiki.WikiErrorCode.NOT_FOUND -> HttpStatus.NOT_FOUND;
+            case com.portfolio.invest.domain.wiki.WikiErrorCode.DUPLICATE_METRIC -> HttpStatus.CONFLICT;
+            default -> HttpStatus.BAD_REQUEST;
+        };
+        return ResponseEntity.status(status).body(new ApiError(e.code(), e.getMessage()));
+    }
+
     @ExceptionHandler(com.portfolio.invest.domain.valuation.ValuationException.class)
     public ResponseEntity<ApiError> valuation(com.portfolio.invest.domain.valuation.ValuationException e) {
         HttpStatus status = switch (e.code()) {

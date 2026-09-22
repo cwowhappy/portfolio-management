@@ -372,3 +372,29 @@ export const IndustryStockSchema = z.object({
   dividendYield: z.number().nullable(),
   prosperity: ProsperitySchema.nullable(),
 });
+
+// —— 投资知识库（/api/wiki/**，与后端 WikiController 的 View 对齐）——
+
+export const WikiEntryTypeSchema = z.enum(["BOOK_NOTE", "CONCEPT", "RESEARCH_NOTE"]);
+export const PrincipleMetricSchema = z.enum([
+  "SINGLE_POSITION_RATIO", "INDUSTRY_POSITION_RATIO", "STOCK_PE_MAX", "STOCK_PB_MAX",
+]);
+export const WikiEntryViewSchema = z.object({
+  id: z.number(),
+  type: WikiEntryTypeSchema,
+  title: z.string(),
+  content: z.string(),
+  category: z.string().nullable(),
+  industryCode: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export const PrincipleRuleViewSchema = z.object({
+  id: z.number(),
+  metric: PrincipleMetricSchema,
+  threshold: z.number(),
+  enabled: z.boolean(),
+  description: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});

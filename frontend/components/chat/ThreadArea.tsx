@@ -10,8 +10,6 @@ import {
 } from "@copilotkit/react-core/v2";
 import type { Message } from "@ag-ui/client";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import {
   AGENT_ID,
   agentMessagesToHistory,
@@ -22,7 +20,7 @@ import { loadMessages, newThreadId } from "@/lib/conversations";
 import InterruptApprovalCard from "./InterruptApprovalCard";
 import ToolCallCard from "./ToolCallCard";
 import { ChartToolRenderers } from "./toolRenderers";
-import { CodeBlock, InlineCode } from "./CodeHighlight";
+import MarkdownView from "@/components/shared/MarkdownView";
 
 // 模块级常量：避免每次渲染新建数组触发潜在的重订阅
 const AGENT_UPDATES = [UseAgentUpdate.OnMessagesChanged, UseAgentUpdate.OnRunStatusChanged];
@@ -238,59 +236,7 @@ const AssistantMessage = memo(function AssistantMessage({
             {renderToolCall({ toolCall: tc, toolMessage: toolMessageByCallId.get(tc.id) })}
           </div>
         ))}
-        {content && (
-          <div className="md-body text-[14px] leading-relaxed text-[color:var(--color-ink)]">
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              urlTransform={(url) => {
-                // FR-6：默认 transform 已拦 javascript:/data:；再拦 http:（明文外域）。
-                // 同源相对路径与 https 放行——本期无工具产图，纯防御 LLM 幻觉 URL。
-                if (url.startsWith("/") || url.startsWith("https://")) return url;
-                return "";
-              }}
-              components={{
-                pre: (p) => <>{p.children}</>,
-                code: ({ className, children }) => {
-                  // 有语言类名，或含换行（无语言围栏代码块）均按块渲染
-                  const isBlock =
-                    /language-[\w-]+/.test(className ?? "") ||
-                    String(children ?? "").includes("\n");
-                  return isBlock ? (
-                    <CodeBlock className={className}>{children}</CodeBlock>
-                  ) : (
-                    <InlineCode>{children}</InlineCode>
-                  );
-                },
-                img: ({ src, alt, title }) => (
-                  // 外域 URL 由 LLM 产出、来源不可枚举，无法配置 next/image 的 remotePatterns；
-                  // 已以 https 门控 + no-referrer + 尺寸约束兜底（FR-6）。
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={src}
-                    alt={alt ?? ""}
-                    title={title}
-                    loading="lazy"
-                    decoding="async"
-                    referrerPolicy="no-referrer"
-                    className="my-2 max-h-[420px] max-w-full rounded-md border border-[color:var(--color-line-soft)]"
-                  />
-                ),
-                a: ({ href, children }) => (
-                  <a
-                    href={href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="underline decoration-[color:var(--color-ink-faint)] underline-offset-2"
-                  >
-                    {children}
-                  </a>
-                ),
-              }}
-            >
-              {content}
-            </ReactMarkdown>
-          </div>
-        )}
+        {content && <MarkdownView content={content} />}
         <FeedbackBar messageId={message.id} />
       </div>
     </div>

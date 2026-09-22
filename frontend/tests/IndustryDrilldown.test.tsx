@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import IndustryDrilldown from "@/components/industry/IndustryDrilldown";
+import { useAuth } from "@/lib/auth";
 import type { IndustryBoardItem, IndustryStock } from "@/lib/types";
 
 // vi.hoisted：vi.mock 工厂被提升到静态 import 前，mock 引用须同层提升（仓库既有教训）。
@@ -13,6 +14,9 @@ vi.mock("@/lib/industryApi", () => ({
   fetchIndustryBoard: fetchIndustryBoardMock,
   fetchIndustryStocks: fetchIndustryStocksMock,
 }));
+
+// 组件新增 useAuth()（保存研究结论入口），本测试无 AuthProvider，照 ScreenerBoard 惯例 mock。
+vi.mock("@/lib/auth", () => ({ useAuth: vi.fn() }));
 
 // vitest globals 关闭时 RTL 自动清理不生效，须显式 cleanup（照 IndustryStockTable.test.tsx 惯例）
 afterEach(() => {
@@ -34,6 +38,7 @@ const stock = (code: string, name = "股" + code): IndustryStock => ({
 
 describe("IndustryDrilldown", () => {
   beforeEach(() => {
+    vi.mocked(useAuth).mockReturnValue({ user: null, loading: false } as ReturnType<typeof useAuth>);
     fetchIndustryBoardMock.mockResolvedValue([boardRow]);
     fetchIndustryStocksMock.mockResolvedValue([stock("601398", "工商银行")]);
   });
@@ -67,5 +72,18 @@ describe("IndustryDrilldown", () => {
       expect(fetchIndustryStocksMock).toHaveBeenLastCalledWith("801780",
         expect.objectContaining({ sortBy: "total_mv", sortDirection: "ASC" })));
     expect(await screen.findByText(/第 1\/2 页/)).toBeTruthy();
+  });
+
+  it("保存研究结论入口：未登录隐藏，登录后挂载并带入行业上下文", async () => {
+    const { rerender } = render(<IndustryDrilldown industryCode="801780" />);
+    await screen.findByText("工商银行");
+    expect(screen.queryByTestId("research-note-open")).toBeNull(); // 未登录隐藏
+
+    const userStub = { id: 1, username: "u", role: "USER", status: "APPROVED", enabled: true } as NonNullable<ReturnType<typeof useAuth>["user"]>;
+    vi.mocked(useAuth).mockReturnValue({ user: userStub, loading: false } as ReturnType<typeof useAuth>);
+    rerender(<IndustryDrilldown industryCode="801780" />);
+    fireEvent.click(screen.getByTestId("research-note-open"));
+    // 行业上下文（榜单名「银行」）预填进弹窗标题，验证 props 正确传入
+    expect((screen.getByTestId("research-note-title") as HTMLInputElement).value).toBe("银行 研究结论");
   });
 });
