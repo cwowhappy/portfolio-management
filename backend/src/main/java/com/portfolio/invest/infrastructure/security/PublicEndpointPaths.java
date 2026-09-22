@@ -21,6 +21,7 @@ public final class PublicEndpointPaths {
             "/api/market/",
             "/api/valuation/",
             "/api/screening/",
+            "/api/industry/",
             "/actuator/",
     };
 

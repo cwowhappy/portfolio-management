@@ -1,0 +1,15 @@
+task_code: industry_valuation_backfill
+task_name: 行业估值历史重算
+# 纯本地 DB→DB 重算（无外部调用），幂等自愈：只补缺失日期，稳态 0 行属正常——
+# 故 validator 置 null（min_rows hard 会在第二次运行起必失败）。
+source_ids:
+  - { source_id: industry_valuation_backfill, type: plugin, class: industry_valuation_backfill }
+converter: field_mapping_industry_history
+calc: null
+validator: null
+target_table: industry_valuation
+schedule: { type: interval, days: 7 }
+enabled: true
+trading_day_gated: false
+retry_max: 3
+retry_backoff: exponential

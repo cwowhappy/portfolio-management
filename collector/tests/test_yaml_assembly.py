@@ -23,6 +23,7 @@ EXPECTED_TASKS = {
     "index_constituent",
     "index_valuation",
     "industry_valuation",
+    "industry_valuation_backfill",
     "shenwan_mapping",
     "stock_financial",
     "stock_valuation_daily",
