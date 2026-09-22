@@ -55,7 +55,8 @@ export default function RulePanel({ rules, onChanged }: {
     };
     try {
       if (editing) {
-        await updateRule(editing.id, { ...payload, enabled: editing.enabled });
+        const enabled = rules.find((r) => r.id === editing.id)?.enabled ?? editing.enabled;
+        await updateRule(editing.id, { ...payload, enabled });
       } else {
         await createRule({ ...payload, enabled: true });
       }

@@ -84,4 +84,18 @@ describe("RulePanel", () => {
     await waitFor(() => expect(updateSpy).toHaveBeenCalledWith(9,
       expect.objectContaining({ metric: "SINGLE_POSITION_RATIO", threshold: 0.25 })));
   });
+
+  it("编辑期间启停被切换：保存取实时 enabled 而非编辑快照", async () => {
+    const updateSpy = vi.spyOn(wikiApi, "updateRule").mockResolvedValue(rules[0]);
+    const { rerender } = render(<RulePanel rules={rules} onChanged={() => {}} />);
+    fireEvent.click(screen.getByTestId("wiki-rule-edit-9")); // 编辑快照 enabled=true
+    fireEvent.click(screen.getByTestId("wiki-rule-toggle-9")); // 编辑中切换启停
+    // 模拟父组件 onChanged 后刷新列表：rules 传入 enabled=false 的新数据
+    const refreshed = rules.map((r) => (r.id === 9 ? { ...r, enabled: false } : r));
+    rerender(<RulePanel rules={refreshed} onChanged={() => {}} />);
+    fireEvent.change(screen.getByTestId("wiki-rule-threshold"), { target: { value: "25" } });
+    fireEvent.click(screen.getByTestId("wiki-rule-save"));
+    await waitFor(() => expect(updateSpy).toHaveBeenLastCalledWith(9,
+      expect.objectContaining({ threshold: 0.25, enabled: false })));
+  });
 });
