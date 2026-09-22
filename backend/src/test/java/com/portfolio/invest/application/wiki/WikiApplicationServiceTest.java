@@ -22,11 +22,12 @@ import static org.mockito.Mockito.when;
 class WikiApplicationServiceTest {
 
     private final WikiEntryRepository repo = mock(WikiEntryRepository.class);
+    private final com.portfolio.invest.domain.wiki.WikiSeedStateRepository seedStateRepo = org.mockito.Mockito.mock(com.portfolio.invest.domain.wiki.WikiSeedStateRepository.class);
     private WikiApplicationService service;
 
     @BeforeEach
     void setUp() {
-        service = new WikiApplicationService(repo); // Task 4 扩为三参（catalog + seedState）时同步改此处
+        service = new WikiApplicationService(repo, new PresetConceptCatalog(), seedStateRepo);
     }
 
     private static WikiEntry entry(long id, WikiEntryType type) {
@@ -81,5 +82,48 @@ class WikiApplicationServiceTest {
         when(repo.findByIdAndUserId(5L, 1L)).thenReturn(Optional.of(entry(5L, WikiEntryType.BOOK_NOTE)));
         service.deleteEntry(1L, 5L);
         verify(repo).deleteById(5L);
+    }
+
+    // —— seeding（Task 4）——
+
+    @DisplayName("首次拉取概念：插入预置 + 写标记")
+    @Test
+    void givenNoSeedMarker_whenListConcepts_thenSeedPresetAndMark() {
+        WikiApplicationService seeded = new WikiApplicationService(repo,
+                new PresetConceptCatalog(), seedStateRepo);
+        when(seedStateRepo.existsByUserId(1L)).thenReturn(false);
+        when(repo.findByUserId(1L, WikiEntryType.CONCEPT)).thenReturn(java.util.List.of());
+        when(repo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        seeded.entries(1L, WikiEntryType.CONCEPT);
+
+        verify(repo, org.mockito.Mockito.times(10)).save(any(WikiEntry.class));
+        verify(seedStateRepo).insert(1L);
+    }
+
+    @DisplayName("已有标记：不重复 seeding")
+    @Test
+    void givenSeedMarkerExists_whenListConcepts_thenNoSeed() {
+        WikiApplicationService seeded = new WikiApplicationService(repo,
+                new PresetConceptCatalog(), seedStateRepo);
+        when(seedStateRepo.existsByUserId(1L)).thenReturn(true);
+        when(repo.findByUserId(1L, WikiEntryType.CONCEPT)).thenReturn(java.util.List.of());
+
+        seeded.entries(1L, WikiEntryType.CONCEPT);
+
+        verify(repo, org.mockito.Mockito.never()).save(any());
+        verify(seedStateRepo, org.mockito.Mockito.never()).insert(1L);
+    }
+
+    @DisplayName("非概念类型不触发 seeding")
+    @Test
+    void givenBookNote_whenList_thenNoSeedCheck() {
+        WikiApplicationService seeded = new WikiApplicationService(repo,
+                new PresetConceptCatalog(), seedStateRepo);
+        when(repo.findByUserId(1L, WikiEntryType.BOOK_NOTE)).thenReturn(java.util.List.of());
+
+        seeded.entries(1L, WikiEntryType.BOOK_NOTE);
+
+        verify(seedStateRepo, org.mockito.Mockito.never()).existsByUserId(1L);
     }
 }

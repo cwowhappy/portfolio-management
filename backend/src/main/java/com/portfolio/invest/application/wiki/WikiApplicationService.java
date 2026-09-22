@@ -5,6 +5,7 @@ import com.portfolio.invest.domain.wiki.WikiEntryRepository;
 import com.portfolio.invest.domain.wiki.WikiEntryType;
 import com.portfolio.invest.domain.wiki.WikiErrorCode;
 import com.portfolio.invest.domain.wiki.WikiException;
+import com.portfolio.invest.domain.wiki.WikiSeedStateRepository;
 import java.time.Instant;
 import java.util.List;
 import org.springframework.stereotype.Service;
@@ -14,13 +15,36 @@ import org.springframework.transaction.annotation.Transactional;
 public class WikiApplicationService {
 
     private final WikiEntryRepository repository;
+    private final PresetConceptCatalog presetConcepts;
+    private final WikiSeedStateRepository seedStateRepository;
 
-    public WikiApplicationService(WikiEntryRepository repository) {
+    public WikiApplicationService(WikiEntryRepository repository,
+                                  PresetConceptCatalog presetConcepts,
+                                  WikiSeedStateRepository seedStateRepository) {
         this.repository = repository;
+        this.presetConcepts = presetConcepts;
+        this.seedStateRepository = seedStateRepository;
     }
 
+    /** 概念首次拉取触发预置 seeding（幂等：wiki_seed_state 标记；删光不复活）。 */
+    @Transactional
     public List<WikiEntryView> entries(Long userId, WikiEntryType type) {
+        if (type == WikiEntryType.CONCEPT) {
+            seedPresetConcepts(userId);
+        }
         return repository.findByUserId(userId, type).stream().map(WikiEntryView::from).toList();
+    }
+
+    private void seedPresetConcepts(Long userId) {
+        if (seedStateRepository.existsByUserId(userId)) {
+            return;
+        }
+        Instant now = Instant.now();
+        for (PresetConceptCatalog.PresetConcept c : presetConcepts.concepts()) {
+            repository.save(WikiEntry.create(userId, WikiEntryType.CONCEPT,
+                    c.title(), c.content(), c.category(), null, now));
+        }
+        seedStateRepository.insert(userId);
     }
 
     @Transactional
