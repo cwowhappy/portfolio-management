@@ -34,16 +34,19 @@ public class InvestTools {
     private final MarketDataService market;
     private final ValuationApplicationService valuationApplicationService;
     private final com.portfolio.invest.application.screening.ScreeningApplicationService screening;
+    private final com.portfolio.invest.application.market.FinancialQueryService financialQuery;
     private final ObjectMapper mapper;
 
     public InvestTools(
             MarketDataService market,
             ValuationApplicationService valuationApplicationService,
             com.portfolio.invest.application.screening.ScreeningApplicationService screening,
+            com.portfolio.invest.application.market.FinancialQueryService financialQuery,
             ObjectMapper mapper) {
         this.market = market;
         this.valuationApplicationService = valuationApplicationService;
         this.screening = screening;
+        this.financialQuery = financialQuery;
         // 注入 Spring Boot 已配置的 ObjectMapper（统一序列化行为；日期已在 ChartSpecs 预转为 ISO 字符串）。
         this.mapper = mapper;
     }
@@ -229,6 +232,31 @@ public class InvestTools {
     /** Double → BigDecimal（null 透传）。 */
     private static BigDecimal bd(Double v) {
         return v == null ? null : BigDecimal.valueOf(v);
+    }
+
+    @Tool(
+            name = "analyze_financials",
+            description = "财报解读：杜邦三因子拆解（净利率×总资产周转率×权益乘数）+ 近 12 季趋势表（ROE/ROA/毛利率/资产负债率/营收及同比）。用户问「XX 赚钱能力如何/财报怎么样」时调用；股票名称先用 search_stock 换码。",
+            readOnly = true,
+            concurrencySafe = true)
+    public ToolResultBlock analyzeFinancials(
+            @ToolParam(name = "code", description = "6位A股代码，如 600519") String code,
+            ToolEmitter emitter) {
+        return runBlock(() -> {
+            com.portfolio.invest.application.market.FinancialAnalysisView view = financialQuery.analyze(code, 12);
+            if (view.records().isEmpty()) {
+                // 库表空：降级——live 财务摘要 + 趋势积累提示，不 emit 空表
+                String live = view.live() == null ? "" : ChartSpecs.financialsSummary(view.live()) + " ";
+                return ToolResultBlock.text(live + "库表趋势数据积累中（新股或未采集），暂无法做杜邦拆解。");
+            }
+            String name = view.live() == null ? code : view.live().name();
+            emitter.emit(ToolResultBlock.builder()
+                    .output(TextBlock.builder().text(mapper.writeValueAsString(
+                            ChartSpecs.financialTrendTable(code, name, view.records()))).build())
+                    .build());
+            return ToolResultBlock.text(
+                    ChartSpecs.financialTrendSummary(name, view.records().size(), view.duPont()));
+        });
     }
 
     private String run(JsonSupplier supplier) {

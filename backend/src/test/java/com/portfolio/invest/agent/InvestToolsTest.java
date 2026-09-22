@@ -42,6 +42,7 @@ class InvestToolsTest {
     private MarketDataService market;
     private ValuationApplicationService valuationService;
     private com.portfolio.invest.application.screening.ScreeningApplicationService screening;
+    private com.portfolio.invest.application.market.FinancialQueryService financialQuery;
     private ObjectMapper mapper;
     private InvestTools tools;
 
@@ -50,11 +51,12 @@ class InvestToolsTest {
         market = mock(MarketDataService.class);
         valuationService = mock(ValuationApplicationService.class);
         screening = mock(com.portfolio.invest.application.screening.ScreeningApplicationService.class);
+        financialQuery = mock(com.portfolio.invest.application.market.FinancialQueryService.class);
         // 复刻 Spring Boot 对 ObjectMapper 的配置（JavaTimeModule + ISO 日期，不写时间戳）
         mapper = new ObjectMapper();
         mapper.registerModule(new JavaTimeModule());
         mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-        tools = new InvestTools(market, valuationService, screening, mapper);
+        tools = new InvestTools(market, valuationService, screening, financialQuery, mapper);
     }
 
     private static Quote quote(String code, Double pe, Double pb) {
@@ -400,5 +402,40 @@ class InvestToolsTest {
 
         assertThat(emitted[0]).as("空结果不 emit 空表").isNull();
         assertThat(out.getOutput().get(0).toString()).contains("无符合条件");
+    }
+
+    @DisplayName("analyze_financials：emit 趋势表，摘要含杜邦三因子")
+    @Test
+    void givenRecordsAndDupont_whenAnalyzeFinancials_thenEmitsTrendAndDupontSummary() {
+        var rec = new com.portfolio.invest.domain.market.FinancialRecord(
+                LocalDate.parse("2026-06-30"), 32.0, 21.0, 91.0, 32.0, 4.0, 10.0, 12.0,
+                new BigDecimal("4.2E10"));
+        when(financialQuery.analyze("600519", 12)).thenReturn(new com.portfolio.invest.application.market.FinancialAnalysisView(
+                List.of(rec),
+                new Financials("600519", "贵州茅台", 25.0, 8.0, List.of(new FinancialIndicator(
+                        "2026-06-30", 23.0, 160.0, 4.2e10, 1.05e10, 32.0, 91.0))),
+                com.portfolio.invest.domain.market.DuPontAnalysis.of(0.25, 21.0, 32.0, 32.0,
+                        "2026-06-30", "2026-06-30")));
+        ToolResultBlock[] emitted = new ToolResultBlock[1];
+
+        ToolResultBlock out = tools.analyzeFinancials("600519", block -> emitted[0] = block);
+
+        assertThat(emitted[0]).as("emit 趋势表").isNotNull();
+        assertThat(emitted[0].getOutput().get(0).toString()).contains("财务趋势");
+        assertThat(out.getOutput().get(0).toString()).contains("净利率 25.0%").contains("权益乘数 1.47");
+    }
+
+    @DisplayName("analyze_financials 库表空：不 emit，降级提示趋势数据积累中")
+    @Test
+    void givenEmptyRecords_whenAnalyzeFinancials_thenNoEmitDegradedSummary() {
+        when(financialQuery.analyze("000001", 12)).thenReturn(new com.portfolio.invest.application.market.FinancialAnalysisView(
+                List.of(), new Financials("000001", "平安银行", 5.0, 0.6, List.of(new FinancialIndicator(
+                        "2026-06-30", 1.5, 20.0, 3.0e10, 2.0e9, 10.0, 40.0))), null));
+        ToolResultBlock[] emitted = new ToolResultBlock[1];
+
+        ToolResultBlock out = tools.analyzeFinancials("000001", block -> emitted[0] = block);
+
+        assertThat(emitted[0]).as("库表空不 emit").isNull();
+        assertThat(out.getOutput().get(0).toString()).contains("数据积累中");
     }
 }
