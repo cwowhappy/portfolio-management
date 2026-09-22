@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import MarkdownView from "@/components/shared/MarkdownView";
 import { createWikiEntry } from "@/lib/wikiApi";
+import { useSaveAction } from "@/lib/useSaveAction";
 
 /** 行业下钻页「保存研究结论」入口：预填行业上下文，存为 RESEARCH_NOTE，成功深链 /wiki。 */
 export default function ResearchNoteDialog({ industryCode, industryName }: {
@@ -15,7 +16,7 @@ export default function ResearchNoteDialog({ industryCode, industryName }: {
   const [content, setContent] = useState("");
   const [preview, setPreview] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { saving, error, setError, run } = useSaveAction();
 
   const openDialog = () => {
     setTitle(`${industryName || industryCode} 研究结论`);
@@ -26,16 +27,13 @@ export default function ResearchNoteDialog({ industryCode, industryName }: {
     setOpen(true);
   };
 
-  const save = async () => {
-    setError(null);
+  const save = () => {
     if (!title.trim()) { setError("标题不能为空"); return; }
     if (!content.trim()) { setError("内容不能为空"); return; }
-    try {
+    void run(async () => {
       await createWikiEntry({ type: "RESEARCH_NOTE", title: title.trim(), content, industryCode });
       setSaved(true);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "保存失败");
-    }
+    });
   };
 
   return (
@@ -81,8 +79,8 @@ export default function ResearchNoteDialog({ industryCode, industryName }: {
                 )}
                 {error && <div className="text-sm text-[color:var(--color-down)]">{error}</div>}
                 <div className="flex gap-2">
-                  <button data-testid="research-note-save" type="button"
-                    className="rounded-md px-4 py-1.5 text-sm bg-[color:var(--color-ink)] text-[color:var(--color-bg)]"
+                  <button data-testid="research-note-save" type="button" disabled={saving}
+                    className="rounded-md px-4 py-1.5 text-sm bg-[color:var(--color-ink)] text-[color:var(--color-bg)] disabled:opacity-60"
                     onClick={save}>
                     保存
                   </button>

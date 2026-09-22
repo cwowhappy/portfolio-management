@@ -3,6 +3,7 @@
 import { useState } from "react";
 import MarkdownView from "@/components/shared/MarkdownView";
 import { createWikiEntry, updateWikiEntry } from "@/lib/wikiApi";
+import { useSaveAction } from "@/lib/useSaveAction";
 import type { WikiEntryType, WikiEntryView } from "@/lib/types";
 
 export default function NoteEditor({ type, editing, onSaved, onCancel }: {
@@ -15,10 +16,9 @@ export default function NoteEditor({ type, editing, onSaved, onCancel }: {
   const [category, setCategory] = useState(editing?.category ?? "");
   const [content, setContent] = useState(editing?.content ?? "");
   const [preview, setPreview] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { saving, error, setError, run } = useSaveAction();
 
-  const save = async () => {
-    setError(null);
+  const save = () => {
     const trimmed = title.trim();
     if (!trimmed) { setError("标题不能为空"); return; }
     if (!content.trim()) { setError("内容不能为空"); return; }
@@ -27,17 +27,15 @@ export default function NoteEditor({ type, editing, onSaved, onCancel }: {
       category: type === "CONCEPT" ? (category.trim() || null) : (editing?.category ?? null),
       industryCode: editing?.industryCode ?? null, // 研究结论来源行业保留，手工创建为 null
     };
-    try {
+    void run(async () => {
       if (editing) await updateWikiEntry(editing.id, cmd);
       else await createWikiEntry(cmd);
       if (!editing) {
         // 新建成功后清空表单：key 恒为 "new" 不 remount，残留会导致重复创建同内容条目
-        setTitle(""); setCategory(""); setContent(""); setPreview(false); setError(null);
+        setTitle(""); setCategory(""); setContent(""); setPreview(false);
       }
       onSaved();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "保存失败");
-    }
+    });
   };
 
   return (
@@ -68,8 +66,8 @@ export default function NoteEditor({ type, editing, onSaved, onCancel }: {
       )}
       {error && <div className="text-sm text-[color:var(--color-down)]">{error}</div>}
       <div className="flex gap-2">
-        <button data-testid="wiki-note-save" type="button"
-          className="rounded-md px-4 py-1.5 text-sm bg-[color:var(--color-ink)] text-[color:var(--color-bg)]"
+        <button data-testid="wiki-note-save" type="button" disabled={saving}
+          className="rounded-md px-4 py-1.5 text-sm bg-[color:var(--color-ink)] text-[color:var(--color-bg)] disabled:opacity-60"
           onClick={save}>
           {editing ? "保存修改" : "保存"}
         </button>

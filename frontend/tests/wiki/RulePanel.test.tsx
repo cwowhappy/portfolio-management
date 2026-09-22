@@ -98,4 +98,33 @@ describe("RulePanel", () => {
     await waitFor(() => expect(updateSpy).toHaveBeenLastCalledWith(9,
       expect.objectContaining({ threshold: 0.25, enabled: false })));
   });
+
+  it("保存请求在途时按钮禁用，连点仅发一次请求", async () => {
+    let resolveSave!: (v: PrincipleRuleView) => void;
+    const pending = new Promise<PrincipleRuleView>((res) => { resolveSave = res; });
+    const createSpy = vi.spyOn(wikiApi, "createRule").mockReturnValue(pending);
+    render(<RulePanel rules={[]} onChanged={() => {}} />);
+    fireEvent.change(screen.getByTestId("wiki-rule-threshold"), { target: { value: "20" } });
+    fireEvent.click(screen.getByTestId("wiki-rule-save"));
+    await waitFor(() => expect((screen.getByTestId("wiki-rule-save") as HTMLButtonElement).disabled).toBe(true));
+    fireEvent.click(screen.getByTestId("wiki-rule-save")); // 在途再点不触发
+    resolveSave(rules[0]);
+    await waitFor(() => expect(createSpy).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect((screen.getByTestId("wiki-rule-save") as HTMLButtonElement).disabled).toBe(false));
+  });
+
+  it("启停失败不再静默吞错：列表区行内展示错误", async () => {
+    vi.spyOn(wikiApi, "updateRule").mockRejectedValue(new Error("启停失败，请重试"));
+    render(<RulePanel rules={rules} onChanged={() => {}} />);
+    fireEvent.click(screen.getByTestId("wiki-rule-toggle-9"));
+    await waitFor(() => expect(screen.getByText("启停失败，请重试")).toBeTruthy());
+  });
+
+  it("删除失败不再静默吞错：列表区行内展示错误", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    vi.spyOn(wikiApi, "deleteRule").mockRejectedValue(new Error("删除失败，请重试"));
+    render(<RulePanel rules={rules} onChanged={() => {}} />);
+    fireEvent.click(screen.getByTestId("wiki-rule-delete-9"));
+    await waitFor(() => expect(screen.getByText("删除失败，请重试")).toBeTruthy());
+  });
 });

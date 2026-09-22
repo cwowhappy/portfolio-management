@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { createEntry, updateEntry, JOURNAL_ENTRY_TYPE_LABELS, PERIOD_TYPE_LABELS, type EntryInput } from "@/lib/journalApi";
+import { useSaveAction } from "@/lib/useSaveAction";
 import type { JournalEntryType, JournalEntryView, PeriodType } from "@/lib/types";
 
 const TYPES: JournalEntryType[] = ["BUY_MEMO", "SELL_MEMO", "RESEARCH_NOTE", "REVIEW"];
@@ -21,14 +22,13 @@ export default function EntryEditor({ editing, onSaved, onCancel }: {
   const [periodType, setPeriodType] = useState<PeriodType>(editing?.periodType ?? "QUARTERLY");
   const [periodStart, setPeriodStart] = useState(editing?.periodStart ?? "");
   const [periodEnd, setPeriodEnd] = useState(editing?.periodEnd ?? "");
-  const [error, setError] = useState<string | null>(null);
+  const { saving, error, setError, run } = useSaveAction();
 
   const isMemo = type === "BUY_MEMO" || type === "SELL_MEMO";
   const isBuyMemo = type === "BUY_MEMO";
   const isReview = type === "REVIEW";
 
-  const save = async () => {
-    setError(null);
+  const save = () => {
     const input: EntryInput = {
       type,
       title: title.trim(),
@@ -57,13 +57,11 @@ export default function EntryEditor({ editing, onSaved, onCancel }: {
       if (!periodStart || !periodEnd) { setError("请填写复盘区间起止日期"); return; }
       if (periodStart > periodEnd) { setError("开始日期不能晚于结束日期"); return; }
     }
-    try {
+    void run(async () => {
       if (editing) await updateEntry(editing.id, input);
       else await createEntry(input);
       onSaved();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "保存失败");
-    }
+    });
   };
 
   return (
@@ -112,7 +110,7 @@ export default function EntryEditor({ editing, onSaved, onCancel }: {
       <textarea className="w-full rounded-md border border-[color:var(--color-line)] px-3 py-2 text-sm mb-3 min-h-32" placeholder="内容（Markdown）" value={content} onChange={(e) => setContent(e.target.value)} />
       {error && <div className="text-sm text-[color:var(--color-down)] mb-3">{error}</div>}
       <div className="flex gap-2">
-        <button className="rounded-md px-4 py-1.5 text-sm bg-[color:var(--color-ink)] text-[color:var(--color-bg)]" onClick={save}>{editing ? "保存修改" : "保存记录"}</button>
+        <button disabled={saving} className="rounded-md px-4 py-1.5 text-sm bg-[color:var(--color-ink)] text-[color:var(--color-bg)] disabled:opacity-60" onClick={save}>{editing ? "保存修改" : "保存记录"}</button>
         {editing && <button className="rounded-md px-4 py-1.5 text-sm border border-[color:var(--color-line)]" onClick={onCancel}>取消</button>}
       </div>
     </div>
