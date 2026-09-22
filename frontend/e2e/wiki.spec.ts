@@ -60,4 +60,18 @@ test.describe("/wiki 投资知识库", () => {
     await expect(page).toHaveURL(/\/wiki\?tab=research/, { timeout: 15_000 });
     await expect(page.getByTestId("wiki-note-list").getByText("研究结论")).toBeVisible({ timeout: 15_000 });
   });
+
+  test("保存连点防重：双击保存按钮仅创建一条读书笔记", async ({ page }) => {
+    await registerAndApprove(page, uniqueUsername("wkd"), TEST_PASSWORD);
+
+    await page.goto("/wiki?tab=book");
+    const title = `连点笔记 ${Date.now().toString(36)}`;
+    await page.getByTestId("wiki-note-title").fill(title);
+    await page.getByTestId("wiki-note-content").fill("## 连点防重");
+    await page.getByTestId("wiki-note-save").dblclick(); // 第二次点击落在 in-flight 禁用窗口内
+    await expect(page.getByTestId("wiki-note-list").getByText(title)).toBeVisible({ timeout: 15_000 });
+    // 留出窗口：若防连点失效，第二次请求此刻已落库并刷新进列表
+    await page.waitForTimeout(1_500);
+    expect(await page.getByTestId("wiki-note-list").getByText(title).count()).toBe(1);
+  });
 });
