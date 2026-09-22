@@ -56,4 +56,17 @@ describe("NotePanel", () => {
     render(<NotePanel type="CONCEPT" entries={[]} onChanged={() => {}} />);
     expect(screen.getByTestId("wiki-note-category")).toBeTruthy();
   });
+
+  it("新建保存成功后清空表单（防重复创建）", async () => {
+    const createSpy = vi.spyOn(wikiApi, "createWikiEntry").mockResolvedValue(entries[0]);
+    render(<NotePanel type="BOOK_NOTE" entries={[]} onChanged={() => {}} />);
+    fireEvent.change(screen.getByTestId("wiki-note-title"), { target: { value: "新笔记" } });
+    fireEvent.change(screen.getByTestId("wiki-note-content"), { target: { value: "## 新内容" } });
+    fireEvent.click(screen.getByTestId("wiki-note-save"));
+    await waitFor(() => expect(createSpy).toHaveBeenCalledTimes(1));
+    await waitFor(() => {
+      expect((screen.getByTestId("wiki-note-title") as HTMLInputElement).value).toBe("");
+      expect((screen.getByTestId("wiki-note-content") as HTMLTextAreaElement).value).toBe("");
+    });
+  });
 });

@@ -30,6 +30,10 @@ export default function NoteEditor({ type, editing, onSaved, onCancel }: {
     try {
       if (editing) await updateWikiEntry(editing.id, cmd);
       else await createWikiEntry(cmd);
+      if (!editing) {
+        // 新建成功后清空表单：key 恒为 "new" 不 remount，残留会导致重复创建同内容条目
+        setTitle(""); setCategory(""); setContent(""); setPreview(false); setError(null);
+      }
       onSaved();
     } catch (e) {
       setError(e instanceof Error ? e.message : "保存失败");
