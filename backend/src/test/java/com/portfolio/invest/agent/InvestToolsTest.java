@@ -34,23 +34,27 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import com.portfolio.invest.domain.market.MarketDataErrorCode;
+import com.portfolio.invest.domain.screening.SortDirection;
 
 /** 7 个 Agent 工具的 JSON 输出与错误兜底。 */
 class InvestToolsTest {
 
     private MarketDataService market;
     private ValuationApplicationService valuationService;
+    private com.portfolio.invest.application.screening.ScreeningApplicationService screening;
+    private ObjectMapper mapper;
     private InvestTools tools;
 
     @BeforeEach
     void setUp() {
         market = mock(MarketDataService.class);
         valuationService = mock(ValuationApplicationService.class);
+        screening = mock(com.portfolio.invest.application.screening.ScreeningApplicationService.class);
         // 复刻 Spring Boot 对 ObjectMapper 的配置（JavaTimeModule + ISO 日期，不写时间戳）
-        ObjectMapper mapper = new ObjectMapper();
+        mapper = new ObjectMapper();
         mapper.registerModule(new JavaTimeModule());
         mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-        tools = new InvestTools(market, valuationService, mapper);
+        tools = new InvestTools(market, valuationService, screening, mapper);
     }
 
     private static Quote quote(String code, Double pe, Double pb) {
@@ -334,5 +338,67 @@ class InvestToolsTest {
 
         assertThat(emitted[0]).as("失败不 emit（SSE 无 ChartSpec）").isNull();
         assertThat(result.getOutput().get(0).toString()).contains("\"error\"");
+    }
+
+    @DisplayName("screen_stocks：条件齐全 emit 表格并返回摘要，Double→BigDecimal 换算与默认排序")
+    @Test
+    void givenResults_whenScreenStocks_thenEmitsTableAndReturnsSummary() throws Exception {
+        var result = new com.portfolio.invest.domain.screening.StockScreeningResult(
+                "600519", "贵州茅台", "801140", "白酒",
+                new BigDecimal("25.0"), new BigDecimal("8.0"), null,
+                new BigDecimal("32.0"), null, null, null, null, null, null,
+                new BigDecimal("2.1E12"), null);
+        when(screening.screen(any())).thenReturn(List.of(result));
+        ToolResultBlock[] emitted = new ToolResultBlock[1];
+
+        ToolResultBlock out = tools.screenStocks(
+                20.0, null, null, 15.0, null, null, null, null, null, null, null, null,
+                null, null, null, null, 10, block -> emitted[0] = block);
+
+        assertThat(emitted[0]).as("emit 全量 spec").isNotNull();
+        String emitText = emitted[0].getOutput().get(0).toString();
+        assertThat(emitText).contains("\"type\":\"table\"").contains("筛选结果（1 只）");
+        assertThat(out).isNotNull();
+        assertThat(out.getOutput().get(0).toString()).contains("贵州茅台");
+        verify(screening).screen(org.mockito.ArgumentMatchers.argThat(c ->
+                c.peTtmMax().compareTo(new BigDecimal("20")) == 0
+                        && c.roeMin().compareTo(new BigDecimal("15")) == 0 && c.limit() == 10
+                        && c.sortBy().equals("total_mv") && c.sortDirection() == SortDirection.DESC));
+    }
+
+    @DisplayName("screen_stocks 无任何条件：拦截不调服务，返回错误 JSON")
+    @Test
+    void givenNoConditions_whenScreenStocks_thenRejectsWithoutCallingService() {
+        ToolResultBlock out = tools.screenStocks(
+                null, null, null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, block -> { });
+
+        org.mockito.Mockito.verifyNoInteractions(screening);
+        assertThat(out.getOutput().get(0).toString()).contains("至少").contains("条件");
+    }
+
+    @DisplayName("screen_stocks 白名单外排序：拦截返回错误 JSON")
+    @Test
+    void givenInvalidSort_whenScreenStocks_thenRejects() {
+        ToolResultBlock out = tools.screenStocks(
+                20.0, null, null, null, null, null, null, null, null, null, null, null,
+                null, null, "evil_col; drop", null, null, block -> { });
+
+        org.mockito.Mockito.verifyNoInteractions(screening);
+        assertThat(out.getOutput().get(0).toString()).contains("error");
+    }
+
+    @DisplayName("screen_stocks 空结果：不 emit，安全摘要")
+    @Test
+    void givenEmptyResults_whenScreenStocks_thenNoEmitSafeSummary() {
+        when(screening.screen(any())).thenReturn(List.of());
+        ToolResultBlock[] emitted = new ToolResultBlock[1];
+
+        ToolResultBlock out = tools.screenStocks(
+                20.0, null, null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, block -> emitted[0] = block);
+
+        assertThat(emitted[0]).as("空结果不 emit 空表").isNull();
+        assertThat(out.getOutput().get(0).toString()).contains("无符合条件");
     }
 }

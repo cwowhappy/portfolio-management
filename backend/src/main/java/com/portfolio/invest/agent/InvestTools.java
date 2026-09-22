@@ -4,6 +4,9 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.portfolio.invest.agent.chart.ChartSpecs;
 import com.portfolio.invest.domain.market.Financials;
+import com.portfolio.invest.domain.screening.ScreeningCriteria;
+import com.portfolio.invest.domain.screening.SortDirection;
+import com.portfolio.invest.domain.screening.StockScreeningResult;
 import com.portfolio.invest.domain.market.KlineBar;
 import com.portfolio.invest.domain.market.MarketDataException;
 import com.portfolio.invest.domain.market.MarketOverview;
@@ -14,6 +17,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolEmitter;
 import io.agentscope.core.tool.ToolParam;
+import java.math.BigDecimal;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -29,14 +33,17 @@ public class InvestTools {
 
     private final MarketDataService market;
     private final ValuationApplicationService valuationApplicationService;
+    private final com.portfolio.invest.application.screening.ScreeningApplicationService screening;
     private final ObjectMapper mapper;
 
     public InvestTools(
             MarketDataService market,
             ValuationApplicationService valuationApplicationService,
+            com.portfolio.invest.application.screening.ScreeningApplicationService screening,
             ObjectMapper mapper) {
         this.market = market;
         this.valuationApplicationService = valuationApplicationService;
+        this.screening = screening;
         // 注入 Spring Boot 已配置的 ObjectMapper（统一序列化行为；日期已在 ChartSpecs 预转为 ISO 字符串）。
         this.mapper = mapper;
     }
@@ -163,6 +170,65 @@ public class InvestTools {
             // ② LLM 摘要：overview() 标量（分位/ERP/温度计）
             return ToolResultBlock.text(ChartSpecs.valuationSummary(overview, history.snapshots().size()));
         });
+    }
+
+    @Tool(
+            name = "screen_stocks",
+            description = "多条件筛选A股（全部条件 AND 组合，至少给一个）：PE(TTM)/PB/股息率/ROE%/ROA%/毛利率%/资产负债率%/流动比率/营收同比%/净利同比%/总市值下限(元)/换手率%，可叠加申万行业码（如 801140）与指数成分（000300 沪深300 / 000905 中证500）。结果表格 + 摘要。",
+            readOnly = true,
+            concurrencySafe = true)
+    public ToolResultBlock screenStocks(
+            @ToolParam(name = "peTtmMax", description = "PE(TTM) 上限，如 20") Double peTtmMax,
+            @ToolParam(name = "pbMax", description = "PB 上限") Double pbMax,
+            @ToolParam(name = "dividendYieldMin", description = "股息率下限 %，如 3") Double dividendYieldMin,
+            @ToolParam(name = "roeMin", description = "ROE 下限 %，如 15") Double roeMin,
+            @ToolParam(name = "roaMin", description = "ROA 下限 %") Double roaMin,
+            @ToolParam(name = "grossMarginMin", description = "毛利率下限 %") Double grossMarginMin,
+            @ToolParam(name = "debtToAssetsMax", description = "资产负债率上限 %，如 60") Double debtToAssetsMax,
+            @ToolParam(name = "currentRatioMin", description = "流动比率下限，如 1.5") Double currentRatioMin,
+            @ToolParam(name = "revenueYoyMin", description = "营收同比下限 %") Double revenueYoyMin,
+            @ToolParam(name = "netprofitYoyMin", description = "净利同比下限 %") Double netprofitYoyMin,
+            @ToolParam(name = "totalMvMin", description = "总市值下限（元），如 1e10=百亿") Double totalMvMin,
+            @ToolParam(name = "turnoverRateMin", description = "换手率下限 %") Double turnoverRateMin,
+            @ToolParam(name = "industryCode", description = "申万一级行业码，可空") String industryCode,
+            @ToolParam(name = "indexCode", description = "指数成分范围：000300/000905，可空") String indexCode,
+            @ToolParam(name = "sortBy", description = "排序字段，默认 total_mv") String sortBy,
+            @ToolParam(name = "sortDirection", description = "asc/desc，默认 desc") String sortDirection,
+            @ToolParam(name = "limit", description = "返回条数，默认 20，最大 50") Integer limit,
+            ToolEmitter emitter) {
+        return runBlock(() -> {
+            String sort = sortBy == null || sortBy.isBlank() ? "total_mv" : sortBy;
+            if (!ScreeningCriteria.SORTABLE_FIELDS.contains(sort)) {
+                return ToolResultBlock.text(toError("不支持的排序字段: " + sort,
+                        "可用: " + ScreeningCriteria.SORTABLE_FIELDS));
+            }
+            ScreeningCriteria criteria = new ScreeningCriteria(
+                    bd(peTtmMax), bd(pbMax), bd(dividendYieldMin), bd(roeMin), bd(roaMin),
+                    bd(grossMarginMin), bd(debtToAssetsMax), bd(currentRatioMin), bd(revenueYoyMin),
+                    bd(netprofitYoyMin), bd(totalMvMin), bd(turnoverRateMin),
+                    industryCode == null || industryCode.isBlank() ? null : industryCode,
+                    indexCode == null || indexCode.isBlank() ? null : indexCode,
+                    sort,
+                    "asc".equalsIgnoreCase(sortDirection) ? SortDirection.ASC : SortDirection.DESC,
+                    Math.max(1, Math.min(limit == null ? 20 : limit, 50)));
+            if (!criteria.hasAnyCondition()) {
+                return ToolResultBlock.text(toError("至少需要一个筛选条件", "请给出 PE/ROE/市值等至少一个条件"));
+            }
+            List<StockScreeningResult> results = screening.screen(criteria);
+            if (results.isEmpty()) {
+                return ToolResultBlock.text(ChartSpecs.screeningSummary(results)); // 空结果不 emit 空表
+            }
+            emitter.emit(ToolResultBlock.builder()
+                    .output(TextBlock.builder().text(mapper.writeValueAsString(
+                            ChartSpecs.screeningTable(results))).build())
+                    .build());
+            return ToolResultBlock.text(ChartSpecs.screeningSummary(results));
+        });
+    }
+
+    /** Double → BigDecimal（null 透传）。 */
+    private static BigDecimal bd(Double v) {
+        return v == null ? null : BigDecimal.valueOf(v);
     }
 
     private String run(JsonSupplier supplier) {
