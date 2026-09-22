@@ -10,7 +10,8 @@
 import { useRenderTool } from "@copilotkit/react-core/v2";
 import { ChartCard, type ChartCardBuilder } from "@/components/chat/charts/ChartCard";
 import { buildCandlestickOption, buildLineOption, buildBarOption } from "@/components/charts/optionBuilders";
-import { KlineParamsSchema, ValuationParamsSchema, OverviewParamsSchema, FinancialsParamsSchema } from "@/lib/tool-params";
+import { KlineParamsSchema, ValuationParamsSchema, OverviewParamsSchema, FinancialsParamsSchema, ScreeningParamsSchema, FinancialsTrendParamsSchema, IndustryParamsSchema, PortfolioParamsSchema, AllocationParamsSchema } from "@/lib/tool-params";
+import { buildPieOption } from "@/components/charts/optionBuilders";
 
 export function ChartToolRenderers() {
   useRenderTool({
@@ -32,6 +33,32 @@ export function ChartToolRenderers() {
     name: "get_financials",
     parameters: FinancialsParamsSchema,
     render: (p) => <ChartCard status={p.status} result={p.result} name={p.name} />,
+  });
+  // ===== MS-12：4 个 table 工具不传 builder（ChartCard 内接 DataTable），pie 传 buildPieOption =====
+  useRenderTool({
+    name: "screen_stocks",
+    parameters: ScreeningParamsSchema,
+    render: (p) => <ChartCard status={p.status} result={p.result} name={p.name} />,
+  });
+  useRenderTool({
+    name: "analyze_financials",
+    parameters: FinancialsTrendParamsSchema,
+    render: (p) => <ChartCard status={p.status} result={p.result} name={p.name} />,
+  });
+  useRenderTool({
+    name: "analyze_industry",
+    parameters: IndustryParamsSchema,
+    render: (p) => <ChartCard status={p.status} result={p.result} name={p.name} />,
+  });
+  useRenderTool({
+    name: "suggest_allocation",
+    parameters: AllocationParamsSchema,
+    render: (p) => <ChartCard status={p.status} result={p.result} name={p.name} />,
+  });
+  useRenderTool({
+    name: "analyze_portfolio",
+    parameters: PortfolioParamsSchema,
+    render: (p) => <ChartCard status={p.status} result={p.result} name={p.name} builder={buildPieOption as ChartCardBuilder} />,
   });
   return null;
 }

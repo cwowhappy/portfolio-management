@@ -38,10 +38,11 @@ const tableSpec = {
 };
 
 describe("ChartToolRenderers", () => {
-  it("注册 get_kline/get_valuation/get_market_overview/get_financials 四个具名渲染器（无 agentId，05 §4.1）", () => {
+  it("注册 4 既有 + 5 MS-12 具名渲染器（无 agentId，05 §4.1）", () => {
     render(<ChartToolRenderers />);
     expect(renderToolConfigs.map((c) => c.name)).toEqual(
-      ["get_kline", "get_valuation", "get_market_overview", "get_financials"]);
+      ["get_kline", "get_valuation", "get_market_overview", "get_financials",
+        "screen_stocks", "analyze_financials", "analyze_industry", "suggest_allocation", "analyze_portfolio"]);
     expect(renderToolConfigs.every((c) => "parameters" in c)).toBe(true);
   });
 
