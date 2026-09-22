@@ -83,6 +83,7 @@ class AgentConfigContextTest {
                     mock(MarketDataService.class), mock(ValuationApplicationService.class),
                     mock(com.portfolio.invest.application.screening.ScreeningApplicationService.class),
                     mock(com.portfolio.invest.application.market.FinancialQueryService.class),
+                    mock(com.portfolio.invest.application.industry.IndustryApplicationService.class),
                     new ObjectMapper());
         }
 

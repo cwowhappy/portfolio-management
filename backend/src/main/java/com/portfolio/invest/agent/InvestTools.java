@@ -35,6 +35,7 @@ public class InvestTools {
     private final ValuationApplicationService valuationApplicationService;
     private final com.portfolio.invest.application.screening.ScreeningApplicationService screening;
     private final com.portfolio.invest.application.market.FinancialQueryService financialQuery;
+    private final com.portfolio.invest.application.industry.IndustryApplicationService industry;
     private final ObjectMapper mapper;
 
     public InvestTools(
@@ -42,11 +43,13 @@ public class InvestTools {
             ValuationApplicationService valuationApplicationService,
             com.portfolio.invest.application.screening.ScreeningApplicationService screening,
             com.portfolio.invest.application.market.FinancialQueryService financialQuery,
+            com.portfolio.invest.application.industry.IndustryApplicationService industry,
             ObjectMapper mapper) {
         this.market = market;
         this.valuationApplicationService = valuationApplicationService;
         this.screening = screening;
         this.financialQuery = financialQuery;
+        this.industry = industry;
         // 注入 Spring Boot 已配置的 ObjectMapper（统一序列化行为；日期已在 ChartSpecs 预转为 ISO 字符串）。
         this.mapper = mapper;
     }
@@ -256,6 +259,42 @@ public class InvestTools {
                     .build());
             return ToolResultBlock.text(
                     ChartSpecs.financialTrendSummary(name, view.records().size(), view.duPont()));
+        });
+    }
+
+    @Tool(
+            name = "analyze_industry",
+            description = "行业分析：不传行业码返回全行业估值板面（PE/PB 及历史分位排名）；传申万一级码（如 801780 银行）返回该行业估值位 + 头部企业表。用户问「XX 行业怎么样/哪些行业便宜」时调用；行业名先经无参板面对齐行业码再下钻。",
+            readOnly = true,
+            concurrencySafe = true)
+    public ToolResultBlock analyzeIndustry(
+            @ToolParam(name = "industryCode", description = "申万一级行业码，可空（空=返回全行业板面）") String industryCode,
+            ToolEmitter emitter) {
+        return runBlock(() -> {
+            List<com.portfolio.invest.application.industry.IndustryBoardView> board = industry.board();
+            if (board.isEmpty()) {
+                return ToolResultBlock.text(ChartSpecs.industryBoardSummary(board)); // 冷库安全摘要
+            }
+            if (industryCode == null || industryCode.isBlank()) {
+                emitter.emit(ToolResultBlock.builder()
+                        .output(TextBlock.builder().text(mapper.writeValueAsString(
+                                ChartSpecs.industryBoardTable(board))).build())
+                        .build());
+                return ToolResultBlock.text(ChartSpecs.industryBoardSummary(board));
+            }
+            var row = board.stream()
+                    .filter(b -> industryCode.equals(b.industryCode())).findFirst().orElse(null);
+            List<com.portfolio.invest.domain.industry.IndustryStock> stocks =
+                    industry.stocks(industryCode, "total_mv", "desc", 15);
+            if (row == null || stocks.isEmpty()) {
+                return ToolResultBlock.text(
+                        "行业码 %s 无板面/成分股数据（请先经板面对齐行业码）。".formatted(industryCode));
+            }
+            emitter.emit(ToolResultBlock.builder()
+                    .output(TextBlock.builder().text(mapper.writeValueAsString(
+                            ChartSpecs.industryStocksTable(row.industryName(), stocks))).build())
+                    .build());
+            return ToolResultBlock.text(ChartSpecs.industryStocksSummary(row, stocks));
         });
     }
 

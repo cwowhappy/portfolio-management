@@ -43,6 +43,7 @@ class InvestToolsTest {
     private ValuationApplicationService valuationService;
     private com.portfolio.invest.application.screening.ScreeningApplicationService screening;
     private com.portfolio.invest.application.market.FinancialQueryService financialQuery;
+    private com.portfolio.invest.application.industry.IndustryApplicationService industry;
     private ObjectMapper mapper;
     private InvestTools tools;
 
@@ -52,11 +53,12 @@ class InvestToolsTest {
         valuationService = mock(ValuationApplicationService.class);
         screening = mock(com.portfolio.invest.application.screening.ScreeningApplicationService.class);
         financialQuery = mock(com.portfolio.invest.application.market.FinancialQueryService.class);
+        industry = mock(com.portfolio.invest.application.industry.IndustryApplicationService.class);
         // 复刻 Spring Boot 对 ObjectMapper 的配置（JavaTimeModule + ISO 日期，不写时间戳）
         mapper = new ObjectMapper();
         mapper.registerModule(new JavaTimeModule());
         mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-        tools = new InvestTools(market, valuationService, screening, financialQuery, mapper);
+        tools = new InvestTools(market, valuationService, screening, financialQuery, industry, mapper);
     }
 
     private static Quote quote(String code, Double pe, Double pb) {
@@ -437,5 +439,69 @@ class InvestToolsTest {
 
         assertThat(emitted[0]).as("库表空不 emit").isNull();
         assertThat(out.getOutput().get(0).toString()).contains("数据积累中");
+    }
+
+    private static com.portfolio.invest.application.industry.IndustryBoardView boardRow(String code, String name,
+                                                                                        String pePct) {
+        return new com.portfolio.invest.application.industry.IndustryBoardView(code, name,
+                new BigDecimal("6.5"), new BigDecimal("0.6"), new BigDecimal("11.0"),
+                new BigDecimal("5.0"), pePct == null ? null : new BigDecimal(pePct),
+                new BigDecimal("8.0"), null, null);
+    }
+
+    @DisplayName("analyze_industry 无参：emit 全行业板面表")
+    @Test
+    void givenBoard_whenAnalyzeIndustryNoCode_thenEmitsBoard() {
+        when(industry.board()).thenReturn(List.of(boardRow("801780", "银行", "15.0")));
+        ToolResultBlock[] emitted = new ToolResultBlock[1];
+
+        ToolResultBlock out = tools.analyzeIndustry(null, block -> emitted[0] = block);
+
+        assertThat(emitted[0]).as("emit 板面表").isNotNull();
+        assertThat(emitted[0].getOutput().get(0).toString()).contains("行业估值板面");
+        assertThat(out.getOutput().get(0).toString()).contains("银行");
+    }
+
+    @DisplayName("analyze_industry 带码：emit 头部企业表，摘要含估值位")
+    @Test
+    void givenCodeWithStocks_whenAnalyzeIndustry_thenEmitsStocksTable() {
+        when(industry.board()).thenReturn(List.of(boardRow("801780", "银行", "15.0")));
+        when(industry.stocks("801780", "total_mv", "desc", 15)).thenReturn(List.of(
+                new com.portfolio.invest.domain.industry.IndustryStock(
+                        "600036", "招商银行", new BigDecimal("8.0E11"),
+                        new BigDecimal("3.2E11"), LocalDate.parse("2026-06-30"),
+                        new BigDecimal("15.0"), new BigDecimal("7.0"), new BigDecimal("0.9"),
+                        new BigDecimal("4.8"), null)));
+        ToolResultBlock[] emitted = new ToolResultBlock[1];
+
+        ToolResultBlock out = tools.analyzeIndustry("801780", block -> emitted[0] = block);
+
+        assertThat(emitted[0]).as("emit 头部企业表").isNotNull();
+        assertThat(emitted[0].getOutput().get(0).toString()).contains("头部企业");
+        assertThat(out.getOutput().get(0).toString()).contains("银行").contains("招商银行");
+    }
+
+    @DisplayName("analyze_industry 板面空库：不 emit，安全摘要")
+    @Test
+    void givenEmptyBoard_whenAnalyzeIndustry_thenSafeSummary() {
+        when(industry.board()).thenReturn(List.of());
+        ToolResultBlock[] emitted = new ToolResultBlock[1];
+
+        ToolResultBlock out = tools.analyzeIndustry(null, block -> emitted[0] = block);
+
+        assertThat(emitted[0]).as("空库不 emit").isNull();
+        assertThat(out.getOutput().get(0).toString()).contains("暂无数据");
+    }
+
+    @DisplayName("analyze_industry 带码无板面行：不 emit，对齐行业码提示")
+    @Test
+    void givenCodeNotInBoard_whenAnalyzeIndustry_thenAlignmentHint() {
+        when(industry.board()).thenReturn(List.of(boardRow("801780", "银行", "15.0")));
+        ToolResultBlock[] emitted = new ToolResultBlock[1];
+
+        ToolResultBlock out = tools.analyzeIndustry("999999", block -> emitted[0] = block);
+
+        assertThat(emitted[0]).as("无板面行不 emit").isNull();
+        assertThat(out.getOutput().get(0).toString()).contains("行业码").contains("板面");
     }
 }
