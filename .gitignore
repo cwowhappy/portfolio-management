@@ -12,6 +12,9 @@ frontend/coverage/
 frontend/.env*.local
 frontend/tsconfig.tsbuildinfo
 
+# Python / collector
+collector/uv.lock
+
 # Playwright
 frontend/test-results/
 frontend/playwright-report/
