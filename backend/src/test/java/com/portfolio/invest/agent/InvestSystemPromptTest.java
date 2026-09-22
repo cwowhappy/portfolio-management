@@ -15,4 +15,14 @@ class InvestSystemPromptTest {
                 .contains("拒绝")
                 .contains("不要原样重试");
     }
+
+    @DisplayName("工具规范含五个新工具映射与私有数据口径（MS-12）")
+    @Test
+    void whenPromptText_thenContainsNewToolGuidance() {
+        assertThat(InvestSystemPrompt.TEXT)
+                .contains("screen_stocks").contains("analyze_portfolio")
+                .contains("suggest_allocation").contains("analyze_financials")
+                .contains("analyze_industry")
+                .contains("私有").contains("MCP");
+    }
 }

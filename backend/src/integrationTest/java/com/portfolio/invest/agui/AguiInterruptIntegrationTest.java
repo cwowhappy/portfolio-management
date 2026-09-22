@@ -120,8 +120,12 @@ class AguiInterruptIntegrationTest extends PostgresTestSupport {
         @Bean
         @Primary
         UserToolkitFactory writeToolkitFactory(InvestTools investTools,
-                McpConfigRepository mcpConfigRepository, McpClientPool mcpClientPool) {
-            return new UserToolkitFactory(investTools, mcpConfigRepository, mcpClientPool) {
+                McpConfigRepository mcpConfigRepository, McpClientPool mcpClientPool,
+                com.portfolio.invest.application.portfolio.PortfolioApplicationService portfolioService,
+                com.portfolio.invest.application.allocation.AllocationApplicationService allocationService,
+                ObjectMapper objectMapper) {
+            return new UserToolkitFactory(investTools, mcpConfigRepository, mcpClientPool,
+                    portfolioService, allocationService, objectMapper) {
                 @Override
                 public Toolkit build(Long userId) {
                     Toolkit toolkit = super.build(userId);
