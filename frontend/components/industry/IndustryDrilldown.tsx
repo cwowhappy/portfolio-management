@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { fetchIndustryBoard, fetchIndustryStocks } from "@/lib/industryApi";
+import { useAuth } from "@/lib/auth";
 import type { IndustryStock } from "@/lib/types";
+import ResearchNoteDialog from "@/components/wiki/ResearchNoteDialog";
 import IndustryStockTable from "./IndustryStockTable";
 
 const PROSPERITY_LABEL = { UP: "↑", FLAT: "→", DOWN: "↓" } as const;
@@ -22,6 +24,7 @@ export default function IndustryDrilldown({ industryCode }: { industryCode: stri
   const [loading, setLoading] = useState(true);
   const [sortBy, setSortBy] = useState<SortKey>("total_mv");
   const [dir, setDir] = useState<"ASC" | "DESC">("DESC");
+  const { user } = useAuth();
 
   useEffect(() => {
     fetchIndustryBoard()
@@ -71,6 +74,11 @@ export default function IndustryDrilldown({ industryCode }: { industryCode: stri
           {industryName || industryCode}{prosperity && <span className="ml-2 text-base">{PROSPERITY_LABEL[prosperity as keyof typeof PROSPERITY_LABEL]}</span>}
         </h1>
         <span className="text-sm text-[color:var(--color-ink-dim)]">成员 {stocks.length}</span>
+        {user && (
+          <span className="ml-auto">
+            <ResearchNoteDialog industryCode={industryCode} industryName={industryName} />
+          </span>
+        )}
       </div>
       {loading ? <div className="h-40 rounded-2xl skeleton" aria-label="加载中" /> : (
         <IndustryStockTable stocks={stocks} sortBy={sortBy} sortDirection={dir} onSort={onSort} />
