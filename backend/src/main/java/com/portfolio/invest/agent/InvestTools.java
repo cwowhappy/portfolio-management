@@ -1,6 +1,5 @@
 package com.portfolio.invest.agent;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.portfolio.invest.agent.chart.ChartSpecs;
 import com.portfolio.invest.domain.market.Financials;
@@ -18,9 +17,7 @@ import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolEmitter;
 import io.agentscope.core.tool.ToolParam;
 import java.math.BigDecimal;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -205,7 +202,7 @@ public class InvestTools {
         return runBlock(() -> {
             String sort = sortBy == null || sortBy.isBlank() ? "total_mv" : sortBy;
             if (!ScreeningCriteria.SORTABLE_FIELDS.contains(sort)) {
-                return ToolResultBlock.text(toError("不支持的排序字段: " + sort,
+                return ToolResultBlock.text(ToolResultBlocks.toError(mapper, "不支持的排序字段: " + sort,
                         "可用: " + ScreeningCriteria.SORTABLE_FIELDS));
             }
             ScreeningCriteria criteria = new ScreeningCriteria(
@@ -218,7 +215,8 @@ public class InvestTools {
                     "asc".equalsIgnoreCase(sortDirection) ? SortDirection.ASC : SortDirection.DESC,
                     Math.max(1, Math.min(limit == null ? 20 : limit, 50)));
             if (!criteria.hasAnyCondition()) {
-                return ToolResultBlock.text(toError("至少需要一个筛选条件", "请给出 PE/ROE/市值等至少一个条件"));
+                return ToolResultBlock.text(ToolResultBlocks.toError(mapper, "至少需要一个筛选条件",
+                        "请给出 PE/ROE/市值等至少一个条件"));
             }
             List<StockScreeningResult> results = screening.screen(criteria);
             if (results.isEmpty()) {
@@ -248,8 +246,10 @@ public class InvestTools {
         return runBlock(() -> {
             com.portfolio.invest.application.market.FinancialAnalysisView view = financialQuery.analyze(code, 12);
             if (view.records().isEmpty()) {
-                // 库表空：降级——live 财务摘要 + 趋势积累提示，不 emit 空表
-                String live = view.live() == null ? "" : ChartSpecs.financialsSummary(view.live()) + " ";
+                // 库表空：降级——live 财务摘要 + 趋势积累提示，不 emit 空表。
+                // live 指标为空（东财返回 data:[] 的新股）时 financialsSummary 会 get(0) IOOBE，须防护
+                String live = (view.live() == null || view.live().indicators().isEmpty())
+                        ? "" : ChartSpecs.financialsSummary(view.live()) + " ";
                 return ToolResultBlock.text(live + "库表趋势数据积累中（新股或未采集），暂无法做杜邦拆解。");
             }
             String name = view.live() == null ? code : view.live().name();
@@ -284,11 +284,16 @@ public class InvestTools {
             }
             var row = board.stream()
                     .filter(b -> industryCode.equals(b.industryCode())).findFirst().orElse(null);
-            List<com.portfolio.invest.domain.industry.IndustryStock> stocks =
-                    industry.stocks(industryCode, "total_mv", "desc", 15);
-            if (row == null || stocks.isEmpty()) {
+            if (row == null) {
+                // 板面无该行即码未对齐——先返回提示，不调 stocks（service 对不存在码抛 INDUSTRY_NOT_FOUND，
+                // 会落进通用错误兜底丢失友好提示）
                 return ToolResultBlock.text(
                         "行业码 %s 无板面/成分股数据（请先经板面对齐行业码）。".formatted(industryCode));
+            }
+            List<com.portfolio.invest.domain.industry.IndustryStock> stocks =
+                    industry.stocks(industryCode, "total_mv", "desc", 15);
+            if (stocks.isEmpty()) {
+                return ToolResultBlock.text(ChartSpecs.industryStocksSummary(row, stocks));
             }
             emitter.emit(ToolResultBlock.builder()
                     .output(TextBlock.builder().text(mapper.writeValueAsString(
@@ -303,45 +308,20 @@ public class InvestTools {
             return supplier.get();
         } catch (MarketDataException e) {
             log.warn("工具数据获取失败: code={}, msg={}", e.getCode(), e.getMessage());
-            return toError(e.getMessage(), "数据源暂不可用，请稍后重试或换个问法");
+            return ToolResultBlocks.toError(mapper, e.getMessage(), "数据源暂不可用，请稍后重试或换个问法");
         } catch (Exception e) {
             log.error("工具执行异常", e);
-            return toError("工具执行失败", "请稍后重试");
+            return ToolResultBlocks.toError(mapper, "工具执行失败", "请稍后重试");
         }
     }
 
-    /** 用 ObjectMapper 序列化错误，避免手工拼 JSON 导致非法输出。 */
-    private String toError(String message, String hint) {
-        try {
-            Map<String, String> body = new LinkedHashMap<>();
-            body.put("error", message);
-            body.put("hint", hint);
-            return mapper.writeValueAsString(body);
-        } catch (JsonProcessingException e) {
-            return "{\"error\":\"工具执行失败\",\"hint\":\"请稍后重试\"}";
-        }
-    }
-
-    /** 双通道版 run()：失败不 emit，返回错误 JSON 文本（前端 ChartCard 嗅探降级）。 */
-    private ToolResultBlock runBlock(BlockSupplier supplier) {
-        try {
-            return supplier.get();
-        } catch (MarketDataException e) {
-            log.warn("工具数据获取失败: code={}, msg={}", e.getCode(), e.getMessage());
-            return ToolResultBlock.text(toError(e.getMessage(), "数据源暂不可用，请稍后重试或换个问法"));
-        } catch (Exception e) {
-            log.error("工具执行异常", e);
-            return ToolResultBlock.text(toError("工具执行失败", "请稍后重试"));
-        }
+    /** 双通道版 run()：失败不 emit，返回错误 JSON 文本（前端 ChartCard 嗅探降级）。共享自 ToolResultBlocks。 */
+    private ToolResultBlock runBlock(ToolResultBlocks.BlockSupplier supplier) {
+        return ToolResultBlocks.runBlock(log, mapper, supplier);
     }
 
     @FunctionalInterface
     private interface JsonSupplier {
         String get() throws Exception;
-    }
-
-    @FunctionalInterface
-    private interface BlockSupplier {
-        ToolResultBlock get() throws Exception;
     }
 }

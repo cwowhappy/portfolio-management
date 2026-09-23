@@ -50,6 +50,8 @@ elif [ -z "${ADMIN_USERNAME:-}" ] || [ -z "${ADMIN_PASSWORD:-}" ]; then
   echo "  - 未设置 ADMIN_USERNAME/ADMIN_PASSWORD，跳过对话冒烟（/agui/run 需登录，在 .env 配置后重跑）"
 else
   COOKIE_JAR=$(mktemp)
+  # fail() 即 exit 1：EXIT trap 保证管理员会话 cookie 不因任何断言失败路径残留在磁盘
+  trap 'rm -f "$COOKIE_JAR"' EXIT
   curl -s --max-time 15 -c "$COOKIE_JAR" -X POST "$BASE/api/auth/login" \
     -H "Content-Type: application/json" \
     -d "{\"username\":\"$ADMIN_USERNAME\",\"password\":\"$ADMIN_PASSWORD\"}" \

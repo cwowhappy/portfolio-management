@@ -441,6 +441,20 @@ class InvestToolsTest {
         assertThat(out.getOutput().get(0).toString()).contains("数据积累中");
     }
 
+    @DisplayName("analyze_financials 库表空且 live 指标为空：纯降级文案不 IOOBE")
+    @Test
+    void givenEmptyRecordsAndEmptyLiveIndicators_whenAnalyzeFinancials_thenPureDegradedSummary() {
+        when(financialQuery.analyze("301999", 12)).thenReturn(new com.portfolio.invest.application.market.FinancialAnalysisView(
+                List.of(), new Financials("301999", "新股股份", null, null, List.of()), null));
+        ToolResultBlock[] emitted = new ToolResultBlock[1];
+
+        ToolResultBlock out = tools.analyzeFinancials("301999", block -> emitted[0] = block);
+
+        assertThat(emitted[0]).as("库表空不 emit").isNull();
+        assertThat(out.getOutput().get(0).toString())
+                .contains("数据积累中").doesNotContain("error");
+    }
+
     private static com.portfolio.invest.application.industry.IndustryBoardView boardRow(String code, String name,
                                                                                         String pePct) {
         return new com.portfolio.invest.application.industry.IndustryBoardView(code, name,

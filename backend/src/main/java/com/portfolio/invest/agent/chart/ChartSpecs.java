@@ -187,15 +187,17 @@ public final class ChartSpecs {
             com.portfolio.invest.application.portfolio.PortfolioOverviewView overview,
             com.portfolio.invest.application.portfolio.ConcentrationView concentration,
             com.portfolio.invest.application.portfolio.IndustryDistributionView distribution) {
+        // ⚠ 刻度契约：concentration/distribution 的 ratio 均为服务层产出的百分数
+        //（PortfolioApplicationService.ratio = part/total×100），此处直接格式化，禁止再 ×100。
         StringBuilder sb = new StringBuilder("总资产 %.1f 亿（成本 %.1f 亿，浮动盈亏 %.1f 亿），共 %d 只持仓。"
                 .formatted(overview.totalAssets().doubleValue() / 1e8,
                         overview.totalCost().doubleValue() / 1e8,
                         overview.totalPnl().doubleValue() / 1e8, overview.positionCount()));
         if (concentration.top5Ratio() != null) {
-            sb.append("前五大占比 %.1f%%".formatted(concentration.top5Ratio().doubleValue() * 100));
+            sb.append("前五大占比 %.1f%%".formatted(concentration.top5Ratio().doubleValue()));
             concentration.holdings().stream().findFirst().ifPresent(h ->
                     sb.append("，第一大 %s(%s) %.1f%%".formatted(
-                            h.stockName(), h.stockCode(), h.ratio().doubleValue() * 100)));
+                            h.stockName(), h.stockCode(), h.ratio().doubleValue())));
             sb.append("。");
         }
         if (!distribution.slices().isEmpty()) {
@@ -203,7 +205,7 @@ public final class ChartSpecs {
             for (int i = 0; i < Math.min(3, distribution.slices().size()); i++) {
                 var s = distribution.slices().get(i);
                 sb.append(i == 0 ? "" : "、").append("%s %.1f%%"
-                        .formatted(s.industryName(), s.ratio().doubleValue() * 100));
+                        .formatted(s.industryName(), s.ratio().doubleValue()));
             }
             sb.append("。配置结构饼图见附图。");
         }
@@ -211,9 +213,10 @@ public final class ChartSpecs {
     }
 
     /**
-     * F10 推荐配置 vs 当前分布对照表（权重百分点）。
+     * F10 推荐配置 vs 当前分布对照表（无生效方案形态；权重全为百分点刻度——
+     * RiskProfile.recommendedWeights「百分比，和为 100」、AssetAllocationView.Slice.ratio 同刻度）。
      * 当前分布的 AllocationSliceCategory 只有 EQUITY/CASH 两类（M08 口径），映射到
-     * AssetClass.STOCK/CASH；BOND/GOLD/REITS 当前必为 0。
+     * AssetClass.STOCK/CASH；五档画像恒含 STOCK/CASH，故无需 actual-only 补行（BOND/GOLD/REITS 必为 0）。
      */
     public static ChartSpec allocationDeviationTable(String profileName,
             List<com.portfolio.invest.application.allocation.WeightView> recommended,
@@ -224,7 +227,7 @@ public final class ChartSpecs {
                 case EQUITY -> com.portfolio.invest.domain.allocation.AssetClass.STOCK;
                 case CASH -> com.portfolio.invest.domain.allocation.AssetClass.CASH;
             };
-            actual.put(ac, s.ratio() == null ? null : s.ratio().doubleValue() * 100);
+            actual.put(ac, s.ratio() == null ? null : s.ratio().doubleValue());
         }
         List<ChartSpec.Column> columns = List.of(
                 new ChartSpec.Column("assetClass", "资产类别", null, null),
@@ -232,30 +235,44 @@ public final class ChartSpecs {
                 new ChartSpec.Column("actual", "当前权重%", "right", null),
                 new ChartSpec.Column("deviation", "偏离pp", "right", null));
         List<Map<String, Object>> rows = new ArrayList<>();
-        java.util.EnumSet<com.portfolio.invest.domain.allocation.AssetClass> seen =
-                java.util.EnumSet.noneOf(com.portfolio.invest.domain.allocation.AssetClass.class);
         for (var w : recommended) {
-            seen.add(w.assetClass());
-            double target = w.weight().doubleValue() * 100;
+            double target = w.weight().doubleValue();
             Double act = actual.get(w.assetClass());
-            Map<String, Object> row = new LinkedHashMap<>();
-            row.put("assetClass", w.assetClass().label());
-            row.put("target", Math.round(target * 10) / 10.0);
-            row.put("actual", act == null ? 0.0 : Math.round(act * 10) / 10.0);
-            row.put("deviation", Math.round(((act == null ? 0.0 : act) - target) * 10) / 10.0);
-            rows.add(row);
-        }
-        for (var e : actual.entrySet()) {
-            if (seen.contains(e.getKey()) || e.getValue() == null) continue;
-            Map<String, Object> row = new LinkedHashMap<>();
-            row.put("assetClass", e.getKey().label());
-            row.put("target", 0.0);
-            row.put("actual", Math.round(e.getValue() * 10) / 10.0);
-            row.put("deviation", Math.round(e.getValue() * 10) / 10.0);
-            rows.add(row);
+            rows.add(deviationRow(w.assetClass().label(), target, act));
         }
         return new ChartSpec.Table(SPEC_VERSION, "table", "推荐配置 vs 当前（%s型）".formatted(profileName),
                 null, columns, rows, null);
+    }
+
+    /** F10 有生效方案形态：target=方案权重、actual/deviation 直接取 DeviationView（同百分点刻度）。 */
+    public static ChartSpec allocationDeviationTable(String profileName,
+            com.portfolio.invest.application.allocation.DeviationView deviation) {
+        List<ChartSpec.Column> columns = List.of(
+                new ChartSpec.Column("assetClass", "资产类别", null, null),
+                new ChartSpec.Column("target", "目标权重%", "right", null),
+                new ChartSpec.Column("actual", "当前权重%", "right", null),
+                new ChartSpec.Column("deviation", "偏离pp", "right", null));
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (var s : deviation.slices()) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("assetClass", s.assetClass().label());
+            row.put("target", Math.round(s.targetWeight().doubleValue() * 10) / 10.0);
+            row.put("actual", Math.round(s.actualWeight().doubleValue() * 10) / 10.0);
+            row.put("deviation", Math.round(s.deviation().doubleValue() * 10) / 10.0);
+            rows.add(row);
+        }
+        return new ChartSpec.Table(SPEC_VERSION, "table", "配置方案 vs 当前（%s型）".formatted(profileName),
+                null, columns, rows, null);
+    }
+
+    private static Map<String, Object> deviationRow(String label, double target, Double actualPercent) {
+        double act = actualPercent == null ? 0.0 : actualPercent;
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("assetClass", label);
+        row.put("target", Math.round(target * 10) / 10.0);
+        row.put("actual", Math.round(act * 10) / 10.0);
+        row.put("deviation", Math.round((act - target) * 10) / 10.0);
+        return row;
     }
 
     public static String allocationSummary(
@@ -267,7 +284,7 @@ public final class ChartSpecs {
             sb.append("当前生效方案偏离：");
             boolean first = true;
             for (var s : deviation.slices()) {
-                double pp = s.deviation().doubleValue() * 100;
+                double pp = s.deviation().doubleValue(); // DeviationView 偏离已是百分点刻度
                 if (Math.abs(pp) < 0.05) continue;
                 sb.append(first ? "" : "、").append("%s %+.1fpp".formatted(s.assetClass().label(), pp));
                 first = false;
@@ -398,10 +415,10 @@ public final class ChartSpecs {
         var highest = board.stream().filter(b -> b.pePercentile() != null)
                 .max(java.util.Comparator.comparing(IndustryBoardView::pePercentile)).orElse(null);
         StringBuilder sb = new StringBuilder("全行业估值板面（%d 个）".formatted(board.size()));
-        if (lowest != null) sb.append("；估值分位最低：%s（PE分位 %s%%）")
-                .append(lowest.industryName()).append(lowest.pePercentile());
-        if (highest != null) sb.append("；最高：%s（PE分位 %s%%）")
-                .append(highest.industryName()).append(highest.pePercentile());
+        if (lowest != null) sb.append("；估值分位最低：%s（PE分位 %s%%）"
+                .formatted(lowest.industryName(), lowest.pePercentile()));
+        if (highest != null) sb.append("；最高：%s（PE分位 %s%%）"
+                .formatted(highest.industryName(), highest.pePercentile()));
         sb.append("。明细见附表；指定行业可传行业码下钻头部企业。");
         return sb.toString();
     }
@@ -425,7 +442,7 @@ public final class ChartSpecs {
             row.put("totalMvYi", s.totalMv() == null ? null
                     : Math.round(s.totalMv().doubleValue() / 1e8 * 10) / 10.0);
             row.put("revenueYi", s.revenue() == null ? null
-                    : Math.round(s.revenue().doubleValue() / 1e8 * 10) / 1.0);
+                    : Math.round(s.revenue().doubleValue() / 1e8 * 10) / 10.0);
             row.put("roe", s.roe());
             row.put("peTtm", s.peTtm());
             row.put("pb", s.pb());

@@ -8,8 +8,6 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolEmitter;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -59,7 +57,7 @@ public class UserInvestTools {
 
     @Tool(
             name = "suggest_allocation",
-            description = "资产配置建议：读取用户风险测评结果（无则引导先完成测评），给出推荐配置（保守/平衡/进取三档内置权重）与当前资产分布对照表及偏离。用户问「我该怎么配置/建议仓位/资产怎么配」时调用。推荐权重来自 M07 问卷评分模型，非本工具编造。",
+            description = "资产配置建议：读取用户风险测评结果（无则引导先完成测评），给出推荐配置（五档风险画像内置权重：保守/稳健/平衡/成长/进取）与当前资产分布对照表及偏离；有生效配置方案时对照方案权重。用户问「我该怎么配置/建议仓位/资产怎么配」时调用。推荐权重来自 M07 问卷评分模型，非本工具编造。",
             readOnly = true,
             concurrencySafe = true)
     public ToolResultBlock suggestAllocation(ToolEmitter emitter) {
@@ -70,39 +68,22 @@ public class UserInvestTools {
                         "尚未完成风险测评。请先到配置页完成 M07 风险测评问卷，我再基于你的风险画像给出配置建议（不凭空编造建议）。");
             }
             var a = assessment.get();
-            var current = portfolio.allocation(userId);
-            var deviation = allocation.deviation(userId);
+            var deviation = allocation.deviation(userId); // 无生效方案返回空列表（不抛）
             emitter.emit(ToolResultBlock.builder()
                     .output(TextBlock.builder().text(mapper.writeValueAsString(
-                            ChartSpecs.allocationDeviationTable(a.profileName(), a.weights(), current))).build())
+                            deviation.slices().isEmpty()
+                                    // 无方案：测评推荐权重 vs 当前分布（此时才读一次持仓分布）
+                                    ? ChartSpecs.allocationDeviationTable(a.profileName(), a.weights(),
+                                            portfolio.allocation(userId))
+                                    // 有方案：直接用 deviation（service 内部已取当前分布，避免重复全量持仓读取）
+                                    : ChartSpecs.allocationDeviationTable(a.profileName(), deviation))).build())
                     .build());
             return ToolResultBlock.text(ChartSpecs.allocationSummary(a, deviation));
         });
     }
 
-    /** 与 InvestTools 同款兜底：失败不 emit，返回错误 JSON 文本（前端 ChartCard 嗅探降级）。 */
-    private ToolResultBlock runBlock(BlockSupplier supplier) {
-        try {
-            return supplier.get();
-        } catch (Exception e) {
-            log.error("用户态工具执行异常 userId={}", userId, e);
-            return ToolResultBlock.text(toError("工具执行失败", "请稍后重试"));
-        }
-    }
-
-    private String toError(String message, String hint) {
-        try {
-            Map<String, String> body = new LinkedHashMap<>();
-            body.put("error", message);
-            body.put("hint", hint);
-            return mapper.writeValueAsString(body);
-        } catch (Exception e) {
-            return "{\"error\":\"工具执行失败\",\"hint\":\"请稍后重试\"}";
-        }
-    }
-
-    @FunctionalInterface
-    private interface BlockSupplier {
-        ToolResultBlock get() throws Exception;
+    /** 共享兜底（ToolResultBlocks，与 InvestTools 同款）；用户态额外带 userId 上下文日志。 */
+    private ToolResultBlock runBlock(ToolResultBlocks.BlockSupplier supplier) {
+        return ToolResultBlocks.runBlock(log, mapper, supplier);
     }
 }
