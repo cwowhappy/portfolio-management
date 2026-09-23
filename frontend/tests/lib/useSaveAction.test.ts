@@ -82,4 +82,25 @@ describe("useSaveAction", () => {
     await act(async () => { await ok; });
     expect(result.current.error).toBeNull();
   });
+
+  it("reset 清除 saving 与 error（对话框重开防迟到状态翻转）", async () => {
+    const { result } = renderHook(() => useSaveAction());
+    let failed!: Promise<void>;
+    await act(async () => { failed = result.current.run(() => Promise.reject(new Error("旧错误"))); });
+    await act(async () => { await failed; });
+    expect(result.current.error).toBe("旧错误");
+
+    act(() => result.current.reset());
+
+    expect(result.current.error).toBeNull();
+    expect(result.current.saving).toBe(false);
+  });
+
+  it("网络 TypeError（fetch 失败）显示中文兜底而非英文 message", async () => {
+    const { result } = renderHook(() => useSaveAction());
+    let running!: Promise<void>;
+    await act(async () => { running = result.current.run(() => Promise.reject(new TypeError("Failed to fetch"))); });
+    await act(async () => { await running; });
+    expect(result.current.error).toBe("保存失败");
+  });
 });

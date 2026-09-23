@@ -112,7 +112,7 @@ export default function RulePanel({ rules, onChanged }: {
         </div>
         {form.error && <div className="text-sm text-[color:var(--color-down)]">{form.error}</div>}
         <div className="flex gap-2">
-          <button data-testid="wiki-rule-save" type="button" disabled={form.saving}
+          <button data-testid="wiki-rule-save" type="button" disabled={form.saving || rows.saving}
             className="rounded-md px-4 py-1.5 text-sm bg-[color:var(--color-ink)] text-[color:var(--color-bg)] disabled:opacity-60"
             onClick={save}>
             {editing ? "保存修改" : "添加规则"}
@@ -138,19 +138,19 @@ export default function RulePanel({ rules, onChanged }: {
               {r.description && <span className="ml-3 text-sm text-[color:var(--color-ink-dim)]">{r.description}</span>}
             </div>
             <div className="flex shrink-0 items-center gap-3 text-xs">
-              <button data-testid={`wiki-rule-toggle-${r.id}`} type="button" disabled={rows.saving}
+              <button data-testid={`wiki-rule-toggle-${r.id}`} type="button" disabled={rows.saving || form.saving}
                 className={r.enabled
                   ? "rounded-md px-2 py-1 bg-[color:var(--color-ink)] text-[color:var(--color-bg)] disabled:opacity-60"
                   : "rounded-md px-2 py-1 border border-[color:var(--color-line)] text-[color:var(--color-ink-dim)] disabled:opacity-60"}
                 onClick={() => toggle(r)}>
                 {r.enabled ? "已启用" : "已停用"}
               </button>
-              <button data-testid={`wiki-rule-edit-${r.id}`} type="button" disabled={rows.saving}
+              <button data-testid={`wiki-rule-edit-${r.id}`} type="button" disabled={rows.saving || form.saving}
                 className="text-[color:var(--color-ink-dim)] hover:underline disabled:opacity-60"
                 onClick={() => startEdit(r)}>
                 编辑
               </button>
-              <button data-testid={`wiki-rule-delete-${r.id}`} type="button" disabled={rows.saving}
+              <button data-testid={`wiki-rule-delete-${r.id}`} type="button" disabled={rows.saving || form.saving}
                 className="text-[color:var(--color-ink-dim)] hover:underline disabled:opacity-60"
                 onClick={() => remove(r)}>
                 删除

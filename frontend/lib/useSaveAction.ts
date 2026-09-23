@@ -6,7 +6,9 @@ import { useCallback, useRef, useState } from "react";
  * 保存类交互的统一防线（MS-11 复盘优化建议 #3 收口）：
  * - in-flight 防连点：run 执行期间的重入直接忽略（ref 守卫，闭包陈旧也拦得住）；
  * - 失败不吞错：异常翻译成行内文案写入 error，由调用方展示；
- * - saving 驱动按钮 disabled，error 在每次 run 开始时清除。
+ *   网络 TypeError（fetch 失败，message 为英文 "Failed to fetch"）走中文兜底文案；
+ * - saving 驱动按钮 disabled，error 在每次 run 开始时清除；
+ * - reset 供「关闭后重开」场景清除残留 saving/error（防迟到响应翻转重开后的视图）。
  *
  * 表单校验在调用 run 之前做，用 setError 写校验文案（复用同一条行内错误位）。
  */
@@ -23,12 +25,19 @@ export function useSaveAction(fallbackMessage = "保存失败") {
     try {
       await action();
     } catch (e) {
-      setError(e instanceof Error ? e.message : fallbackMessage);
+      setError(e instanceof TypeError ? fallbackMessage : e instanceof Error ? e.message : fallbackMessage);
     } finally {
       inFlight.current = false;
       setSaving(false);
     }
   }, [fallbackMessage]);
 
-  return { saving, error, setError, run };
+  /** 清除全部状态（含 in-flight 守卫）——对话框/编辑器重开时调用。 */
+  const reset = useCallback(() => {
+    inFlight.current = false;
+    setSaving(false);
+    setError(null);
+  }, []);
+
+  return { saving, error, setError, run, reset };
 }

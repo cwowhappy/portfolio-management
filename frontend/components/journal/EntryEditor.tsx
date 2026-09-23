@@ -47,6 +47,8 @@ export default function EntryEditor({ editing, onSaved, onCancel }: {
     if (!input.content) { setError("内容不能为空"); return; }
     // 备忘 stockCode 必填：除非已提供 tradeId（后端可从交易反查标的）；研究笔记 stockCode 可选（FR-C1）
     if (isMemo && !tradeId.trim() && !stockCode.trim()) { setError("请填写股票代码或关联交易 ID"); return; }
+    // tradeId 须为数字（NaN 经 JSON.stringify 变 null，静默丢链接且后端报错口径误导）
+    if (isMemo && tradeId.trim() && !/^\d+$/.test(tradeId.trim())) { setError("关联交易 ID 需为数字"); return; }
     // targetPrice / stopLoss 必须为正数（填了就要 >0）
     if (isBuyMemo) {
       if (targetPrice.trim() !== "" && !(Number(targetPrice) > 0)) { setError("目标价需大于 0"); return; }

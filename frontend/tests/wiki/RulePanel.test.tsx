@@ -90,6 +90,9 @@ describe("RulePanel", () => {
     const { rerender } = render(<RulePanel rules={rules} onChanged={() => {}} />);
     fireEvent.click(screen.getByTestId("wiki-rule-edit-9")); // 编辑快照 enabled=true
     fireEvent.click(screen.getByTestId("wiki-rule-toggle-9")); // 编辑中切换启停
+    // 等 toggle 的 rows 防线复位（互斥禁用解除）再保存
+    await waitFor(() =>
+      expect((screen.getByTestId("wiki-rule-save") as HTMLButtonElement).disabled).toBe(false));
     // 模拟父组件 onChanged 后刷新列表：rules 传入 enabled=false 的新数据
     const refreshed = rules.map((r) => (r.id === 9 ? { ...r, enabled: false } : r));
     rerender(<RulePanel rules={refreshed} onChanged={() => {}} />);
@@ -126,5 +129,35 @@ describe("RulePanel", () => {
     render(<RulePanel rules={rules} onChanged={() => {}} />);
     fireEvent.click(screen.getByTestId("wiki-rule-delete-9"));
     await waitFor(() => expect(screen.getByText("删除失败，请重试")).toBeTruthy());
+  });
+
+  it("行操作在途时表单保存互斥禁用（防启停被保存的旧快照回滚）", async () => {
+    let resolveToggle!: (v: PrincipleRuleView) => void;
+    const pending = new Promise<PrincipleRuleView>((res) => { resolveToggle = res; });
+    vi.spyOn(wikiApi, "updateRule").mockReturnValue(pending);
+    render(<RulePanel rules={rules} onChanged={() => {}} />);
+
+    fireEvent.click(screen.getByTestId("wiki-rule-toggle-9")); // 行操作在途
+
+    await waitFor(() =>
+      expect((screen.getByTestId("wiki-rule-save") as HTMLButtonElement).disabled).toBe(true));
+    resolveToggle(rules[0]);
+    await waitFor(() =>
+      expect((screen.getByTestId("wiki-rule-save") as HTMLButtonElement).disabled).toBe(false));
+  });
+
+  it("表单保存在途时行操作互斥禁用", async () => {
+    let resolveSave!: (v: PrincipleRuleView) => void;
+    const pending = new Promise<PrincipleRuleView>((res) => { resolveSave = res; });
+    vi.spyOn(wikiApi, "createRule").mockReturnValue(pending);
+    render(<RulePanel rules={rules} onChanged={() => {}} />);
+
+    fireEvent.click(screen.getByTestId("wiki-rule-save")); // 表单保存在途（默认阈值合法）
+
+    await waitFor(() =>
+      expect((screen.getByTestId("wiki-rule-toggle-9") as HTMLButtonElement).disabled).toBe(true));
+    resolveSave(rules[0]);
+    await waitFor(() =>
+      expect((screen.getByTestId("wiki-rule-toggle-9") as HTMLButtonElement).disabled).toBe(false));
   });
 });
