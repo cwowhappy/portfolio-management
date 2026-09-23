@@ -16,14 +16,14 @@ export default function ResearchNoteDialog({ industryCode, industryName }: {
   const [content, setContent] = useState("");
   const [preview, setPreview] = useState(false);
   const [saved, setSaved] = useState(false);
-  const { saving, error, setError, run } = useSaveAction();
+  const { saving, error, setError, run, reset } = useSaveAction();
 
   const openDialog = () => {
     setTitle(`${industryName || industryCode} 研究结论`);
     setContent("");
     setPreview(false);
     setSaved(false);
-    setError(null);
+    reset(); // 清除上一轮 saving/error 残留（防迟到响应翻转重开后的视图）
     setOpen(true);
   };
 
@@ -46,7 +46,7 @@ export default function ResearchNoteDialog({ industryCode, industryName }: {
       {open && (
         <div data-testid="research-note-dialog"
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-          onClick={(e) => { if (e.target === e.currentTarget) setOpen(false); }}>
+          onClick={(e) => { if (e.target === e.currentTarget && !saving) setOpen(false); }}>
           <div className="w-full max-w-2xl rounded-2xl border border-[color:var(--color-line)] bg-[color:var(--color-bg)] p-5 space-y-3">
             {saved ? (
               <div className="space-y-3 text-center py-6">
@@ -84,7 +84,8 @@ export default function ResearchNoteDialog({ industryCode, industryName }: {
                     onClick={save}>
                     保存
                   </button>
-                  <button type="button" className="rounded-md px-4 py-1.5 text-sm border border-[color:var(--color-line)]"
+                  <button type="button" disabled={saving}
+                    className="rounded-md px-4 py-1.5 text-sm border border-[color:var(--color-line)] disabled:opacity-60"
                     onClick={() => setOpen(false)}>
                     取消
                   </button>

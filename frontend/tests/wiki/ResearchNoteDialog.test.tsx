@@ -64,4 +64,36 @@ describe("ResearchNoteDialog", () => {
     // 保存成功切换到「已保存」视图（保存按钮随之卸载）即完成信号
     await waitFor(() => expect(screen.getByTestId("research-note-view-link")).toBeTruthy());
   });
+
+  it("保存中取消禁用（防迟到响应翻转重开后的视图）", async () => {
+    let resolveSave!: (v: wikiReturn) => void;
+    const pending = new Promise<wikiReturn>((res) => { resolveSave = res; });
+    vi.spyOn(wikiApi, "createWikiEntry").mockReturnValue(pending);
+    render(<ResearchNoteDialog industryCode="801120" industryName="白酒" />);
+    fireEvent.click(screen.getByTestId("research-note-open"));
+    fireEvent.change(screen.getByTestId("research-note-content"), { target: { value: "结论" } });
+    fireEvent.click(screen.getByTestId("research-note-save"));
+    await waitFor(() => expect((screen.getByTestId("research-note-save") as HTMLButtonElement).disabled).toBe(true));
+
+    const cancel = screen.getByRole("button", { name: "取消" }) as HTMLButtonElement;
+    expect(cancel.disabled).toBe(true);
+
+    resolveSave(saved);
+    await waitFor(() => expect(screen.getByTestId("research-note-view-link")).toBeTruthy());
+  });
+
+  it("关闭后重开：saving 已复位，可再次发起保存（reset 生效）", async () => {
+    const createSpy = vi.spyOn(wikiApi, "createWikiEntry").mockResolvedValue(saved);
+    render(<ResearchNoteDialog industryCode="801120" industryName="白酒" />);
+    // 第一次：保存成功
+    fireEvent.click(screen.getByTestId("research-note-open"));
+    fireEvent.change(screen.getByTestId("research-note-content"), { target: { value: "第一条" } });
+    fireEvent.click(screen.getByTestId("research-note-save"));
+    await screen.findByTestId("research-note-view-link");
+    // 已保存视图下再点外部「保存研究结论」入口 → openDialog 重置（含 hook reset）→ 表单可再次保存
+    fireEvent.click(screen.getByTestId("research-note-open"));
+    fireEvent.change(screen.getByTestId("research-note-content"), { target: { value: "第二条" } });
+    fireEvent.click(screen.getByTestId("research-note-save"));
+    await waitFor(() => expect(createSpy).toHaveBeenCalledTimes(2));
+  });
 });

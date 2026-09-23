@@ -113,4 +113,13 @@ describe("EntryEditor 表单校验", () => {
     await vi.waitFor(() =>
       expect((screen.getByRole("button", { name: "保存记录" }) as HTMLButtonElement).disabled).toBe(false));
   });
+
+  it("关联交易 ID 非数字被前端拦截，不调 API", async () => {
+    render(<EntryEditor editing={null} onSaved={() => {}} onCancel={() => {}} />);
+    await fillBase("备忘", "内容");
+    fireEvent.change(screen.getByPlaceholderText("关联交易 ID（可选）"), { target: { value: "abc" } });
+    await clickSave();
+    expect(await screen.findByText(/关联交易 ID 需为数字/)).toBeTruthy();
+    expect(api.createEntry).not.toHaveBeenCalled();
+  });
 });
