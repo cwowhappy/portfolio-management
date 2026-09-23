@@ -80,7 +80,11 @@ class AgentConfigContextTest {
         @Bean
         InvestTools investTools() {
             return new InvestTools(
-                    mock(MarketDataService.class), mock(ValuationApplicationService.class), new ObjectMapper());
+                    mock(MarketDataService.class), mock(ValuationApplicationService.class),
+                    mock(com.portfolio.invest.application.screening.ScreeningApplicationService.class),
+                    mock(com.portfolio.invest.application.market.FinancialQueryService.class),
+                    mock(com.portfolio.invest.application.industry.IndustryApplicationService.class),
+                    new ObjectMapper());
         }
 
         @Bean

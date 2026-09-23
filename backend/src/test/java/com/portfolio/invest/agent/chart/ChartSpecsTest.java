@@ -90,4 +90,137 @@ class ChartSpecsTest {
                 .contains("\"revenueYi\":900.0").contains("\"netProfitYi\":420.0")
                 .contains("\"roe\":18.2").contains("\"grossMargin\":91.5}");
     }
+
+    @DisplayName("筛选结果表：列名与首行值（市值亿=元/1e8）")
+    @Test
+    void givenScreeningResults_whenScreeningTable_thenSerializesTable() throws Exception {
+        var r = new com.portfolio.invest.domain.screening.StockScreeningResult(
+                "600519", "贵州茅台", "801140", "白酒",
+                new BigDecimal("25.0"), new BigDecimal("8.0"), new BigDecimal("3.2"),
+                new BigDecimal("32.0"), new BigDecimal("21.0"), new BigDecimal("91.0"),
+                new BigDecimal("32.0"), new BigDecimal("4.0"),
+                new BigDecimal("10.0"), new BigDecimal("12.0"),
+                new BigDecimal("2.1E12"), new BigDecimal("0.5"));
+        String json = mapper.writeValueAsString(ChartSpecs.screeningTable(List.of(r)));
+        assertThat(json).contains("\"type\":\"table\"");
+        assertThat(json).contains("\"label\":\"总市值(亿)\"");
+        assertThat(json).contains("21000.0"); // 2.1E12 元 → 21000 亿
+        assertThat(ChartSpecs.screeningSummary(List.of(r))).contains("1 只").contains("贵州茅台");
+    }
+
+    @DisplayName("财报趋势表：报告期降序列 + 营收亿元换算")
+    @Test
+    void givenRecords_whenFinancialTrendTable_thenSerializesTable() throws Exception {
+        var rec = new com.portfolio.invest.domain.market.FinancialRecord(
+                java.time.LocalDate.parse("2026-06-30"), 32.0, 21.0, 91.0, 32.0, 4.0, 10.0, 12.0,
+                new BigDecimal("4.2E10"));
+        String json = mapper.writeValueAsString(ChartSpecs.financialTrendTable("600519", "贵州茅台", List.of(rec)));
+        assertThat(json).contains("\"type\":\"table\"").contains("2026-06-30").contains("420.0"); // 营收亿
+        var duPont = com.portfolio.invest.domain.market.DuPontAnalysis.of(0.25, 21.0, 32.0, 32.0, "2026-06-30", "2026-06-30");
+        assertThat(ChartSpecs.financialTrendSummary("贵州茅台", 12, duPont))
+                .contains("净利率 25.0%").contains("权益乘数 1.47").contains("杜邦");
+    }
+
+    @DisplayName("行业板面表与个股表：分位列与市值/营收亿元")
+    @Test
+    void givenIndustryViews_whenTables_thenSerialize() throws Exception {
+        var boardRow = new com.portfolio.invest.application.industry.IndustryBoardView(
+                "801780", "银行", new BigDecimal("6.5"), new BigDecimal("0.6"), new BigDecimal("11.0"),
+                new BigDecimal("5.0"), new BigDecimal("15.0"), new BigDecimal("8.0"), null, null);
+        String boardJson = mapper.writeValueAsString(ChartSpecs.industryBoardTable(List.of(boardRow)));
+        assertThat(boardJson).contains("\"type\":\"table\"").contains("银行").contains("PE分位%");
+        assertThat(ChartSpecs.industryBoardSummary(List.of(boardRow)))
+                .contains("银行").contains("估值分位最低：银行（PE分位 15.0%）")
+                .doesNotContain("%s"); // formatted 占位符必须已替换
+
+        var stock = new com.portfolio.invest.domain.industry.IndustryStock(
+                "600036", "招商银行", new BigDecimal("8.0E11"), new BigDecimal("3.2E11"),
+                java.time.LocalDate.parse("2026-06-30"), new BigDecimal("15.0"),
+                new BigDecimal("7.0"), new BigDecimal("0.9"), new BigDecimal("4.8"), null);
+        String stockJson = mapper.writeValueAsString(ChartSpecs.industryStocksTable("银行", List.of(stock)));
+        assertThat(stockJson).contains("招商银行").contains("8000.0").contains("3200.0"); // 市值/营收亿
+        assertThat(ChartSpecs.industryStocksSummary(boardRow, List.of(stock))).contains("银行").contains("招商银行");
+    }
+
+    @DisplayName("持仓配置饼图：资产类市值亿 + 单位亿元")
+    @Test
+    void givenAllocation_whenPortfolioPie_thenSerializesPie() throws Exception {
+        var allocation = new com.portfolio.invest.application.portfolio.AssetAllocationView(List.of(
+                new com.portfolio.invest.application.portfolio.AssetAllocationView.Slice(
+                        com.portfolio.invest.application.portfolio.AllocationSliceCategory.EQUITY,
+                        new BigDecimal("1.0E11"), new BigDecimal("0.8")),
+                new com.portfolio.invest.application.portfolio.AssetAllocationView.Slice(
+                        com.portfolio.invest.application.portfolio.AllocationSliceCategory.CASH,
+                        new BigDecimal("2.5E10"), new BigDecimal("0.2"))));
+        String json = mapper.writeValueAsString(ChartSpecs.portfolioPie(allocation));
+        assertThat(json).contains("\"type\":\"pie\"").contains("\"unit\":\"亿元\"");
+        assertThat(json).contains("\"value\":1000.0").contains("\"value\":250.0");
+    }
+
+    @DisplayName("持仓摘要：总资产/盈亏/集中度/行业分布要点（ratio 为服务层百分数刻度）")
+    @Test
+    void givenOverviewAndConcentration_whenPortfolioSummary_thenContainsKeyPoints() {
+        var overview = new com.portfolio.invest.application.portfolio.PortfolioOverviewView(
+                new BigDecimal("1.25E11"), new BigDecimal("1.0E11"), new BigDecimal("2.5E10"),
+                new BigDecimal("1.0E9"), new BigDecimal("2.5E10"), new BigDecimal("5.0E9"), 5, 2);
+        var concentration = new com.portfolio.invest.application.portfolio.ConcentrationView(
+                List.of(new com.portfolio.invest.application.portfolio.ConcentrationView.Holding(
+                        "600519", "贵州茅台", new BigDecimal("4.0E10"), new BigDecimal("32.0"))),
+                new BigDecimal("68.0"));
+        var distribution = new com.portfolio.invest.application.portfolio.IndustryDistributionView(
+                List.of(new com.portfolio.invest.application.portfolio.IndustryDistributionView.Slice(
+                        "白酒", new BigDecimal("6.0E10"), new BigDecimal("48.0"))));
+        assertThat(ChartSpecs.portfolioSummary(overview, concentration, distribution))
+                .contains("1250.0 亿").contains("5 只持仓").contains("前五大占比 68.0%")
+                .contains("第一大 贵州茅台(600519) 32.0%").contains("白酒 48.0%");
+    }
+
+    @DisplayName("配置对照表（无方案）：推荐 vs 当前 vs 偏离（权重百分数刻度）")
+    @Test
+    void givenRecommendedAndCurrent_whenAllocationDeviationTable_thenSerializesTable() throws Exception {
+        var recommended = List.of(
+                new com.portfolio.invest.application.allocation.WeightView(
+                        com.portfolio.invest.domain.allocation.AssetClass.STOCK, new BigDecimal("60")),
+                new com.portfolio.invest.application.allocation.WeightView(
+                        com.portfolio.invest.domain.allocation.AssetClass.CASH, new BigDecimal("40")));
+        var current = new com.portfolio.invest.application.portfolio.AssetAllocationView(List.of(
+                new com.portfolio.invest.application.portfolio.AssetAllocationView.Slice(
+                        com.portfolio.invest.application.portfolio.AllocationSliceCategory.EQUITY,
+                        new BigDecimal("9.0E10"), new BigDecimal("90.0"))));
+        String json = mapper.writeValueAsString(
+                ChartSpecs.allocationDeviationTable("平衡", recommended, current));
+        assertThat(json).contains("\"type\":\"table\"");
+        assertThat(json).contains("股票").contains("60.0").contains("90.0").contains("30.0"); // 偏离 +30pp
+        assertThat(json).contains("现金").contains("40.0").contains("0.0").contains("-40.0");
+    }
+
+    @DisplayName("配置对照表（有方案）：DeviationView 直生成，方案目标 vs 当前")
+    @Test
+    void givenDeviationSlices_whenAllocationDeviationTableOverload_thenSerializesTable() throws Exception {
+        var deviation = new com.portfolio.invest.application.allocation.DeviationView(List.of(
+                new com.portfolio.invest.application.allocation.DeviationView.DeviationSlice(
+                        com.portfolio.invest.domain.allocation.AssetClass.STOCK,
+                        new BigDecimal("60"), new BigDecimal("90"), new BigDecimal("30")),
+                new com.portfolio.invest.application.allocation.DeviationView.DeviationSlice(
+                        com.portfolio.invest.domain.allocation.AssetClass.CASH,
+                        new BigDecimal("40"), new BigDecimal("10"), new BigDecimal("-30"))));
+        String json = mapper.writeValueAsString(ChartSpecs.allocationDeviationTable("平衡", deviation));
+        assertThat(json).contains("配置方案 vs 当前（平衡型）");
+        assertThat(json).contains("股票").contains("60.0").contains("90.0").contains("30.0");
+        assertThat(json).contains("现金").contains("40.0").contains("10.0").contains("-30.0");
+    }
+
+    @DisplayName("配置建议摘要：画像 + 得分 + 活跃方案偏离提示（偏离百分点刻度）")
+    @Test
+    void givenAssessmentAndDeviation_whenAllocationSummary_thenContainsProfileAndDeviation() {
+        var assessment = new com.portfolio.invest.application.allocation.AssessmentView(
+                62, com.portfolio.invest.domain.allocation.RiskProfile.BALANCED, "平衡",
+                List.of(), java.util.Map.of(), java.time.Instant.parse("2026-09-01T00:00:00Z"));
+        var deviation = new com.portfolio.invest.application.allocation.DeviationView(List.of(
+                new com.portfolio.invest.application.allocation.DeviationView.DeviationSlice(
+                        com.portfolio.invest.domain.allocation.AssetClass.STOCK, new BigDecimal("60"),
+                        new BigDecimal("90"), new BigDecimal("30"))));
+        assertThat(ChartSpecs.allocationSummary(assessment, deviation))
+                .contains("平衡").contains("62").contains("股票 +30.0pp");
+    }
 }

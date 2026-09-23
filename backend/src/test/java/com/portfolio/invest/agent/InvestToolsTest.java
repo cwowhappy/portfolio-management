@@ -34,23 +34,31 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import com.portfolio.invest.domain.market.MarketDataErrorCode;
+import com.portfolio.invest.domain.screening.SortDirection;
 
 /** 7 个 Agent 工具的 JSON 输出与错误兜底。 */
 class InvestToolsTest {
 
     private MarketDataService market;
     private ValuationApplicationService valuationService;
+    private com.portfolio.invest.application.screening.ScreeningApplicationService screening;
+    private com.portfolio.invest.application.market.FinancialQueryService financialQuery;
+    private com.portfolio.invest.application.industry.IndustryApplicationService industry;
+    private ObjectMapper mapper;
     private InvestTools tools;
 
     @BeforeEach
     void setUp() {
         market = mock(MarketDataService.class);
         valuationService = mock(ValuationApplicationService.class);
+        screening = mock(com.portfolio.invest.application.screening.ScreeningApplicationService.class);
+        financialQuery = mock(com.portfolio.invest.application.market.FinancialQueryService.class);
+        industry = mock(com.portfolio.invest.application.industry.IndustryApplicationService.class);
         // 复刻 Spring Boot 对 ObjectMapper 的配置（JavaTimeModule + ISO 日期，不写时间戳）
-        ObjectMapper mapper = new ObjectMapper();
+        mapper = new ObjectMapper();
         mapper.registerModule(new JavaTimeModule());
         mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-        tools = new InvestTools(market, valuationService, mapper);
+        tools = new InvestTools(market, valuationService, screening, financialQuery, industry, mapper);
     }
 
     private static Quote quote(String code, Double pe, Double pb) {
@@ -334,5 +342,180 @@ class InvestToolsTest {
 
         assertThat(emitted[0]).as("失败不 emit（SSE 无 ChartSpec）").isNull();
         assertThat(result.getOutput().get(0).toString()).contains("\"error\"");
+    }
+
+    @DisplayName("screen_stocks：条件齐全 emit 表格并返回摘要，Double→BigDecimal 换算与默认排序")
+    @Test
+    void givenResults_whenScreenStocks_thenEmitsTableAndReturnsSummary() throws Exception {
+        var result = new com.portfolio.invest.domain.screening.StockScreeningResult(
+                "600519", "贵州茅台", "801140", "白酒",
+                new BigDecimal("25.0"), new BigDecimal("8.0"), null,
+                new BigDecimal("32.0"), null, null, null, null, null, null,
+                new BigDecimal("2.1E12"), null);
+        when(screening.screen(any())).thenReturn(List.of(result));
+        ToolResultBlock[] emitted = new ToolResultBlock[1];
+
+        ToolResultBlock out = tools.screenStocks(
+                20.0, null, null, 15.0, null, null, null, null, null, null, null, null,
+                null, null, null, null, 10, block -> emitted[0] = block);
+
+        assertThat(emitted[0]).as("emit 全量 spec").isNotNull();
+        String emitText = emitted[0].getOutput().get(0).toString();
+        assertThat(emitText).contains("\"type\":\"table\"").contains("筛选结果（1 只）");
+        assertThat(out).isNotNull();
+        assertThat(out.getOutput().get(0).toString()).contains("贵州茅台");
+        verify(screening).screen(org.mockito.ArgumentMatchers.argThat(c ->
+                c.peTtmMax().compareTo(new BigDecimal("20")) == 0
+                        && c.roeMin().compareTo(new BigDecimal("15")) == 0 && c.limit() == 10
+                        && c.sortBy().equals("total_mv") && c.sortDirection() == SortDirection.DESC));
+    }
+
+    @DisplayName("screen_stocks 无任何条件：拦截不调服务，返回错误 JSON")
+    @Test
+    void givenNoConditions_whenScreenStocks_thenRejectsWithoutCallingService() {
+        ToolResultBlock out = tools.screenStocks(
+                null, null, null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, block -> { });
+
+        org.mockito.Mockito.verifyNoInteractions(screening);
+        assertThat(out.getOutput().get(0).toString()).contains("至少").contains("条件");
+    }
+
+    @DisplayName("screen_stocks 白名单外排序：拦截返回错误 JSON")
+    @Test
+    void givenInvalidSort_whenScreenStocks_thenRejects() {
+        ToolResultBlock out = tools.screenStocks(
+                20.0, null, null, null, null, null, null, null, null, null, null, null,
+                null, null, "evil_col; drop", null, null, block -> { });
+
+        org.mockito.Mockito.verifyNoInteractions(screening);
+        assertThat(out.getOutput().get(0).toString()).contains("error");
+    }
+
+    @DisplayName("screen_stocks 空结果：不 emit，安全摘要")
+    @Test
+    void givenEmptyResults_whenScreenStocks_thenNoEmitSafeSummary() {
+        when(screening.screen(any())).thenReturn(List.of());
+        ToolResultBlock[] emitted = new ToolResultBlock[1];
+
+        ToolResultBlock out = tools.screenStocks(
+                20.0, null, null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, block -> emitted[0] = block);
+
+        assertThat(emitted[0]).as("空结果不 emit 空表").isNull();
+        assertThat(out.getOutput().get(0).toString()).contains("无符合条件");
+    }
+
+    @DisplayName("analyze_financials：emit 趋势表，摘要含杜邦三因子")
+    @Test
+    void givenRecordsAndDupont_whenAnalyzeFinancials_thenEmitsTrendAndDupontSummary() {
+        var rec = new com.portfolio.invest.domain.market.FinancialRecord(
+                LocalDate.parse("2026-06-30"), 32.0, 21.0, 91.0, 32.0, 4.0, 10.0, 12.0,
+                new BigDecimal("4.2E10"));
+        when(financialQuery.analyze("600519", 12)).thenReturn(new com.portfolio.invest.application.market.FinancialAnalysisView(
+                List.of(rec),
+                new Financials("600519", "贵州茅台", 25.0, 8.0, List.of(new FinancialIndicator(
+                        "2026-06-30", 23.0, 160.0, 4.2e10, 1.05e10, 32.0, 91.0))),
+                com.portfolio.invest.domain.market.DuPontAnalysis.of(0.25, 21.0, 32.0, 32.0,
+                        "2026-06-30", "2026-06-30")));
+        ToolResultBlock[] emitted = new ToolResultBlock[1];
+
+        ToolResultBlock out = tools.analyzeFinancials("600519", block -> emitted[0] = block);
+
+        assertThat(emitted[0]).as("emit 趋势表").isNotNull();
+        assertThat(emitted[0].getOutput().get(0).toString()).contains("财务趋势");
+        assertThat(out.getOutput().get(0).toString()).contains("净利率 25.0%").contains("权益乘数 1.47");
+    }
+
+    @DisplayName("analyze_financials 库表空：不 emit，降级提示趋势数据积累中")
+    @Test
+    void givenEmptyRecords_whenAnalyzeFinancials_thenNoEmitDegradedSummary() {
+        when(financialQuery.analyze("000001", 12)).thenReturn(new com.portfolio.invest.application.market.FinancialAnalysisView(
+                List.of(), new Financials("000001", "平安银行", 5.0, 0.6, List.of(new FinancialIndicator(
+                        "2026-06-30", 1.5, 20.0, 3.0e10, 2.0e9, 10.0, 40.0))), null));
+        ToolResultBlock[] emitted = new ToolResultBlock[1];
+
+        ToolResultBlock out = tools.analyzeFinancials("000001", block -> emitted[0] = block);
+
+        assertThat(emitted[0]).as("库表空不 emit").isNull();
+        assertThat(out.getOutput().get(0).toString()).contains("数据积累中");
+    }
+
+    @DisplayName("analyze_financials 库表空且 live 指标为空：纯降级文案不 IOOBE")
+    @Test
+    void givenEmptyRecordsAndEmptyLiveIndicators_whenAnalyzeFinancials_thenPureDegradedSummary() {
+        when(financialQuery.analyze("301999", 12)).thenReturn(new com.portfolio.invest.application.market.FinancialAnalysisView(
+                List.of(), new Financials("301999", "新股股份", null, null, List.of()), null));
+        ToolResultBlock[] emitted = new ToolResultBlock[1];
+
+        ToolResultBlock out = tools.analyzeFinancials("301999", block -> emitted[0] = block);
+
+        assertThat(emitted[0]).as("库表空不 emit").isNull();
+        assertThat(out.getOutput().get(0).toString())
+                .contains("数据积累中").doesNotContain("error");
+    }
+
+    private static com.portfolio.invest.application.industry.IndustryBoardView boardRow(String code, String name,
+                                                                                        String pePct) {
+        return new com.portfolio.invest.application.industry.IndustryBoardView(code, name,
+                new BigDecimal("6.5"), new BigDecimal("0.6"), new BigDecimal("11.0"),
+                new BigDecimal("5.0"), pePct == null ? null : new BigDecimal(pePct),
+                new BigDecimal("8.0"), null, null);
+    }
+
+    @DisplayName("analyze_industry 无参：emit 全行业板面表")
+    @Test
+    void givenBoard_whenAnalyzeIndustryNoCode_thenEmitsBoard() {
+        when(industry.board()).thenReturn(List.of(boardRow("801780", "银行", "15.0")));
+        ToolResultBlock[] emitted = new ToolResultBlock[1];
+
+        ToolResultBlock out = tools.analyzeIndustry(null, block -> emitted[0] = block);
+
+        assertThat(emitted[0]).as("emit 板面表").isNotNull();
+        assertThat(emitted[0].getOutput().get(0).toString()).contains("行业估值板面");
+        assertThat(out.getOutput().get(0).toString()).contains("银行");
+    }
+
+    @DisplayName("analyze_industry 带码：emit 头部企业表，摘要含估值位")
+    @Test
+    void givenCodeWithStocks_whenAnalyzeIndustry_thenEmitsStocksTable() {
+        when(industry.board()).thenReturn(List.of(boardRow("801780", "银行", "15.0")));
+        when(industry.stocks("801780", "total_mv", "desc", 15)).thenReturn(List.of(
+                new com.portfolio.invest.domain.industry.IndustryStock(
+                        "600036", "招商银行", new BigDecimal("8.0E11"),
+                        new BigDecimal("3.2E11"), LocalDate.parse("2026-06-30"),
+                        new BigDecimal("15.0"), new BigDecimal("7.0"), new BigDecimal("0.9"),
+                        new BigDecimal("4.8"), null)));
+        ToolResultBlock[] emitted = new ToolResultBlock[1];
+
+        ToolResultBlock out = tools.analyzeIndustry("801780", block -> emitted[0] = block);
+
+        assertThat(emitted[0]).as("emit 头部企业表").isNotNull();
+        assertThat(emitted[0].getOutput().get(0).toString()).contains("头部企业");
+        assertThat(out.getOutput().get(0).toString()).contains("银行").contains("招商银行");
+    }
+
+    @DisplayName("analyze_industry 板面空库：不 emit，安全摘要")
+    @Test
+    void givenEmptyBoard_whenAnalyzeIndustry_thenSafeSummary() {
+        when(industry.board()).thenReturn(List.of());
+        ToolResultBlock[] emitted = new ToolResultBlock[1];
+
+        ToolResultBlock out = tools.analyzeIndustry(null, block -> emitted[0] = block);
+
+        assertThat(emitted[0]).as("空库不 emit").isNull();
+        assertThat(out.getOutput().get(0).toString()).contains("暂无数据");
+    }
+
+    @DisplayName("analyze_industry 带码无板面行：不 emit，对齐行业码提示")
+    @Test
+    void givenCodeNotInBoard_whenAnalyzeIndustry_thenAlignmentHint() {
+        when(industry.board()).thenReturn(List.of(boardRow("801780", "银行", "15.0")));
+        ToolResultBlock[] emitted = new ToolResultBlock[1];
+
+        ToolResultBlock out = tools.analyzeIndustry("999999", block -> emitted[0] = block);
+
+        assertThat(emitted[0]).as("无板面行不 emit").isNull();
+        assertThat(out.getOutput().get(0).toString()).contains("行业码").contains("板面");
     }
 }

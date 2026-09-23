@@ -1,5 +1,8 @@
 package com.portfolio.invest.agent;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.portfolio.invest.application.allocation.AllocationApplicationService;
+import com.portfolio.invest.application.portfolio.PortfolioApplicationService;
 import com.portfolio.invest.domain.mcp.*;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
@@ -19,16 +22,26 @@ public class UserToolkitFactory {
     private final InvestTools investTools;
     private final McpConfigRepository repository;
     private final McpClientPool clientPool;
+    private final PortfolioApplicationService portfolioService;
+    private final AllocationApplicationService allocationService;
+    private final ObjectMapper mapper;
 
-    public UserToolkitFactory(InvestTools investTools, McpConfigRepository repository, McpClientPool clientPool) {
+    public UserToolkitFactory(InvestTools investTools, McpConfigRepository repository, McpClientPool clientPool,
+                              PortfolioApplicationService portfolioService,
+                              AllocationApplicationService allocationService, ObjectMapper mapper) {
         this.investTools = investTools;
         this.repository = repository;
         this.clientPool = clientPool;
+        this.portfolioService = portfolioService;
+        this.allocationService = allocationService;
+        this.mapper = mapper;
     }
 
     public Toolkit build(Long userId) {
         Toolkit toolkit = new Toolkit();
         toolkit.registerTool(investTools);
+        // 用户态工具（F09/F10）：userId 经构造注入，不进 LLM 上下文
+        toolkit.registerTool(new UserInvestTools(userId, portfolioService, allocationService, mapper));
         // 预填内置工具名，防 MCP 同名工具静默覆盖内置（ToolRegistry.register 为 Map.put 后写覆盖）
         Set<String> names = new HashSet<>(toolkit.getToolNames());
         for (McpProvider provider : repository.findEnabledProviders()) {

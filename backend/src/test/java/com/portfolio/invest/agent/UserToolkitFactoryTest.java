@@ -56,7 +56,10 @@ class UserToolkitFactoryTest {
         when(client.listTools()).thenReturn(Mono.just(mcpTools));
         when(client.getName()).thenReturn("tushare");
 
-        return new UserToolkitFactory(investTools, repository, clientPool).build(1L);
+        return new UserToolkitFactory(investTools, repository, clientPool,
+                mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
+                mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
+                new com.fasterxml.jackson.databind.ObjectMapper()).build(1L);
     }
 
     @DisplayName("readOnlyHint=true 的 MCP 工具装配为只读（不触发审批）")
@@ -120,7 +123,10 @@ class UserToolkitFactoryTest {
         when(clientPool.acquire(provider, endpoint, "token")).thenReturn(client);
         when(client.listTools()).thenReturn(Mono.just(List.of(tool("trade_cal", annotations(true)))));
 
-        Toolkit toolkit = new UserToolkitFactory(investTools, repository, clientPool).build(1L);
+        Toolkit toolkit = new UserToolkitFactory(investTools, repository, clientPool,
+                mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
+                mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
+                new com.fasterxml.jackson.databind.ObjectMapper()).build(1L);
 
         assertThat(toolkit.getTool("trade_cal")).as("配置缺失 → MCP 工具不注册").isNull();
         assertThat(toolkit.getTool("search_stock")).as("内置工具不受影响").isNotNull();
@@ -146,7 +152,10 @@ class UserToolkitFactoryTest {
         when(clientPool.acquire(provider, endpoint, "token")).thenReturn(client);
         when(client.listTools()).thenReturn(Mono.just(List.of(tool("trade_cal", annotations(true)))));
 
-        Toolkit toolkit = new UserToolkitFactory(investTools, repository, clientPool).build(1L);
+        Toolkit toolkit = new UserToolkitFactory(investTools, repository, clientPool,
+                mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
+                mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
+                new com.fasterxml.jackson.databind.ObjectMapper()).build(1L);
 
         assertThat(toolkit.getTool("trade_cal")).as("配置停用 → MCP 工具不注册").isNull();
         assertThat(toolkit.getTool("search_stock")).as("内置工具不受影响").isNotNull();
@@ -173,7 +182,10 @@ class UserToolkitFactoryTest {
         when(clientPool.acquire(provider, endpoint, null)).thenReturn(client);
         when(client.listTools()).thenReturn(Mono.just(List.of(tool("trade_cal", annotations(true)))));
 
-        Toolkit toolkit = new UserToolkitFactory(investTools, repository, clientPool).build(1L);
+        Toolkit toolkit = new UserToolkitFactory(investTools, repository, clientPool,
+                mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
+                mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
+                new com.fasterxml.jackson.databind.ObjectMapper()).build(1L);
 
         assertThat(toolkit.getTool("trade_cal")).as("密钥缺失 → MCP 工具不注册").isNull();
         assertThat(toolkit.getTool("search_stock")).as("内置工具不受影响").isNotNull();
@@ -194,7 +206,10 @@ class UserToolkitFactoryTest {
         when(repository.findByUserIdAndProviderId(1L, 2L)).thenReturn(Optional.of(config));
         when(repository.findEnabledEndpointsByProviderId(2L)).thenReturn(List.of());
 
-        Toolkit toolkit = new UserToolkitFactory(investTools, repository, clientPool).build(1L);
+        Toolkit toolkit = new UserToolkitFactory(investTools, repository, clientPool,
+                mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
+                mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
+                new com.fasterxml.jackson.databind.ObjectMapper()).build(1L);
 
         assertThat(toolkit.getTool("search_stock")).as("内置工具不受影响").isNotNull();
         verifyNoInteractions(clientPool);
@@ -223,9 +238,31 @@ class UserToolkitFactoryTest {
         when(clientB.listTools()).thenReturn(Mono.just(List.of(tool("b_tool", annotations(true)))));
         when(clientB.getName()).thenReturn("tushare-b");
 
-        Toolkit toolkit = new UserToolkitFactory(investTools, repository, clientPool).build(1L);
+        Toolkit toolkit = new UserToolkitFactory(investTools, repository, clientPool,
+                mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
+                mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
+                new com.fasterxml.jackson.databind.ObjectMapper()).build(1L);
 
         assertThat(toolkit.getTool("b_tool")).as("正常端点 B 的工具照常注册（单点失败不拖垮装配）").isNotNull();
         assertThat(toolkit.getTool("search_stock")).as("内置工具不受影响").isNotNull();
+    }
+
+    @DisplayName("装配后内置工具含 5 新工具（无 MCP 环境共 12 个）")
+    @Test
+    void givenInvestToolsAndUserServices_whenBuild_thenRegistersUserTools() {
+        InvestTools investTools = mock(InvestTools.class);
+        McpConfigRepository repository = mock(McpConfigRepository.class);
+        McpClientPool clientPool = mock(McpClientPool.class);
+        when(repository.findEnabledProviders()).thenReturn(List.of());
+
+        Toolkit toolkit = new UserToolkitFactory(investTools, repository, clientPool,
+                mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
+                mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
+                new com.fasterxml.jackson.databind.ObjectMapper()).build(1L);
+
+        var names = toolkit.getToolNames();
+        assertThat(names).contains("screen_stocks", "analyze_financials", "analyze_industry",
+                "analyze_portfolio", "suggest_allocation");
+        assertThat(names).as("7 既有 + 5 新（inline mock 保留 @Tool 注解扫描）").hasSize(12);
     }
 }

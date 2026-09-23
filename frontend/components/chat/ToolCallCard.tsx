@@ -10,11 +10,18 @@ const TOOL_LABELS: Record<string, string> = {
   get_news: "个股新闻",
   get_market_overview: "大盘速览",
   get_valuation: "估值查询",
+  screen_stocks: "筛选选股",
+  analyze_portfolio: "持仓分析",
+  suggest_allocation: "配置建议",
+  analyze_financials: "财报解读",
+  analyze_industry: "行业分析",
 };
 
 /** 无参工具在参数为空时显示的友好文案 */
 const TOOL_EMPTY_SUMMARY: Record<string, string> = {
   get_valuation: "查询市场估值",
+  analyze_portfolio: "读取我的持仓组合",
+  suggest_allocation: "基于风险测评给配置建议",
 };
 
 function labelOf(name: string) {

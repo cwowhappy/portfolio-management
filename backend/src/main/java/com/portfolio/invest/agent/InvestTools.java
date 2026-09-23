@@ -1,9 +1,11 @@
 package com.portfolio.invest.agent;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.portfolio.invest.agent.chart.ChartSpecs;
 import com.portfolio.invest.domain.market.Financials;
+import com.portfolio.invest.domain.screening.ScreeningCriteria;
+import com.portfolio.invest.domain.screening.SortDirection;
+import com.portfolio.invest.domain.screening.StockScreeningResult;
 import com.portfolio.invest.domain.market.KlineBar;
 import com.portfolio.invest.domain.market.MarketDataException;
 import com.portfolio.invest.domain.market.MarketOverview;
@@ -14,9 +16,8 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolEmitter;
 import io.agentscope.core.tool.ToolParam;
-import java.util.LinkedHashMap;
+import java.math.BigDecimal;
 import java.util.List;
-import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -29,14 +30,23 @@ public class InvestTools {
 
     private final MarketDataService market;
     private final ValuationApplicationService valuationApplicationService;
+    private final com.portfolio.invest.application.screening.ScreeningApplicationService screening;
+    private final com.portfolio.invest.application.market.FinancialQueryService financialQuery;
+    private final com.portfolio.invest.application.industry.IndustryApplicationService industry;
     private final ObjectMapper mapper;
 
     public InvestTools(
             MarketDataService market,
             ValuationApplicationService valuationApplicationService,
+            com.portfolio.invest.application.screening.ScreeningApplicationService screening,
+            com.portfolio.invest.application.market.FinancialQueryService financialQuery,
+            com.portfolio.invest.application.industry.IndustryApplicationService industry,
             ObjectMapper mapper) {
         this.market = market;
         this.valuationApplicationService = valuationApplicationService;
+        this.screening = screening;
+        this.financialQuery = financialQuery;
+        this.industry = industry;
         // 注入 Spring Boot 已配置的 ObjectMapper（统一序列化行为；日期已在 ChartSpecs 预转为 ISO 字符串）。
         this.mapper = mapper;
     }
@@ -165,50 +175,153 @@ public class InvestTools {
         });
     }
 
+    @Tool(
+            name = "screen_stocks",
+            description = "多条件筛选A股（全部条件 AND 组合，至少给一个）：PE(TTM)/PB/股息率/ROE%/ROA%/毛利率%/资产负债率%/流动比率/营收同比%/净利同比%/总市值下限(元)/换手率%，可叠加申万行业码（如 801140）与指数成分（000300 沪深300 / 000905 中证500）。结果表格 + 摘要。",
+            readOnly = true,
+            concurrencySafe = true)
+    public ToolResultBlock screenStocks(
+            @ToolParam(name = "peTtmMax", description = "PE(TTM) 上限，如 20") Double peTtmMax,
+            @ToolParam(name = "pbMax", description = "PB 上限") Double pbMax,
+            @ToolParam(name = "dividendYieldMin", description = "股息率下限 %，如 3") Double dividendYieldMin,
+            @ToolParam(name = "roeMin", description = "ROE 下限 %，如 15") Double roeMin,
+            @ToolParam(name = "roaMin", description = "ROA 下限 %") Double roaMin,
+            @ToolParam(name = "grossMarginMin", description = "毛利率下限 %") Double grossMarginMin,
+            @ToolParam(name = "debtToAssetsMax", description = "资产负债率上限 %，如 60") Double debtToAssetsMax,
+            @ToolParam(name = "currentRatioMin", description = "流动比率下限，如 1.5") Double currentRatioMin,
+            @ToolParam(name = "revenueYoyMin", description = "营收同比下限 %") Double revenueYoyMin,
+            @ToolParam(name = "netprofitYoyMin", description = "净利同比下限 %") Double netprofitYoyMin,
+            @ToolParam(name = "totalMvMin", description = "总市值下限（元），如 1e10=百亿") Double totalMvMin,
+            @ToolParam(name = "turnoverRateMin", description = "换手率下限 %") Double turnoverRateMin,
+            @ToolParam(name = "industryCode", description = "申万一级行业码，可空") String industryCode,
+            @ToolParam(name = "indexCode", description = "指数成分范围：000300/000905，可空") String indexCode,
+            @ToolParam(name = "sortBy", description = "排序字段，默认 total_mv") String sortBy,
+            @ToolParam(name = "sortDirection", description = "asc/desc，默认 desc") String sortDirection,
+            @ToolParam(name = "limit", description = "返回条数，默认 20，最大 50") Integer limit,
+            ToolEmitter emitter) {
+        return runBlock(() -> {
+            String sort = sortBy == null || sortBy.isBlank() ? "total_mv" : sortBy;
+            if (!ScreeningCriteria.SORTABLE_FIELDS.contains(sort)) {
+                return ToolResultBlock.text(ToolResultBlocks.toError(mapper, "不支持的排序字段: " + sort,
+                        "可用: " + ScreeningCriteria.SORTABLE_FIELDS));
+            }
+            ScreeningCriteria criteria = new ScreeningCriteria(
+                    bd(peTtmMax), bd(pbMax), bd(dividendYieldMin), bd(roeMin), bd(roaMin),
+                    bd(grossMarginMin), bd(debtToAssetsMax), bd(currentRatioMin), bd(revenueYoyMin),
+                    bd(netprofitYoyMin), bd(totalMvMin), bd(turnoverRateMin),
+                    industryCode == null || industryCode.isBlank() ? null : industryCode,
+                    indexCode == null || indexCode.isBlank() ? null : indexCode,
+                    sort,
+                    "asc".equalsIgnoreCase(sortDirection) ? SortDirection.ASC : SortDirection.DESC,
+                    Math.max(1, Math.min(limit == null ? 20 : limit, 50)));
+            if (!criteria.hasAnyCondition()) {
+                return ToolResultBlock.text(ToolResultBlocks.toError(mapper, "至少需要一个筛选条件",
+                        "请给出 PE/ROE/市值等至少一个条件"));
+            }
+            List<StockScreeningResult> results = screening.screen(criteria);
+            if (results.isEmpty()) {
+                return ToolResultBlock.text(ChartSpecs.screeningSummary(results)); // 空结果不 emit 空表
+            }
+            emitter.emit(ToolResultBlock.builder()
+                    .output(TextBlock.builder().text(mapper.writeValueAsString(
+                            ChartSpecs.screeningTable(results))).build())
+                    .build());
+            return ToolResultBlock.text(ChartSpecs.screeningSummary(results));
+        });
+    }
+
+    /** Double → BigDecimal（null 透传）。 */
+    private static BigDecimal bd(Double v) {
+        return v == null ? null : BigDecimal.valueOf(v);
+    }
+
+    @Tool(
+            name = "analyze_financials",
+            description = "财报解读：杜邦三因子拆解（净利率×总资产周转率×权益乘数）+ 近 12 季趋势表（ROE/ROA/毛利率/资产负债率/营收及同比）。用户问「XX 赚钱能力如何/财报怎么样」时调用；股票名称先用 search_stock 换码。",
+            readOnly = true,
+            concurrencySafe = true)
+    public ToolResultBlock analyzeFinancials(
+            @ToolParam(name = "code", description = "6位A股代码，如 600519") String code,
+            ToolEmitter emitter) {
+        return runBlock(() -> {
+            com.portfolio.invest.application.market.FinancialAnalysisView view = financialQuery.analyze(code, 12);
+            if (view.records().isEmpty()) {
+                // 库表空：降级——live 财务摘要 + 趋势积累提示，不 emit 空表。
+                // live 指标为空（东财返回 data:[] 的新股）时 financialsSummary 会 get(0) IOOBE，须防护
+                String live = (view.live() == null || view.live().indicators().isEmpty())
+                        ? "" : ChartSpecs.financialsSummary(view.live()) + " ";
+                return ToolResultBlock.text(live + "库表趋势数据积累中（新股或未采集），暂无法做杜邦拆解。");
+            }
+            String name = view.live() == null ? code : view.live().name();
+            emitter.emit(ToolResultBlock.builder()
+                    .output(TextBlock.builder().text(mapper.writeValueAsString(
+                            ChartSpecs.financialTrendTable(code, name, view.records()))).build())
+                    .build());
+            return ToolResultBlock.text(
+                    ChartSpecs.financialTrendSummary(name, view.records().size(), view.duPont()));
+        });
+    }
+
+    @Tool(
+            name = "analyze_industry",
+            description = "行业分析：不传行业码返回全行业估值板面（PE/PB 及历史分位排名）；传申万一级码（如 801780 银行）返回该行业估值位 + 头部企业表。用户问「XX 行业怎么样/哪些行业便宜」时调用；行业名先经无参板面对齐行业码再下钻。",
+            readOnly = true,
+            concurrencySafe = true)
+    public ToolResultBlock analyzeIndustry(
+            @ToolParam(name = "industryCode", description = "申万一级行业码，可空（空=返回全行业板面）") String industryCode,
+            ToolEmitter emitter) {
+        return runBlock(() -> {
+            List<com.portfolio.invest.application.industry.IndustryBoardView> board = industry.board();
+            if (board.isEmpty()) {
+                return ToolResultBlock.text(ChartSpecs.industryBoardSummary(board)); // 冷库安全摘要
+            }
+            if (industryCode == null || industryCode.isBlank()) {
+                emitter.emit(ToolResultBlock.builder()
+                        .output(TextBlock.builder().text(mapper.writeValueAsString(
+                                ChartSpecs.industryBoardTable(board))).build())
+                        .build());
+                return ToolResultBlock.text(ChartSpecs.industryBoardSummary(board));
+            }
+            var row = board.stream()
+                    .filter(b -> industryCode.equals(b.industryCode())).findFirst().orElse(null);
+            if (row == null) {
+                // 板面无该行即码未对齐——先返回提示，不调 stocks（service 对不存在码抛 INDUSTRY_NOT_FOUND，
+                // 会落进通用错误兜底丢失友好提示）
+                return ToolResultBlock.text(
+                        "行业码 %s 无板面/成分股数据（请先经板面对齐行业码）。".formatted(industryCode));
+            }
+            List<com.portfolio.invest.domain.industry.IndustryStock> stocks =
+                    industry.stocks(industryCode, "total_mv", "desc", 15);
+            if (stocks.isEmpty()) {
+                return ToolResultBlock.text(ChartSpecs.industryStocksSummary(row, stocks));
+            }
+            emitter.emit(ToolResultBlock.builder()
+                    .output(TextBlock.builder().text(mapper.writeValueAsString(
+                            ChartSpecs.industryStocksTable(row.industryName(), stocks))).build())
+                    .build());
+            return ToolResultBlock.text(ChartSpecs.industryStocksSummary(row, stocks));
+        });
+    }
+
     private String run(JsonSupplier supplier) {
         try {
             return supplier.get();
         } catch (MarketDataException e) {
             log.warn("工具数据获取失败: code={}, msg={}", e.getCode(), e.getMessage());
-            return toError(e.getMessage(), "数据源暂不可用，请稍后重试或换个问法");
+            return ToolResultBlocks.toError(mapper, e.getMessage(), "数据源暂不可用，请稍后重试或换个问法");
         } catch (Exception e) {
             log.error("工具执行异常", e);
-            return toError("工具执行失败", "请稍后重试");
+            return ToolResultBlocks.toError(mapper, "工具执行失败", "请稍后重试");
         }
     }
 
-    /** 用 ObjectMapper 序列化错误，避免手工拼 JSON 导致非法输出。 */
-    private String toError(String message, String hint) {
-        try {
-            Map<String, String> body = new LinkedHashMap<>();
-            body.put("error", message);
-            body.put("hint", hint);
-            return mapper.writeValueAsString(body);
-        } catch (JsonProcessingException e) {
-            return "{\"error\":\"工具执行失败\",\"hint\":\"请稍后重试\"}";
-        }
-    }
-
-    /** 双通道版 run()：失败不 emit，返回错误 JSON 文本（前端 ChartCard 嗅探降级）。 */
-    private ToolResultBlock runBlock(BlockSupplier supplier) {
-        try {
-            return supplier.get();
-        } catch (MarketDataException e) {
-            log.warn("工具数据获取失败: code={}, msg={}", e.getCode(), e.getMessage());
-            return ToolResultBlock.text(toError(e.getMessage(), "数据源暂不可用，请稍后重试或换个问法"));
-        } catch (Exception e) {
-            log.error("工具执行异常", e);
-            return ToolResultBlock.text(toError("工具执行失败", "请稍后重试"));
-        }
+    /** 双通道版 run()：失败不 emit，返回错误 JSON 文本（前端 ChartCard 嗅探降级）。共享自 ToolResultBlocks。 */
+    private ToolResultBlock runBlock(ToolResultBlocks.BlockSupplier supplier) {
+        return ToolResultBlocks.runBlock(log, mapper, supplier);
     }
 
     @FunctionalInterface
     private interface JsonSupplier {
         String get() throws Exception;
-    }
-
-    @FunctionalInterface
-    private interface BlockSupplier {
-        ToolResultBlock get() throws Exception;
     }
 }

@@ -50,6 +50,8 @@ elif [ -z "${ADMIN_USERNAME:-}" ] || [ -z "${ADMIN_PASSWORD:-}" ]; then
   echo "  - 未设置 ADMIN_USERNAME/ADMIN_PASSWORD，跳过对话冒烟（/agui/run 需登录，在 .env 配置后重跑）"
 else
   COOKIE_JAR=$(mktemp)
+  # fail() 即 exit 1：EXIT trap 保证管理员会话 cookie 不因任何断言失败路径残留在磁盘
+  trap 'rm -f "$COOKIE_JAR"' EXIT
   curl -s --max-time 15 -c "$COOKIE_JAR" -X POST "$BASE/api/auth/login" \
     -H "Content-Type: application/json" \
     -d "{\"username\":\"$ADMIN_USERNAME\",\"password\":\"$ADMIN_PASSWORD\"}" \
@@ -57,8 +59,25 @@ else
   RESP=$(curl -s --max-time 120 -b "$COOKIE_JAR" -X POST "$BASE/agui/run" \
     -H "Content-Type: application/json" \
     -d "{\"threadId\":\"smoke\",\"runId\":\"smoke-1\",\"messages\":[{\"id\":\"m1\",\"role\":\"user\",\"content\":\"用一句话介绍你自己\"}],\"state\":{},\"tools\":[]}")
-  rm -f "$COOKIE_JAR"
   echo "$RESP" | grep -q "TEXT_MESSAGE" && pass "Agent 流式回答" || fail "Agent 回答异常: $RESP"
+
+  # MS-12：5 个新工具链路（明确指令降低模型不调工具的偶发；「只用内置工具」防 LLM 顺手
+  # 调 MCP 工具触发 HITL 审批挂起（sw_daily 实测）；断言 AG-UI 工具调用事件）
+  tool_smoke() {
+    local run_id="$1" question="$2" label="$3"
+    local resp
+    resp=$(curl -s --max-time 120 -b "$COOKIE_JAR" -X POST "$BASE/agui/run" \
+      -H "Content-Type: application/json" \
+      -d "{\"threadId\":\"smoke-ms12\",\"runId\":\"$run_id\",\"messages\":[{\"id\":\"m-$run_id\",\"role\":\"user\",\"content\":\"$question\"}],\"state\":{},\"tools\":[]}")
+    echo "$resp" | grep -q "TOOL_CALL_START" && pass "$label 工具调用" || fail "$label 未观察到工具调用: $(echo "$resp" | head -c 200)"
+    echo "$resp" | grep -q "TEXT_MESSAGE" && pass "$label 文本回答" || fail "$label 无文本回答"
+  }
+  tool_smoke smoke-ms12-1 "只用内置工具：请调用筛选工具 screen_stocks，筛选 ROE 大于 15% 且 PE 小于 20 的股票" "筛选"
+  tool_smoke smoke-ms12-2 "只用内置工具：请调用持仓分析工具 analyze_portfolio 分析我的持仓组合" "持仓分析"
+  tool_smoke smoke-ms12-3 "只用内置工具：请调用配置建议工具 suggest_allocation 给我资产配置建议" "配置建议"
+  tool_smoke smoke-ms12-4 "只用内置工具：请调用财报解读工具 analyze_financials 分析 600519 的财报" "财报解读"
+  tool_smoke smoke-ms12-5 "只用内置工具：请调用行业分析工具 analyze_industry 看看银行行业" "行业分析"
+  rm -f "$COOKIE_JAR"
 fi
 
 echo "全部通过"
