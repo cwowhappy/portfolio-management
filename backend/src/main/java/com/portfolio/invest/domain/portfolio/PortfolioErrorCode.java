@@ -10,4 +10,5 @@ public final class PortfolioErrorCode {
     public static final String GROUP_HAS_CASH_FLOW = "GROUP_HAS_CASH_FLOW";
     public static final String INVALID_GROUP_TYPE = "INVALID_GROUP_TYPE";
     public static final String INVALID_INPUT = "INVALID_INPUT";
+    public static final String INSUFFICIENT_CASH = "INSUFFICIENT_CASH";
 }
