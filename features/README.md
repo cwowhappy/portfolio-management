@@ -42,7 +42,7 @@
 | [rebalancing-screening](rebalancing-screening/) | MS-08（已交付 2026-09-17，PR #36） | M07 资产组合配置、M09 价值投资筛选器 | `/allocation` `/screener`（扩展） |
 | [industry-listed-research](industry-listed-research/) | MS-09（已交付 2026-09-18，PR #38） | M10 行业研究中心 | `/industry`（扩展）`/industry/[industryCode]`（新增） |
 | [wiki-knowledge-base](wiki-knowledge-base/) | MS-11（已交付 2026-09-22，PR #40） | M13 投资知识库 | `/wiki`（新增）`/industry/[industryCode]`（扩展） |
-| [ai-research-tools-phase2](ai-research-tools-phase2/) | MS-12（已交付 2026-09-23，PR 待回填） | M05 AI 投研能力二期 | 对话内核扩展（5 个内置工具 + 提示词 + 工具卡） |
+| [ai-research-tools-phase2](ai-research-tools-phase2/) | MS-12（已交付 2026-09-23，PR #42） | M05 AI 投研能力二期 | 对话内核扩展（5 个内置工具 + 提示词 + 工具卡） |
 | [collector-design-optimize](collector-design-optimize/) | 跨 MS-01/05（重构） | M14 系统与工程 | — |
 | [mcp-integration](mcp-integration/) | MS-16（已交付 2026-09-07，PR #19） | M03 对话式投研问答、M14 系统与工程 | `/settings/mcp` |
 | [skill-integration](skill-integration/) | MS-17（已交付 2026-09-08，PR #20） | M03 对话式投研问答、M14 系统与工程 | `/settings/skills` |
