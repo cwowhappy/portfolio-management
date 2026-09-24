@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { afterEach, describe, it, expect } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
 import RiskStatsCards from "@/components/analytics/RiskStatsCards";
 import type { RiskStatsView } from "@/lib/types";
 
@@ -25,4 +25,16 @@ describe("RiskStatsCards", () => {
     render(<RiskStatsCards stats={{ ...stats, sharpe: null, calmar: null, mdd: null }} />);
     expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(3);
   });
+
+  it("sharpeRfFallback=true 时标注 rf=0 退化口径", () => {
+    render(<RiskStatsCards stats={{ ...stats, sharpeRfFallback: true }} />);
+    expect(screen.getByText("无 1Y 国债数据，rf=0 口径")).toBeTruthy();
+  });
+
+  it("sharpeRfFallback=false 时标注常规 rf 口径", () => {
+    render(<RiskStatsCards stats={stats} />);
+    expect(screen.getByText("rf=1Y 国债")).toBeTruthy();
+  });
 });
+
+afterEach(cleanup);

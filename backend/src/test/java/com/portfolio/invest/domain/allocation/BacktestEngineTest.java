@@ -42,6 +42,32 @@ class BacktestEngineTest {
                 .isInstanceOf(AllocationException.class);
     }
 
+    /** 规格 §七点名边界：全现金方案。CASH 两日各 +0.01%（0.0001）：
+     * 1000 → 1000×1.0001=1000.1 → 1000.1×1.0001=1000.20001。单资产 100% 权重的
+     * 再平衡重置是恒等变换（total×100/100=total），故 N=1 与永不两分支逐点相等。 */
+    @DisplayName("已知答案：全现金方案 1000→1000.1→1000.20001，再平衡对单资产无差异")
+    @Test
+    void givenAllCashPlan_whenRun_thenKnownAnswerAndRebalanceInvariant() {
+        Map<AssetClass, List<BacktestEngine.DatedReturn>> rets = Map.of(
+                AssetClass.CASH, List.of(dr(1, "0.0001"), dr(2, "0.0001")));
+        var weights = Map.of(AssetClass.CASH, bd("100"));
+        var never = BacktestEngine.run(weights, rets, 0);
+        assertThat(never.points()).hasSize(3); // 期初 1000（与首日收盘同日期）+ 两个交易日点
+        assertThat(never.points().get(0).value()).isCloseTo(bd("1000"), within(bd("0.000001")));
+        assertThat(never.points().get(1).value()).isCloseTo(bd("1000.1"), within(bd("0.000001")));
+        assertThat(never.points().get(2).value()).isCloseTo(bd("1000.20001"), within(bd("0.000001")));
+        var daily = BacktestEngine.run(weights, rets, 1);
+        assertThat(daily.points()).isEqualTo(never.points()); // 单资产：重置权重=恒等，两分支曲线全等
+    }
+
+    @DisplayName("守卫：RebalanceMode 交易日映射 QUARTERLY=63 / ANNUAL=252 / NEVER=0（常量笔误即红）")
+    @Test
+    void givenRebalanceModes_whenTradingDays_thenExactConstantMapping() {
+        assertThat(BacktestEngine.RebalanceMode.QUARTERLY.tradingDays()).isEqualTo(63);
+        assertThat(BacktestEngine.RebalanceMode.ANNUAL.tradingDays()).isEqualTo(252);
+        assertThat(BacktestEngine.RebalanceMode.NEVER.tradingDays()).isEqualTo(0);
+    }
+
     private static BacktestEngine.DatedReturn dr(int day, String ret) {
         return new BacktestEngine.DatedReturn(LocalDate.of(2026, 1, 4 + day), new BigDecimal(ret));
     }

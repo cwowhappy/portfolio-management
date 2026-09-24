@@ -21,10 +21,12 @@ public class BenchmarkIndustryWeightAdapter implements BenchmarkIndustryWeightPo
 
     @Override
     public Map<String, BigDecimal> industryWeights(String indexCode) {
-        // 成分股（快照，weight 百分数）JOIN 行业映射按行业求和；未映射成分股并入 UNMAPPED
+        // 成分股（快照，weight 百分数）JOIN 行业映射按行业求和；未映射成分股并入 UNMAPPED；
+        // weight 可空（V4 DDL 无 NOT NULL），组内全 NULL 时 SUM 返回 SQL NULL → COALESCE 0 兜底，
+        // 否则 HashMap.merge(null) NPE → attribution 500（部分 NULL 已由 SUM 语义忽略）
         Map<String, BigDecimal> percent = new LinkedHashMap<>();
         jdbc.query("""
-                SELECT COALESCE(m.industry_code, ?) AS industry, SUM(c.weight) AS w
+                SELECT COALESCE(m.industry_code, ?) AS industry, COALESCE(SUM(c.weight), 0) AS w
                 FROM index_constituent c
                 LEFT JOIN shenwan_industry_mapping m ON c.stock_code = m.stock_code
                 WHERE c.index_code = ?

@@ -94,7 +94,7 @@ public class GlobalExceptionHandler {
         HttpStatus status = switch (e.code()) {
             case com.portfolio.invest.domain.allocation.AllocationErrorCode.NOT_FOUND -> HttpStatus.NOT_FOUND;
             case com.portfolio.invest.domain.allocation.AllocationErrorCode.REITS_BACKTEST_UNSUPPORTED
-                    -> HttpStatus.UNPROCESSABLE_ENTITY;
+                    -> HttpStatus.UNPROCESSABLE_CONTENT;
             default -> HttpStatus.BAD_REQUEST;
         };
         return ResponseEntity.status(status).body(new ApiError(e.code(), e.getMessage()));

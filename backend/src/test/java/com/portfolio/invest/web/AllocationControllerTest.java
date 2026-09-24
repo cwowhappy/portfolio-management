@@ -240,7 +240,7 @@ class AllocationControllerTest {
         when(backtestService.backtest(eq(3L), isNull(), isNull(), any(), any()))
                 .thenThrow(new AllocationException(AllocationErrorCode.REITS_BACKTEST_UNSUPPORTED, "REITs 不支持"));
         mvc.perform(get("/api/allocation/backtest").principal(withUser(3L)))
-                .andExpect(status().isUnprocessableEntity())
+                .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("REITS_BACKTEST_UNSUPPORTED"));
     }
 }
