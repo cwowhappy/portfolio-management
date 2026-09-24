@@ -207,13 +207,13 @@ def test_seed_tasks_unknown_key_fails():
 
 
 def test_seed_tasks_real_yaml_defs_pass():
-    """真实 11 个任务 YAML 必须通过键校验（封闭契约与存量配置一一对应）。"""
+    """真实 13 个任务 YAML 必须通过键校验（封闭契约与存量配置一一对应）。"""
     conn = MagicMock()
     cur = conn.cursor.return_value.__enter__.return_value
     cur.fetchall.return_value = []  # reconcile 查询：无残留任务
     seed_tasks(conn, load_task_defs(str(TASKS_DIR)))
-    # 11 次 upsert + 1 次 reconcile all_codes 查询（无残留则不额外 disable）
-    assert cur.execute.call_count == 12
+    # 13 次 upsert + 1 次 reconcile all_codes 查询（无残留则不额外 disable）
+    assert cur.execute.call_count == 14
 
 
 # ---------------------------------------------------------------- S1 调度属性 / S3 异常兜底

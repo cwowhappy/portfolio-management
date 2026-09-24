@@ -209,6 +209,45 @@ class IndustryIndexCloseSource(Source):
         return pd.concat(frames, ignore_index=True)
 
 
+class BondIndexCloseSource(Source):
+    """中证全债指数收盘（MS-13 回测债券类代理）：tushare index_daily H11001.CSI。
+
+    该接口对债券指数仅 close 口径（open/high/low/amount 为 None，Task 0 探测实证）——本用途只需 close。
+    """
+
+    supports_range = True
+
+    def __init__(self, source_id, pro_factory):
+        self.source_id = source_id
+        self.pro_factory = pro_factory
+
+    def fetch(self, params):
+        pro = self.pro_factory()
+        start, end = _date_param(params, "start"), _date_param(params, "end")
+        df = pro.index_daily(ts_code="H11001.CSI", start_date=start, end_date=end)
+        df = df.rename(columns={"trade_date": "trading_day"})
+        df["index_code"], df["index_name"] = "H11001", "中证全债"
+        return df[["trading_day", "index_code", "index_name", "close"]]
+
+
+class GoldEtfCloseSource(Source):
+    """华安黄金ETF收盘（MS-13 回测黄金类代理，真实可投含费损）：tushare fund_daily 518880.SH。"""
+
+    supports_range = True
+
+    def __init__(self, source_id, pro_factory):
+        self.source_id = source_id
+        self.pro_factory = pro_factory
+
+    def fetch(self, params):
+        pro = self.pro_factory()
+        start, end = _date_param(params, "start"), _date_param(params, "end")
+        df = pro.fund_daily(ts_code="518880.SH", start_date=start, end_date=end)
+        df = df.rename(columns={"trade_date": "trading_day"})
+        df["index_code"], df["index_name"] = "518880", "华安黄金ETF"
+        return df[["trading_day", "index_code", "index_name", "close"]]
+
+
 class IndustryUniverseSource(Source):
     """全A估值快照 + 申万行业映射的 JOIN 源。
 

@@ -329,3 +329,47 @@ def test_industry_index_close_supports_range_for_backfill():
     from collector.sources.plugins import IndustryIndexCloseSource
 
     assert IndustryIndexCloseSource.supports_range is True
+
+
+# ------------------------------------------------- MS-13 中证全债/黄金ETF收盘 bond_index_close / gold_etf_close
+
+
+def test_bond_index_close_maps_columns(mocker):
+    from collector.sources.plugins import BondIndexCloseSource
+
+    class FakePro:
+        def index_daily(self, ts_code, start_date, end_date):
+            assert ts_code == "H11001.CSI"
+            return pd.DataFrame({"trade_date": ["20260923"], "close": [3456.7]})
+
+    df = BondIndexCloseSource("bond_index_close", pro_factory=lambda: FakePro()).fetch(
+        {"start": "2026-09-23", "end": "2026-09-23"}
+    )
+    assert set(df.columns) == {"trading_day", "index_code", "index_name", "close"}
+    assert df.iloc[0]["index_code"] == "H11001" and df.iloc[0]["index_name"] == "中证全债"
+
+
+def test_bond_index_close_supports_range_for_backfill():
+    from collector.sources.plugins import BondIndexCloseSource
+
+    assert BondIndexCloseSource.supports_range is True
+
+
+def test_gold_etf_close_maps_columns(mocker):
+    from collector.sources.plugins import GoldEtfCloseSource
+
+    class FakePro:
+        def fund_daily(self, ts_code, start_date, end_date):
+            assert ts_code == "518880.SH"
+            return pd.DataFrame({"trade_date": ["20260923"], "close": [7.89]})
+
+    df = GoldEtfCloseSource("gold_etf_close", pro_factory=lambda: FakePro()).fetch(
+        {"start": "2026-09-23", "end": "2026-09-23"}
+    )
+    assert df.iloc[0]["index_code"] == "518880" and df.iloc[0]["index_name"] == "华安黄金ETF"
+
+
+def test_gold_etf_close_supports_range_for_backfill():
+    from collector.sources.plugins import GoldEtfCloseSource
+
+    assert GoldEtfCloseSource.supports_range is True

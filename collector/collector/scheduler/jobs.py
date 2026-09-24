@@ -27,6 +27,8 @@ from collector.scheduler.calendar import TradingCalendar
 from collector.scheduler.runner import TaskRunner
 from collector.sources.plugins import (
     AllASpotBackupSource,
+    BondIndexCloseSource,
+    GoldEtfCloseSource,
     IndexCloseSource,
     IndexConstituentSource,
     IndexValuationSource,
@@ -284,6 +286,8 @@ def build_registries(config):
             "stock_financial": StockFinancialSource("stock_financial", pro_factory=pro),
             "index_close": IndexCloseSource("index_close", pro_factory=pro),
             "industry_index_close": IndustryIndexCloseSource("industry_index_close"),
+            "bond_index_close": BondIndexCloseSource("bond_index_close", pro_factory=pro),
+            "gold_etf_close": GoldEtfCloseSource("gold_etf_close", pro_factory=pro),
             "industry_valuation_backfill": IndustryValuationBackfillSource(
                 "industry_valuation_backfill", conn_factory=conn_factory
             ),
