@@ -371,6 +371,13 @@ export interface TradeStatsView {
   sellCount: number; winCount: number; winRate: string; avgWin: string; avgLoss: string;
   profitFactor: string | null; avgHoldingDays: string; bestPnl: string; worstPnl: string;
 }
+// 数值为后端 toPlainString 字符串（如 "0.2500000000"），null=「—」；recoveryDate null=回撤进行中。
+export interface RiskStatsView {
+  mdd: string | null; currentDrawdown: string | null;
+  peakDate: string | null; troughDate: string | null; recoveryDate: string | null;
+  drawdownDays: number; sharpe: string | null; sharpeRfFallback: boolean;
+  calmar: string | null; windowDays: number;
+}
 
 // —— 行业研究（/api/industry/**，与后端 IndustryController 的 DTO 对齐）——
 

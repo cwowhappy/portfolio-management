@@ -336,6 +336,14 @@ export const TradeStatsViewSchema = z.object({
   avgLoss: z.string(), profitFactor: z.string().nullable(), avgHoldingDays: z.string(),
   bestPnl: z.string(), worstPnl: z.string(),
 });
+// 数值字段对齐后端 toPlainString 契约（字符串、null=「—」）；recoveryDate null=回撤进行中；
+// sharpeRfFallback=true 表示 rf 端口空表、夏普按 rf=0 退化口径计算。
+export const RiskStatsViewSchema = z.object({
+  mdd: z.string().nullable(), currentDrawdown: z.string().nullable(),
+  peakDate: z.string().nullable(), troughDate: z.string().nullable(), recoveryDate: z.string().nullable(),
+  drawdownDays: z.number(), sharpe: z.string().nullable(), sharpeRfFallback: z.boolean(),
+  calmar: z.string().nullable(), windowDays: z.number(),
+});
 
 // —— 行业研究（/api/industry/**，与后端 IndustryController 的 DTO 对齐）——
 
