@@ -5,11 +5,15 @@ import com.portfolio.invest.domain.analytics.AnnualReturnCalculator;
 import com.portfolio.invest.domain.analytics.CashEvent;
 import com.portfolio.invest.domain.analytics.DailyPoint;
 import com.portfolio.invest.domain.analytics.DatedAmount;
+import com.portfolio.invest.domain.analytics.DatedIndex;
+import com.portfolio.invest.domain.analytics.DatedReturn;
 import com.portfolio.invest.domain.analytics.ExternalFlow;
 import com.portfolio.invest.domain.analytics.IndexClosePort;
 import com.portfolio.invest.domain.analytics.IrrCalculator;
 import com.portfolio.invest.domain.analytics.NavReconstructor;
 import com.portfolio.invest.domain.analytics.NavSeries;
+import com.portfolio.invest.domain.analytics.RiskFreeRatePort;
+import com.portfolio.invest.domain.analytics.RiskMetricsCalculator;
 import com.portfolio.invest.domain.analytics.StockClosePort;
 import com.portfolio.invest.domain.analytics.StockEvent;
 import com.portfolio.invest.domain.analytics.TradeStatsCalculator;
@@ -41,8 +45,8 @@ import java.util.TreeMap;
 import org.springframework.stereotype.Service;
 
 /**
- * 收益分析编排（MS-07）：取 portfolio 流水 → 单趟重放真实 Position 聚合 → 调 domain/analytics
- * 纯函数 → 组装四个只读 View。零落库（读侧重算），方法不加事务注解（对照 portfolio 读方法惯例）。
+ * 收益分析编排（MS-07/MS-13）：取 portfolio 流水 → 单趟重放真实 Position 聚合 → 调 domain/analytics
+ * 纯函数 → 组装只读 View。零落库（读侧重算），方法不加事务注解（对照 portfolio 读方法惯例）。
  */
 @Service
 public class AnalyticsApplicationService {
@@ -65,13 +69,16 @@ public class AnalyticsApplicationService {
     private final StockClosePort stockClose;
     private final IndexClosePort indexClose;
     private final MarketDataService marketData;
+    private final RiskFreeRatePort riskFree;
 
     public AnalyticsApplicationService(PortfolioRepository portfolioRepository,
-            StockClosePort stockClose, IndexClosePort indexClose, MarketDataService marketData) {
+            StockClosePort stockClose, IndexClosePort indexClose, MarketDataService marketData,
+            RiskFreeRatePort riskFree) {
         this.portfolioRepository = portfolioRepository;
         this.stockClose = stockClose;
         this.indexClose = indexClose;
         this.marketData = marketData;
+        this.riskFree = riskFree;
     }
 
     /** 总览卡：TWR 累计/年化、IRR（无解 → null；无外部现金流 → 退化累计收益并标注）、总资产、三基准同期收益与超额。 */
@@ -183,6 +190,57 @@ public class AnalyticsApplicationService {
         return Optional.of(new TradeStatsView(s.sellCount(), s.winCount(),
                 plain(s.winRate()), plain(s.avgWin()), plain(s.avgLoss()), plain(s.profitFactor()),
                 plain(s.avgHoldingDays()), plain(s.bestPnl()), plain(s.worstPnl())));
+    }
+
+    /** 风险指标（MS-13 F07/F08）：回撤基于 TWR 净值指数（spec §2.2），夏普 rf=1Y 国债。 */
+    public Optional<RiskStatsView> riskStats(Long userId) {
+        Optional<Replay> replay = replay(userId);
+        if (replay.isEmpty()) {
+            return Optional.empty();
+        }
+        List<DailyPoint> pts = reconstruct(replay.get()).points();
+        if (pts.size() < 2) {
+            return Optional.empty();
+        }
+        List<DatedIndex> idx = RiskMetricsCalculator.twrIndex(new NavSeries(pts), replay.get().externalFlows());
+        RiskMetricsCalculator.MddResult mdd = RiskMetricsCalculator.maxDrawdown(idx);
+        // rf 端口空表 → 空 map 直传（夏普内部退化 rf=0；字面 null 会 NPE，勿传）
+        SortedMap<LocalDate, BigDecimal> rf = riskFree.oneYearSeries(
+                pts.get(0).tradeDate(), pts.get(pts.size() - 1).tradeDate());
+        RiskMetricsCalculator.SharpeResult sharpe = RiskMetricsCalculator.sharpe(dailyReturns(idx), rf);
+        long windowDays = ChronoUnit.DAYS.between(pts.get(0).tradeDate(), pts.get(pts.size() - 1).tradeDate());
+        BigDecimal cumulative = TwrCalculator.cumulative(new NavSeries(pts), replay.get().externalFlows());
+        BigDecimal calmar = RiskMetricsCalculator.calmar(TwrCalculator.annualized(cumulative, windowDays), mdd);
+        long drawdownDays = mdd.peakDate() == null ? 0
+                : java.util.stream.IntStream.range(0, idx.size())
+                        .filter(i -> idx.get(i).date().equals(mdd.troughDate())).findFirst().orElse(0)
+                - java.util.stream.IntStream.range(0, idx.size())
+                        .filter(i -> idx.get(i).date().equals(mdd.peakDate())).findFirst().orElse(0);
+        return Optional.of(new RiskStatsView(
+                plain(mdd.mdd()),
+                plain(mdd.currentDrawdown()),
+                mdd.peakDate() == null ? null : mdd.peakDate().toString(),
+                mdd.troughDate() == null ? null : mdd.troughDate().toString(),
+                mdd.recoveryDate() == null ? null : mdd.recoveryDate().toString(),
+                drawdownDays,
+                plain(sharpe.value()),
+                sharpe.rfFallback(),
+                plain(calmar),
+                windowDays));
+    }
+
+    /** 指数序列 → 日收益序列（与 twrIndex 同窗口，跳过指数未动日）。 */
+    private static List<DatedReturn> dailyReturns(List<DatedIndex> idx) {
+        List<DatedReturn> out = new ArrayList<>();
+        for (int i = 1; i < idx.size(); i++) {
+            BigDecimal prev = idx.get(i - 1).index();
+            if (prev.signum() > 0) {
+                out.add(new DatedReturn(idx.get(i).date(),
+                        idx.get(i).index().divide(prev, java.math.MathContext.DECIMAL64)
+                                .subtract(BigDecimal.ONE)));
+            }
+        }
+        return out;
     }
 
     // ---------- 取数与重放 ----------

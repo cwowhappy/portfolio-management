@@ -13,6 +13,7 @@ import com.portfolio.invest.application.analytics.AnalyticsApplicationService;
 import com.portfolio.invest.application.analytics.AnnualReturnRow;
 import com.portfolio.invest.application.analytics.NavSeriesView;
 import com.portfolio.invest.application.analytics.OverviewView;
+import com.portfolio.invest.application.analytics.RiskStatsView;
 import com.portfolio.invest.application.analytics.TradeStatsView;
 import com.portfolio.invest.domain.user.User;
 import com.portfolio.invest.domain.user.UserRole;
@@ -203,5 +204,41 @@ class AnalyticsControllerTest {
 
         assertThat(result.getResponse().getContentAsString()).isEmpty();
         verify(service).tradeStats(1L);
+    }
+
+    // ———— risk-stats ————
+
+    @DisplayName("risk-stats有数据返回200及风险指标载荷")
+    @Test
+    void givenRiskStats_whenGetRiskStats_thenReturn200WithPayload() throws Exception {
+        RiskStatsView view = new RiskStatsView("0.25", "0", "2026-01-06", "2026-01-07",
+                "2026-01-08", 1L, "2.5", false, "1.5", 3L);
+        when(service.riskStats(1L)).thenReturn(Optional.of(view));
+
+        MvcResult result = mvc.perform(get("/api/analytics/risk-stats").principal(auth()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.mdd").value("0.25"))
+                .andExpect(jsonPath("$.recoveryDate").value("2026-01-08"))
+                .andExpect(jsonPath("$.drawdownDays").value(1))
+                .andExpect(jsonPath("$.sharpeRfFallback").value(false))
+                .andReturn();
+
+        RiskStatsView body = mapper.readValue(
+                result.getResponse().getContentAsString(StandardCharsets.UTF_8), RiskStatsView.class);
+        assertThat(body).isEqualTo(view);
+        verify(service).riskStats(1L);
+    }
+
+    @DisplayName("risk-stats无数据返回204空体")
+    @Test
+    void givenNoData_whenGetRiskStats_thenReturn204EmptyBody() throws Exception {
+        when(service.riskStats(1L)).thenReturn(Optional.empty());
+
+        MvcResult result = mvc.perform(get("/api/analytics/risk-stats").principal(auth()))
+                .andExpect(status().isNoContent())
+                .andReturn();
+
+        assertThat(result.getResponse().getContentAsString()).isEmpty();
+        verify(service).riskStats(1L);
     }
 }

@@ -4,6 +4,7 @@ import com.portfolio.invest.application.analytics.AnalyticsApplicationService;
 import com.portfolio.invest.application.analytics.AnnualReturnRow;
 import com.portfolio.invest.application.analytics.NavSeriesView;
 import com.portfolio.invest.application.analytics.OverviewView;
+import com.portfolio.invest.application.analytics.RiskStatsView;
 import com.portfolio.invest.application.analytics.TradeStatsView;
 import com.portfolio.invest.infrastructure.security.AuthenticatedUser;
 import java.util.List;
@@ -14,7 +15,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 收益分析四端点（MS-07）：overview/nav/trade-stats 无数据返回 204 空体
+ * 收益分析五端点（MS-07/MS-13）：overview/nav/trade-stats/risk-stats 无数据返回 204 空体
  * （沿 allocation latestAssessment 先例），annual 恒返回数组（无流水为空数组）。
  */
 @RestController
@@ -49,6 +50,13 @@ public class AnalyticsController {
     @GetMapping("/trade-stats")
     public ResponseEntity<TradeStatsView> tradeStats(Authentication auth) {
         return service.tradeStats(currentUserId(auth))
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.noContent().build());
+    }
+
+    @GetMapping("/risk-stats")
+    public ResponseEntity<RiskStatsView> riskStats(Authentication auth) {
+        return service.riskStats(currentUserId(auth))
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.noContent().build());
     }

@@ -2,6 +2,7 @@ package com.portfolio.invest.application.analytics;
 
 import com.portfolio.invest.application.market.MarketDataService;
 import com.portfolio.invest.domain.analytics.IndexClosePort;
+import com.portfolio.invest.domain.analytics.RiskFreeRatePort;
 import com.portfolio.invest.domain.analytics.StockClosePort;
 import com.portfolio.invest.domain.portfolio.CashTransaction;
 import com.portfolio.invest.domain.portfolio.CashTransactionType;
@@ -48,13 +49,16 @@ class AnalyticsApplicationServiceTest {
     private static final BigDecimal ELEVEN = new BigDecimal("11");
     private static final BigDecimal TWELVE = new BigDecimal("12");
     private static final BigDecimal ONE = new BigDecimal("1");
+    private static final BigDecimal NINE = new BigDecimal("9");
+    private static final BigDecimal THIRTEEN = new BigDecimal("13");
 
     private final PortfolioRepository repo = mock(PortfolioRepository.class);
     private final StockClosePort stockClose = mock(StockClosePort.class);
     private final IndexClosePort indexClose = mock(IndexClosePort.class);
     private final MarketDataService marketData = mock(MarketDataService.class);
+    private final RiskFreeRatePort riskFree = mock(RiskFreeRatePort.class);
     private final AnalyticsApplicationService service =
-            new AnalyticsApplicationService(repo, stockClose, indexClose, marketData);
+            new AnalyticsApplicationService(repo, stockClose, indexClose, marketData, riskFree);
 
     @DisplayName("无组合无流水 → empty（不创建组合）")
     @Test
@@ -277,12 +281,73 @@ class AnalyticsApplicationServiceTest {
                 within(new BigDecimal("0.0001")));
     }
 
+    // ———— riskStats ————
+
+    @DisplayName("已知答案：V 形流水 → MDD 25%（峰01-06 谷01-07 恢复01-08），夏普/Calmar 可算")
+    @Test
+    void givenVShapeFlows_whenRiskStats_thenMddTwentyFiveAndSharpeNotNull() {
+        // 手算链（twrIndex 口径）：转入 1000（01-02）→ 01-05 买 100 股@10 → 收盘 10/12/9/13 四日
+        // 净值 1000→1200→900→1300（买入后无新外部流）→ 指数 1 → 1.2 → 0.9 → 1.3
+        // 峰 1.2（01-06）谷 0.9（01-07）→ MDD = 1 − 0.9/1.2 = 0.25；01-08 指数 1.3 ≥ 1.2 → 已恢复
+        // 末点=全程最高 → 当前回撤 0；日收益 0.2/−0.25/+0.4̅4（3 条，sd≠0）→ 夏普可算；
+        // rf 空表（无国债数据）→ rfFallback=true 退化 rf=0（编排传端口返回值空 map，不传 null）；
+        // 累计 TWR = 0.3、窗口 3 天 → 年化 1.3^(365/3)−1 巨大但有限 → Calmar = 年化/0.25 > 0
+        when(repo.findPortfolioByUserId(1L)).thenReturn(Optional.of(
+                Portfolio.reconstitute(9L, 1L, CostMethod.WEIGHTED_AVG, Instant.now(), Instant.now())));
+        when(repo.findGroupsByPortfolioId(9L)).thenReturn(List.of(
+                HoldingGroup.reconstitute(5L, 9L, "主账户", GroupType.ACCOUNT, Instant.now())));
+        when(repo.findCashTransactionsByGroupId(5L)).thenReturn(List.of(
+                new CashTransaction(1L, 5L, CashTransactionType.DEPOSIT, new BigDecimal("1000"),
+                        JAN_02, null, Instant.now())));
+        Position pos = Position.create(9L, 5L, "600519", "贵州茅台", Instant.now());
+        when(repo.findPositionsByPortfolioId(9L)).thenReturn(List.of(pos));
+        when(repo.findTradesByPositionId(pos.id())).thenReturn(List.of(
+                new Trade(1L, pos.id(), TradeType.BUY, JAN_05,
+                        TEN, new BigDecimal("100"), BigDecimal.ZERO, Instant.now())));
+        when(repo.findDividendsByPositionId(pos.id())).thenReturn(List.of());
+        when(stockClose.closes(eq("600519"), any(), any())).thenReturn(vShapeCloses());
+        when(marketData.quoteBatch(anyList())).thenReturn(Map.of());
+        when(riskFree.oneYearSeries(JAN_05, JAN_08)).thenReturn(new TreeMap<>());
+
+        RiskStatsView v = service.riskStats(1L).orElseThrow();
+        assertThat(new BigDecimal(v.mdd())).isCloseTo(new BigDecimal("0.25"),
+                within(new BigDecimal("0.0001")));
+        assertThat(v.peakDate()).isEqualTo("2026-01-06");
+        assertThat(v.troughDate()).isEqualTo("2026-01-07");
+        assertThat(v.recoveryDate()).isEqualTo("2026-01-08");
+        assertThat(v.drawdownDays()).isEqualTo(1);
+        assertThat(new BigDecimal(v.currentDrawdown())).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(v.windowDays()).isEqualTo(3);
+        assertThat(v.sharpe()).isNotNull();
+        assertThat(v.sharpeRfFallback()).isTrue();
+        assertThat(v.calmar()).isNotNull();
+        assertThat(new BigDecimal(v.calmar())).isGreaterThan(BigDecimal.ZERO);
+    }
+
+    @DisplayName("无流水 → empty（Controller 204）")
+    @Test
+    void givenNoFlows_whenRiskStats_thenEmpty() {
+        when(repo.findPortfolioByUserId(1L)).thenReturn(Optional.empty());
+        assertThat(service.riskStats(1L)).isEmpty();
+        verify(repo, never()).insertPortfolioIfAbsent(any());
+    }
+
     /** 600519 三日收盘 10 → 11 → 12（补今日实时价的路径由 quoteBatch 空 Map 关闭）。 */
     private static TreeMap<LocalDate, BigDecimal> stockCloses() {
         TreeMap<LocalDate, BigDecimal> closes = new TreeMap<>();
         closes.put(JAN_05, TEN);
         closes.put(JAN_06, ELEVEN);
         closes.put(JAN_07, TWELVE);
+        return closes;
+    }
+
+    /** 600519 四日 V 形收盘 10 → 12 → 9 → 13（涨 20% → 跌 25% → 涨 44.4%）。 */
+    private static TreeMap<LocalDate, BigDecimal> vShapeCloses() {
+        TreeMap<LocalDate, BigDecimal> closes = new TreeMap<>();
+        closes.put(JAN_05, TEN);
+        closes.put(JAN_06, TWELVE);
+        closes.put(JAN_07, NINE);
+        closes.put(JAN_08, THIRTEEN);
         return closes;
     }
 }
