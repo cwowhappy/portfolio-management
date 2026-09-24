@@ -12,7 +12,7 @@ vi.mock("@/components/charts/EChart", () => ({
 
 vi.mock("@/lib/analyticsApi", async () => {
   const actual = await vi.importActual<typeof import("@/lib/analyticsApi")>("@/lib/analyticsApi");
-  return { ...actual, fetchOverview: vi.fn(), fetchNav: vi.fn(), fetchAnnual: vi.fn(), fetchTradeStats: vi.fn(), fetchRiskStats: vi.fn() };
+  return { ...actual, fetchOverview: vi.fn(), fetchNav: vi.fn(), fetchAnnual: vi.fn(), fetchTradeStats: vi.fn(), fetchRiskStats: vi.fn(), fetchAttribution: vi.fn() };
 });
 const api = vi.mocked(analyticsApi);
 
@@ -36,6 +36,16 @@ beforeEach(() => {
     recoveryDate: "2026-01-08", drawdownDays: 1, sharpe: "2.5138421875", sharpeRfFallback: false,
     calmar: "6.9012345678", windowDays: 2,
   });
+  // 归因数值同样 toPlainString（setScale(10)）；食品饮料 |0.0015|+|0.006| > 银行 |0.003| 排序在前
+  api.fetchAttribution.mockResolvedValue({
+    windowStart: "2026-01-05", windowEnd: "2026-01-07",
+    rows: [
+      { industry: "801120", industryName: "食品饮料", allocation: "0.0015000000", selection: "0.0060000000" },
+      { industry: "801780", industryName: "银行", allocation: "0.0030000000", selection: "0.0000000000" },
+    ],
+    cashAllocation: "-0.0005000000", totalExcess: "0.0100000000", residual: "0.0000000100",
+    unmappedValueShare: "0.0000000000",
+  });
 });
 afterEach(cleanup);
 
@@ -44,10 +54,12 @@ function readNavOption() {
 }
 
 describe("AnalyticsBoard", () => {
-  it("渲染五块：总览卡/风险指标/净值图/年度表/交易统计", async () => {
+  it("渲染六块：总览卡/风险指标/归因/净值图/年度表/交易统计", async () => {
     render(<AnalyticsBoard />);
     await waitFor(() => expect(screen.getByTestId("analytics-overview")).toBeTruthy());
     expect(screen.getByTestId("risk-stats")).toBeTruthy();
+    expect(screen.getByTestId("attribution-section")).toBeTruthy();
+    expect(screen.getByTestId("attribution-chart")).toBeTruthy(); // EChart mock 壳
     expect(screen.getByTestId("nav-chart")).toBeTruthy();
     expect(screen.getByTestId("annual-table")).toBeTruthy();
     expect(screen.getByTestId("trade-stats")).toBeTruthy();
@@ -61,6 +73,10 @@ describe("AnalyticsBoard", () => {
     expect(within(screen.getByTestId("risk-stats")).getByText("25.00%")).toBeTruthy();
     expect(within(screen.getByTestId("risk-stats")).getByText(/2026-01-06→2026-01-07（1 交易日，2026-01-08 恢复）/)).toBeTruthy();
     expect(within(screen.getByTestId("risk-stats")).getByText("2.51")).toBeTruthy(); // sharpe 2.5138… → 2.51
+    // 归因块：toPlainString "0.0100000000" → 1.00%；图类目按 |配置|+|选择| 降序
+    expect(within(screen.getByTestId("attribution-section")).getByText("1.00%")).toBeTruthy();
+    const attributionOption = JSON.parse(screen.getByTestId("attribution-chart").dataset.option!);
+    expect(attributionOption.xAxis.data).toEqual(["食品饮料", "银行"]);
   });
 
   it("riskStats 204（undefined）时风险指标块渲染空态、其余块正常", async () => {
@@ -71,6 +87,16 @@ describe("AnalyticsBoard", () => {
     expect(screen.getByTestId("risk-stats-empty").textContent).toContain("暂无风险指标");
     expect(screen.getByText("风险指标与归因")).toBeTruthy(); // 小节标题仍在
     expect(screen.getByTestId("analytics-overview")).toBeTruthy();
+  });
+
+  it("attribution 204（undefined）时归因块渲染空态、风险指标块正常", async () => {
+    api.fetchAttribution.mockResolvedValue(undefined);
+    render(<AnalyticsBoard />);
+    await waitFor(() => expect(screen.getByTestId("attribution-empty")).toBeTruthy());
+    expect(screen.queryByTestId("attribution-section")).toBeNull();
+    expect(screen.getByTestId("attribution-empty").textContent).toContain("暂无归因数据");
+    expect(screen.getByTestId("risk-stats")).toBeTruthy(); // 同小节的风险指标块不受影响
+    expect(screen.getByText("风险指标与归因")).toBeTruthy(); // 小节标题仍在
   });
 
   it("irrSimple 退化口径：展示数值并附小字「无现金流流水，IRR=累计收益」", async () => {

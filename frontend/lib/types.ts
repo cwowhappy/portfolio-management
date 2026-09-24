@@ -378,6 +378,15 @@ export interface RiskStatsView {
   drawdownDays: number; sharpe: string | null; sharpeRfFallback: boolean;
   calmar: string | null; windowDays: number;
 }
+// 归因（MS-13 F09）：allocation/selection=行业累计贡献小数（toPlainString 字符串）；
+// residual=totalExcess−Σ贡献（日频权重近似损耗）；窗口 null=无可归因交易日。
+export interface AttributionRow {
+  industry: string; industryName: string | null; allocation: string; selection: string;
+}
+export interface Attribution {
+  windowStart: string | null; windowEnd: string | null; rows: AttributionRow[];
+  cashAllocation: string; totalExcess: string; residual: string; unmappedValueShare: string;
+}
 
 // —— 行业研究（/api/industry/**，与后端 IndustryController 的 DTO 对齐）——
 

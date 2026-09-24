@@ -344,6 +344,18 @@ export const RiskStatsViewSchema = z.object({
   drawdownDays: z.number(), sharpe: z.string().nullable(), sharpeRfFallback: z.boolean(),
   calmar: z.string().nullable(), windowDays: z.number(),
 });
+// 归因（MS-13 F09）：数值 toPlainString 小数（累计贡献）；窗口 null=无可归因交易日；
+// industryName null=映射缺失桶，展示用行业码兜底。
+export const AttributionRowSchema = z.object({
+  industry: z.string(), industryName: z.string().nullable(),
+  allocation: z.string(), selection: z.string(),
+});
+export const AttributionSchema = z.object({
+  windowStart: z.string().nullable(), windowEnd: z.string().nullable(),
+  rows: z.array(AttributionRowSchema),
+  cashAllocation: z.string(), totalExcess: z.string(),
+  residual: z.string(), unmappedValueShare: z.string(),
+});
 
 // —— 行业研究（/api/industry/**，与后端 IndustryController 的 DTO 对齐）——
 

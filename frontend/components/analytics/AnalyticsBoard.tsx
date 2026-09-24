@@ -1,13 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { fetchOverview, fetchNav, fetchAnnual, fetchTradeStats, fetchRiskStats } from "@/lib/analyticsApi";
-import type { AnalyticsNav, AnalyticsOverview, AnnualReturnRow, TradeStatsView, RiskStatsView } from "@/lib/types";
+import { fetchOverview, fetchNav, fetchAnnual, fetchTradeStats, fetchRiskStats, fetchAttribution } from "@/lib/analyticsApi";
+import type { AnalyticsNav, AnalyticsOverview, AnnualReturnRow, TradeStatsView, RiskStatsView, Attribution } from "@/lib/types";
 import OverviewCards from "@/components/analytics/OverviewCards";
 import NavChart, { type NormalizedNav } from "@/components/analytics/NavChart";
 import AnnualTable from "@/components/analytics/AnnualTable";
 import TradeStatsCards from "@/components/analytics/TradeStatsCards";
 import RiskStatsCards from "@/components/analytics/RiskStatsCards";
+import AttributionSection from "@/components/analytics/AttributionSection";
 
 /** 归一化：序列各值除以自身窗口首值 ×1000（首日恒为 1000，消绝对规模便于跨序列对比）。 */
 function normalize(values: number[]): number[] {
@@ -46,19 +47,21 @@ export default function AnalyticsBoard() {
   const [annual, setAnnual] = useState<AnnualReturnRow[]>([]);
   const [tradeStats, setTradeStats] = useState<TradeStatsView | null>(null);
   const [riskStats, setRiskStats] = useState<RiskStatsView | null>(null);
+  const [attribution, setAttribution] = useState<Attribution | null>(null);
   const [error, setError] = useState<string | null>(null);
   const requestSeqRef = useRef(0);
 
   const reload = useCallback(() => {
     const seq = ++requestSeqRef.current;
-    Promise.all([fetchOverview(), fetchNav(), fetchAnnual(), fetchTradeStats(), fetchRiskStats()])
-      .then(([o, n, a, t, r]) => {
+    Promise.all([fetchOverview(), fetchNav(), fetchAnnual(), fetchTradeStats(), fetchRiskStats(), fetchAttribution()])
+      .then(([o, n, a, t, r, at]) => {
         if (seq !== requestSeqRef.current) return; // 已有更新的 reload，丢弃过期响应
-        setOverview(o ?? null); // overview/nav/trade-stats/risk-stats 204 → undefined，归一为 null 走块级空态
+        setOverview(o ?? null); // overview/nav/trade-stats/risk-stats/attribution 204 → undefined，归一为 null 走块级空态
         setNav(n ?? null);
         setAnnual(a);
         setTradeStats(t ?? null);
         setRiskStats(r ?? null);
+        setAttribution(at ?? null);
         setLoading(false);
       })
       .catch((e) => {
@@ -105,6 +108,15 @@ export default function AnalyticsBoard() {
         ) : (
           <div data-testid="risk-stats-empty" className="rounded-2xl border border-[color:var(--color-line)] bg-[color:var(--color-panel)]/70 p-8 text-[color:var(--color-ink-dim)]">
             暂无风险指标
+          </div>
+        )}
+        {attribution != null ? (
+          <div className="mt-4">
+            <AttributionSection attribution={attribution} />
+          </div>
+        ) : (
+          <div data-testid="attribution-empty" className="mt-4 rounded-2xl border border-[color:var(--color-line)] bg-[color:var(--color-panel)]/70 p-8 text-[color:var(--color-ink-dim)]">
+            暂无归因数据
           </div>
         )}
       </div>
