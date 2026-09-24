@@ -231,6 +231,16 @@ export const AssessmentViewSchema = z.object({
   totalScore: z.number(), profile: RiskProfileSchema, profileName: z.string(),
   weights: z.array(WeightViewSchema), answers: z.record(z.string()), assessedAt: z.string(),
 });
+// 配置回测（MS-13 M07-F06）：数值全 toPlainString 字符串——曲线净值期初 1000；
+// 年化收益/MDD 为小数（×100 展示）、夏普为比率；sharpe null=不可算「—」；
+// window/rebalance 回显请求值，windowStart/End 为实际截齐窗口；rfFallback=true 表示 rf=0 退化口径。
+export const CurvePointViewSchema = z.object({ date: z.string(), value: z.string() });
+export const BacktestViewSchema = z.object({
+  planName: z.string(), windowStart: z.string(), windowEnd: z.string(),
+  window: z.string(), rebalance: z.string(), curve: z.array(CurvePointViewSchema),
+  annualizedReturn: z.string(), mdd: z.string(), sharpe: z.string().nullable(),
+  rfFallback: z.boolean(),
+});
 
 // —— 价值筛选（/api/screening/**，与后端 ScreeningController 的 DTO 对齐）——
 

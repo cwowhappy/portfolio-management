@@ -250,6 +250,15 @@ export interface RebalanceView {
   hasActivePlan: boolean; totalAssets: number; suppressed: boolean; anyAlert: boolean;
   items: RebalanceItem[]; timeTrigger: RebalanceTimeTrigger | null;
 }
+// 配置回测（MS-13 M07-F06）：数值为后端 toPlainString 字符串（曲线净值期初 1000；
+// 年化收益/MDD 为小数、夏普为比率），sharpe null=不可算「—」；
+// window/rebalance 回显请求值，windowStart/End 为实际截齐窗口。
+export interface CurvePointView { date: string; value: string; }
+export interface BacktestView {
+  planName: string; windowStart: string; windowEnd: string;
+  window: string; rebalance: string; curve: CurvePointView[];
+  annualizedReturn: string; mdd: string; sharpe: string | null; rfFallback: boolean;
+}
 
 // —— 自选观察（/api/watchlist/**）——
 

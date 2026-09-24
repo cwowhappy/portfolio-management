@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
-import { activatePlan, ackRebalance, createPlan, fetchDeviation, fetchPlans, fetchRebalance, fetchTemplates, submitAssessment } from "@/lib/allocationApi";
+import { activatePlan, ackRebalance, createPlan, fetchBacktest, fetchDeviation, fetchPlans, fetchRebalance, fetchTemplates, submitAssessment } from "@/lib/allocationApi";
 
 const planJson = { id: 5, name: "平衡", source: "TEMPLATE", weights: [{ assetClass: "STOCK", weight: 60 }, { assetClass: "BOND", weight: 40 }], active: false, rebalanceFrequency: "OFF", lastRebalancedAt: null };
 
@@ -79,6 +79,30 @@ describe("allocationApi", () => {
   it("响应不符合 schema 时抛校验错误", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ slices: [{ assetClass: "CRYPTO" }] }) }));
     await expect(fetchDeviation()).rejects.toThrow();
+  });
+
+  it("fetchBacktest：查询串含 planId/template/window/rebalance，View 数值按字符串契约解析", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true, status: 200,
+      json: async () => ({
+        planName: "永久组合", windowStart: "2021-09-24", windowEnd: "2026-09-24", window: "5Y", rebalance: "annual",
+        curve: [{ date: "2021-09-24", value: "1000" }, { date: "2026-09-24", value: "1310.5" }],
+        annualizedReturn: "0.0555", mdd: "0.12", sharpe: null, rfFallback: true,
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const view = await fetchBacktest({ planId: 3, template: "all-weather", window: "5Y", rebalance: "annual" });
+    expect(view.planName).toBe("永久组合");
+    expect(view.curve[1]).toEqual({ date: "2026-09-24", value: "1310.5" });
+    expect(view.sharpe).toBeNull();
+    expect(view.rfFallback).toBe(true);
+    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url.startsWith("/api/allocation/backtest?")).toBe(true);
+    const qs = new URLSearchParams(url.split("?")[1]);
+    expect(qs.get("planId")).toBe("3");
+    expect(qs.get("template")).toBe("all-weather");
+    expect(qs.get("window")).toBe("5Y");
+    expect(qs.get("rebalance")).toBe("annual");
   });
 });
 
