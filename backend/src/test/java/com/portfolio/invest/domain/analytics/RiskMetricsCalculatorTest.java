@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.TreeMap;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
 
@@ -60,5 +61,45 @@ class RiskMetricsCalculatorTest {
                 List.of(new ExternalFlow(LocalDate.of(2026, 1, 6), new BigDecimal("500"))));
         assertThat(idx.get(idx.size() - 1).index())
                 .isCloseTo(new BigDecimal("1.16875"), within(new BigDecimal("0.000001")));
+    }
+
+    @DisplayName("已知答案：3 日收益 1%/2%/3%，rf 恒 3.65%（日 0.01%）→ 夏普手算对拍")
+    @Test
+    void givenThreeReturnsAndConstantRf_whenSharpe_thenMatchesHandCalc() {
+        LocalDate d = LocalDate.of(2026, 1, 5);
+        var rets = new java.util.ArrayList<DatedReturn>();
+        for (double r : new double[]{0.01, 0.02, 0.03}) {
+            rets.add(new DatedReturn(d, BigDecimal.valueOf(r)));
+            d = d.plusDays(1);
+        }
+        var rf = new TreeMap<LocalDate, BigDecimal>();
+        rf.put(LocalDate.of(2026, 1, 1), new BigDecimal("3.65"));  // 恒定 3.65% 年化
+        var res = RiskMetricsCalculator.sharpe(rets, rf);
+        // e_t = 0.0099/0.0199/0.0299，mean=0.0199，样本 std=sqrt((2×0.0001)/2)=0.01
+        // Sharpe = 1.99 × √252 ≈ 31.590
+        assertThat(res.value()).isCloseTo(new BigDecimal("31.590"), within(new BigDecimal("0.001")));
+        assertThat(res.rfFallback()).isFalse();
+    }
+
+    @DisplayName("空 rf 序列 → rf=0 退化并标注；单点/std=0 → value=null")
+    @Test
+    void givenEmptyRfOrFlat_whenSharpe_thenFallbackOrNull() {
+        var rets = List.of(new DatedReturn(LocalDate.of(2026, 1, 5), new BigDecimal("0.01")),
+                new DatedReturn(LocalDate.of(2026, 1, 6), new BigDecimal("0.01")));
+        var res = RiskMetricsCalculator.sharpe(rets, new TreeMap<>());
+        assertThat(res.rfFallback()).isTrue();  // e=r，std=0 → value null
+        assertThat(res.value()).isNull();
+        assertThat(RiskMetricsCalculator.sharpe(List.of(), new TreeMap<>()).value()).isNull();
+    }
+
+    @DisplayName("Calmar=年化/MDD；MDD=0 → null")
+    @Test
+    void givenAnnualizedAndMdd_whenCalmar_thenDivide() {
+        var mdd = new RiskMetricsCalculator.MddResult(new BigDecimal("0.2"),
+                LocalDate.of(2026, 1, 6), LocalDate.of(2026, 1, 7), null, new BigDecimal("0.2"));
+        assertThat(RiskMetricsCalculator.calmar(new BigDecimal("0.3"), mdd))
+                .isEqualByComparingTo("1.5");
+        assertThat(RiskMetricsCalculator.calmar(new BigDecimal("0.3"),
+                new RiskMetricsCalculator.MddResult(BigDecimal.ZERO, null, null, null, BigDecimal.ZERO))).isNull();
     }
 }
