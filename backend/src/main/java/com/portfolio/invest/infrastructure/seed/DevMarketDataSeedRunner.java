@@ -13,7 +13,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * e2e/冷库样例数据种子：E2E_DEV_SEED 已配置且 stock_valuation_daily 为空时，
- * 应用 db/seed/valuation-dev-seed.sql（估值/筛选样例，供 chat-tools 筛选等 e2e 用例）。
+ * 应用 db/seed/e2e-seed.sql（估值/筛选样例，不含 industry_valuation——MS-09 空库门控保持）。
  * 与 AdminSeedRunner 同型的启动幂等种子；未配置或库已有数据时零副作用。
  * 背景：CI 的 invest 库只有 flyway schema，筛选空结果按设计不 emit 表格卡，
  * chat-tools 筛选 e2e 自引入起 8/8 超时（2026-09-24 排查，PR #42 引入用例）。
@@ -22,7 +22,7 @@ import org.springframework.stereotype.Component;
 public class DevMarketDataSeedRunner implements ApplicationRunner {
 
     private static final Logger log = LoggerFactory.getLogger(DevMarketDataSeedRunner.class);
-    static final String SEED_LOCATION = "db/seed/valuation-dev-seed.sql";
+    static final String SEED_LOCATION = "db/seed/e2e-seed.sql";
 
     private final JdbcTemplate jdbc;
     private final boolean enabled;

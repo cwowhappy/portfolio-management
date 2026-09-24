@@ -81,4 +81,16 @@ class DevMarketDataSeedRunnerIntegrationTest {
                 "SELECT COUNT(*) FROM stock_valuation_daily", Integer.class);
         assertThat(rows).isEqualTo(5);
     }
+
+    /** 回归钉（PR #48 首轮 CI 教训）：e2e 种子不得写 industry_valuation——行业板面 MS-09 用例
+     *  以「board 空 → skip」为设计门控，塞行业行会意外解锁 4 个依赖 250 天历史分位的用例。 */
+    @DisplayName("种子不写 industry_valuation（MS-09 空库门控保持）")
+    @Test
+    void givenEmptyDb_whenRun_thenIndustryValuationUntouched() {
+        new DevMarketDataSeedRunner(jdbcTemplate, "1").run(null);
+
+        Integer rows = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM industry_valuation", Integer.class);
+        assertThat(rows).isZero();
+    }
 }
