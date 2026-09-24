@@ -50,7 +50,9 @@ export default defineConfig({
     {
       command: "bash ../scripts/e2e-frontend.sh",
       url: "http://localhost:3000",
-      timeout: 120_000,
+      // 冷缓存 runner 上 next build（编译+类型检查+静态页生成）可超 120s（PR #47 CI 实测
+      // 编译 41s 后仍需数十秒静默检查，预算耗尽时 next start 未及执行）——放宽到 300s
+      timeout: 300_000,
       reuseExistingServer: !process.env.CI,
     },
   ],

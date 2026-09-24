@@ -122,6 +122,10 @@ jobs:
       REMEMBER_ME_KEY: ci-remember-me-key
       # HITL e2e：后端按此 URL 幂等种子 hitl-e2e provider/endpoint（scripts/e2e-mcp-server.mjs）
       E2E_HITL_MCP_URL: http://127.0.0.1:8765/mcp
+      # chat-tools 筛选等用例依赖行情样例数据：CI 库为空 schema，由后端启动时幂等应用
+      # db/seed/e2e-seed.sql（DevMarketDataSeedRunner，库非空自动跳过；不含 industry_valuation，
+      # 行业板面 MS-09 用例保持空库跳过门控）
+      E2E_DEV_SEED: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
