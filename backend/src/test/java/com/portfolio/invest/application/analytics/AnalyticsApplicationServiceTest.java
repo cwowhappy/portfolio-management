@@ -1,7 +1,10 @@
 package com.portfolio.invest.application.analytics;
 
 import com.portfolio.invest.application.market.MarketDataService;
+import com.portfolio.invest.domain.analytics.BenchmarkIndustryWeightPort;
 import com.portfolio.invest.domain.analytics.IndexClosePort;
+import com.portfolio.invest.domain.analytics.IndustryMappingPort;
+import com.portfolio.invest.domain.analytics.RiskFreeRatePort;
 import com.portfolio.invest.domain.analytics.StockClosePort;
 import com.portfolio.invest.domain.portfolio.CashTransaction;
 import com.portfolio.invest.domain.portfolio.CashTransactionType;
@@ -48,13 +51,19 @@ class AnalyticsApplicationServiceTest {
     private static final BigDecimal ELEVEN = new BigDecimal("11");
     private static final BigDecimal TWELVE = new BigDecimal("12");
     private static final BigDecimal ONE = new BigDecimal("1");
+    private static final BigDecimal NINE = new BigDecimal("9");
+    private static final BigDecimal THIRTEEN = new BigDecimal("13");
 
     private final PortfolioRepository repo = mock(PortfolioRepository.class);
     private final StockClosePort stockClose = mock(StockClosePort.class);
     private final IndexClosePort indexClose = mock(IndexClosePort.class);
     private final MarketDataService marketData = mock(MarketDataService.class);
+    private final RiskFreeRatePort riskFree = mock(RiskFreeRatePort.class);
+    private final IndustryMappingPort industryMapping = mock(IndustryMappingPort.class);
+    private final BenchmarkIndustryWeightPort benchmarkWeight = mock(BenchmarkIndustryWeightPort.class);
     private final AnalyticsApplicationService service =
-            new AnalyticsApplicationService(repo, stockClose, indexClose, marketData);
+            new AnalyticsApplicationService(repo, stockClose, indexClose, marketData, riskFree,
+                    industryMapping, benchmarkWeight);
 
     @DisplayName("无组合无流水 → empty（不创建组合）")
     @Test
@@ -277,12 +286,266 @@ class AnalyticsApplicationServiceTest {
                 within(new BigDecimal("0.0001")));
     }
 
+    // ———— riskStats ————
+
+    @DisplayName("已知答案：V 形流水 → MDD 25%（峰01-06 谷01-07 恢复01-08），夏普/Calmar 可算")
+    @Test
+    void givenVShapeFlows_whenRiskStats_thenMddTwentyFiveAndSharpeNotNull() {
+        // 手算链（twrIndex 口径）：转入 1000（01-02）→ 01-05 买 100 股@10 → 收盘 10/12/9/13 四日
+        // 净值 1000→1200→900→1300（买入后无新外部流）→ 指数 1 → 1.2 → 0.9 → 1.3
+        // 峰 1.2（01-06）谷 0.9（01-07）→ MDD = 1 − 0.9/1.2 = 0.25；01-08 指数 1.3 ≥ 1.2 → 已恢复
+        // 末点=全程最高 → 当前回撤 0；日收益 0.2/−0.25/+0.4̅4（3 条，sd≠0）→ 夏普可算；
+        // rf 空表（无国债数据）→ rfFallback=true 退化 rf=0（编排传端口返回值空 map，不传 null）；
+        // 累计 TWR = 0.3、窗口 3 天 → 年化 1.3^(365/3)−1 巨大但有限 → Calmar = 年化/0.25 > 0
+        when(repo.findPortfolioByUserId(1L)).thenReturn(Optional.of(
+                Portfolio.reconstitute(9L, 1L, CostMethod.WEIGHTED_AVG, Instant.now(), Instant.now())));
+        when(repo.findGroupsByPortfolioId(9L)).thenReturn(List.of(
+                HoldingGroup.reconstitute(5L, 9L, "主账户", GroupType.ACCOUNT, Instant.now())));
+        when(repo.findCashTransactionsByGroupId(5L)).thenReturn(List.of(
+                new CashTransaction(1L, 5L, CashTransactionType.DEPOSIT, new BigDecimal("1000"),
+                        JAN_02, null, Instant.now())));
+        Position pos = Position.create(9L, 5L, "600519", "贵州茅台", Instant.now());
+        when(repo.findPositionsByPortfolioId(9L)).thenReturn(List.of(pos));
+        when(repo.findTradesByPositionId(pos.id())).thenReturn(List.of(
+                new Trade(1L, pos.id(), TradeType.BUY, JAN_05,
+                        TEN, new BigDecimal("100"), BigDecimal.ZERO, Instant.now())));
+        when(repo.findDividendsByPositionId(pos.id())).thenReturn(List.of());
+        when(stockClose.closes(eq("600519"), any(), any())).thenReturn(vShapeCloses());
+        when(marketData.quoteBatch(anyList())).thenReturn(Map.of());
+        when(riskFree.oneYearSeries(JAN_05, JAN_08)).thenReturn(new TreeMap<>());
+
+        RiskStatsView v = service.riskStats(1L).orElseThrow();
+        assertThat(new BigDecimal(v.mdd())).isCloseTo(new BigDecimal("0.25"),
+                within(new BigDecimal("0.0001")));
+        assertThat(v.peakDate()).isEqualTo("2026-01-06");
+        assertThat(v.troughDate()).isEqualTo("2026-01-07");
+        assertThat(v.recoveryDate()).isEqualTo("2026-01-08");
+        assertThat(v.drawdownDays()).isEqualTo(1);
+        assertThat(new BigDecimal(v.currentDrawdown())).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(v.windowDays()).isEqualTo(3);
+        assertThat(v.sharpe()).isNotNull();
+        assertThat(v.sharpeRfFallback()).isTrue();
+        assertThat(v.calmar()).isNotNull();
+        assertThat(new BigDecimal(v.calmar())).isGreaterThan(BigDecimal.ZERO);
+    }
+
+    @DisplayName("无流水 → empty（Controller 204）")
+    @Test
+    void givenNoFlows_whenRiskStats_thenEmpty() {
+        when(repo.findPortfolioByUserId(1L)).thenReturn(Optional.empty());
+        assertThat(service.riskStats(1L)).isEmpty();
+        verify(repo, never()).insertPortfolioIfAbsent(any());
+    }
+
+    // ———— attribution ————
+
+    @DisplayName("已知答案：两行业两日手算对拍——totalExcess/residual/各贡献精确吻合，residual≈0")
+    @Test
+    void givenTwoIndustriesTwoDays_whenAttribution_thenMatchesHandCalc() {
+        // 手算链（子周期权重=前一日收盘快照，Rp_i=行业市值_t/市值_{t-1}-1，Rp=(V_t-F_t)/V_{t-1}-1）：
+        // 转入 3000（01-02）→ 01-05 各买 100 股@10：600519→801120(食品饮料)、000001→801780(银行)，
+        // 现金余 1000。组合 V：01-05=3000 / 01-06=3100（600519 涨到 11）/ 01-07=3200（涨到 12）。
+        // 行业指数 801120：1000/1100/1210（日 +10%/+10%）；801780：2000/2200/2200（+10%/0%）；
+        // 基准 000300：4000/4400/4664 → Rb=+10%/+6%（=0.6×10%+0.4×10% 与 0.6×10%+0.4×0%，构造恒等）；
+        // 基准权重 wb={801120:0.6, 801780:0.4}；rf=3.65% → rfDaily=3.65/100/365=0.0001。
+        //
+        // 行 t=01-06：wp={120:1/3, 780:1/3} wc=1/3；Rp_120=1100/1000-1=10% Rp_780=0；
+        //   Rb_i={120:10%, 780:10%}；Rp=3100/3000-1=1/30；Rb=10%。
+        // 行 t=01-07：wp={120:11/31, 780:10/31} wc=10/31；Rp_120=1200/1100-1=1/11 Rp_780=0；
+        //   Rb_i={120:10%, 780:0%}；Rp=3200/3100-1=1/31；Rb=6%。
+        //
+        // totalExcess=(1/30-0.1)+(1/31-0.06)=-1/15-43/1550=-439/4650≈-0.0944086022。
+        // 贡献：alloc_120=(11/31-0.6)(10%-6%)=-0.304/31≈-0.0098064516；
+        //  sel_120=(11/31)(1/11-10%)=-1/310≈-0.0032258065；
+        //  alloc_780=(10/31-0.4)(0-6%)=0.144/31≈0.0046451613；sel_780=(1/3)(0-10%)=-1/30≈-0.0333333333；
+        //  cash=(1/3)(0.0001-10%)+(10/31)(0.0001-6%)≈-0.0526225806。
+        // residual=totalExcess-Σ贡献=-0.0001×(1/3+10/31)=-61/93×10^-4≈-0.0000655914（≈0，唯一损耗
+        // =现金实际收益 0 与 rf 模型收益之差，Brinson 恒等式其余项精确为零）。
+        when(repo.findPortfolioByUserId(1L)).thenReturn(Optional.of(
+                Portfolio.reconstitute(9L, 1L, CostMethod.WEIGHTED_AVG, Instant.now(), Instant.now())));
+        when(repo.findGroupsByPortfolioId(9L)).thenReturn(List.of(
+                HoldingGroup.reconstitute(5L, 9L, "主账户", GroupType.ACCOUNT, Instant.now())));
+        when(repo.findCashTransactionsByGroupId(5L)).thenReturn(List.of(
+                new CashTransaction(1L, 5L, CashTransactionType.DEPOSIT, new BigDecimal("3000"),
+                        JAN_02, null, Instant.now())));
+        Position posA = Position.create(9L, 5L, "600519", "贵州茅台", Instant.now());
+        Position posB = Position.create(9L, 5L, "000001", "平安银行", Instant.now());
+        when(repo.findPositionsByPortfolioId(9L)).thenReturn(List.of(posA, posB));
+        when(repo.findTradesByPositionId(posA.id())).thenReturn(List.of(
+                new Trade(1L, posA.id(), TradeType.BUY, JAN_05,
+                        TEN, new BigDecimal("100"), BigDecimal.ZERO, Instant.now())));
+        when(repo.findTradesByPositionId(posB.id())).thenReturn(List.of(
+                new Trade(2L, posB.id(), TradeType.BUY, JAN_05,
+                        TEN, new BigDecimal("100"), BigDecimal.ZERO, Instant.now())));
+        when(repo.findDividendsByPositionId(any())).thenReturn(List.of());
+        when(stockClose.closes(eq("600519"), any(), any())).thenReturn(stockCloses());
+        TreeMap<LocalDate, BigDecimal> flat = new TreeMap<>();
+        flat.put(JAN_05, TEN);
+        flat.put(JAN_06, TEN);
+        flat.put(JAN_07, TEN);
+        when(stockClose.closes(eq("000001"), any(), any())).thenReturn(flat);
+        when(indexClose.closes(anyString(), any(), any())).thenReturn(new TreeMap<>());
+        when(indexClose.closes(eq("801120"), any(), any())).thenReturn(indexCloses(
+                "1000", "1100", "1210"));
+        when(indexClose.closes(eq("801780"), any(), any())).thenReturn(indexCloses(
+                "2000", "2200", "2200"));
+        when(indexClose.closes(eq("000300"), any(), any())).thenReturn(indexCloses(
+                "4000", "4400", "4664"));
+        when(industryMapping.byStock()).thenReturn(Map.of(
+                "600519", new IndustryMappingPort.IndustryRef("801120", "食品饮料"),
+                "000001", new IndustryMappingPort.IndustryRef("801780", "银行")));
+        when(benchmarkWeight.industryWeights("000300")).thenReturn(Map.of(
+                "801120", new BigDecimal("0.6"), "801780", new BigDecimal("0.4")));
+        TreeMap<LocalDate, BigDecimal> rf = new TreeMap<>();
+        rf.put(JAN_05, new BigDecimal("3.65"));
+        when(riskFree.oneYearSeries(any(), any())).thenReturn(rf);
+        when(marketData.quoteBatch(anyList())).thenReturn(Map.of());
+
+        AttributionView v = service.attribution(1L).orElseThrow();
+        assertThat(v.windowStart()).isEqualTo("2026-01-06");
+        assertThat(v.windowEnd()).isEqualTo("2026-01-07");
+        assertThat(v.rows()).hasSize(2);
+        assertThat(v.rows()).extracting(AttributionView.Row::industry)
+                .containsExactly("801120", "801780");
+        assertThat(v.rows()).extracting(AttributionView.Row::industryName)
+                .containsExactly("食品饮料", "银行");
+        assertThat(num(v.rows().get(0).allocation())).isCloseTo(num("-0.0098064516"), within(num("0.0000001")));
+        assertThat(num(v.rows().get(0).selection())).isCloseTo(num("-0.0032258065"), within(num("0.0000001")));
+        assertThat(num(v.rows().get(1).allocation())).isCloseTo(num("0.0046451613"), within(num("0.0000001")));
+        assertThat(num(v.rows().get(1).selection())).isCloseTo(num("-0.0333333333"), within(num("0.0000001")));
+        assertThat(num(v.cashAllocation())).isCloseTo(num("-0.0526225806"), within(num("0.0000001")));
+        assertThat(num(v.totalExcess())).isCloseTo(num("-0.0944086022"), within(num("0.0000001")));
+        assertThat(num(v.residual())).isCloseTo(num("-0.0000655914"), within(num("0.0000001")));
+        assertThat(num(v.unmappedValueShare())).isEqualByComparingTo("0");
+    }
+
+    @DisplayName("行业指数窗口为空：行业贡献全跳过，残差=totalExcess-现金项留痕；未映射股归 UNMAPPED 桶")
+    @Test
+    void givenIndustryIndexesEmpty_whenAttribution_thenZeroIndustryEffectsAndUnmappedBucket() {
+        // 手算链：600519→801120 有映射、999999 无映射归 UNMAPPED；行业指数全空 → Rb_i 缺键
+        // → 配置/选择贡献全为 0（缺日容忍）；基准 000300：4000/4400/4400 → Rb=+10%/0%；
+        // V：3000/3100/3200，现金 1000 恒定 → cash=(1/3)(0-10%)+(10/31)(0-0)=-1/30；
+        // totalExcess=(1/30-0.1)+(1/31-0)=-16/465；residual=-16/465+1/30=-1/930；
+        // unmappedValueShare=窗口均值(wp_UNMAPPED)=(1/3+10/31)/2=61/186≈0.3279569892。
+        when(repo.findPortfolioByUserId(1L)).thenReturn(Optional.of(
+                Portfolio.reconstitute(9L, 1L, CostMethod.WEIGHTED_AVG, Instant.now(), Instant.now())));
+        when(repo.findGroupsByPortfolioId(9L)).thenReturn(List.of(
+                HoldingGroup.reconstitute(5L, 9L, "主账户", GroupType.ACCOUNT, Instant.now())));
+        when(repo.findCashTransactionsByGroupId(5L)).thenReturn(List.of(
+                new CashTransaction(1L, 5L, CashTransactionType.DEPOSIT, new BigDecimal("3000"),
+                        JAN_02, null, Instant.now())));
+        Position posA = Position.create(9L, 5L, "600519", "贵州茅台", Instant.now());
+        Position posB = Position.create(9L, 5L, "999999", "无名股", Instant.now());
+        when(repo.findPositionsByPortfolioId(9L)).thenReturn(List.of(posA, posB));
+        when(repo.findTradesByPositionId(posA.id())).thenReturn(List.of(
+                new Trade(1L, posA.id(), TradeType.BUY, JAN_05,
+                        TEN, new BigDecimal("100"), BigDecimal.ZERO, Instant.now())));
+        when(repo.findTradesByPositionId(posB.id())).thenReturn(List.of(
+                new Trade(2L, posB.id(), TradeType.BUY, JAN_05,
+                        TEN, new BigDecimal("100"), BigDecimal.ZERO, Instant.now())));
+        when(repo.findDividendsByPositionId(any())).thenReturn(List.of());
+        when(stockClose.closes(eq("600519"), any(), any())).thenReturn(stockCloses());
+        TreeMap<LocalDate, BigDecimal> flat = new TreeMap<>();
+        flat.put(JAN_05, TEN);
+        flat.put(JAN_06, TEN);
+        flat.put(JAN_07, TEN);
+        when(stockClose.closes(eq("999999"), any(), any())).thenReturn(flat);
+        when(indexClose.closes(anyString(), any(), any())).thenReturn(new TreeMap<>());
+        when(indexClose.closes(eq("000300"), any(), any())).thenReturn(indexCloses(
+                "4000", "4400", "4400"));
+        when(industryMapping.byStock()).thenReturn(Map.of(
+                "600519", new IndustryMappingPort.IndustryRef("801120", "食品饮料")));
+        when(benchmarkWeight.industryWeights("000300")).thenReturn(Map.of(
+                "801120", new BigDecimal("0.7"),
+                BenchmarkIndustryWeightPort.UNMAPPED_KEY, new BigDecimal("0.3")));
+        when(riskFree.oneYearSeries(any(), any())).thenReturn(new TreeMap<>());
+        when(marketData.quoteBatch(anyList())).thenReturn(Map.of());
+
+        AttributionView v = service.attribution(1L).orElseThrow();
+        assertThat(v.rows()).extracting(AttributionView.Row::industry)
+                .containsExactly("801120", "UNMAPPED");
+        assertThat(v.rows()).extracting(AttributionView.Row::industryName)
+                .containsExactly("食品饮料", "未映射行业");
+        assertThat(v.rows()).allSatisfy(r -> {
+            assertThat(num(r.allocation())).isEqualByComparingTo("0");
+            assertThat(num(r.selection())).isEqualByComparingTo("0");
+        });
+        assertThat(num(v.cashAllocation())).isCloseTo(num("-0.0333333333"), within(num("0.0000001")));
+        assertThat(num(v.totalExcess())).isCloseTo(num("-0.0344086022"), within(num("0.0000001")));
+        assertThat(num(v.residual())).isCloseTo(num("-0.0010752688"), within(num("0.0000001")));
+        assertThat(num(v.unmappedValueShare())).isCloseTo(num("0.3279569892"), within(num("0.0000001")));
+    }
+
+    @DisplayName("行业与基准指数全空 → 空行结果不抛（窗口 null、贡献全 0）")
+    @Test
+    void givenAllIndexClosesEmpty_whenAttribution_thenEmptyRowsWithoutThrowing() {
+        when(repo.findPortfolioByUserId(1L)).thenReturn(Optional.of(
+                Portfolio.reconstitute(9L, 1L, CostMethod.WEIGHTED_AVG, Instant.now(), Instant.now())));
+        when(repo.findGroupsByPortfolioId(9L)).thenReturn(List.of(
+                HoldingGroup.reconstitute(5L, 9L, "主账户", GroupType.ACCOUNT, Instant.now())));
+        when(repo.findCashTransactionsByGroupId(5L)).thenReturn(List.of(
+                new CashTransaction(1L, 5L, CashTransactionType.DEPOSIT, new BigDecimal("1000"),
+                        JAN_02, null, Instant.now())));
+        Position pos = Position.create(9L, 5L, "600519", "贵州茅台", Instant.now());
+        when(repo.findPositionsByPortfolioId(9L)).thenReturn(List.of(pos));
+        when(repo.findTradesByPositionId(pos.id())).thenReturn(List.of(
+                new Trade(1L, pos.id(), TradeType.BUY, JAN_05,
+                        TEN, new BigDecimal("100"), BigDecimal.ZERO, Instant.now())));
+        when(repo.findDividendsByPositionId(any())).thenReturn(List.of());
+        when(stockClose.closes(eq("600519"), any(), any())).thenReturn(stockCloses());
+        when(indexClose.closes(anyString(), any(), any())).thenReturn(new TreeMap<>());
+        when(industryMapping.byStock()).thenReturn(Map.of(
+                "600519", new IndustryMappingPort.IndustryRef("801120", "食品饮料")));
+        when(benchmarkWeight.industryWeights("000300")).thenReturn(Map.of(
+                "801120", BigDecimal.ONE));
+        when(riskFree.oneYearSeries(any(), any())).thenReturn(new TreeMap<>());
+        when(marketData.quoteBatch(anyList())).thenReturn(Map.of());
+
+        AttributionView v = service.attribution(1L).orElseThrow();
+        assertThat(v.rows()).isEmpty();
+        assertThat(v.windowStart()).isNull();
+        assertThat(v.windowEnd()).isNull();
+        assertThat(num(v.totalExcess())).isEqualByComparingTo("0");
+        assertThat(num(v.residual())).isEqualByComparingTo("0");
+    }
+
+    @DisplayName("无流水 → empty（Controller 204）")
+    @Test
+    void givenNoFlows_whenAttribution_thenEmpty() {
+        when(repo.findPortfolioByUserId(1L)).thenReturn(Optional.empty());
+        assertThat(service.attribution(1L)).isEmpty();
+        verify(repo, never()).insertPortfolioIfAbsent(any());
+    }
+
+    /** 行业/基准指数三日收盘（05/06/07）。 */
+    private static TreeMap<LocalDate, BigDecimal> indexCloses(String d1, String d2, String d3) {
+        TreeMap<LocalDate, BigDecimal> closes = new TreeMap<>();
+        closes.put(JAN_05, new BigDecimal(d1));
+        closes.put(JAN_06, new BigDecimal(d2));
+        closes.put(JAN_07, new BigDecimal(d3));
+        return closes;
+    }
+
+    private static BigDecimal num(String v) {
+        return new BigDecimal(v);
+    }
+
     /** 600519 三日收盘 10 → 11 → 12（补今日实时价的路径由 quoteBatch 空 Map 关闭）。 */
     private static TreeMap<LocalDate, BigDecimal> stockCloses() {
         TreeMap<LocalDate, BigDecimal> closes = new TreeMap<>();
         closes.put(JAN_05, TEN);
         closes.put(JAN_06, ELEVEN);
         closes.put(JAN_07, TWELVE);
+        return closes;
+    }
+
+    /** 600519 四日 V 形收盘 10 → 12 → 9 → 13（涨 20% → 跌 25% → 涨 44.4%）。 */
+    private static TreeMap<LocalDate, BigDecimal> vShapeCloses() {
+        TreeMap<LocalDate, BigDecimal> closes = new TreeMap<>();
+        closes.put(JAN_05, TEN);
+        closes.put(JAN_06, TWELVE);
+        closes.put(JAN_07, NINE);
+        closes.put(JAN_08, THIRTEEN);
         return closes;
     }
 }

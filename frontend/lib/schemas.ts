@@ -231,6 +231,16 @@ export const AssessmentViewSchema = z.object({
   totalScore: z.number(), profile: RiskProfileSchema, profileName: z.string(),
   weights: z.array(WeightViewSchema), answers: z.record(z.string()), assessedAt: z.string(),
 });
+// 配置回测（MS-13 M07-F06）：数值全 toPlainString 字符串——曲线净值期初 1000；
+// 年化收益/MDD 为小数（×100 展示）、夏普为比率；sharpe null=不可算「—」；
+// window/rebalance 回显请求值，windowStart/End 为实际截齐窗口；rfFallback=true 表示 rf=0 退化口径。
+export const CurvePointViewSchema = z.object({ date: z.string(), value: z.string() });
+export const BacktestViewSchema = z.object({
+  planName: z.string(), windowStart: z.string(), windowEnd: z.string(),
+  window: z.string(), rebalance: z.string(), curve: z.array(CurvePointViewSchema),
+  annualizedReturn: z.string(), mdd: z.string(), sharpe: z.string().nullable(),
+  rfFallback: z.boolean(),
+});
 
 // —— 价值筛选（/api/screening/**，与后端 ScreeningController 的 DTO 对齐）——
 
@@ -335,6 +345,26 @@ export const TradeStatsViewSchema = z.object({
   sellCount: z.number(), winCount: z.number(), winRate: z.string(), avgWin: z.string(),
   avgLoss: z.string(), profitFactor: z.string().nullable(), avgHoldingDays: z.string(),
   bestPnl: z.string(), worstPnl: z.string(),
+});
+// 数值字段对齐后端 toPlainString 契约（字符串、null=「—」）；recoveryDate null=回撤进行中；
+// sharpeRfFallback=true 表示 rf 端口空表、夏普按 rf=0 退化口径计算。
+export const RiskStatsViewSchema = z.object({
+  mdd: z.string().nullable(), currentDrawdown: z.string().nullable(),
+  peakDate: z.string().nullable(), troughDate: z.string().nullable(), recoveryDate: z.string().nullable(),
+  drawdownDays: z.number(), sharpe: z.string().nullable(), sharpeRfFallback: z.boolean(),
+  calmar: z.string().nullable(), windowDays: z.number(),
+});
+// 归因（MS-13 F09）：数值 toPlainString 小数（累计贡献）；窗口 null=无可归因交易日；
+// industryName null=映射缺失桶，展示用行业码兜底。
+export const AttributionRowSchema = z.object({
+  industry: z.string(), industryName: z.string().nullable(),
+  allocation: z.string(), selection: z.string(),
+});
+export const AttributionSchema = z.object({
+  windowStart: z.string().nullable(), windowEnd: z.string().nullable(),
+  rows: z.array(AttributionRowSchema),
+  cashAllocation: z.string(), totalExcess: z.string(),
+  residual: z.string(), unmappedValueShare: z.string(),
 });
 
 // —— 行业研究（/api/industry/**，与后端 IndustryController 的 DTO 对齐）——

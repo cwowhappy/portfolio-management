@@ -96,4 +96,31 @@ test.describe("/allocation 资产配置", () => {
     await expect(page.getByTestId("rebalance-anchor")).toContainText("上次再平衡");
     await expect(page.getByTestId("rebalance-alert")).toBeVisible();
   });
+
+  // 回测全链路（MS-13 M07-F06）：永久组合模板（股/债/金/现 25×4）+ 5Y 窗口 → 运行回测。双环境口径：
+  // - 本地 PG：index_close_history 三代码 5Y 窗口内数据充足（000300/H11001/518880 均数千行，
+  //   treasury 1Y 同覆盖）→ 成功态：三指标 + backtest-chart 净值曲线（不断言具体数值——依赖库内数据深度）；
+  // - CI 种子库：无三代码收盘数据（亦无 treasury 1Y）→ BacktestApplicationService 对权重>0 的
+  //   价格资产先于引擎抛 INVALID_INPUT（400）「…窗口内收盘不足 2 点，无法回测」（股/债/金哪个先报
+  //   取决于 PRICE_CODES 的 Map 遍历序，正则三者皆覆盖）→ 前端卡内错误文案分支，无结果区。
+  // 两态皆合法（CI 空库为设计行为，MS-09/analytics 同理），每条断言 or() 双态（照 analytics.spec 先例）。
+  test("回测：永久组合 5Y 窗口出三指标与净值曲线", async ({ page }) => {
+    await registerAndApprove(page, uniqueUsername("bt"), TEST_PASSWORD);
+
+    await page.getByRole("link", { name: "配置" }).click();
+    await expect(page).toHaveURL(/\/allocation/, { timeout: 15_000 });
+
+    const card = page.getByTestId("backtest-card");
+    // 模板下拉选项由 BacktestCard useEffect 拉取后填充；selectOption 自带等待选项出现
+    await card.getByLabel("模板").selectOption({ label: "永久组合" });
+    await card.getByLabel("窗口").selectOption("5Y");
+    await card.getByRole("button", { name: "运行回测" }).click();
+
+    // 成功态下三指标与曲线同一次 React commit 渲染；CI 错误态三者皆不存在 → 逐条 or 兜底
+    const ciNoData = card.getByText(/窗口内收盘不足 2 点，无法回测/);
+    await expect(card.getByText("年化收益").or(ciNoData)).toBeVisible({ timeout: 20_000 });
+    await expect(card.getByText("最大回撤").or(ciNoData)).toBeVisible();
+    await expect(card.getByText("夏普比率").or(ciNoData)).toBeVisible();
+    await expect(page.getByTestId("backtest-chart").or(ciNoData)).toBeVisible();
+  });
 });

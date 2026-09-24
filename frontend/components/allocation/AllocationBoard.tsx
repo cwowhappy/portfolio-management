@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchTemplates, fetchPlans, fetchDeviation, fetchAssessment, fetchRebalance, ackRebalance } from "@/lib/allocationApi";
 import type { TemplateView, PlanView, DeviationView, AssessmentView, RebalanceView } from "@/lib/types";
 import AssessmentCard from "./AssessmentCard";
+import BacktestCard from "./BacktestCard";
 import DeviationChart from "./DeviationChart";
 import PlanEditor from "./PlanEditor";
 import PlanList from "./PlanList";
@@ -63,6 +64,8 @@ export default function AllocationBoard() {
       <AssessmentCard assessment={assessment} onChanged={reload} />
       <RebalanceCard view={rebalance} onAck={onAck} ackBusy={ackBusy} />
       <DeviationChart deviation={deviation} />
+      {/* 回测卡独立自取 plans/templates，不接入 Board 既有 state/reload */}
+      <BacktestCard />
       <PlanEditor key={editing?.id ?? "new"} templates={templates} editing={editing} onSaved={() => { setEditing(null); onPlanChanged(); }} />
       <PlanList plans={plans} onChanged={onPlanChanged} onEdit={setEditing} />
     </div>

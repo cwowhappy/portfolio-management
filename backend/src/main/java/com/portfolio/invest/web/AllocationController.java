@@ -2,6 +2,8 @@ package com.portfolio.invest.web;
 
 import com.portfolio.invest.application.allocation.AllocationApplicationService;
 import com.portfolio.invest.application.allocation.AssessmentView;
+import com.portfolio.invest.application.allocation.BacktestApplicationService;
+import com.portfolio.invest.application.allocation.BacktestView;
 import com.portfolio.invest.application.allocation.CreatePlanCommand;
 import com.portfolio.invest.application.allocation.DeviationView;
 import com.portfolio.invest.application.allocation.PlanView;
@@ -21,6 +23,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -30,9 +33,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class AllocationController {
 
     private final AllocationApplicationService service;
+    private final BacktestApplicationService backtestService;
 
-    public AllocationController(AllocationApplicationService service) {
+    public AllocationController(AllocationApplicationService service, BacktestApplicationService backtestService) {
         this.service = service;
+        this.backtestService = backtestService;
     }
 
     @GetMapping("/templates")
@@ -75,6 +80,16 @@ public class AllocationController {
     @GetMapping("/rebalance")
     public RebalanceView rebalance(Authentication auth) {
         return service.rebalance(currentUserId(auth));
+    }
+
+    /** 配置回测（MS-13 M07-F06）：权重来源 planId > template > 激活方案。 */
+    @GetMapping("/backtest")
+    public BacktestView backtest(Authentication auth,
+            @RequestParam(required = false) Long planId,
+            @RequestParam(required = false) String template,
+            @RequestParam(defaultValue = "5Y") String window,
+            @RequestParam(defaultValue = "never") String rebalance) {
+        return backtestService.backtest(currentUserId(auth), planId, template, window, rebalance);
     }
 
     @PostMapping("/rebalance/ack")

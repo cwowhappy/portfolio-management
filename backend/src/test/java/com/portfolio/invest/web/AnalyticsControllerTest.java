@@ -11,8 +11,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.portfolio.invest.application.analytics.AnalyticsApplicationService;
 import com.portfolio.invest.application.analytics.AnnualReturnRow;
+import com.portfolio.invest.application.analytics.AttributionView;
 import com.portfolio.invest.application.analytics.NavSeriesView;
 import com.portfolio.invest.application.analytics.OverviewView;
+import com.portfolio.invest.application.analytics.RiskStatsView;
 import com.portfolio.invest.application.analytics.TradeStatsView;
 import com.portfolio.invest.domain.user.User;
 import com.portfolio.invest.domain.user.UserRole;
@@ -203,5 +205,78 @@ class AnalyticsControllerTest {
 
         assertThat(result.getResponse().getContentAsString()).isEmpty();
         verify(service).tradeStats(1L);
+    }
+
+    // ———— risk-stats ————
+
+    @DisplayName("risk-stats有数据返回200及风险指标载荷")
+    @Test
+    void givenRiskStats_whenGetRiskStats_thenReturn200WithPayload() throws Exception {
+        RiskStatsView view = new RiskStatsView("0.25", "0", "2026-01-06", "2026-01-07",
+                "2026-01-08", 1L, "2.5", false, "1.5", 3L);
+        when(service.riskStats(1L)).thenReturn(Optional.of(view));
+
+        MvcResult result = mvc.perform(get("/api/analytics/risk-stats").principal(auth()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.mdd").value("0.25"))
+                .andExpect(jsonPath("$.recoveryDate").value("2026-01-08"))
+                .andExpect(jsonPath("$.drawdownDays").value(1))
+                .andExpect(jsonPath("$.sharpeRfFallback").value(false))
+                .andReturn();
+
+        RiskStatsView body = mapper.readValue(
+                result.getResponse().getContentAsString(StandardCharsets.UTF_8), RiskStatsView.class);
+        assertThat(body).isEqualTo(view);
+        verify(service).riskStats(1L);
+    }
+
+    @DisplayName("risk-stats无数据返回204空体")
+    @Test
+    void givenNoData_whenGetRiskStats_thenReturn204EmptyBody() throws Exception {
+        when(service.riskStats(1L)).thenReturn(Optional.empty());
+
+        MvcResult result = mvc.perform(get("/api/analytics/risk-stats").principal(auth()))
+                .andExpect(status().isNoContent())
+                .andReturn();
+
+        assertThat(result.getResponse().getContentAsString()).isEmpty();
+        verify(service).riskStats(1L);
+    }
+
+    // ———— attribution ————
+
+    @DisplayName("attribution有数据返回200及归因载荷")
+    @Test
+    void givenAttribution_whenGetAttribution_thenReturn200WithPayload() throws Exception {
+        AttributionView view = new AttributionView("2026-01-06", "2026-01-07",
+                List.of(new AttributionView.Row("801120", "食品饮料", "-0.0098064516", "-0.0032258065"),
+                        new AttributionView.Row("801780", "银行", "0.0046451613", "-0.0333333333")),
+                "-0.0526225806", "-0.0944086022", "-0.0000655914", "0.0000000000");
+        when(service.attribution(1L)).thenReturn(Optional.of(view));
+
+        MvcResult result = mvc.perform(get("/api/analytics/attribution").principal(auth()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.rows.length()").value(2))
+                .andExpect(jsonPath("$.rows[0].industryName").value("食品饮料"))
+                .andExpect(jsonPath("$.residual").value("-0.0000655914"))
+                .andReturn();
+
+        AttributionView body = mapper.readValue(
+                result.getResponse().getContentAsString(StandardCharsets.UTF_8), AttributionView.class);
+        assertThat(body).isEqualTo(view);
+        verify(service).attribution(1L);
+    }
+
+    @DisplayName("attribution无流水返回204空体")
+    @Test
+    void givenNoData_whenGetAttribution_thenReturn204EmptyBody() throws Exception {
+        when(service.attribution(1L)).thenReturn(Optional.empty());
+
+        MvcResult result = mvc.perform(get("/api/analytics/attribution").principal(auth()))
+                .andExpect(status().isNoContent())
+                .andReturn();
+
+        assertThat(result.getResponse().getContentAsString()).isEmpty();
+        verify(service).attribution(1L);
     }
 }

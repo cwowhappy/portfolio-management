@@ -250,6 +250,15 @@ export interface RebalanceView {
   hasActivePlan: boolean; totalAssets: number; suppressed: boolean; anyAlert: boolean;
   items: RebalanceItem[]; timeTrigger: RebalanceTimeTrigger | null;
 }
+// 配置回测（MS-13 M07-F06）：数值为后端 toPlainString 字符串（曲线净值期初 1000；
+// 年化收益/MDD 为小数、夏普为比率），sharpe null=不可算「—」；
+// window/rebalance 回显请求值，windowStart/End 为实际截齐窗口。
+export interface CurvePointView { date: string; value: string; }
+export interface BacktestView {
+  planName: string; windowStart: string; windowEnd: string;
+  window: string; rebalance: string; curve: CurvePointView[];
+  annualizedReturn: string; mdd: string; sharpe: string | null; rfFallback: boolean;
+}
 
 // —— 自选观察（/api/watchlist/**）——
 
@@ -370,6 +379,22 @@ export interface AnnualReturnRow {
 export interface TradeStatsView {
   sellCount: number; winCount: number; winRate: string; avgWin: string; avgLoss: string;
   profitFactor: string | null; avgHoldingDays: string; bestPnl: string; worstPnl: string;
+}
+// 数值为后端 toPlainString 字符串（如 "0.2500000000"），null=「—」；recoveryDate null=回撤进行中。
+export interface RiskStatsView {
+  mdd: string | null; currentDrawdown: string | null;
+  peakDate: string | null; troughDate: string | null; recoveryDate: string | null;
+  drawdownDays: number; sharpe: string | null; sharpeRfFallback: boolean;
+  calmar: string | null; windowDays: number;
+}
+// 归因（MS-13 F09）：allocation/selection=行业累计贡献小数（toPlainString 字符串）；
+// residual=totalExcess−Σ贡献（日频权重近似损耗）；窗口 null=无可归因交易日。
+export interface AttributionRow {
+  industry: string; industryName: string | null; allocation: string; selection: string;
+}
+export interface Attribution {
+  windowStart: string | null; windowEnd: string | null; rows: AttributionRow[];
+  cashAllocation: string; totalExcess: string; residual: string; unmappedValueShare: string;
 }
 
 // —— 行业研究（/api/industry/**，与后端 IndustryController 的 DTO 对齐）——
