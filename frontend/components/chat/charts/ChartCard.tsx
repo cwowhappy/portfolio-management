@@ -26,22 +26,25 @@ export function ChartCard({ status, result, name, builder }: {
   const parsed = useMemo(() => {
     if (status !== "complete" || typeof result !== "string") return null;
     if (isToolError(result)) return { degrade: true as const };
+    let json: unknown;
     try {
-      const check = ChartSpecSchema.safeParse(JSON.parse(result));
-      if (!check.success) return { degrade: true as const };
-      const spec = check.data;
-      if (spec.type === "table") return { spec, table: true as const }; // P4：接 DataTable，不再降级
-      if (!builder) return { degrade: true as const };
-      const p = getPalette();
-      // 空串规约为 undefined（jsdom/SSR 取不到 CSS 变量时），让 builder 的 ?? FALLBACK 兜底生效——
-      // ?? 不回退空串，直接透传 "" 会把 K 线实体色置空。生产路径解析值为非空 hex，语义不变。
-      return {
-        spec,
-        option: builder(spec, { up: p.up || undefined, down: p.down || undefined }),
-      };
+      json = JSON.parse(result);
     } catch {
-      return { degrade: true as const };
+      // 非 JSON 纯文本：工具的合法文字产物（空筛选摘要/空持仓引导/冷库估值提示等），非异常
+      return { text: true as const };
     }
+    const check = ChartSpecSchema.safeParse(json);
+    if (!check.success) return { degrade: true as const };
+    const spec = check.data;
+    if (spec.type === "table") return { spec, table: true as const }; // P4：接 DataTable，不再降级
+    if (!builder) return { degrade: true as const };
+    const p = getPalette();
+    // 空串规约为 undefined（jsdom/SSR 取不到 CSS 变量时），让 builder 的 ?? FALLBACK 兜底生效——
+    // ?? 不回退空串，直接透传 "" 会把 K 线实体色置空。生产路径解析值为非空 hex，语义不变。
+    return {
+      spec,
+      option: builder(spec, { up: p.up || undefined, down: p.down || undefined }),
+    };
   }, [status, result, builder]);
 
   if (parsed == null)
@@ -58,6 +61,15 @@ export function ChartCard({ status, result, name, builder }: {
         <div className="mb-1 text-xs font-medium text-[color:var(--color-ink-dim)]">{parsed.spec.title}</div>
         <DataTable spec={parsed.spec} />
       </div>
+    );
+  if (parsed.text)
+    return (
+      <details className="tool-card my-2 w-full max-w-[560px] px-3 py-2 text-xs">
+        <summary className="cursor-pointer text-[color:var(--color-ink-dim)]">文字结果（点击展开）</summary>
+        <pre className="mt-2 max-h-[320px] overflow-auto whitespace-pre-wrap break-all text-[color:var(--color-ink-faint)]">
+          {result!.slice(0, 2000)}
+        </pre>
+      </details>
     );
   if (parsed.degrade)
     return (
