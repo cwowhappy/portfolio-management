@@ -32,6 +32,13 @@ test.describe("/portfolio 持仓组合管理", () => {
     // 等待分组刷新：分组切换标签出现「主账户」。
     await expect(page.getByTestId("group-tabs").getByRole("button", { name: "主账户" })).toBeVisible();
 
+    // 买入校验分组现金（issue #45）：先现金转入，余额刷新出现在分组列表行。
+    await page.getByLabel("现金账户").selectOption({ label: "主账户" });
+    await page.getByLabel("转入转出").selectOption("DEPOSIT");
+    await page.getByLabel("金额", { exact: true }).fill("200000");
+    await page.getByRole("button", { name: "录入" }).click();
+    await expect(page.getByText("现金 200000.00")).toBeVisible({ timeout: 15_000 });
+
     // BuyForm 的分组下拉不会随 groups 更新而自动选中，显式选中刚建的账户分组。
     await page.getByLabel("分组").selectOption({ label: "主账户" });
 
@@ -46,5 +53,32 @@ test.describe("/portfolio 持仓组合管理", () => {
     // 本用例禁用重试（重复注册会撞唯一用户名），超时不足会直接红。
     await expect(table.getByText("贵州茅台")).toBeVisible({ timeout: 15_000 });
     await expect(table.getByText("暂无持仓")).toHaveCount(0);
+  });
+
+  test("现金不足买入被拒（issue #45）", async ({ page }) => {
+    await registerAndApprove(page, uniqueUsername("pfc"), TEST_PASSWORD);
+
+    await page.getByRole("link", { name: "持仓" }).click();
+    await expect(page).toHaveURL(/\/portfolio/, { timeout: 15_000 });
+    await page.getByPlaceholder("分组名（如 华泰）").fill("主账户");
+    await page.getByRole("button", { name: "新建" }).click();
+    await expect(page.getByTestId("group-tabs").getByRole("button", { name: "主账户" })).toBeVisible();
+    // 仅转入小额，买入远超余额
+    await page.getByLabel("现金账户").selectOption({ label: "主账户" });
+    await page.getByLabel("转入转出").selectOption("DEPOSIT");
+    await page.getByLabel("金额", { exact: true }).fill("1000");
+    await page.getByRole("button", { name: "录入" }).click();
+    await expect(page.getByText("现金 1000.00")).toBeVisible({ timeout: 15_000 });
+
+    await page.getByLabel("分组").selectOption({ label: "主账户" });
+    await page.getByLabel("代码").fill("600519");
+    await page.getByLabel("名称").fill("贵州茅台");
+    await page.getByLabel("价格").fill("1500");
+    await page.getByLabel("数量").fill("100");
+    await page.getByRole("button", { name: "买入" }).click();
+
+    // 后端 INSUFFICIENT_CASH → BuyForm 展示可行动错误（含可用/需求数字），持仓不新增
+    await expect(page.getByText(/现金不足：可用 1000/)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("position-table").getByText("贵州茅台")).toHaveCount(0);
   });
 });

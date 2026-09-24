@@ -6,11 +6,11 @@ import { registerAndApprove, TEST_PASSWORD, uniqueUsername } from "./helpers";
 const hasAdminSeed = !!(process.env.ADMIN_USERNAME && process.env.ADMIN_PASSWORD);
 
 // 造数据说明（与 portfolio.spec.ts 同法，最小路径）：
-// - 不做「现金转入」：买入不校验现金余额（先例 portfolio.spec.ts 直接买入），
-//   总资产 = 市值 + 负现金，仅断言四块渲染不校验数值符号；
+// - 先「现金转入」再买入（issue #45 起买入校验分组现金，负现金形态从源头阻断）；
 // - 断言不依赖 close 回填：首事件日 = 今日，窗口 [今日,今日]，序列仅今日 quoteBatch
-//   实时价单点 → TWR/年化为 0；无现金流水 → IRR 退化口径（=累计收益 0%，附小字标注），
-//   均属预期短序列形态。
+//   实时价单点 → TWR/年化为 0；转入构成外部现金流 → IRR 走 XIRR 真解，
+//   均属预期短序列形态。精确数值对拍在 AnalyticsApplicationServiceTest 已知答案用例
+//   （转入+买入+涨10% → TWR 20%），e2e 不依赖实时行情做脆化精确断言。
 test.describe("/analytics 收益分析", () => {
   test.skip(!hasAdminSeed, "未配置 ADMIN_USERNAME/ADMIN_PASSWORD（无种子管理员），跳过收益分析用例");
 
@@ -24,15 +24,20 @@ test.describe("/analytics 收益分析", () => {
     await expect(page.getByTestId("analytics-empty")).toBeVisible();
   });
 
-  test("买入后四块渲染（容忍短序列）", async ({ page }) => {
+  test("转入并买入后四块渲染 + 单点短序列口径", async ({ page }) => {
     await registerAndApprove(page, uniqueUsername("ana"), TEST_PASSWORD);
 
-    // 造数据走 /portfolio UI：建组 → 买入（分组下拉细节注释见 portfolio.spec.ts）
+    // 造数据走 /portfolio UI：建组 → 现金转入 → 买入（分组下拉细节注释见 portfolio.spec.ts）
     await page.getByRole("link", { name: "持仓" }).click();
     await expect(page).toHaveURL(/\/portfolio/, { timeout: 15_000 });
     await page.getByPlaceholder("分组名（如 华泰）").fill("主账户");
     await page.getByRole("button", { name: "新建" }).click();
     await expect(page.getByTestId("group-tabs").getByRole("button", { name: "主账户" })).toBeVisible();
+    await page.getByLabel("现金账户").selectOption({ label: "主账户" });
+    await page.getByLabel("转入转出").selectOption("DEPOSIT");
+    await page.getByLabel("金额", { exact: true }).fill("200000");
+    await page.getByRole("button", { name: "录入" }).click();
+    await expect(page.getByText("现金 200000.00")).toBeVisible({ timeout: 15_000 });
     await page.getByLabel("分组").selectOption({ label: "主账户" });
     await page.getByLabel("代码").fill("600519");
     await page.getByLabel("名称").fill("贵州茅台");
@@ -51,5 +56,11 @@ test.describe("/analytics 收益分析", () => {
     await expect(page.getByTestId("nav-chart")).toBeVisible();
     await expect(page.getByTestId("annual-table")).toBeVisible();
     await expect(page.getByTestId("trade-stats")).toBeVisible();
+    // 单点短序列口径（issue #45 验收回归）：TWR 累计 0.00%；总资产 = 市值 + 49995 现金 > 0
+    // （负现金失真形态已被买入校验从源头阻断）。
+    await expect(overview.getByText("TWR 累计").locator("..").getByText("0.00%")).toBeVisible();
+    const totalText = await overview.getByText("总资产").locator("..").innerText();
+    const total = Number(totalText.replace(/[^0-9.]/g, ""));
+    expect(total).toBeGreaterThan(49995);
   });
 });

@@ -144,6 +144,18 @@ public class PortfolioApplicationService {
     public PositionView buy(Long userId, BuyCommand cmd) {
         Portfolio p = getOrCreatePortfolio(userId);
         requireGroup(p.id(), cmd.groupId());
+        // 买入校验分组现金（issue #45）：账户现金 = 转入−转出+卖出+分红−买入（01-需求规格「现金独立记账」），
+        // 不足则拒——防止负现金形态流入 analytics 使总资产/TWR 失真（负现金=账本不完整）。
+        var groupPositions = repository.findPositionsByGroupId(cmd.groupId());
+        BigDecimal available = cashBalance(cmd.groupId(), groupPositions,
+                repository.findCashTransactionsByGroupId(cmd.groupId()));
+        BigDecimal cost = cmd.price().multiply(cmd.quantity()).add(cmd.fee());
+        if (available.compareTo(cost) < 0) {
+            throw new PortfolioException(PortfolioErrorCode.INSUFFICIENT_CASH,
+                    "现金不足：可用 " + available.stripTrailingZeros().toPlainString()
+                            + "，本次需 " + cost.stripTrailingZeros().toPlainString()
+                            + "（含费），请先在分组现金转入");
+        }
         var position = repository
                 .findPositionByPortfolioIdAndGroupIdAndStockCode(p.id(), cmd.groupId(), cmd.stockCode())
                 .orElseGet(() -> Position.create(p.id(), cmd.groupId(), cmd.stockCode(), cmd.stockName(), Instant.now()));

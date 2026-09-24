@@ -136,6 +136,7 @@ class PortfolioApplicationServiceTest {
         when(repo.findPositionByPortfolioIdAndGroupIdAndStockCode(10L, 1L, "600519")).thenReturn(Optional.empty());
         when(repo.findGroupByIdAndPortfolioId(1L, 10L))
                 .thenReturn(Optional.of(HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now())));
+        stubGroupCash("200000");
         when(repo.savePosition(any())).thenAnswer(inv -> {
             Position p = inv.getArgument(0);
             return Position.reconstitute(
@@ -157,6 +158,48 @@ class PortfolioApplicationServiceTest {
         ArgumentCaptor<Trade> captor = ArgumentCaptor.forClass(Trade.class);
         verify(repo).saveTrade(captor.capture());
         assertThat(captor.getValue().positionId()).isEqualTo(99L);
+    }
+
+    @DisplayName("现金不足买入被拒且不落任何写入（issue #45：买入校验分组现金）")
+    @Test
+    void givenNoCash_whenBuy_thenRejectWithInsufficientCash() {
+        when(repo.findGroupByIdAndPortfolioId(1L, 10L))
+                .thenReturn(Optional.of(HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now())));
+        when(repo.findPositionByPortfolioIdAndGroupIdAndStockCode(10L, 1L, "600519")).thenReturn(Optional.empty());
+        // 分组无转入流水（Mockito 集合默认空）→ 现金 0 < 1500×100+5
+
+        assertThatThrownBy(() -> service.buy(1L, new BuyCommand(1L, "600519", "贵州茅台",
+                LocalDate.of(2026, 8, 27), new BigDecimal("1500"), new BigDecimal("100"), new BigDecimal("5"))))
+                .isInstanceOfSatisfying(PortfolioException.class,
+                        e -> {
+                            assertThat(e.code()).isEqualTo(PortfolioErrorCode.INSUFFICIENT_CASH);
+                            assertThat(e.getMessage()).contains("现金不足").contains("150005");
+                        });
+        verify(repo, org.mockito.Mockito.never()).saveTrade(any());
+        verify(repo, org.mockito.Mockito.never()).savePosition(any());
+    }
+
+    @DisplayName("现金恰好等于买入成本（含费）可成交")
+    @Test
+    void givenExactSufficientCash_whenBuy_thenSucceed() {
+        when(repo.findPositionByPortfolioIdAndGroupIdAndStockCode(10L, 1L, "600519")).thenReturn(Optional.empty());
+        when(repo.findGroupByIdAndPortfolioId(1L, 10L))
+                .thenReturn(Optional.of(HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now())));
+        stubGroupCash("150005"); // 恰好 = 1500×100+5
+        when(repo.savePosition(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(repo.saveTrade(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        var view = service.buy(1L, new BuyCommand(1L, "600519", "贵州茅台",
+                LocalDate.of(2026, 8, 27), new BigDecimal("1500"), new BigDecimal("100"), new BigDecimal("5")));
+
+        assertThat(view.quantity()).isEqualByComparingTo("100");
+    }
+
+    /** 为分组 1 stub 一笔现金转入（买入校验的造数前置）。 */
+    private void stubGroupCash(String amount) {
+        when(repo.findCashTransactionsByGroupId(1L)).thenReturn(List.of(
+                new CashTransaction(1L, 1L, CashTransactionType.DEPOSIT,
+                        new BigDecimal(amount), LocalDate.of(2026, 8, 26), "转入", Instant.now())));
     }
 
     @DisplayName("卖出调用引擎并保存")
@@ -453,6 +496,7 @@ class PortfolioApplicationServiceTest {
     void givenExistingPosition_whenBuy_thenAccumulateQuantity() {
         when(repo.findGroupByIdAndPortfolioId(1L, 10L))
                 .thenReturn(Optional.of(HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now())));
+        stubGroupCash("200000");
         when(repo.findPositionByPortfolioIdAndGroupIdAndStockCode(10L, 1L, "600519"))
                 .thenReturn(Optional.of(positionWithId(5)));
         when(repo.savePosition(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -865,6 +909,7 @@ class PortfolioApplicationServiceTest {
         // buy 仍能按 组合+分组+代码 命中已清仓行，重新买入（FR-A4：交易历史保留、可再开仓）
         when(repo.findGroupByIdAndPortfolioId(1L, 10L))
                 .thenReturn(Optional.of(HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now())));
+        stubGroupCash("200000"); // 已清仓行净现金流 +2000 亦计入分组现金，转入覆盖后买入
         when(repo.findPositionByPortfolioIdAndGroupIdAndStockCode(10L, 1L, "600519"))
                 .thenReturn(Optional.of(clearedPosition(5L)));
         when(repo.savePosition(any())).thenAnswer(inv -> {

@@ -70,11 +70,17 @@ class PositionOptimisticLockingIntegrationTest extends ConcurrencyTestSupport {
                         + "created_at, updated_at, version) "
                         + "VALUES (?, ?, ?, ?, ?, 100, 10000, 10000, 0, 0, -10000, now(), now(), 1)",
                 POSITION_ID, PORTFOLIO_ID, GROUP_ID, STOCK, "贵州茅台");
+        // 买入校验分组现金（issue #45）：存量持仓 net_cash_flow=-10000 已占现金，转入覆盖胜者买入（10×20）
+        jdbcTemplate.update(
+                "INSERT INTO cash_transaction(id, group_id, type, amount, tx_date, note, created_at) "
+                        + "VALUES (?, ?, 'DEPOSIT', 100000, '2026-08-27', 'seed', now())",
+                GROUP_ID, GROUP_ID);
     }
 
     @AfterEach
     void cleanup() {
         jdbcTemplate.update("DELETE FROM trade WHERE position_id = ?", POSITION_ID);
+        jdbcTemplate.update("DELETE FROM cash_transaction WHERE group_id = ?", GROUP_ID);
         jdbcTemplate.update("DELETE FROM dividend WHERE position_id = ?", POSITION_ID);
         jdbcTemplate.update("DELETE FROM position WHERE id = ?", POSITION_ID);
         jdbcTemplate.update("DELETE FROM holding_group WHERE id = ?", GROUP_ID);
