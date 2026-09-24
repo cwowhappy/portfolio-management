@@ -2,7 +2,10 @@ package com.portfolio.invest.web;
 
 import com.portfolio.invest.application.allocation.AllocationApplicationService;
 import com.portfolio.invest.application.allocation.AssessmentView;
+import com.portfolio.invest.application.allocation.BacktestApplicationService;
+import com.portfolio.invest.application.allocation.BacktestView;
 import com.portfolio.invest.application.allocation.CreatePlanCommand;
+import com.portfolio.invest.application.allocation.CurvePointView;
 import com.portfolio.invest.application.allocation.DeviationView;
 import com.portfolio.invest.application.allocation.PlanView;
 import com.portfolio.invest.application.allocation.QuestionnaireView;
@@ -36,6 +39,7 @@ import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -48,17 +52,22 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class AllocationControllerTest {
 
     private final AllocationApplicationService service = mock(AllocationApplicationService.class);
+    private final BacktestApplicationService backtestService = mock(BacktestApplicationService.class);
     private MockMvc mvc;
 
     @BeforeEach
     void setUp() {
-        mvc = MockMvcBuilders.standaloneSetup(new AllocationController(service))
+        mvc = MockMvcBuilders.standaloneSetup(new AllocationController(service, backtestService))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
     }
 
     private org.springframework.security.core.Authentication auth() {
-        var user = User.reconstitute(1L, "u", "p", UserRole.USER, UserStatus.APPROVED, true,
+        return withUser(1L);
+    }
+
+    private org.springframework.security.core.Authentication withUser(Long id) {
+        var user = User.reconstitute(id, "u", "p", UserRole.USER, UserStatus.APPROVED, true,
                 Instant.now(), Instant.now());
         var principal = new AuthenticatedUser(user);
         return new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
@@ -211,5 +220,27 @@ class AllocationControllerTest {
                         .content("{\"answers\":[{\"questionId\":\"Q1\",\"optionId\":\"C\"}]}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_ANSWERS"));
+    }
+
+    @DisplayName("backtest 200 契约与 400/422 错误路径")
+    @Test
+    void whenBacktest_then200And400And422() throws Exception {
+        when(backtestService.backtest(eq(1L), isNull(), isNull(), eq("5Y"), eq("never")))
+                .thenReturn(new BacktestView("我的方案", "2021-09-24", "2026-09-24", "5Y", "never",
+                        List.of(new CurvePointView("2021-09-24", "1000")), "0.08", "0.15", "0.9", false));
+        mvc.perform(get("/api/allocation/backtest").principal(withUser(1L)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.planName").value("我的方案"))
+                .andExpect(jsonPath("$.curve[0].value").value("1000"));
+        when(backtestService.backtest(eq(2L), isNull(), isNull(), any(), any()))
+                .thenThrow(new AllocationException(AllocationErrorCode.NO_ACTIVE_PLAN, "无可用方案"));
+        mvc.perform(get("/api/allocation/backtest").principal(withUser(2L)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("NO_ACTIVE_PLAN"));
+        when(backtestService.backtest(eq(3L), isNull(), isNull(), any(), any()))
+                .thenThrow(new AllocationException(AllocationErrorCode.REITS_BACKTEST_UNSUPPORTED, "REITs 不支持"));
+        mvc.perform(get("/api/allocation/backtest").principal(withUser(3L)))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("REITS_BACKTEST_UNSUPPORTED"));
     }
 }
