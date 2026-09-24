@@ -50,11 +50,26 @@ describe("ChartCard（状态机壳，05 §4.6）", () => {
     expect(details.textContent).toContain("Tool execution failed");
   });
 
-  it("complete + 非法 spec（specVersion 错/JSON 坏）→ 降级折叠卡", () => {
+  it("complete + 非法 spec（specVersion 错）→ 降级折叠卡（数据异常）", () => {
     render(<ChartCard status="complete" name="get_kline" result='{"specVersion":2,"type":"pie"}' builder={anyBuilder} />);
     expect(document.querySelector("details.tool-card")).toBeTruthy();
-    render(<ChartCard status="complete" name="get_kline" result="不是JSON" builder={anyBuilder} />);
-    expect(document.querySelectorAll("details.tool-card")).toHaveLength(2);
+    expect(document.querySelector("details.tool-card")!.textContent).toContain("数据异常");
+  });
+
+  it("complete + 非 JSON 纯文本（工具合法文字结果：空筛选摘要/空持仓引导/冷库估值提示）→ 中立文字卡，不标数据异常", () => {
+    render(
+      <ChartCard
+        status="complete"
+        name="screen_stocks"
+        result="筛选完成：无满足条件的股票，可尝试放宽 PE/ROE 阈值后重试。"
+        builder={anyBuilder}
+      />,
+    );
+    const details = document.querySelector("details.tool-card")!;
+    expect(details).toBeTruthy();
+    expect(details.textContent).toContain("文字结果");
+    expect(details.textContent).not.toContain("数据异常");
+    expect(details.textContent).toContain("无满足条件的股票");
   });
 
   it("complete + table 变体 → DataTable（th 可见、非降级卡，无 builder 也渲染）", () => {

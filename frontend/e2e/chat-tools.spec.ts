@@ -5,8 +5,9 @@ const hasAdminSeed = !!(process.env.ADMIN_USERNAME && process.env.ADMIN_PASSWORD
 
 // MS-12：5 个新工具纳入对话链路（真实 LLM，双门控同 chat.spec）。
 // 断言信号说明：具名 ChartCard 渲染器接管工具卡的渲染（ToolCallCard 标签不再显示），
-// 故断言图表卡的实际渲染产物——筛选表格标题「筛选结果（」与空持仓的 ChartCard 降级折叠卡
-// （analyze_portfolio 空持仓返回纯文本，ChartCard 降级形态与 get_valuation 冷库同款）。
+// 故断言图表卡的实际渲染产物——筛选表格标题「筛选结果（」与空持仓的 ChartCard 文字卡
+// （analyze_portfolio 空持仓返回纯文本；非 JSON 文字是工具合法产物，渲染为中立「文字结果」
+// 折叠卡，2026-09-24 修复前误标「数据异常」）。
 test.describe("AI 工具二期", () => {
   test.skip(!process.env.DEEPSEEK_API_KEY, "未配置 DEEPSEEK_API_KEY，跳过真实对话");
   test.skip(!hasAdminSeed, "未配置 ADMIN_USERNAME/ADMIN_PASSWORD，跳过");
@@ -31,8 +32,8 @@ test.describe("AI 工具二期", () => {
     const sendBtn = page.getByRole("button", { name: "发送" });
     await expect(sendBtn).toBeEnabled({ timeout: 30_000 });
     await sendBtn.click();
-    // analyze_portfolio 被调用的可观测信号：ChartCard 降级折叠卡（空持仓纯文本结果）
-    await expect(page.getByText("数据异常（原始结果折叠）").first()).toBeVisible({ timeout: 180_000 });
+    // analyze_portfolio 被调用的可观测信号：ChartCard 文字结果折叠卡（空持仓纯文本结果）
+    await expect(page.getByText("文字结果（点击展开）").first()).toBeVisible({ timeout: 180_000 });
     await expect(page.getByRole("button", { name: "■ 停止" })).toBeHidden({ timeout: 180_000 });
   });
 });
