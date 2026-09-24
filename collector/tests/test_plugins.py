@@ -297,3 +297,35 @@ def test_stock_valuation_daily_range_loops_open_days():
     src = StockValuationDailySource("svd", pro_factory=lambda: _svd_pro(True), limiter=_NoWaitLimiter())
     df = src.fetch({"start": "2026-09-14", "end": "2026-09-15"})
     assert len(df) == 2  # 两个开市日各一行
+
+
+# ---------------------------------------------------------------- MS-13 申万一级行业指数收盘 industry_index_close
+
+
+def test_industry_index_close_fetches_all_industries(mocker):
+    from collector.sources.plugins import INDUSTRY_INDEX_CODES, IndustryIndexCloseSource
+
+    captured = []
+
+    def fake_sw_fetch(code):
+        captured.append(code)
+        return pd.DataFrame(
+            {
+                "日期": ["2026-09-22", "2026-09-23"],
+                "收盘": [1234.0, 1235.5],
+            }
+        )
+
+    src = IndustryIndexCloseSource("industry_index_close", sw_fetch=fake_sw_fetch, sleep_fn=lambda s: None)
+    df = src.fetch({"start": "2026-09-23", "end": "2026-09-23"})
+    assert len(captured) == len(INDUSTRY_INDEX_CODES) == 31
+    assert set(df.columns) == {"trading_day", "index_code", "index_name", "close"}
+    assert len(df) == 31  # 窗口裁剪：只留 2026-09-23 一天/行业
+    assert (df["trading_day"] == "20260923").all()  # ISO → 紧凑格式归一
+    assert df["index_code"].str.endswith(".SI").sum() == 0  # 去后缀落库，与 shenwan_industry_mapping 同构
+
+
+def test_industry_index_close_supports_range_for_backfill():
+    from collector.sources.plugins import IndustryIndexCloseSource
+
+    assert IndustryIndexCloseSource.supports_range is True

@@ -1,5 +1,6 @@
 import datetime as dt
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 import akshare as ak
@@ -135,6 +136,76 @@ class IndexCloseSource(Source):
             df = df.rename(columns={"trade_date": "trading_day"})
             df["index_code"], df["index_name"] = code, name
             frames.append(df[["trading_day", "index_code", "index_name", "close"]])
+        return pd.concat(frames, ignore_index=True)
+
+
+INDUSTRY_INDEX_CODES = {
+    "801010": "农林牧渔",
+    "801030": "基础化工",
+    "801040": "钢铁",
+    "801050": "有色金属",
+    "801080": "电子",
+    "801110": "家用电器",
+    "801120": "食品饮料",
+    "801130": "纺织服饰",
+    "801140": "轻工制造",
+    "801150": "医药生物",
+    "801160": "公用事业",
+    "801170": "交通运输",
+    "801180": "房地产",
+    "801200": "商贸零售",
+    "801210": "社会服务",
+    "801230": "综合",
+    "801710": "建筑材料",
+    "801720": "建筑装饰",
+    "801730": "电力设备",
+    "801740": "国防军工",
+    "801750": "计算机",
+    "801760": "传媒",
+    "801770": "通信",
+    "801780": "银行",
+    "801790": "非银金融",
+    "801880": "汽车",
+    "801890": "机械设备",
+    "801950": "煤炭",
+    "801960": "石油石化",
+    "801970": "环保",
+    "801980": "美容护理",
+}  # 申万 2021 一级 31 行业；Task 0 四方对齐核验零差异（调研报告 §四）
+
+
+def _default_sw_fetch(code):
+    """akshare 申万官网源（Task 0 裁决：sw_daily 积分权限不可得）；返回全历史，列 日期/收盘。"""
+    import akshare as ak
+
+    return ak.index_hist_sw(symbol=code, period="day")
+
+
+class IndustryIndexCloseSource(Source):
+    """申万一级行业指数收盘（MS-13 归因基准）：akshare index_hist_sw（申万 2021 口径原生同构）。
+
+    index_hist_sw 无日期参数、一次返回全历史——fetch 内按 params 窗口客户端裁剪（supports_range=True 供 backfill）。
+    index_code 去 .SI 后缀落库（源即无后缀）——与 shenwan_industry_mapping.industry_code 同构（Join 零转换）。
+    """
+
+    supports_range = True
+
+    def __init__(self, source_id, sw_fetch=None, sleep_fn=time.sleep):
+        self.source_id = source_id
+        self.sw_fetch = sw_fetch or _default_sw_fetch
+        self.sleep_fn = sleep_fn
+
+    def fetch(self, params):
+        start, end = _date_param(params, "start"), _date_param(params, "end")
+        frames = []
+        for code, name in INDUSTRY_INDEX_CODES.items():
+            df = self.sw_fetch(code)[["日期", "收盘"]]
+            df = df.rename(columns={"日期": "trading_day", "收盘": "close"})
+            df["trading_day"] = pd.to_datetime(df["trading_day"]).dt.strftime("%Y%m%d")
+            df = df[(df["trading_day"] >= start) & (df["trading_day"] <= end)]
+            df["index_code"], df["index_name"] = code, name
+            frames.append(df[["trading_day", "index_code", "index_name", "close"]])
+            self.sleep_fn(0.3)  # 申万官网源保守限速（探测建议 0.3–0.5s）
         return pd.concat(frames, ignore_index=True)
 
 

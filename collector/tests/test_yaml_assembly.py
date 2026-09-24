@@ -22,6 +22,7 @@ EXPECTED_TASKS = {
     "index_close",
     "index_constituent",
     "index_valuation",
+    "industry_index_close",
     "industry_valuation",
     "industry_valuation_backfill",
     "shenwan_mapping",

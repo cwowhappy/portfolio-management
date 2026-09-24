@@ -30,6 +30,7 @@ from collector.sources.plugins import (
     IndexCloseSource,
     IndexConstituentSource,
     IndexValuationSource,
+    IndustryIndexCloseSource,
     IndustryUniverseSource,
     IndustryValuationBackfillSource,
     ShenwanMappingSource,
@@ -282,6 +283,7 @@ def build_registries(config):
             "stock_valuation_daily": StockValuationDailySource("stock_valuation_daily", pro_factory=pro),
             "stock_financial": StockFinancialSource("stock_financial", pro_factory=pro),
             "index_close": IndexCloseSource("index_close", pro_factory=pro),
+            "industry_index_close": IndustryIndexCloseSource("industry_index_close"),
             "industry_valuation_backfill": IndustryValuationBackfillSource(
                 "industry_valuation_backfill", conn_factory=conn_factory
             ),
