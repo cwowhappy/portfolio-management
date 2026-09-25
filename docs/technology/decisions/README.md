@@ -9,7 +9,7 @@
 |------|------|------|
 | [ADR-0001](0001-agent-framework.md) | Agent 框架选型：AgentScope Java | 有效 |
 | [ADR-0002](0002-interaction-protocol.md) | 交互协议选型：AG-UI 标准协议 | 有效 |
-| [ADR-0003](0003-market-data-source.md) | 行情数据源：东方财富公开接口 + 新浪兜底 | 有效 |
+| [ADR-0003](0003-market-data-source.md) | 行情数据源：东方财富公开接口 + 新浪兜底（2026-09-25 修订：行情主源切腾讯，东财/新浪兜底，见变更记录） | 有效 |
 | [ADR-0004](0004-session-model.md) | 会话模型：前端持有历史 + threadId | 已被 [ADR-0008](0008-conversation-persistence.md) 取代 |
 | [ADR-0005](0005-frontend-agui-framework.md) | 前端 AG-UI 框架选型：assistant-ui（渐进式迁移） | 已被 [ADR-0006](0006-frontend-copilotkit.md) 取代 |
 | [ADR-0006](0006-frontend-copilotkit.md) | 前端 AG-UI 框架切换：assistant-ui → CopilotKit | 有效 |
