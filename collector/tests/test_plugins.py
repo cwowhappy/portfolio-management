@@ -594,3 +594,241 @@ def test_etf_basic_supports_range_false():
     from collector.sources.plugins import EtfBasicSource
 
     assert EtfBasicSource.supports_range is False
+
+
+# ------------------------------------- MS-14 P3 Task 14 ETF/跟踪指数日线 etf_close / tracking_index_close
+
+import logging
+
+
+class _FakeCursor:
+    def __init__(self, rows, sql_log):
+        self._rows = rows
+        self._sql_log = sql_log
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def execute(self, sql, *args, **kwargs):
+        self._sql_log.append(sql)
+
+    def fetchall(self):
+        return self._rows
+
+
+class _FakeConn:
+    """只读查询用 FakeConn：fetchall → rows；execute 的 SQL 追加进 sql_log 供断言。"""
+
+    def __init__(self, rows, sql_log):
+        self._rows = rows
+        self._sql_log = sql_log
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def cursor(self):
+        return _FakeCursor(self._rows, self._sql_log)
+
+
+def _fake_conn_factory(rows, sql_log=None):
+    return lambda: _FakeConn(rows, sql_log if sql_log is not None else [])
+
+
+def _fund_daily_frame():
+    """fund_daily trade_date 全市场模式缩影（探测 §三：2134 行含 LOF/封基与 .OF 脏行）。"""
+    return pd.DataFrame(
+        {
+            "ts_code": ["510300.SH", "159915.SZ", "518880.SH", "501000.SH", "160605.SZ", "158008.OF"],
+            "trade_date": ["20260924"] * 6,
+            "close": [4.515, 3.312, 8.788, 1.0, 2.0, 3.0],
+        }
+    )
+
+
+class _EtfClosePro:
+    """fund_daily/trade_cal FakePro：trade_date 全市场单次模式（返回帧的 trade_date 改写为请求日）。"""
+
+    def __init__(self, empty_days=()):
+        self.fund_daily_calls = []
+        self._empty_days = set(empty_days)
+
+    def trade_cal(self, exchange=None, start_date=None, end_date=None, is_open=None):
+        return pd.DataFrame({"cal_date": ["20260922", "20260923", "20260924"], "is_open": [1, 1, 1]})
+
+    def fund_daily(self, trade_date=None, ts_code=None, **kw):
+        self.fund_daily_calls.append({"trade_date": trade_date, "ts_code": ts_code})
+        if trade_date in self._empty_days:
+            return pd.DataFrame()
+        df = _fund_daily_frame()
+        df["trade_date"] = trade_date
+        return df
+
+
+_ETF_WHITELIST = [
+    ("510300", "沪深300ETF华泰柏瑞"),
+    ("159915", "创业板ETF易方达"),
+    ("518880", "黄金ETF华安"),
+]
+
+
+def test_etf_close_trade_date_mode_filters_by_etf_basic_whitelist():
+    """日常增量：fund_daily(trade_date=最近开市日) 单次全市场，FakePro 收到 trade_date 而非 ts_code；
+    etf_basic 半连接剔除 LOF（501000/160605）与 .OF 脏行（158008）。"""
+    from collector.sources.plugins import EtfCloseSource
+
+    pro = _EtfClosePro()
+    src = EtfCloseSource(
+        "etf_close",
+        conn_factory=_fake_conn_factory(_ETF_WHITELIST),
+        pro_factory=lambda: pro,
+        sleep_fn=lambda s: None,
+    )
+    df = src.fetch({})
+    assert list(df.columns) == ["trading_day", "index_code", "index_name", "close"]
+    assert pro.fund_daily_calls == [{"trade_date": "20260924", "ts_code": None}]  # 单次全市场
+    assert set(df["index_code"]) == {"510300", "159915", "518880"}  # 半连接过滤
+    row = df[df["index_code"] == "510300"].iloc[0]
+    assert row["trading_day"] == "20260924"
+    assert row["index_name"] == "沪深300ETF华泰柏瑞"  # index_name 用 etf_basic.fund_name
+    assert row["close"] == 4.515
+
+
+def test_etf_close_backfill_loops_open_days():
+    """backfill range 模式：start/end 区间按交易日历逐日循环 trade_date；上游无数据的开市日跳过不阻断。"""
+    from collector.sources.plugins import EtfCloseSource
+
+    pro = _EtfClosePro(empty_days={"20260923"})
+    sleeps = []
+    src = EtfCloseSource(
+        "etf_close",
+        conn_factory=_fake_conn_factory(_ETF_WHITELIST),
+        pro_factory=lambda: pro,
+        sleep_fn=sleeps.append,
+    )
+    df = src.fetch({"start": "2026-09-22", "end": "2026-09-24"})
+    assert [c["trade_date"] for c in pro.fund_daily_calls] == ["20260922", "20260923", "20260924"]
+    assert sleeps == [0.3, 0.3]  # 逐日调用间隔 0.3s
+    assert set(df["trading_day"]) == {"20260922", "20260924"}  # 0923 上游空 → 该日 0 行
+    assert len(df) == 6  # 2 日 × 白名单 3 只
+
+
+def test_etf_close_supports_range_for_backfill():
+    from collector.sources.plugins import EtfCloseSource
+
+    assert EtfCloseSource.supports_range is True
+
+
+class _TrackingPro:
+    """index_daily/trade_cal FakePro：data_by_ts 有数据的 ts_code 返回帧，其余返回空帧。"""
+
+    def __init__(self, data_by_ts):
+        self.data_by_ts = data_by_ts
+        self.index_daily_calls = []
+
+    def trade_cal(self, exchange=None, start_date=None, end_date=None, is_open=None):
+        return pd.DataFrame({"cal_date": ["20260924"], "is_open": [1]})
+
+    def index_daily(self, ts_code=None, start_date=None, end_date=None):
+        self.index_daily_calls.append((ts_code, start_date, end_date))
+        return self.data_by_ts.get(ts_code, pd.DataFrame(columns=["trade_date", "close"]))
+
+
+def _index_frame(days, closes):
+    return pd.DataFrame({"trade_date": list(days), "close": list(closes)})
+
+
+def test_tracking_index_close_dedupes_codes_and_loops_index_daily():
+    """读 etf_basic 去重 tracking_index_code 循环 index_daily；指数行 index_name 用 tracking_index_name。"""
+    from collector.sources.plugins import TrackingIndexCloseSource
+
+    pro = _TrackingPro(
+        {
+            "000300.SH": _index_frame(["20260923", "20260924"], [3900.12, 3905.5]),
+            "399006.SZ": _index_frame(["20260924"], [1234.5]),
+        }
+    )
+    sleeps, sql_log = [], []
+    src = TrackingIndexCloseSource(
+        "tracking_index_close",
+        conn_factory=_fake_conn_factory(
+            [("000300", "沪深300指数"), ("399006", "创业板指数(价格)")], sql_log
+        ),
+        pro_factory=lambda: pro,
+        sleep_fn=sleeps.append,
+    )
+    df = src.fetch({})
+    # 去重（GROUP BY tracking_index_code）后逐指数一次；日常增量取最近开市日作 start/end
+    assert "GROUP BY tracking_index_code" in sql_log[0]
+    assert [(c[0], c[1], c[2]) for c in pro.index_daily_calls] == [
+        ("000300.SH", "20260924", "20260924"),
+        ("399006.SZ", "20260924", "20260924"),
+    ]
+    assert sleeps == [0.3]  # 指数间调用间隔
+    assert list(df.columns) == ["trading_day", "index_code", "index_name", "close"]
+    assert set(df["index_code"]) == {"000300", "399006"}
+    assert df[df["index_code"] == "000300"]["index_name"].iloc[0] == "沪深300指数"
+    assert df[df["index_code"] == "000300"]["close"].tolist() == [3900.12, 3905.5]
+
+
+def test_tracking_index_close_probes_suffix_fallback_and_caches():
+    """000 段先 .SH 拉空回退 .CSI 命中并缓存；第二次 fetch 直接用缓存不再重复探测。"""
+    from collector.sources.plugins import TrackingIndexCloseSource
+
+    pro = _TrackingPro({"000300.CSI": _index_frame(["20260924"], [3905.5])})
+    src = TrackingIndexCloseSource(
+        "tracking_index_close",
+        conn_factory=_fake_conn_factory([("000300", "沪深300指数")]),
+        pro_factory=lambda: pro,
+        sleep_fn=lambda s: None,
+    )
+    df1 = src.fetch({})
+    assert [c[0] for c in pro.index_daily_calls] == ["000300.SH", "000300.CSI"]  # 探测回退
+    assert df1["index_code"].tolist() == ["000300"]
+
+    df2 = src.fetch({})
+    assert [c[0] for c in pro.index_daily_calls] == ["000300.SH", "000300.CSI", "000300.CSI"]  # 缓存命中免探测
+    assert len(df2) == 1
+
+
+def test_tracking_index_close_skips_unavailable_codes_and_counts(caplog):
+    """NDX100 等海外码候选全空 → 跳过计数（warning 日志留痕），返回 df 不含该码。"""
+    from collector.sources.plugins import TrackingIndexCloseSource
+
+    pro = _TrackingPro({"000300.SH": _index_frame(["20260924"], [3905.5])})
+    src = TrackingIndexCloseSource(
+        "tracking_index_close",
+        conn_factory=_fake_conn_factory([("000300", "沪深300指数"), ("NDX100", "纳斯达克100指数")]),
+        pro_factory=lambda: pro,
+        sleep_fn=lambda s: None,
+    )
+    with caplog.at_level(logging.WARNING, logger="collector.sources.plugins"):
+        df = src.fetch({})
+    assert set(df["index_code"]) == {"000300"}  # NDX100 不在结果里
+    assert "NDX100" in caplog.text and "1 个跟踪指数" in caplog.text
+    ndx_attempts = {c[0] for c in pro.index_daily_calls if c[0].startswith("NDX100")}
+    assert ndx_attempts == {"NDX100.SZ", "NDX100.CSI", "NDX100.SH"}  # 未归族码三候选兜底探测
+
+
+def test_index_ts_candidates_rule_constants():
+    """后缀解析规则常量钉住（探测报告 §三：首轮假阴性教训——不能照搬 INDEXTEXCH 拼后缀）。"""
+    from collector.sources.plugins import _index_ts_candidates
+
+    assert _index_ts_candidates("931573") == ("931573.CSI",)  # 中证系 93 段
+    assert _index_ts_candidates("H30202") == ("H30202.CSI",)  # 中证系 H 码族
+    assert _index_ts_candidates("970030") == ("970030.SZ",)  # 国证 970
+    assert _index_ts_candidates("000300") == ("000300.SH", "000300.CSI")  # 沪系 000，次选 .CSI
+    assert _index_ts_candidates("950155") == ("950155.SH", "950155.CSI")  # 沪系 950，次选 .CSI
+    assert _index_ts_candidates("399006") == ("399006.SZ",)  # 深系 399
+    assert _index_ts_candidates("980034") == ("980034.SZ", "980034.CSI", "980034.SH")  # 未归族三候选
+
+
+def test_tracking_index_close_supports_range_for_backfill():
+    from collector.sources.plugins import TrackingIndexCloseSource
+
+    assert TrackingIndexCloseSource.supports_range is True

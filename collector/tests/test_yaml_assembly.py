@@ -21,6 +21,7 @@ EXPECTED_TASKS = {
     "all_a_valuation",
     "bond_index_close",
     "etf_basic",
+    "etf_close",
     "gold_etf_close",
     "index_close",
     "index_constituent",
@@ -31,6 +32,7 @@ EXPECTED_TASKS = {
     "shenwan_mapping",
     "stock_financial",
     "stock_valuation_daily",
+    "tracking_index_close",
     "treasury_yield_curve",
 }
 

@@ -29,6 +29,7 @@ from collector.sources.plugins import (
     AllASpotBackupSource,
     BondIndexCloseSource,
     EtfBasicSource,
+    EtfCloseSource,
     GoldEtfCloseSource,
     IndexCloseSource,
     IndexConstituentSource,
@@ -39,6 +40,7 @@ from collector.sources.plugins import (
     ShenwanMappingSource,
     StockFinancialSource,
     StockValuationDailySource,
+    TrackingIndexCloseSource,
     TreasuryCurveSource,
     make_index_dividend_fetch,
 )
@@ -301,6 +303,10 @@ def build_registries(config):
             "bond_index_close": BondIndexCloseSource("bond_index_close", pro_factory=pro),
             "gold_etf_close": GoldEtfCloseSource("gold_etf_close", pro_factory=pro),
             "etf_basic": EtfBasicSource("etf_basic"),
+            "etf_close": EtfCloseSource("etf_close", conn_factory=conn_factory, pro_factory=pro),
+            "tracking_index_close": TrackingIndexCloseSource(
+                "tracking_index_close", conn_factory=conn_factory, pro_factory=pro
+            ),
             "industry_valuation_backfill": IndustryValuationBackfillSource(
                 "industry_valuation_backfill", conn_factory=conn_factory
             ),

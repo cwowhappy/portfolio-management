@@ -1,0 +1,17 @@
+task_code: etf_close
+task_name: ETF收盘价
+# fund_daily(trade_date=) 全市场单次 + etf_basic.fund_code 半连接过滤（剔除 LOF/封基/.OF 脏行，
+# 探测报告 §三/§七）；实测日行数 1685（=目录全集），min_rows=1500 留 ~11% 余量；
+# 写 index_close_history，index_code=6 位基金码。
+source_ids:
+  - { source_id: etf_close, type: plugin, class: etf_close }
+converter: field_mapping_index_close
+calc: null
+validator:
+  - { check: min_rows, value: 1500, level: hard }
+target_table: index_close_history
+schedule: { type: cron, cron: "50 15 * * 1-5" }
+enabled: true
+trading_day_gated: true
+retry_max: 3
+retry_backoff: exponential

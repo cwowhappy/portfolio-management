@@ -1,5 +1,6 @@
 import datetime as dt
 import json
+import logging
 import re
 import time
 import urllib.request
@@ -10,6 +11,8 @@ import pandas as pd
 
 from collector.sources.base import Source, SourceError
 from collector.sources.ratelimit import RateLimiter
+
+logger = logging.getLogger(__name__)
 
 # StockFinancialSource 逐股拉取 fina_indicator 前的最小调用间隔（秒）。
 # fina_indicator 上游限 200 次/分钟，取 0.35s（≈171 次/分钟）留安全余量，避免逐股并发触发限流。
@@ -433,6 +436,190 @@ class EtfBasicSource(Source):
             )
             self.sleep_fn(ETF_ENRICH_INTERVAL)
         return pd.DataFrame(rows, columns=ETF_BASIC_COLUMNS)
+
+
+# ------------------------------------------- MS-14 P3 Task 14 ETF/跟踪指数日线 etf_close / tracking_index_close
+#
+# 源口径（09-调研报告/2026-09-26-ETF数据源探测.md §三/§七，实测钉住）：
+# - etf_close：fund_daily(trade_date=YYYYMMDD) 全市场单次模式（实测 2134 行/0.1s，含 LOF/封基
+#   与 .OF 脏行）——与 etf_basic.fund_code 半连接过滤（勿用前缀白名单，§七建议：深市新段
+#   158xxx 与脏行自然解决）；fund_daily ts_code 带 .SH/.SZ 后缀，剥后缀后 join。
+#   日常增量取最近一个开市日（单次调用）；回填（supports_range）按交易日历逐日循环
+#   trade_date 模式（250 日 × 0.3s ≈ 2 分钟，远优于单码 1685 次循环）。
+# - tracking_index_close：读 etf_basic DISTINCT tracking_index_code（非 null）去重循环
+#   index_daily(ts_code=..., start_date, end_date)——后缀按 §三码族规则候选逐一探测
+#   （000 段 .SH 拉空须回退 .CSI；INDEXTEXCH 对中证系为 '--' 不能照搬拼后缀），命中缓存
+#   实例级复用；海外/港股/极新国证码（NDX100/N225/CES100/980034…）探测不可得 → 跳过并
+#   计数（日志留痕，df 不含该码），Task 15 误差计算侧自然降级 null（报告 §六）。
+ETF_DAILY_INTERVAL = 0.3  # fund_daily 逐日回填调用间隔（探测 §三：0.35s 连发零限频，保守 0.3s）
+INDEX_DAILY_INTERVAL = 0.3  # index_daily 逐指数调用间隔（同上）
+_RECENT_OPEN_LOOKBACK_DAYS = 15  # 无参日常增量回溯最近开市日的自然日窗口（覆盖最长假期）
+
+
+def _open_days(pro, start_ymd, end_ymd):
+    """trade_cal 开市日升序（YYYYMMDD 字符串）。"""
+    cal = pro.trade_cal(exchange="SSE", start_date=start_ymd, end_date=end_ymd, is_open="1")
+    if cal is None or cal.empty:
+        return []
+    return sorted(pd.to_datetime(cal["cal_date"]).dt.strftime("%Y%m%d").tolist())
+
+
+def _target_days(pro, params):
+    """目标交易日序列：显式 start/end（backfill）→ 区间开市日；date → 单日；无参 → 最近一个开市日。
+
+    无参回溯最近开市日而非直取今天：交易日 cron 下两者一致；周末/节假日手动补跑可自愈
+    最近交易日的缺口（upsert 幂等，重复行无害）。
+    """
+    if "start" in params or "end" in params:
+        start = normalize_date(params.get("start") or params.get("end"), "start")
+        end = normalize_date(params.get("end") or params.get("start"), "end")
+        return _open_days(pro, start, end)
+    if params.get("date"):
+        return [normalize_date(params["date"], "date")]
+    today = dt.date.today().strftime("%Y%m%d")
+    lookback = (dt.date.today() - dt.timedelta(days=_RECENT_OPEN_LOOKBACK_DAYS)).strftime("%Y%m%d")
+    return _open_days(pro, lookback, today)[-1:]
+
+
+def _index_ts_candidates(code):
+    """跟踪指数码 → index_daily ts_code 候选序列（探测报告 §三后缀规则，按序逐一探测）。
+
+    中证系 93xxxx/H 码族 → .CSI；国证 970 → .SZ；沪系 000/950 → .SH（次选 .CSI——中证系
+    与上证共用 000 段，先 .SH 拉空再试 .CSI）；深系 399 → .SZ；未归族码（980/987 国证
+    极新码、CBA 估值码、海外字母码等）三候选兜底探测，全空即跳过。
+    """
+    if code.startswith(("93", "H")):
+        return (code + ".CSI",)
+    if code.startswith(("000", "950")):
+        return (code + ".SH", code + ".CSI")
+    if code.startswith(("399", "970")):
+        return (code + ".SZ",)
+    return (code + ".SZ", code + ".CSI", code + ".SH")
+
+
+class EtfCloseSource(Source):
+    """全市场 ETF 收盘（MS-14 P3 Task 14，写 index_close_history）：fund_daily trade_date
+    全市场单次 + etf_basic.fund_code 半连接过滤；index_name 取 etf_basic.fund_name。
+
+    supports_range=True：backfill 按交易日历逐日循环 trade_date 模式。
+    etf_basic 为空（目录任务未跑）时半连接产出 0 行，由 min_rows hard 校验兜底失败。
+    """
+
+    supports_range = True
+
+    def __init__(self, source_id, conn_factory, pro_factory, sleep_fn=time.sleep):
+        self.source_id = source_id
+        self.conn_factory = conn_factory
+        self.pro_factory = pro_factory
+        self.sleep_fn = sleep_fn
+
+    def _fund_whitelist(self):
+        """etf_basic 白名单：fund_code → fund_name（半连接过滤 + index_name 来源）。"""
+        with self.conn_factory() as conn, conn.cursor() as cur:
+            cur.execute("SELECT fund_code, fund_name FROM etf_basic")
+            rows = cur.fetchall()
+        return pd.DataFrame(rows, columns=["fund_code", "fund_name"])
+
+    def _filter_etf_rows(self, day_frame, whitelist):
+        """ts_code 剥 .SH/.SZ/.OF 后缀后与白名单 inner join：LOF/封基/场外脏行自然剔除。"""
+        out = day_frame.rename(columns={"trade_date": "trading_day"})
+        out["index_code"] = out["ts_code"].str.split(".").str[0]
+        out = out.merge(whitelist, left_on="index_code", right_on="fund_code", how="inner")
+        out["index_name"] = out["fund_name"]
+        return out[["trading_day", "index_code", "index_name", "close"]]
+
+    def fetch(self, params):
+        pro = self.pro_factory()
+        whitelist = self._fund_whitelist()
+        frames = []
+        for i, day in enumerate(_target_days(pro, params)):
+            if i:
+                self.sleep_fn(ETF_DAILY_INTERVAL)
+            df = pro.fund_daily(trade_date=day)
+            if df is None or df.empty:
+                continue  # 回填窗口内上游暂无该日数据：跳过不阻断（当日增量缺数由 min_rows hard 兜底）
+            frames.append(self._filter_etf_rows(df, whitelist))
+        if not frames:
+            return pd.DataFrame(columns=["trading_day", "index_code", "index_name", "close"])
+        return pd.concat(frames, ignore_index=True)
+
+
+class TrackingIndexCloseSource(Source):
+    """ETF 跟踪指数收盘（MS-14 P3 Task 14，写 index_close_history）：etf_basic DISTINCT
+    tracking_index_code 去重循环 index_daily；指数行 index_name 取 etf_basic.tracking_index_name。
+
+    ts_code 后缀候选逐一探测（000 段 .SH 空回退 .CSI），命中缓存实例级复用（调度进程长驻，
+    后续运行免重复探测）；探测不可得码跳过并计数。supports_range=True：backfill 以
+    start/end 区间逐指数单次拉取（index_daily 原生支持区间）。
+    """
+
+    supports_range = True
+
+    _CLOSE_COLUMNS = ["trading_day", "index_code", "index_name", "close"]
+
+    def __init__(self, source_id, conn_factory, pro_factory, sleep_fn=time.sleep):
+        self.source_id = source_id
+        self.conn_factory = conn_factory
+        self.pro_factory = pro_factory
+        self.sleep_fn = sleep_fn
+        self._suffix_cache = {}  # code → 命中的 ts_code（实例级，跨运行复用；不做负缓存，新码可复探）
+
+    def _tracking_indexes(self):
+        """etf_basic 去重跟踪指数码 → 名称（同码多名取 MAX，稳态下名称一致）。"""
+        with self.conn_factory() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT tracking_index_code, MAX(tracking_index_name) FROM etf_basic "
+                "WHERE tracking_index_code IS NOT NULL AND tracking_index_code <> '' "
+                "GROUP BY tracking_index_code"
+            )
+            return cur.fetchall()
+
+    def _fetch_one(self, code, call):
+        """缓存/候选探测 index_daily；返回命中的原始帧，全候选空返回 None（不可得）。"""
+        candidates = (self._suffix_cache[code],) if code in self._suffix_cache else _index_ts_candidates(code)
+        for ts_code in candidates:
+            df = call(ts_code)
+            if df is not None and not df.empty:
+                self._suffix_cache[code] = ts_code
+                return df
+        return None
+
+    def fetch(self, params):
+        pro = self.pro_factory()
+        start, end = _date_param(params, "start"), _date_param(params, "end")
+        if not (params.get("start") or params.get("end") or params.get("date")):
+            days = _target_days(pro, {})  # 无参日常增量：最近开市日（周末补跑自愈）
+            if not days:
+                return pd.DataFrame(columns=self._CLOSE_COLUMNS)
+            start = end = days[-1]
+        frames, skipped = [], []
+        state = {"first": True}
+
+        def call(ts_code, _start=start, _end=end):
+            if not state["first"]:
+                self.sleep_fn(INDEX_DAILY_INTERVAL)
+            state["first"] = False
+            return pro.index_daily(ts_code=ts_code, start_date=_start, end_date=_end)
+
+        for code, name in sorted(self._tracking_indexes()):
+            df = self._fetch_one(code, call)
+            if df is None:
+                skipped.append(code)
+                continue
+            df = df.rename(columns={"trade_date": "trading_day"})
+            df["index_code"], df["index_name"] = code, name
+            frames.append(df[["trading_day", "index_code", "index_name", "close"]])
+        if skipped:
+            logger.warning(
+                "%s: %d 个跟踪指数 index_daily 探测不可得已跳过（海外/港股/极新码，"
+                "Task 15 误差计算将降级 null）：%s",
+                self.source_id,
+                len(skipped),
+                ",".join(skipped),
+            )
+        if not frames:
+            return pd.DataFrame(columns=self._CLOSE_COLUMNS)
+        return pd.concat(frames, ignore_index=True)
 
 
 class IndustryUniverseSource(Source):
