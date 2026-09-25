@@ -29,4 +29,6 @@ public class MarketHttpDataSource implements MarketDataSource {
     @Override public JsonNode fallbackKline(String symbol, String period, int limit) {
         return tencent.kline(symbol, period, limit);
     }
+    @Override public String tencentQuote(String symbol) { return tencent.quote(symbol); }
+    @Override public String tencentIndices() { return tencent.indices(); }
 }

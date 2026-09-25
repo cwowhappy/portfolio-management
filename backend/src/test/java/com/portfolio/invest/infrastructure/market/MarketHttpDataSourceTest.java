@@ -46,4 +46,13 @@ class MarketHttpDataSourceTest {
         assertThat(source.fallbackKline("sh600519", "day", 120)).isSameAs(node);
         verify(tencent).kline("sh600519", "day", 120);
     }
+
+    @DisplayName("腾讯方法委托腾讯客户端")
+    @Test
+    void whenTencentMethodCalled_thenDelegatesToTencent() {
+        when(tencent.quote("sh600519")).thenReturn("txt");
+        assertThat(source.tencentQuote("sh600519")).isEqualTo("txt");
+        when(tencent.indices()).thenReturn("idx");
+        assertThat(source.tencentIndices()).isEqualTo("idx");
+    }
 }
