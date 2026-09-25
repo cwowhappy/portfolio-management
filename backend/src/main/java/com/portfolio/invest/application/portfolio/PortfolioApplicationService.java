@@ -19,6 +19,7 @@ import com.portfolio.invest.domain.valuation.ValuationRepository;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -108,6 +109,9 @@ public class PortfolioApplicationService {
 
     @Transactional
     public CashTransactionView addCashTransaction(Long userId, CashTransactionCommand cmd) {
+        if (cmd.txDate().isAfter(LocalDate.now())) {
+            throw new PortfolioException(PortfolioErrorCode.INVALID_INPUT, "日期不能晚于今日");
+        }
         Portfolio p = getOrCreatePortfolio(userId);
         requireGroup(p.id(), cmd.groupId());
         CashTransaction tx = repository.saveCashTransaction(new CashTransaction(
@@ -142,6 +146,9 @@ public class PortfolioApplicationService {
 
     @Transactional
     public PositionView buy(Long userId, BuyCommand cmd) {
+        if (cmd.tradeDate().isAfter(LocalDate.now())) {
+            throw new PortfolioException(PortfolioErrorCode.INVALID_INPUT, "日期不能晚于今日");
+        }
         Portfolio p = getOrCreatePortfolio(userId);
         requireGroup(p.id(), cmd.groupId());
         // 买入校验分组现金（issue #45）：账户现金 = 转入−转出+卖出+分红−买入（01-需求规格「现金独立记账」），
@@ -170,6 +177,9 @@ public class PortfolioApplicationService {
 
     @Transactional
     public PositionView sell(Long userId, SellCommand cmd) {
+        if (cmd.tradeDate().isAfter(LocalDate.now())) {
+            throw new PortfolioException(PortfolioErrorCode.INVALID_INPUT, "日期不能晚于今日");
+        }
         Portfolio p = getOrCreatePortfolio(userId);
         var position = requirePosition(p.id(), cmd.positionId());
         var updated = position.applySell(cmd.price(), cmd.quantity(), cmd.fee());
@@ -250,6 +260,9 @@ public class PortfolioApplicationService {
 
     @Transactional
     public PositionView addCashDividend(Long userId, CashDividendCommand cmd) {
+        if (cmd.exDate().isAfter(LocalDate.now())) {
+            throw new PortfolioException(PortfolioErrorCode.INVALID_INPUT, "日期不能晚于今日");
+        }
         Portfolio p = getOrCreatePortfolio(userId);
         var position = requirePosition(p.id(), cmd.positionId());
         repository.saveDividend(new Dividend(
@@ -265,6 +278,9 @@ public class PortfolioApplicationService {
 
     @Transactional
     public PositionView addStockDividend(Long userId, StockDividendCommand cmd) {
+        if (cmd.exDate().isAfter(LocalDate.now())) {
+            throw new PortfolioException(PortfolioErrorCode.INVALID_INPUT, "日期不能晚于今日");
+        }
         Portfolio p = getOrCreatePortfolio(userId);
         var position = requirePosition(p.id(), cmd.positionId());
         repository.saveDividend(new Dividend(
