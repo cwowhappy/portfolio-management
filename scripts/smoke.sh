@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 端到端冒烟：健康检查 → fixture 新鲜度（上游字段漂移探测）→ 行情接口 → （有 key 时）真实对话
+# 端到端冒烟：健康检查 → fixture 新鲜度（腾讯上游字段漂移探测）→ 行情接口 → （有 key 时）真实对话
 set -u
 BASE=${BACKEND_URL:-http://localhost:8080}
 FE=${FRONTEND_URL:-http://localhost:3000}
@@ -16,22 +16,27 @@ STATUS=$(curl -s --max-time 15 $BASE/api/agent/status) || fail "状态接口不�
 echo "$STATUS" | grep -q '"market":{"ok":true' && pass "行情源连通" || fail "行情源异常"
 echo "$STATUS"
 
-echo "== 2. fixture 新鲜度检查（东财上游字段漂移探测）=="
-# 直连东财实时行情接口（URL 构造与 EastmoneyClient.quote 保持一致），
-# 校验返回 JSON 仍包含 MarketDataParser.parseQuote 依赖的全部字段；
-# 字段缺失说明上游接口漂移，后端解析与测试 fixture 已失真，冒烟应先红
-EM_QUOTE_URL="https://push2.eastmoney.com/api/qt/stock/get?secid=1.600519&fields=f43,f44,f45,f46,f47,f48,f57,f58,f60,f86,f162,f167,f169,f170&fltt=2&invt=2"
-# 东财会拒绝非浏览器 UA（Empty reply），UA/Referer 与后端 RestClientFactory 保持一致
-EM_UA="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
-RAW_QUOTE=$(curl -s --max-time 15 -H "User-Agent: $EM_UA" -H "Referer: https://quote.eastmoney.com/" "$EM_QUOTE_URL") || fail "东财行情接口不可达"
-[ -n "$RAW_QUOTE" ] || fail "东财行情接口返回为空"
-echo "$RAW_QUOTE" | grep -q '"data"' || fail "东财行情响应缺少 data 节点：上游接口漂移，需更新 fixture 与解析器"
-MISSING_FIELDS=""
-for f in f43 f44 f45 f46 f47 f48 f57 f58 f60 f86 f162 f167 f169 f170; do
-  echo "$RAW_QUOTE" | grep -q "\"$f\"" || MISSING_FIELDS="$MISSING_FIELDS $f"
+echo "== 2. fixture 新鲜度检查（腾讯上游字段漂移探测）=="
+# 直连腾讯实时行情接口（URL 构造与 TencentClient.quote 保持一致），
+# 校验返回仍是 ~ 分隔且关键位置可解析（名称/价格/昨收/今开/量/涨跌/涨跌幅/高低/时间戳/额/PE/PB）；
+# 位置漂移或字段缺失说明上游格式变更，后端解析与测试 fixture 已失真，冒烟应先红
+TX_QUOTE_URL="https://qt.gtimg.cn/q=sh600519"
+TX_UA="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+RAW_QUOTE=$(curl -s --max-time 15 -H "User-Agent: $TX_UA" "$TX_QUOTE_URL" | iconv -f GBK -t UTF-8) || fail "腾讯行情接口不可达"
+[ -n "$RAW_QUOTE" ] || fail "腾讯行情接口返回为空"
+echo "$RAW_QUOTE" | grep -q 'v_sh600519="' || fail "腾讯行情响应缺少 v_sh600519 节点：上游接口漂移"
+PAYLOAD=$(echo "$RAW_QUOTE" | sed 's/^[^"]*"//; s/"[^"]*$//')
+IFS='~' read -r -a TXF <<< "$PAYLOAD"
+[ "${#TXF[@]}" -ge 47 ] || fail "腾讯行情字段数不足(${#TXF[@]}<47)：上游接口漂移"
+[ -n "${TXF[1]}" ] || fail "名称位置[1]为空：上游接口漂移"
+for pos in 3 4 5 6 31 32 33 34 37; do
+  [[ "${TXF[$pos]}" =~ ^-?[0-9]+([.][0-9]+)?$ ]] || fail "位置[$pos]非数值(${TXF[$pos]})：上游接口漂移"
 done
-[ -z "$MISSING_FIELDS" ] && pass "fixture 字段与上游一致" \
-  || fail "上游接口漂移，需更新 fixture 与解析器（缺失字段:$MISSING_FIELDS）"
+[[ "${TXF[30]}" =~ ^[0-9]{14}$ ]] || fail "时间戳位置[30]非14位数字(${TXF[30]})：上游接口漂移"
+for pos in 39 46; do
+  [[ "${TXF[$pos]}" =~ ^-?[0-9]+([.][0-9]+)?$ ]] || fail "估值位置[$pos]非数值(${TXF[$pos]})：上游接口漂移"
+done
+pass "fixture 字段与上游一致"
 
 echo "== 3. 行情接口 =="
 curl -s --max-time 15 "$BASE/api/market/overview" | grep -q "上证指数" && pass "大盘速览" || fail "大盘速览"
