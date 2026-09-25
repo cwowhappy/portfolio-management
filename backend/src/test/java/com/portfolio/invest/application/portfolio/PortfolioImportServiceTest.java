@@ -12,6 +12,7 @@ import com.portfolio.invest.domain.portfolio.PortfolioRepository;
 import com.portfolio.invest.domain.portfolio.Position;
 import com.portfolio.invest.domain.portfolio.Trade;
 import com.portfolio.invest.domain.portfolio.TradeType;
+import com.portfolio.invest.domain.valuation.ValuationRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -21,6 +22,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
@@ -60,7 +62,8 @@ class PortfolioImportServiceTest {
             """;
 
     private final PortfolioRepository repo = mock(PortfolioRepository.class);
-    private final PortfolioImportService service = new PortfolioImportService(repo);
+    private final ValuationRepository valuation = mock(ValuationRepository.class);
+    private final PortfolioImportService service = new PortfolioImportService(repo, valuation);
 
     @Test
     @DisplayName("六类行标准文件导入成功：importedCount=6 且分组内现金/持仓/记录全部落库")
@@ -117,6 +120,10 @@ class PortfolioImportServiceTest {
         assertThat(positionCaptor.getAllValues())
                 .extracting(Position::portfolioId, Position::groupId, Position::stockCode)
                 .containsOnly(tuple(10L, 1L, "600519"));
+        // 名称列全链：CSV 带名称的 BUY 行建仓后持仓名称 =「贵州茅台」（后续演化 copy 保留）
+        assertThat(positionCaptor.getAllValues())
+                .extracting(Position::stockName)
+                .containsOnly("贵州茅台");
         // 数量演化轨迹 + 终态对拍模拟器：100 → 50（卖 50）→ 50（现金分红不变）→ 52.5（×1.05）
         assertThat(positionCaptor.getAllValues().get(0).quantity()).isEqualByComparingTo("100");
         assertThat(positionCaptor.getAllValues().get(1).quantity()).isEqualByComparingTo("50");
@@ -222,6 +229,56 @@ class PortfolioImportServiceTest {
     }
 
     @Test
+    @DisplayName("未知证券代码返回行错误且零落库（不在持仓与快照集合）")
+    void givenUnknownStockCodeWhenImportThenRowErrorAndNoSave() {
+        givenPortfolioAndMainAccountGroup();
+        // 两集合都不含 999999：用户零持仓、快照只回 600519
+        when(repo.findPositionsByPortfolioId(10L)).thenReturn(List.of());
+
+        ImportResult r = service.importCsv(1L,
+                csv("2024-01-05,BUY,999999,未知股票,主账户,10.00,100,,"));
+
+        assertThat(r.importedCount()).isZero();
+        assertThat(r.rowErrors()).hasSize(1);
+        assertThat(r.rowErrors().get(0).row()).isEqualTo(2);
+        assertThat(r.rowErrors().get(0).reason())
+                .contains("未知证券代码")
+                .contains("999999");
+        verifyNoSave();
+    }
+
+    @Test
+    @DisplayName("快照命中代码可首导：新股票建仓通过且空名称回填代码")
+    void givenSnapshotCodeWhenImportThenNewStockImported() {
+        givenPortfolioAndMainAccountGroup();
+        when(valuation.findLatestSnapshotStockCodes()).thenReturn(Set.of("600519", "000001"));
+        when(repo.findPositionsByPortfolioId(10L)).thenReturn(List.of());
+        when(repo.findPositionsByGroupId(1L)).thenReturn(List.of());
+        when(repo.findCashTransactionsByGroupId(1L)).thenReturn(List.of());
+        when(repo.findPositionByPortfolioIdAndGroupIdAndStockCode(anyLong(), anyLong(), anyString()))
+                .thenReturn(Optional.empty());
+        when(repo.savePosition(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        // 名称列留空的 BUY 行：stockName 落代码回填（000001）
+        ImportResult r = service.importCsv(1L, csv(
+                "2024-01-03,DEPOSIT,,,主账户,,,100000.00,",
+                "2024-01-05,BUY,000001,,主账户,10.00,100,,"));
+
+        assertThat(r.rowErrors()).isEmpty();
+        assertThat(r.importedCount()).isEqualTo(2);
+
+        ArgumentCaptor<Position> positionCaptor = ArgumentCaptor.forClass(Position.class);
+        verify(repo, times(1)).savePosition(positionCaptor.capture());
+        assertThat(positionCaptor.getAllValues().get(0).stockCode()).isEqualTo("000001");
+        assertThat(positionCaptor.getAllValues().get(0).stockName()).isEqualTo("000001");
+
+        ArgumentCaptor<Trade> tradeCaptor = ArgumentCaptor.forClass(Trade.class);
+        verify(repo, times(1)).saveTrade(tradeCaptor.capture());
+        assertThat(tradeCaptor.getAllValues().get(0).type()).isEqualTo(TradeType.BUY);
+        assertThat(tradeCaptor.getAllValues().get(0).quantity()).isEqualByComparingTo("100");
+    }
+
+    @Test
     @DisplayName("卖出复用既有持仓行（含已清仓行）：SELL 行解析到既有 positionId，不新建 Position")
     void givenExistingPositionRowWhenImportThenReusePositionId() {
         givenPortfolioAndMainAccountGroup();
@@ -259,10 +316,11 @@ class PortfolioImportServiceTest {
                 .containsExactly(tuple(5L, TradeType.BUY), tuple(5L, TradeType.SELL));
     }
 
-    /** userId=1 → portfolio(id=10)，组「主账户」(id=1, ACCOUNT)。 */
+    /** userId=1 → portfolio(id=10)，组「主账户」(id=1, ACCOUNT)；最新快照含 600519（L3 代码校验放行）。 */
     private void givenPortfolioAndMainAccountGroup() {
         when(repo.findPortfolioByUserId(1L)).thenReturn(Optional.of(portfolio()));
         when(repo.findGroupsByPortfolioId(10L)).thenReturn(List.of(mainAccountGroup()));
+        when(valuation.findLatestSnapshotStockCodes()).thenReturn(Set.of("600519"));
     }
 
     private static Portfolio portfolio() {

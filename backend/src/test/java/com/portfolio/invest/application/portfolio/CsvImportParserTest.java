@@ -58,6 +58,7 @@ class CsvImportParserTest {
         ImportRow buy = out.rows().get(0);
         assertThat(buy.date()).isEqualTo(LocalDate.of(2024, 1, 5));
         assertThat(buy.stockCode()).isEqualTo("600519");
+        assertThat(buy.stockName()).isEqualTo("贵州茅台");
         assertThat(buy.price()).isEqualTo(new BigDecimal("1680.00"));
         assertThat(buy.quantity()).isEqualTo(new BigDecimal("100"));
         assertThat(buy.fee()).isEqualTo(new BigDecimal("5.00"));
@@ -76,6 +77,7 @@ class CsvImportParserTest {
 
         ImportRow deposit = out.rows().get(4);
         assertThat(deposit.stockCode()).isNull();
+        assertThat(deposit.stockName()).isNull();
         assertThat(deposit.price()).isNull();
         assertThat(deposit.quantity()).isNull();
         assertThat(deposit.amount()).isEqualByComparingTo("200000.00");

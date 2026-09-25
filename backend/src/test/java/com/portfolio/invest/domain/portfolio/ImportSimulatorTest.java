@@ -178,10 +178,11 @@ class ImportSimulatorTest {
 
     private static ImportRow row(int rowNumber, ImportRow.ImportRowType type, String date, String stockCode,
                                  Long groupId, String price, String qty, String fee, String amount) {
-        return new ImportRow(rowNumber, type, LocalDate.parse(date), stockCode, null, groupId,
+        // 模拟器测试直给 groupId；stockName/groupName 留 null（模拟器不消费名称，名称链在 T4 fix 落地）
+        return new ImportRow(rowNumber, type, LocalDate.parse(date), stockCode, null, null, groupId,
                 price == null ? null : new BigDecimal(price),
                 qty == null ? null : new BigDecimal(qty),
                 fee == null ? null : new BigDecimal(fee),
-                amount == null ? null : new BigDecimal(amount), null);  // 模拟器测试直给 groupId，groupName 留 null
+                amount == null ? null : new BigDecimal(amount), null);
     }
 }

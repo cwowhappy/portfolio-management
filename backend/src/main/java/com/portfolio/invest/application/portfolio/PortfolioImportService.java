@@ -16,21 +16,25 @@ import com.portfolio.invest.domain.portfolio.PortfolioRepository;
 import com.portfolio.invest.domain.portfolio.Position;
 import com.portfolio.invest.domain.portfolio.Trade;
 import com.portfolio.invest.domain.portfolio.TradeType;
+import com.portfolio.invest.domain.valuation.ValuationRepository;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
  * CSV 导入编排服务（设计规格 §1.2 五层校验管线 + §1.4 执行）：
- * L1/L2/L4 由 {@link CsvImportParser} 完成；本层补 L3（分组名→实体，存在且 ACCOUNT）与
+ * L1/L2/L4 由 {@link CsvImportParser} 完成；本层补 L3（分组名→实体，存在且 ACCOUNT；
+ * 证券代码 ∈ 用户历史持仓 ∪ stock_valuation_daily 最新快照）与
  * L5（模拟重放通过后同事务执行）。执行阶段逐行调领域实体方法演化（applyBuy/applySell/
  * applyCashDividend/applyStockDividend），<b>不</b>逐条调 PortfolioApplicationService 的
  * buy()/sell()——那会每笔触发一次行情调用（quoteQuietly），2000 行上限会串行打满行情源。
@@ -40,12 +44,14 @@ import org.springframework.transaction.annotation.Transactional;
 public class PortfolioImportService {
 
     private final PortfolioRepository repository;
+    private final ValuationRepository valuationRepository;
 
     /** 解析器无状态且非 Spring bean（Task 3 零注解交付），直接持有实例即可。 */
     private final CsvImportParser parser = new CsvImportParser();
 
-    public PortfolioImportService(PortfolioRepository repository) {
+    public PortfolioImportService(PortfolioRepository repository, ValuationRepository valuationRepository) {
         this.repository = repository;
+        this.valuationRepository = valuationRepository;
     }
 
     @Transactional
@@ -68,12 +74,20 @@ public class PortfolioImportService {
         }
         List<ImportSimulator.RowError> errors = new ArrayList<>();
         List<ImportRow> resolved = new ArrayList<>();
+        // L3 证券代码存在性：允许集 = 该用户全部历史持仓（含已清仓）∪ stock_valuation_daily 最新快照。
+        // 只有文件确有带代码的行才装集合（纯 DEPOSIT/WITHDRAW 文件零额外查询）
+        Set<String> knownStockCodes = knownStockCodes(portfolio, parsed.rows());
         for (ImportRow raw : parsed.rows()) {
             HoldingGroup g = accountGroups.get(raw.groupName());
             if (g == null) {
                 errors.add(new ImportSimulator.RowError(raw.rowNumber(), nonAccountGroups.containsKey(raw.groupName())
                         ? "分组「" + raw.groupName() + "」是标签分组（TAG），仅支持账户分组导入"
                         : "分组不存在「" + raw.groupName() + "」，请先在页面创建或修改 CSV"));
+                continue;
+            }
+            if (raw.stockCode() != null && !knownStockCodes.contains(raw.stockCode())) {
+                errors.add(new ImportSimulator.RowError(raw.rowNumber(),
+                        "未知证券代码 " + raw.stockCode()));
                 continue;
             }
             resolved.add(raw.withGroupId(g.id()));
@@ -91,6 +105,17 @@ public class PortfolioImportService {
         // 执行：与模拟器同序逐行演化落库
         execute(portfolio, sorted(resolved));
         return new ImportResult(resolved.size(), List.of());
+    }
+
+    /** L3 允许代码集：用户全部持仓（含已清仓）∪ 最新快照；无代码行的文件返回空集（不查库）。 */
+    private Set<String> knownStockCodes(Portfolio portfolio, List<ImportRow> rows) {
+        if (rows.stream().noneMatch(r -> r.stockCode() != null)) {
+            return Set.of();
+        }
+        Set<String> codes = new HashSet<>(valuationRepository.findLatestSnapshotStockCodes());
+        repository.findPositionsByPortfolioId(portfolio.id())
+                .forEach(p -> codes.add(p.stockCode()));
+        return codes;
     }
 
     /**
@@ -120,9 +145,9 @@ public class PortfolioImportService {
 
     /**
      * 执行落库：按模拟器同序（groupId→date→rowNumber）逐行演化。对每个 (groupId, stockCode)
-     * 维护工作持仓（首次从库内取，含已清仓行——写路径可寻址；不存在则新建），后续行在
-     * 已保存实例上续演，保证多行同股时 Trade/Dividend 挂同一 positionId。
-     * 证券名称：ImportRow 无名称字段（Task 3 宽收决策），stock_name 非空约束以代码回填。
+     * 维护工作持仓（首次从库内取，含已清仓行——写路径可寻址；不存在则新建——名称取 CSV
+     * 名称列，空则回填代码），后续行在已保存实例上续演，保证多行同股时 Trade/Dividend
+     * 挂同一 positionId。
      */
     private void execute(Portfolio portfolio, List<ImportRow> rows) {
         Map<String, Position> working = new HashMap<>();
@@ -167,8 +192,10 @@ public class PortfolioImportService {
         if (cached != null) {
             return cached;
         }
+        // stock_name 非空：CSV 名称列空（ImportRow.stockName=null）时以代码回填
+        String stockName = r.stockName() != null ? r.stockName() : r.stockCode();
         return repository.findPositionByPortfolioIdAndGroupIdAndStockCode(portfolio.id(), r.groupId(), r.stockCode())
-                .orElseGet(() -> Position.create(portfolio.id(), r.groupId(), r.stockCode(), r.stockCode(),
+                .orElseGet(() -> Position.create(portfolio.id(), r.groupId(), r.stockCode(), stockName,
                         Instant.now()));
     }
 

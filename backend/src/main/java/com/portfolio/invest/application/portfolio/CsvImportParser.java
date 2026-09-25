@@ -45,6 +45,7 @@ public final class CsvImportParser {
     private static final int COL_DATE = 0;
     private static final int COL_TYPE = 1;
     private static final int COL_STOCK_CODE = 2;
+    private static final int COL_STOCK_NAME = 3;
     private static final int COL_GROUP_NAME = 4;
     private static final int COL_PRICE = 5;
     private static final int COL_QUANTITY = 6;
@@ -163,7 +164,8 @@ public final class CsvImportParser {
             return new RowOutcome(null, errors);
         }
         return new RowOutcome(new ImportRow(rowNumber, type, date,
-                blankToNull(record.get(COL_STOCK_CODE)), blankToNull(record.get(COL_GROUP_NAME)), null,
+                blankToNull(record.get(COL_STOCK_CODE)), blankToNull(record.get(COL_STOCK_NAME)),
+                blankToNull(record.get(COL_GROUP_NAME)), null,
                 price, quantity, fee, amount, blankToNull(note)), List.of());
     }
 
