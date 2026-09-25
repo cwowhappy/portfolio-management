@@ -98,6 +98,59 @@ public final class MarketDataParser {
                 time);
     }
 
+    /** 腾讯实时行情（主源）：v_sh600519="1~名称~代码~价~昨收~今开~量(手)~...~时间~涨跌~涨跌幅~高~低~...~量(手)~额(万)~换手~PE(TTM)~...~PB~..."（~ 分隔）。 */
+    public static Quote parseTencentQuote(String raw, String code) {
+        int start = raw.indexOf('"');
+        int end = raw.lastIndexOf('"');
+        if (start < 0 || end <= start) {
+            throw new MarketDataException(MarketDataErrorCode.BAD_RESPONSE, "腾讯行情响应格式异常");
+        }
+        String[] f = raw.substring(start + 1, end).split("~", -1);
+        if (f.length < 47) {
+            throw new MarketDataException(MarketDataErrorCode.BAD_RESPONSE, "腾讯行情字段不足");
+        }
+        double price = numOrZero(f[3]);
+        if (price <= 0) {
+            throw new MarketDataException(MarketDataErrorCode.BAD_RESPONSE, "腾讯行情价格无效");
+        }
+        return new Quote(
+                code,
+                f[1],
+                price,
+                numOrZero(f[31]),
+                numOrZero(f[32]),
+                numOrZero(f[5]),
+                numOrZero(f[33]),
+                numOrZero(f[34]),
+                numOrZero(f[4]),
+                parseLongOrZero(f[6]) * 100,          // 手 → 股
+                numOrZero(f[37]) * 10000,             // 万元 → 元
+                nullablePos(f[39]),                   // PE(TTM)
+                nullablePos(f[46]),                   // PB
+                formatTencentTime(f[30]));
+    }
+
+    /** 腾讯指数速览（主源）：多行 v_s_sh000001="1~上证指数~000001~点位~涨跌~涨跌幅~..."; */
+    public static MarketOverview buildTencentOverview(String raw) {
+        List<IndexQuote> list = new ArrayList<>();
+        for (String line : raw.split(";")) {
+            int start = line.indexOf('"');
+            int end = line.lastIndexOf('"');
+            if (start < 0 || end <= start) {
+                continue;
+            }
+            String[] f = line.substring(start + 1, end).split("~");
+            if (f.length < 6) {
+                continue;
+            }
+            list.add(new IndexQuote(f[2], f[1], numOrZero(f[3]), numOrZero(f[4]), numOrZero(f[5])));
+        }
+        if (list.isEmpty()) {
+            throw new MarketDataException(MarketDataErrorCode.BAD_RESPONSE, "腾讯指数数据为空");
+        }
+        return new MarketOverview(LocalDateTime.now(MARKET_ZONE).format(TIME_FMT), list);
+    }
+
     /** K线：klines 为 "date,open,close,high,low,volume,amount,amplitude" 字符串数组。 */
     public static List<KlineBar> parseKline(JsonNode root) {
         JsonNode klines = root.path("data").path("klines");
@@ -312,6 +365,24 @@ public final class MarketDataParser {
             return (long) Double.parseDouble(s.trim());
         } catch (Exception e) {
             return 0;
+        }
+    }
+
+    /** 腾讯时间戳 yyyyMMddHHmmss → "yyyy-MM-dd HH:mm"；空或畸形返回 ""。 */
+    private static String formatTencentTime(String s) {
+        if (s == null || !s.matches("\\d{14}")) {
+            return "";
+        }
+        return LocalDateTime.parse(s, DateTimeFormatter.ofPattern("yyyyMMddHHmmss")).format(TIME_FMT);
+    }
+
+    /** 正数可空字段（PE/PB）：空串/非数值/≤0 → null。 */
+    private static Double nullablePos(String s) {
+        try {
+            double v = Double.parseDouble(s.trim());
+            return v > 0 ? v : null;
+        } catch (Exception e) {
+            return null;
         }
     }
 

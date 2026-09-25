@@ -27,6 +27,8 @@ class MarketDataParserTest {
     private static JsonNode newsJson;
     private static JsonNode overviewJson;
     private static String sinaRaw;
+    private static String tencentRaw;
+    private static String tencentIndicesRaw;
 
     @BeforeAll
     static void loadFixtures() throws IOException {
@@ -37,6 +39,8 @@ class MarketDataParserTest {
         newsJson = fixture("eastmoney-news.json");
         overviewJson = fixture("eastmoney-overview.json");
         sinaRaw = fixtureText("sina-quote.txt");
+        tencentRaw = fixtureText("tencent-quote.txt");
+        tencentIndicesRaw = fixtureText("tencent-indices.txt");
     }
 
     @DisplayName("东财行情JSON解析出报价")
@@ -135,6 +139,39 @@ class MarketDataParserTest {
         assertThat(bars.get(2).volume()).isEqualTo(3872300L); // 手 → 股
         assertThat(bars.get(2).amount()).isEqualTo(0.0); // 腾讯无成交额字段
         assertThat(bars.get(2).amplitudePct()).isEqualTo(0.0); // 腾讯无振幅字段
+    }
+
+    @DisplayName("腾讯行情文本解析出报价")
+    @Test
+    void givenTencentRawText_whenParseTencentQuote_thenReturnQuote() {
+        Quote q = MarketDataParser.parseTencentQuote(tencentRaw, "600519");
+        assertThat(q.code()).isEqualTo("600519");
+        assertThat(q.name()).isEqualTo("贵州茅台");
+        assertThat(q.price()).isEqualTo(1237.00);
+        assertThat(q.prevClose()).isEqualTo(1251.24);
+        assertThat(q.open()).isEqualTo(1250.01);
+        assertThat(q.change()).isEqualTo(-14.24);
+        assertThat(q.changePct()).isEqualTo(-1.14);
+        assertThat(q.high()).isEqualTo(1256.13);
+        assertThat(q.low()).isEqualTo(1231.05);
+        assertThat(q.volume()).isEqualTo(3_123_900L);      // 31239手 ×100 → 股
+        assertThat(q.amount()).isEqualTo(3_867_310_000.0); // 386731万 ×10000 → 元
+        assertThat(q.pe()).isEqualTo(18.99);
+        assertThat(q.pb()).isEqualTo(6.15);
+        assertThat(q.time()).isEqualTo("2026-09-24 16:14");
+    }
+
+    @DisplayName("腾讯指数文本解析出三指数速览")
+    @Test
+    void givenTencentIndicesRaw_whenBuildTencentOverview_thenReturnThreeIndices() {
+        MarketOverview o = MarketDataParser.buildTencentOverview(tencentIndicesRaw);
+        assertThat(o.indices()).hasSize(3);
+        assertThat(o.indices().get(0).code()).isEqualTo("000001");
+        assertThat(o.indices().get(0).name()).isEqualTo("上证指数");
+        assertThat(o.indices().get(0).price()).isEqualTo(3888.37);
+        assertThat(o.indices().get(0).change()).isEqualTo(-48.15);
+        assertThat(o.indices().get(0).changePct()).isEqualTo(-1.22);
+        assertThat(o.time()).isNotBlank();
     }
 
     @DisplayName("新浪指数文本构建出指数速览")

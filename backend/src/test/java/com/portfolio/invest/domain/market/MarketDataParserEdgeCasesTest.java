@@ -137,6 +137,70 @@ class MarketDataParserEdgeCasesTest {
         assertThat(q.time()).isEmpty();
     }
 
+    // ———— parseTencentQuote / buildTencentOverview ————
+
+    /** 构造 47 位腾讯行情行，指定位置可覆盖。 */
+    private String tencentQuoteWith(java.util.function.UnaryOperator<String[]> mutator) {
+        String[] f = new String[47];
+        java.util.Arrays.fill(f, "");
+        f[1] = "贵州茅台"; f[2] = "600519"; f[3] = "1237.00"; f[4] = "1251.24"; f[5] = "1250.01";
+        f[6] = "31239"; f[30] = "20260924161444"; f[31] = "-14.24"; f[32] = "-1.14";
+        f[33] = "1256.13"; f[34] = "1231.05"; f[37] = "386731"; f[39] = "18.99"; f[46] = "6.15";
+        f = mutator.apply(f);
+        return "v_sh600519=\"" + String.join("~", f) + "\";";
+    }
+
+    @DisplayName("parseTencentQuote无引号抛BAD_RESPONSE")
+    @Test
+    void givenNoQuotes_whenParseTencentQuote_thenThrowBadResponse() {
+        assertThatThrownBy(() -> MarketDataParser.parseTencentQuote("garbage", "600519"))
+                .isInstanceOf(MarketDataException.class)
+                .hasMessageContaining("腾讯行情响应格式异常");
+    }
+
+    @DisplayName("parseTencentQuote字段不足抛BAD_RESPONSE")
+    @Test
+    void givenTooFewFields_whenParseTencentQuote_thenThrowBadResponse() {
+        assertThatThrownBy(() -> MarketDataParser.parseTencentQuote("v_sh600519=\"1~贵州茅台~600519\"", "600519"))
+                .isInstanceOf(MarketDataException.class)
+                .hasMessageContaining("腾讯行情字段不足");
+    }
+
+    @DisplayName("parseTencentQuote价格非正抛BAD_RESPONSE")
+    @Test
+    void givenNonPositivePrice_whenParseTencentQuote_thenThrowBadResponse() {
+        String raw = tencentQuoteWith(f -> { f[3] = "0.00"; return f; });
+        assertThatThrownBy(() -> MarketDataParser.parseTencentQuote(raw, "600519"))
+                .isInstanceOf(MarketDataException.class)
+                .hasMessageContaining("腾讯行情价格无效");
+    }
+
+    @DisplayName("parseTencentQuote时间戳空或畸形返回空串")
+    @Test
+    void givenBlankOrMalformedTime_whenParseTencentQuote_thenTimeEmpty() {
+        assertThat(MarketDataParser.parseTencentQuote(
+                tencentQuoteWith(f -> { f[30] = ""; return f; }), "600519").time()).isEmpty();
+        assertThat(MarketDataParser.parseTencentQuote(
+                tencentQuoteWith(f -> { f[30] = "abc"; return f; }), "600519").time()).isEmpty();
+    }
+
+    @DisplayName("parseTencentQuote空PE/PB返回null")
+    @Test
+    void givenEmptyValuation_whenParseTencentQuote_thenNullPePb() {
+        Quote q = MarketDataParser.parseTencentQuote(
+                tencentQuoteWith(f -> { f[39] = ""; f[46] = ""; return f; }), "600519");
+        assertThat(q.pe()).isNull();
+        assertThat(q.pb()).isNull();
+    }
+
+    @DisplayName("buildTencentOverview无有效行抛BAD_RESPONSE")
+    @Test
+    void givenNoValidLines_whenBuildTencentOverview_thenThrowBadResponse() {
+        assertThatThrownBy(() -> MarketDataParser.buildTencentOverview("garbage"))
+                .isInstanceOf(MarketDataException.class)
+                .hasMessageContaining("腾讯指数数据为空");
+    }
+
     // ———— parseKline ————
 
     @DisplayName("parseKline数据为null抛BAD_RESPONSE")
