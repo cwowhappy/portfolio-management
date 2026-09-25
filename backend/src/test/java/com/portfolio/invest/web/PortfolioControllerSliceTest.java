@@ -21,6 +21,7 @@ import com.portfolio.invest.application.portfolio.ConcentrationView;
 import com.portfolio.invest.application.portfolio.DividendView;
 import com.portfolio.invest.application.portfolio.IndustryDistributionView;
 import com.portfolio.invest.application.portfolio.PortfolioApplicationService;
+import com.portfolio.invest.application.portfolio.PortfolioImportService;
 import com.portfolio.invest.application.portfolio.PositionView;
 import com.portfolio.invest.application.portfolio.SellCommand;
 import com.portfolio.invest.application.portfolio.StockDividendCommand;
@@ -59,6 +60,9 @@ class PortfolioControllerSliceTest {
 
     @MockitoBean
     private PortfolioApplicationService service;
+
+    @MockitoBean
+    private PortfolioImportService importService;
 
     /** 构造已认证主体：控制器 currentUserId(auth) 会 cast auth.getPrincipal() 为 AuthenticatedUser。 */
     private Authentication auth() {

@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.portfolio.invest.application.portfolio.PortfolioApplicationService;
+import com.portfolio.invest.application.portfolio.PortfolioImportService;
 import com.portfolio.invest.domain.user.User;
 import com.portfolio.invest.domain.user.UserRepository;
 import com.portfolio.invest.domain.user.UserRole;
@@ -53,6 +54,9 @@ class SecuritySliceTest {
 
     @MockitoBean
     private PortfolioApplicationService service;
+
+    @MockitoBean
+    private PortfolioImportService importService;
 
     // SecurityConfig 装配所需依赖（切片内无真实实现）
     @MockitoBean

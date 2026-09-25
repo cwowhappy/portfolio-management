@@ -10,18 +10,26 @@ import com.portfolio.invest.application.portfolio.CreateGroupCommand;
 import com.portfolio.invest.application.portfolio.DividendView;
 import com.portfolio.invest.application.portfolio.EditTradeCommand;
 import com.portfolio.invest.application.portfolio.GroupView;
+import com.portfolio.invest.application.portfolio.ImportResult;
 import com.portfolio.invest.application.portfolio.IndustryDistributionView;
 import com.portfolio.invest.application.portfolio.PortfolioApplicationService;
+import com.portfolio.invest.application.portfolio.PortfolioImportService;
 import com.portfolio.invest.application.portfolio.PortfolioOverviewView;
 import com.portfolio.invest.application.portfolio.PositionView;
 import com.portfolio.invest.application.portfolio.RenameGroupCommand;
 import com.portfolio.invest.application.portfolio.SellCommand;
 import com.portfolio.invest.application.portfolio.StockDividendCommand;
 import com.portfolio.invest.application.portfolio.TradeView;
+import com.portfolio.invest.domain.portfolio.PortfolioErrorCode;
+import com.portfolio.invest.domain.portfolio.PortfolioException;
 import com.portfolio.invest.infrastructure.security.AuthenticatedUser;
 import jakarta.validation.Valid;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -33,15 +41,21 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api/portfolio")
 public class PortfolioController {
 
-    private final PortfolioApplicationService service;
+    /** 导入文件大小上限 1MB；multipart 解析器上限放宽到 2MB（application.yml），边界文件不被容器先拒。 */
+    private static final long IMPORT_MAX_BYTES = 1024 * 1024;
 
-    public PortfolioController(PortfolioApplicationService service) {
+    private final PortfolioApplicationService service;
+    private final PortfolioImportService importService;
+
+    public PortfolioController(PortfolioApplicationService service, PortfolioImportService importService) {
         this.service = service;
+        this.importService = importService;
     }
 
     @GetMapping("/overview")
@@ -141,6 +155,34 @@ public class PortfolioController {
     @GetMapping("/concentration")
     public ConcentrationView concentration(Authentication auth) {
         return service.concentration(currentUserId(auth));
+    }
+
+    /** CSV 导入模板下载：BOM + 九列表头 + 六类型示例行（与解析器测试样例逐行同源）。 */
+    @GetMapping("/import/template")
+    public ResponseEntity<String> importTemplate() {
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=import-template.csv")
+                .header(HttpHeaders.CONTENT_TYPE, "text/csv; charset=UTF-8")
+                .body(PortfolioImportTemplate.CSV);
+    }
+
+    /**
+     * CSV 批量导入（multipart 字段 file）。文件级只校空文件与 1MB 上限；行级校验（含
+     * 2000 行上限、九列结构、类型/数值/日期约束）全在解析层 L1/L2/L4，此处不重复实现。
+     * 字节按 UTF-8 宽容解码（非法字节替换 U+FFFD，与解析层容忍 BOM 同口径），不抛编码异常。
+     */
+    @PostMapping(value = "/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ImportResult importCsv(Authentication auth,
+                                  @RequestParam(value = "file", required = false) MultipartFile file)
+            throws IOException {
+        if (file == null || file.isEmpty()) {
+            throw new PortfolioException(PortfolioErrorCode.INVALID_INPUT, "文件为空");
+        }
+        if (file.getSize() > IMPORT_MAX_BYTES) {
+            throw new PortfolioException(PortfolioErrorCode.INVALID_INPUT, "文件过大（上限 1MB）");
+        }
+        String csvContent = new String(file.getBytes(), StandardCharsets.UTF_8);
+        return importService.importCsv(currentUserId(auth), csvContent);
     }
 
     private static Long currentUserId(Authentication auth) {
