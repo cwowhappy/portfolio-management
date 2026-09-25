@@ -54,8 +54,8 @@ describe("ImportDialog", () => {
     vi.mocked(importCsv).mockResolvedValueOnce({
       importedCount: 0,
       rowErrors: [
-        { row: 3, reason: "证券代码不存在：999999" },
-        { row: 5, reason: "数量必须为正整数" },
+        { row: 3, reason: "未知证券代码 999999" },
+        { row: 5, reason: "价格必须大于 0" },
       ],
     });
     render(<ImportDialog onImported={onImported} />);
@@ -64,9 +64,9 @@ describe("ImportDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "导入" }));
     const table = await screen.findByTestId("import-row-errors");
     expect(within(table).getByText("3")).toBeTruthy();
-    expect(within(table).getByText("证券代码不存在：999999")).toBeTruthy();
+    expect(within(table).getByText("未知证券代码 999999")).toBeTruthy();
     expect(within(table).getByText("5")).toBeTruthy();
-    expect(within(table).getByText("数量必须为正整数")).toBeTruthy();
+    expect(within(table).getByText("价格必须大于 0")).toBeTruthy();
     expect(screen.queryByText(/成功导入/)).toBeNull();
     expect(onImported).not.toHaveBeenCalled();
   });

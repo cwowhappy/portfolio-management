@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { buildExportHref, fetchScreenedStocks } from "@/lib/screeningApi";
 import { buildFundExportHref, fetchFundScreening } from "@/lib/fundScreeningApi";
-import { addToWatchlist, fetchWatchlist } from "@/lib/watchlistApi";
+import { addToWatchlist, fetchWatchlist, removeFromWatchlist } from "@/lib/watchlistApi";
 import { fetchValuationIndustries } from "@/lib/valuationApi";
 import { useAuth } from "@/lib/auth";
 import type { FundScreeningParams, FundScreeningResult, IndustryValuation, ScreeningParams, ScreeningStock } from "@/lib/types";
@@ -110,15 +110,22 @@ export default function ScreenerBoard() {
     if (fundResults) submitFund(next);
   };
 
-  // 未登录点 ⭐ → 登录后回到 /screener；已登录 → 加入自选并更新集合
+  // 未登录点 ⭐ → 登录后回到 /screener；已登录 → toggle：已自选移除、未自选加入（个股/基金 tab 共用）
   const onToggleWatchlist = (stockCode: string) => {
     if (!user) {
       router.push("/login?redirect=/screener");
       return;
     }
-    addToWatchlist(stockCode)
-      .then(() => setWatchlistCodes((prev) => new Set(prev).add(stockCode)))
-      .catch((e) => setError(e instanceof Error ? e.message : "加入自选失败"));
+    const inList = watchlistCodes.has(stockCode);
+    const action = inList ? removeFromWatchlist(stockCode) : addToWatchlist(stockCode);
+    action
+      .then(() => setWatchlistCodes((prev) => {
+        const next = new Set(prev);
+        if (inList) next.delete(stockCode);
+        else next.add(stockCode);
+        return next;
+      }))
+      .catch((e) => setError(e instanceof Error ? e.message : inList ? "移除自选失败" : "加入自选失败"));
   };
 
   return (

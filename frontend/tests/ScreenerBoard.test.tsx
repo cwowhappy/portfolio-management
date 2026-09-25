@@ -6,7 +6,7 @@ import * as screeningApi from "@/lib/screeningApi";
 import * as fundScreeningApi from "@/lib/fundScreeningApi";
 import * as watchlistApi from "@/lib/watchlistApi";
 import * as valuationApi from "@/lib/valuationApi";
-import type { FundScreeningParams, FundScreeningResult, ScreeningStock } from "@/lib/types";
+import type { FundScreeningParams, FundScreeningResult, ScreeningStock, WatchlistItemView } from "@/lib/types";
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),
@@ -53,6 +53,11 @@ const STOCK: ScreeningStock = {
 
 const userStub = { id: 1, username: "u", role: "USER", status: "APPROVED", enabled: true } as NonNullable<ReturnType<typeof useAuth>["user"]>;
 
+const WATCHLIST_ROW: WatchlistItemView = {
+  stockCode: "601398", stockName: "工商银行", industryName: "银行",
+  price: 5.6, peTtm: 5.6, pb: 0.62, dividendYield: 5.4, totalMv: 2.2e12, addedAt: "2026-09-01T00:00:00Z",
+};
+
 /** 触发筛选提交：先填 PE 条件（空条件会被拦），再走 form submit（tab 与提交按钮同名「筛选」）。 */
 function submitForm() {
   fireEvent.change(screen.getByPlaceholderText("如 20"), { target: { value: "20" } });
@@ -87,6 +92,21 @@ describe("ScreenerBoard", () => {
 
     await waitFor(() => expect(watchlist.addToWatchlist).toHaveBeenCalledWith("601398"));
     await waitFor(() => expect(screen.getByRole("button", { name: "移除自选 601398" })).toBeTruthy());
+  });
+
+  it("已自选时点 ⭐ 调 removeFromWatchlist 并置回空心", async () => {
+    vi.mocked(useAuth).mockReturnValue({ user: userStub, loading: false } as ReturnType<typeof useAuth>);
+    watchlist.fetchWatchlist.mockResolvedValue([WATCHLIST_ROW]);
+    watchlist.removeFromWatchlist.mockResolvedValue(undefined);
+
+    render(<ScreenerBoard />);
+    submitForm();
+    const star = await screen.findByRole("button", { name: "移除自选 601398" });
+    fireEvent.click(star);
+
+    await waitFor(() => expect(watchlist.removeFromWatchlist).toHaveBeenCalledWith("601398"));
+    expect(watchlist.addToWatchlist).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByRole("button", { name: "加自选 601398" })).toBeTruthy());
   });
 
   it("导出 <a> 的 href 携带当前筛选参数且带 download 属性", async () => {
@@ -141,5 +161,14 @@ describe("ScreenerBoard 基金 tab", () => {
     expect(arg.sortDirection).toBe("ASC");
     expect(await screen.findByTestId("fund-results-table")).toBeTruthy();
     expect(screen.getByTestId("fund-export-csv").getAttribute("download")).not.toBeNull();
+  });
+
+  it("基金提交失败：行内渲染 fundError 文案且无结果表", async () => {
+    fundApi.fetchFundScreening.mockRejectedValueOnce(new Error("基金筛选服务不可用"));
+    render(<ScreenerBoard />);
+    fireEvent.click(screen.getByTestId("tab-fund"));
+    fireEvent.click(screen.getByTestId("fund-form"));
+    expect(await screen.findByText("基金筛选服务不可用")).toBeTruthy();
+    expect(screen.queryByTestId("fund-results-table")).toBeNull();
   });
 });

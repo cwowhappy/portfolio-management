@@ -272,7 +272,7 @@ ETF_DETAIL_HEADERS = {
     "Referer": "https://fund.eastmoney.com/",
 }
 ETF_DETAIL_TIMEOUT = 15  # 单只请求超时（秒）
-ETF_ENRICH_INTERVAL = 0.3  # 逐只保守限速：~1685 只 ≈ 9 分钟（周更可接受，报告 §2.2）
+ETF_ENRICH_INTERVAL = 0.3  # 逐只保守限速：~1685 只实测 ~16 分钟（含网络 RTT；周更可接受，报告 §2.2）
 
 # 非证券指数的跟踪标的码 → tracking_index_code/name 置 null（不参与 Task 15 误差计算）：
 # SGE 贵金属现货（AU9999 黄金/AG 白银）；商品期货价格指数（DCESMFI 等）按 INDEXNAME 含
