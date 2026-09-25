@@ -328,6 +328,38 @@ export interface ScreeningParams {
   limit?: number;
 }
 
+// —— ETF 基金筛选（/api/screening/funds，与后端 FundScreeningResult 对齐）——
+// 注意三个数值字段的后端口径即用户输入口径，api 层不做换算：
+// feeRate=年化 %（0.6 = 0.6%）、scale=亿元、trackingError1y=小数（0.0318 = 3.18%，收盘价口径）。
+
+export interface FundScreeningResult {
+  fundCode: string;
+  fundName: string;
+  /** 年化费率，单位 %；null=未知「—」 */
+  feeRate: number | null;
+  /** 基金规模，单位 亿元；null=未知「—」 */
+  scale: number | null;
+  trackingIndexName: string | null;
+  category: string | null;
+  /** 近1年跟踪误差，小数（0.0318 = 3.18%），收盘价口径；null=未知「—」 */
+  trackingError1y: number | null;
+}
+
+export interface FundScreeningParams {
+  /** 年化费率上限，单位 %（输入 0.6 = 0.6%） */
+  feeRateMax?: number;
+  /** 规模下限，单位 亿元 */
+  scaleMin?: number;
+  /** 跟踪误差上限，小数（输入 0.05 = 5%），收盘价口径 */
+  trackingErrorMax?: number;
+  /** 六桶类别：宽基/行业/商品/债券/QDII/其他（白名单在后端） */
+  category?: string;
+  /** 可排序列：fee_rate / scale / tracking_error_1y（默认 tracking_error_1y ASC） */
+  sortBy?: string;
+  sortDirection?: "ASC" | "DESC";
+  limit?: number;
+}
+
 // —— 投资决策记录 ——
 
 export type JournalEntryType = "BUY_MEMO" | "SELL_MEMO" | "RESEARCH_NOTE" | "REVIEW";

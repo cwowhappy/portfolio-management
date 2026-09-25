@@ -3,9 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ScreenerBoard from "@/components/screening/ScreenerBoard";
 import { useAuth } from "@/lib/auth";
 import * as screeningApi from "@/lib/screeningApi";
+import * as fundScreeningApi from "@/lib/fundScreeningApi";
 import * as watchlistApi from "@/lib/watchlistApi";
 import * as valuationApi from "@/lib/valuationApi";
-import type { ScreeningStock } from "@/lib/types";
+import type { FundScreeningParams, FundScreeningResult, ScreeningStock } from "@/lib/types";
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),
@@ -19,6 +20,19 @@ vi.mock("@/lib/screeningApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/screeningApi")>()),
   fetchScreenedStocks: vi.fn(),
 }));
+vi.mock("@/lib/fundScreeningApi", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/fundScreeningApi")>()),
+  fetchFundScreening: vi.fn(),
+}));
+// 基金 tab 子组件 mock：表单以按钮转发 onSubmit，结果表仅渲染 testid（真实行为由各自测试文件覆盖）
+vi.mock("@/components/screening/FundScreeningForm", () => ({
+  default: ({ onSubmit }: { onSubmit: () => void }) => (
+    <button type="button" data-testid="fund-form" onClick={onSubmit}>基金表单（mock）</button>
+  ),
+}));
+vi.mock("@/components/screening/FundResultsTable", () => ({
+  default: () => <div data-testid="fund-results-table" />,
+}));
 vi.mock("@/lib/watchlistApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/watchlistApi")>()),
   fetchWatchlist: vi.fn().mockResolvedValue([]),
@@ -27,6 +41,7 @@ vi.mock("@/lib/watchlistApi", async (importOriginal) => ({
   searchStocks: vi.fn(),
 }));
 const screening = vi.mocked(screeningApi);
+const fundApi = vi.mocked(fundScreeningApi);
 const watchlist = vi.mocked(watchlistApi);
 
 const STOCK: ScreeningStock = {
@@ -95,5 +110,36 @@ describe("ScreenerBoard", () => {
     render(<ScreenerBoard />);
     fireEvent.click(screen.getByTestId("tab-watchlist"));
     expect(await screen.findByTestId("watchlist-panel")).toBeTruthy();
+  });
+});
+
+const FUND: FundScreeningResult = {
+  fundCode: "510300", fundName: "沪深300ETF", feeRate: 0.5, scale: 120.3,
+  trackingIndexName: "沪深300指数", category: "宽基", trackingError1y: 0.0318,
+};
+
+describe("ScreenerBoard 基金 tab", () => {
+  it("三 tab 切换：基金挂载表单、自选面板、回到个股", async () => {
+    render(<ScreenerBoard />);
+    fireEvent.click(screen.getByTestId("tab-fund"));
+    expect(screen.getByTestId("fund-form")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("tab-watchlist"));
+    expect(await screen.findByTestId("watchlist-panel")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("tab-screener"));
+    expect(screen.getByPlaceholderText("如 20")).toBeTruthy();
+  });
+
+  it("基金提交走 fetchFundScreening 并渲染结果与导出链接", async () => {
+    fundApi.fetchFundScreening.mockResolvedValue([FUND]);
+    render(<ScreenerBoard />);
+    fireEvent.click(screen.getByTestId("tab-fund"));
+    fireEvent.click(screen.getByTestId("fund-form"));
+    await waitFor(() => expect(fundApi.fetchFundScreening).toHaveBeenCalledTimes(1));
+    // 默认排序口径显式携带（后端默认 tracking_error_1y ASC）
+    const arg = fundApi.fetchFundScreening.mock.lastCall?.[0] as FundScreeningParams;
+    expect(arg.sortBy).toBe("tracking_error_1y");
+    expect(arg.sortDirection).toBe("ASC");
+    expect(await screen.findByTestId("fund-results-table")).toBeTruthy();
+    expect(screen.getByTestId("fund-export-csv").getAttribute("download")).not.toBeNull();
   });
 });

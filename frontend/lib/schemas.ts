@@ -269,6 +269,19 @@ export const ScreeningStockSchema = z.object({
   turnoverRate: z.number().nullable(),
 });
 
+// —— ETF 基金筛选（/api/screening/funds，与后端 FundScreeningResult 对齐）——
+// feeRate（年化%）、scale（亿元）、trackingError1y（小数、收盘价口径）可 null=未知「—」；
+// trackingIndexName/category 后端虽为非空 String，仍按 nullable 容错（目录字段缺源时兜底「—」）。
+export const FundScreeningResultSchema = z.object({
+  fundCode: z.string(),
+  fundName: z.string(),
+  feeRate: z.number().nullable(),
+  scale: z.number().nullable(),
+  trackingIndexName: z.string().nullable(),
+  category: z.string().nullable(),
+  trackingError1y: z.number().nullable(),
+});
+
 // —— 自选观察（/api/watchlist/**，与后端 WatchlistController 的 DTO 对齐）——
 
 export const WatchlistItemViewSchema = z.object({
