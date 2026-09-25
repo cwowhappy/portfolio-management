@@ -104,11 +104,11 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 
 ```java
 // 全部纯函数直调，零 mock。样例数据约定：组 1/组 2，股 600519。
-// 手算基准：现金 100000；BUY 100 股 ×1680+费 5 = 168005 → 余 831995。
+// 手算基准（2026-09-25 勘误：起点须 1000000）：现金 1000000；BUY 100 股 ×1680+费 5 = 168005 → 余 831995。
 
 @Test @DisplayName("买入扣现金加持仓，卖出回现金减持仓")
 void givenBuyThenSellWhenSimulateThenNoError() {
-    var start = new ImportSimulator.StartState(Map.of(1L, new BigDecimal("100000")), Map.of());
+    var start = new ImportSimulator.StartState(Map.of(1L, new BigDecimal("1000000")), Map.of());
     var rows = List.of(
             row(2, BUY, "2024-01-05", "600519", 1L, "1680.00", "100", "5.00", null),
             row(3, SELL, "2024-01-10", "600519", 1L, "1750.50", "50", "5.00", null));
@@ -295,7 +295,7 @@ void givenFutureDateWhenParseThenRowError() { /* "日期不能晚于今日" */ }
 
 - [ ] **Step 3: 运行确认失败 → 实现 → 通过 → Commit**
 
-实现要点：`CSVFormat.DEFAULT.builder().setHeader(HEADER).setSkipHeaderRecord(true).setIgnoreEmptyLines(true).build()`；`new CSVParser(new StringReader(stripBom(content)), format)`（stripBom 手写：startsWith("﻿") 去首字符）；列约束表按设计规格 §1.1 类型×列矩阵硬编码（BUY/SELL 需 price>0/qty>0/fee≥0 可空默认 0、代码分组必填；分红需 price>0、代码分组必填、qty/fee/amount 必空；DEPOSIT/WITHDRAW 需 amount>0、代码/价格/数量必空、分组必填）。数值解析 try/catch NumberFormatException → L2 行错误。
+实现要点：`CSVFormat.DEFAULT.builder().setHeader(HEADER).setIgnoreEmptyLines(true).build()`（**不 skip header**——表头须作记录 1 精确匹配，skip 后表头从 getRecords() 消失；2026-09-25 T3 实现者 jshell 实测勘误）；`new CSVParser(new StringReader(stripBom(content)), format)`（stripBom 手写：startsWith("﻿") 去首字符）；列约束表按设计规格 §1.1 类型×列矩阵硬编码（BUY/SELL 需 price>0/qty>0/fee≥0 可空默认 0、代码分组必填、SELL 另加 fee<price×qty；分红需 price>0、代码分组必填、qty/fee/amount 必空；DEPOSIT/WITHDRAW 需 amount>0、代码/价格/数量必空、分组必填）。数值解析 try/catch NumberFormatException → L2 行错误。**注意规格 §1.1 示例 CSV 已于 2026-09-25 勘误（DEPOSIT/WITHDRAW 行金额原错位在数量/价格列）——Task 5 模板须用勘误后行**。
 
 ```bash
 git add -A && git commit -m "feat(portfolio): CSV 导入解析器 L1/L2/L4（Commons CSV，BOM 容忍）
