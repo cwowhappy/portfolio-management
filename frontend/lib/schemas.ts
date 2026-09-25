@@ -190,6 +190,12 @@ export const IndustryDistributionSchema = z.object({ slices: z.array(IndustrySli
 export const ConcentrationHoldingSchema = z.object({ stockCode: z.string(), stockName: z.string(), marketValue: z.number(), ratio: z.number() });
 export const ConcentrationSchema = z.object({ holdings: z.array(ConcentrationHoldingSchema), top5Ratio: z.number() });
 
+// CSV 批量导入结果（POST /api/portfolio/import，rowErrors 空=全部成功）
+export const ImportRowErrorSchema = z.object({ row: z.number(), reason: z.string() });
+export const ImportResultSchema = z.object({
+  importedCount: z.number(), rowErrors: z.array(ImportRowErrorSchema),
+});
+
 // —— 资产配置（/api/allocation/**，与后端 AllocationController 的 DTO 对齐）——
 
 export const AssetClassSchema = z.enum(["STOCK", "BOND", "GOLD", "CASH", "REITS"]);

@@ -225,6 +225,10 @@ export interface IndustryDistribution { slices: IndustrySlice[]; }
 export interface ConcentrationHolding { stockCode: string; stockName: string; marketValue: number; ratio: number; }
 export interface Concentration { holdings: ConcentrationHolding[]; top5Ratio: number; }
 
+// CSV 批量导入结果（rowErrors 空=全部成功）
+export interface ImportRowError { row: number; reason: string; }
+export interface ImportResult { importedCount: number; rowErrors: ImportRowError[]; }
+
 // —— 资产配置 ——
 
 export type AssetClass = "STOCK" | "BOND" | "GOLD" | "CASH" | "REITS";

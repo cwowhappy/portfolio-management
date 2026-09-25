@@ -60,6 +60,28 @@ describe("portfolio 反代路由", () => {
     expect((init.headers as Record<string, string>)["Content-Type"]).toBe("application/json");
   });
 
+  it("POST multipart：字节流原样透传并显式带含 boundary 的 Content-Type（CSV 批量导入）", async () => {
+    fetchMock.mockResolvedValue(new Response('{"importedCount":6,"rowErrors":[]}', { status: 200 }));
+    const raw = "--boundary\r\nfile-part\r\n--boundary--";
+    const res = await POST(
+      new Request("http://localhost:3000/api/portfolio/import", {
+        method: "POST",
+        headers: { "Content-Type": "multipart/form-data; boundary=----abc123" },
+        body: new TextEncoder().encode(raw),
+      }),
+      { params: Promise.resolve({ path: ["import"] }) },
+    );
+    expect(res.status).toBe(200);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://localhost:8080/api/portfolio/import");
+    expect(init.method).toBe("POST");
+    expect(init.body).toBeInstanceOf(ArrayBuffer);
+    expect(new TextDecoder().decode(init.body as ArrayBuffer)).toBe(raw);
+    expect((init.headers as Record<string, string>)["Content-Type"]).toBe(
+      "multipart/form-data; boundary=----abc123",
+    );
+  });
+
   it("DELETE 拼对上游路径与方法，且不带 body", async () => {
     fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
     const res = await DELETE(

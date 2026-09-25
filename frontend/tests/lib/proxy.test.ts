@@ -111,6 +111,34 @@ describe("反代中继（lib/proxy）", () => {
     expect(headers["Content-Type"]).toContain("application/json");
   });
 
+  it("path 形式：FormData body 不设 Content-Type（浏览器生成 boundary）", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(new Response('{"importedCount":1,"rowErrors":[]}'));
+    vi.stubGlobal("fetch", fetchSpy);
+    const req = { headers: new Headers() } as unknown as Request;
+    const fd = new FormData();
+    fd.append("file", new File(["date,type\n"], "import.csv", { type: "text/csv" }));
+    await relay("/api/portfolio/import", "POST", req, fd);
+    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(init.body).toBe(fd);
+    const headers = init.headers as Record<string, string>;
+    expect(headers["Content-Type"]).toBeUndefined();
+  });
+
+  it("path 形式：contentType 显式透传，不覆盖为 JSON（multipart 字节流场景）", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(new Response('{"importedCount":1,"rowErrors":[]}'));
+    vi.stubGlobal("fetch", fetchSpy);
+    const req = { headers: new Headers() } as unknown as Request;
+    const bytes = new TextEncoder().encode("--boundary\r\nfile-part\r\n--boundary--");
+    await relay(
+      "/api/portfolio/import", "POST", req, bytes, undefined,
+      "multipart/form-data; boundary=----abc123",
+    );
+    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(init.body).toBe(bytes);
+    const headers = init.headers as Record<string, string>;
+    expect(headers["Content-Type"]).toBe("multipart/form-data; boundary=----abc123");
+  });
+
   it("path 形式：上游请求带 15s 超时 signal", async () => {
     const fetchSpy = vi.fn().mockResolvedValue(new Response("{}"));
     vi.stubGlobal("fetch", fetchSpy);

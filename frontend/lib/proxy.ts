@@ -4,8 +4,10 @@
 //
 // 提供两种调用方式：
 // 1. relay(upstream: Response) —— 调用方自行 fetch 上游后中继（/api/auth/**、/api/admin/**）。
-// 2. relay(path, method, req, body?, timeoutMs?) —— 内部 fetch 上游并透传入站 Cookie。
-//    透传入站 Cookie 保证后端会话识别；body 存在时补 Content-Type: application/json。
+// 2. relay(path, method, req, body?, timeoutMs?, contentType?) —— 内部 fetch 上游并透传入站 Cookie。
+//    透传入站 Cookie 保证后端会话识别；body 存在时补 Content-Type: application/json；
+//    FormData 分支不设 Content-Type（浏览器生成 boundary）；contentType 显式透传该值
+//    （multipart 字节流场景，boundary 在值里不能重编；与 FormData 分支互斥）。
 //
 // 两种形式统一兜底：上游请求默认 15s 超时（health 等 liveness 可传更短覆盖）；fetch 抛错
 // （后端不可达/超时）→ 502 JSON，避免路由抛出未捕获异常变成框架默认的 500 HTML 错误页。
@@ -23,11 +25,20 @@ export async function relay(
   timeoutMs?: number,
 ): Promise<Response>;
 export async function relay(
+  path: string,
+  method: string,
+  req?: Request,
+  body?: BodyInit,
+  timeoutMs?: number,
+  contentType?: string,
+): Promise<Response>;
+export async function relay(
   a: Response | string,
   b?: string,
   req?: Request,
   body?: BodyInit,
   timeoutMs?: number,
+  contentType?: string,
 ): Promise<Response> {
   let upstream: Response;
   try {
@@ -36,7 +47,11 @@ export async function relay(
       upstream = await fetch(BACKEND + a, {
         method: b ?? "GET",
         headers: {
-          ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+          ...(contentType
+            ? { "Content-Type": contentType }
+            : body !== undefined && !(body instanceof FormData)
+              ? { "Content-Type": "application/json" }
+              : {}),
           ...(cookie ? { Cookie: cookie } : {}),
         },
         body,
