@@ -7,6 +7,7 @@ import { fetchIndustryWatch, unwatchIndustry, watchIndustry } from "@/lib/indust
 import { useAuth } from "@/lib/auth";
 import type { IndustryBoardItem } from "@/lib/types";
 import IndustryBoardTable from "./IndustryBoardTable";
+import IndustryCompareView from "./IndustryCompareView";
 import Disclaimer from "@/components/Disclaimer";
 import ValuationHeatmap from "./ValuationHeatmap";
 
@@ -16,6 +17,7 @@ export default function IndustryBoard() {
   const [items, setItems] = useState<IndustryBoardItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [view, setView] = useState<"board" | "compare">("board");
   const [watchedCodes, setWatchedCodes] = useState<Set<string>>(new Set());
   const [watchError, setWatchError] = useState<string | null>(null);
 
@@ -70,10 +72,37 @@ export default function IndustryBoard() {
   }
   return (
     <div className="mx-auto max-w-6xl px-6 py-8 space-y-6">
-      <h1 className="font-[family-name:var(--font-display)] text-2xl">行业估值</h1>
+      <div className="flex items-center gap-4">
+        <h1 className="font-[family-name:var(--font-display)] text-2xl">行业估值</h1>
+        {/* 「榜单 / 对比」分段切换（按钮样式照 ScreenerBoard tab 先例） */}
+        <div className="flex gap-2 text-sm">
+          <button
+            data-testid="view-board"
+            className={`rounded-md px-3 py-1.5 ${view === "board"
+              ? "bg-[color:var(--color-panel)] text-[color:var(--color-ink)]"
+              : "text-[color:var(--color-ink-dim)] hover:bg-[color:var(--color-panel)]/60"}`}
+            onClick={() => setView("board")}
+          >
+            榜单
+          </button>
+          <button
+            data-testid="view-compare"
+            className={`rounded-md px-3 py-1.5 ${view === "compare"
+              ? "bg-[color:var(--color-panel)] text-[color:var(--color-ink)]"
+              : "text-[color:var(--color-ink-dim)] hover:bg-[color:var(--color-panel)]/60"}`}
+            onClick={() => setView("compare")}
+          >
+            对比
+          </button>
+        </div>
+      </div>
       {watchError && <div className="text-sm text-[color:var(--color-up)]">{watchError}</div>}
       {loading ? (
         <div className="h-40 rounded-2xl skeleton" aria-label="加载中" />
+      ) : view === "compare" ? (
+        // 对比视图消费同一份 board items（无新 API）；关注集与 ⭐ 回调共享，未登录跳登录逻辑复用
+        <IndustryCompareView items={items}
+          watchedCodes={watchedCodes} onToggleWatch={onToggleWatch} user={user} />
       ) : (
         <div className="grid md:grid-cols-2 gap-6">
           <IndustryBoardTable items={items}
