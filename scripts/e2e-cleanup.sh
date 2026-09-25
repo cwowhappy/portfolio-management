@@ -18,6 +18,7 @@ DELETE FROM portfolio        WHERE user_id IN (SELECT id FROM app_user WHERE use
 DELETE FROM mcp_user_config  WHERE user_id IN (SELECT id FROM app_user WHERE username LIKE 'e2e\_%');
 DELETE FROM skill_user_config WHERE user_id IN (SELECT id FROM app_user WHERE username LIKE 'e2e\_%');
 DELETE FROM watchlist_item   WHERE user_id IN (SELECT id FROM app_user WHERE username LIKE 'e2e\_%');
+DELETE FROM industry_watch   WHERE user_id IN (SELECT id FROM app_user WHERE username LIKE 'e2e\_%');
 DELETE FROM wiki_entry       WHERE user_id IN (SELECT id FROM app_user WHERE username LIKE 'e2e\_%');
 DELETE FROM principle_rule   WHERE user_id IN (SELECT id FROM app_user WHERE username LIKE 'e2e\_%');
 DELETE FROM wiki_seed_state  WHERE user_id IN (SELECT id FROM app_user WHERE username LIKE 'e2e\_%');

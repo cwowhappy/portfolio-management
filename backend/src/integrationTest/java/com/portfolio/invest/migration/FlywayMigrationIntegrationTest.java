@@ -30,7 +30,7 @@ class FlywayMigrationIntegrationTest extends PostgresTestSupport {
         List<String> versions = jdbcTemplate.queryForList(
                 "SELECT version FROM flyway_schema_history WHERE type = 'SQL' ORDER BY installed_rank",
                 String.class);
-        assertThat(versions).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16");
+        assertThat(versions).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17");
 
         Integer failed = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM flyway_schema_history WHERE success = false", Integer.class);
@@ -117,6 +117,17 @@ class FlywayMigrationIntegrationTest extends PostgresTestSupport {
         assertColumn("watchlist_item", "stock_code", "character varying", false);
         assertColumn("watchlist_item", "added_at", "timestamp with time zone", false);
         assertUniqueColumns("watchlist_item", "user_id,stock_code");
+    }
+
+    @DisplayName("行业关注表契约（V17）")
+    @Test
+    void whenSchemaMigrated_thenIndustryWatchTableMatchesContract() {
+        // V17：行业对比 ⭐ 关注落库（平移 V14 watchlist_item，stock_code → industry_code），登录用户隔离
+        assertPrimaryKey("industry_watch", "id");
+        assertColumn("industry_watch", "user_id", "bigint", false);
+        assertColumn("industry_watch", "industry_code", "character varying", false);
+        assertColumn("industry_watch", "added_at", "timestamp with time zone", false);
+        assertUniqueColumns("industry_watch", "user_id,industry_code");
     }
 
     private void assertColumn(String table, String column, String dataType, boolean nullable) {
