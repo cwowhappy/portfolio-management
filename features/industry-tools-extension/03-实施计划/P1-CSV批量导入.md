@@ -544,8 +544,8 @@ export async function importCsv(file: File): Promise<ImportResult> {
 ```java
 // 前置：建组"导入测试组"（ACCOUNT）；文件：DEPOSIT 200000 → BUY 100×1680+5 → SELL 50×1750.5+5
 //       → CASH_DIVIDEND 25.63/股(余50股) → STOCK_DIVIDEND 0.05 → WITHDRAW 1000
-// 断言（手算已知答案）：
-//   组现金 = 200000 −168005 +87520 −5 +1281.5 −1000 = 119791.5
+// 断言（手算已知答案；2026-09-25 T7 勘误——SELL 回款 87520 已含费用扣除，勿再减 5）：
+//   组现金 = 200000 −168005 +87520 +1281.5 −1000 = 119796.5
 //   持仓数量 = 100 −50 =50 → 送股×1.05 = 52.5
 //   trade 2 行/dividend 2 行/cash_transaction 2 行
 // 第二用例：同文件但 SELL 行数量改 999 → rowErrors 含行号、六表零写入（SELECT count 对拍）

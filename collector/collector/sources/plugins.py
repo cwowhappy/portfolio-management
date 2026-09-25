@@ -284,19 +284,87 @@ ETF_SPOT_INDEX_PREFIXES = ("AU", "AG")
 # 已知不精确处（关键词法的固有取舍，1685 只中个位数）：黄金产业股票指数含「黄金」误入商品；
 # 一带一路/央企等主题未列举归宽基。
 ETF_QDII_KEYWORDS = (
-    "QDII", "海外", "纳斯达克", "纳指", "中概", "日经", "恒生", "港股", "标普500", "道琼斯",
-    "德国", "法国", "印度", "越南", "沙特", "亚太", "亚洲",
+    "QDII",
+    "海外",
+    "纳斯达克",
+    "纳指",
+    "中概",
+    "日经",
+    "恒生",
+    "港股",
+    "标普500",
+    "道琼斯",
+    "德国",
+    "法国",
+    "印度",
+    "越南",
+    "沙特",
+    "亚太",
+    "亚洲",
 )
 ETF_BOND_KEYWORDS = ("债", "固收", "存单", "短融")
 ETF_COMMODITY_KEYWORDS = ("商品", "黄金", "白银", "货币", "期货", "豆粕", "原油")
 ETF_INDUSTRY_KEYWORDS = (
-    "行业", "主题",
-    "半导体", "芯片", "医药", "医疗", "生物", "创新药", "中药", "消费", "食品", "饮料", "白酒", "酒",
-    "新能源", "光伏", "电池", "军工", "国防", "证券", "券商", "银行", "保险", "地产", "房地产",
-    "建筑", "建材", "钢铁", "煤炭", "化工", "石油", "石化", "计算机", "传媒", "游戏", "通信",
-    "电子", "汽车", "家电", "农业", "养殖", "环保", "电力", "交通", "物流", "旅游", "教育",
-    "科技", "人工智能", "机器人", "软件", "信息", "互联网", "航空", "港口", "有色", "金属",
-    "机械", "设备", "养老",
+    "行业",
+    "主题",
+    "半导体",
+    "芯片",
+    "医药",
+    "医疗",
+    "生物",
+    "创新药",
+    "中药",
+    "消费",
+    "食品",
+    "饮料",
+    "白酒",
+    "酒",
+    "新能源",
+    "光伏",
+    "电池",
+    "军工",
+    "国防",
+    "证券",
+    "券商",
+    "银行",
+    "保险",
+    "地产",
+    "房地产",
+    "建筑",
+    "建材",
+    "钢铁",
+    "煤炭",
+    "化工",
+    "石油",
+    "石化",
+    "计算机",
+    "传媒",
+    "游戏",
+    "通信",
+    "电子",
+    "汽车",
+    "家电",
+    "农业",
+    "养殖",
+    "环保",
+    "电力",
+    "交通",
+    "物流",
+    "旅游",
+    "教育",
+    "科技",
+    "人工智能",
+    "机器人",
+    "软件",
+    "信息",
+    "互联网",
+    "航空",
+    "港口",
+    "有色",
+    "金属",
+    "机械",
+    "设备",
+    "养老",
 )
 
 _ETF_FUND_CODE = re.compile(r"(\d{6})")
@@ -612,8 +680,7 @@ class TrackingIndexCloseSource(Source):
             frames.append(df[["trading_day", "index_code", "index_name", "close"]])
         if skipped:
             logger.warning(
-                "%s: %d 个跟踪指数 index_daily 探测不可得已跳过（海外/港股/极新码，"
-                "Task 15 误差计算将降级 null）：%s",
+                "%s: %d 个跟踪指数 index_daily 探测不可得已跳过（海外/港股/极新码，Task 15 误差计算将降级 null）：%s",
                 self.source_id,
                 len(skipped),
                 ",".join(skipped),
@@ -675,9 +742,7 @@ class EtfTrackingErrorSource(Source):
         window = joined.tail(ETF_TRACKING_WINDOW_ROWS)
         if len(window) < ETF_TRACKING_MIN_SAMPLES:
             return None
-        diff = window["close_etf"].pct_change(fill_method=None) - window["close_idx"].pct_change(
-            fill_method=None
-        )
+        diff = window["close_etf"].pct_change(fill_method=None) - window["close_idx"].pct_change(fill_method=None)
         return round(float(diff.std(ddof=1)) * ETF_ANNUALIZATION, 6)
 
     def fetch(self, params):
@@ -694,8 +759,7 @@ class EtfTrackingErrorSource(Source):
             # float 算术）；统一转 float64，测试侧已是 float 时为幂等 no-op。
             closes["close"] = closes["close"].astype(float)
             series = {
-                code: g[["trading_day", "close"]].sort_values("trading_day")
-                for code, g in closes.groupby("index_code")
+                code: g[["trading_day", "close"]].sort_values("trading_day") for code, g in closes.groupby("index_code")
             }
             updates = []
             for fund_code, index_code in pairs:
@@ -703,9 +767,7 @@ class EtfTrackingErrorSource(Source):
                 if etf is None or index is None:
                     updates.append((None, fund_code))  # 指数日线无行（海外码等）→ null
                     continue
-                joined = etf.merge(
-                    index, on="trading_day", how="inner", suffixes=("_etf", "_idx")
-                )
+                joined = etf.merge(index, on="trading_day", how="inner", suffixes=("_etf", "_idx"))
                 updates.append((self._tracking_error(joined), fund_code))
             cur.executemany(ETF_TRACKING_UPDATE_SQL, updates)
         computed = sum(1 for value, _ in updates if value is not None)

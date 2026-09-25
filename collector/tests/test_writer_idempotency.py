@@ -125,9 +125,7 @@ def test_etf_basic_upsert_idempotent(pg_conn):
     # 模拟 Task 15 已写入跟踪误差
     pg_conn.execute("UPDATE etf_basic SET tracking_error_1y=0.012345 WHERE fund_code='510300'")
     store.upsert(pg_conn, "etf_basic", [{**rec, "fee_rate": 0.15}])
-    rows = pg_conn.execute(
-        "SELECT fee_rate, tracking_error_1y FROM etf_basic WHERE fund_code='510300'"
-    ).fetchall()
+    rows = pg_conn.execute("SELECT fee_rate, tracking_error_1y FROM etf_basic WHERE fund_code='510300'").fetchall()
     assert len(rows) == 1
     assert float(rows[0][0]) == 0.15
     assert float(rows[0][1]) == 0.012345  # 周更不触碰误差列

@@ -756,9 +756,7 @@ def test_tracking_index_close_dedupes_codes_and_loops_index_daily():
     sleeps, sql_log = [], []
     src = TrackingIndexCloseSource(
         "tracking_index_close",
-        conn_factory=_fake_conn_factory(
-            [("000300", "沪深300指数"), ("399006", "创业板指数(价格)")], sql_log
-        ),
+        conn_factory=_fake_conn_factory([("000300", "沪深300指数"), ("399006", "创业板指数(价格)")], sql_log),
         pro_factory=lambda: pro,
         sleep_fn=sleeps.append,
     )
@@ -915,9 +913,7 @@ def test_etf_tracking_error_identical_series_yields_zero():
     log = []
     days = _days(250)
     wandering = _price_path(1000.0, [1.0 + (0.004 if i % 3 == 0 else -0.002) for i in range(250)])
-    closes = _close_rows(days, "510300", wandering) + _close_rows(
-        days, "000300", [Decimal(str(v)) for v in wandering]
-    )
+    closes = _close_rows(days, "510300", wandering) + _close_rows(days, "000300", [Decimal(str(v)) for v in wandering])
     _te_source([("510300", "000300")], closes, log).fetch({})
     assert log[-1][0] == "executemany"
     assert log[-1][2] == [(0.0, "510300")]
