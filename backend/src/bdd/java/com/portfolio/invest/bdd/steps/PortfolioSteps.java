@@ -1,6 +1,7 @@
 package com.portfolio.invest.bdd.steps;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -14,11 +15,14 @@ import com.portfolio.invest.application.portfolio.CreateGroupCommand;
 import com.portfolio.invest.application.portfolio.PortfolioApplicationService;
 import com.portfolio.invest.application.portfolio.PortfolioOverviewView;
 import com.portfolio.invest.application.portfolio.SellCommand;
+import com.portfolio.invest.domain.market.MarketDataErrorCode;
+import com.portfolio.invest.domain.market.MarketDataException;
 import com.portfolio.invest.domain.market.StockRef;
 import com.portfolio.invest.domain.portfolio.CashTransactionType;
 import com.portfolio.invest.domain.portfolio.GroupType;
 import com.portfolio.invest.domain.user.UserRepository;
 import com.portfolio.invest.infrastructure.market.EastmoneyClient;
+import com.portfolio.invest.infrastructure.market.TencentClient;
 import io.cucumber.java.zh_cn.假如;
 import io.cucumber.java.zh_cn.当;
 import io.cucumber.java.zh_cn.那么;
@@ -29,7 +33,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 /**
  * 组合记账步骤：业务计算类场景直调 ApplicationService + 真实 PG（Testcontainers），
- * 行情经 {@code @MockitoBean} 的东财客户端 mock 供给固定价格，数值断言全部手算可验证。
+ * 行情由 {@code @MockitoBean} 的东财客户端 mock 兜底供给固定价格（腾讯主源在报价步骤中置为故障），
+ * 数值断言全部手算可验证。
  */
 public class PortfolioSteps {
 
@@ -41,6 +46,9 @@ public class PortfolioSteps {
 
     @Autowired
     PortfolioApplicationService portfolioService;
+
+    @Autowired
+    TencentClient tencentClient;
 
     @Autowired
     EastmoneyClient eastmoneyClient;
@@ -63,13 +71,16 @@ public class PortfolioSteps {
     @假如("行情源中 {string} 的最新价为 {bigdecimal} 元，昨收为 {bigdecimal} 元")
     public void 行情源报价(String code, BigDecimal price, BigDecimal prevClose) throws Exception {
         // 重新 stub 即视为「行情源当前状态」：清掉此前交互记录，便于缓存场景精确 verify 调用次数
-        Mockito.reset(eastmoneyClient);
+        Mockito.reset(eastmoneyClient, tencentClient);
         StockRef ref = StockRef.from(code);
         JsonNode json = mapper.readTree("""
                 {"data":{"f43":%s,"f44":%s,"f45":%s,"f46":%s,"f47":0,"f48":0,
                 "f57":"%s","f58":"测试%s","f60":%s,"f86":0,"f162":5.0,"f167":1.0,"f169":0.1,"f170":0.07}}
                 """.formatted(price, price, price, price, ref.code(), ref.code(), prevClose));
         when(eastmoneyClient.quote(ref.secid())).thenReturn(json);
+        // 腾讯主源置为故障，行情由东财兜底供给：未 stub 的腾讯 mock 返回 null 会在解析层打断降级链
+        when(tencentClient.quote(anyString())).thenThrow(
+                new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "腾讯主源不可用（模拟故障）"));
     }
 
     @当("创建账户分组 {string}")
