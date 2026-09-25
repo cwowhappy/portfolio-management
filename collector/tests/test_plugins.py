@@ -832,3 +832,170 @@ def test_tracking_index_close_supports_range_for_backfill():
     from collector.sources.plugins import TrackingIndexCloseSource
 
     assert TrackingIndexCloseSource.supports_range is True
+
+
+# ------------------------------------- MS-14 P3 Task 15 ETF 跟踪误差近1年重算 etf_tracking_error
+
+import math
+
+
+class _DbCursor:
+    """EtfTrackingErrorSource 的 FakeCursor：fetchall 按序出队（etf_basic 映射 → 日线行），
+    execute/executemany 的 SQL 与参数留痕供断言（读与回写在同一连接/事务内）。"""
+
+    def __init__(self, fetchall_queue, log):
+        self._queue = list(fetchall_queue)
+        self._log = log
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def execute(self, sql, *args):
+        self._log.append(("execute", sql, args))
+
+    def executemany(self, sql, seq):
+        self._log.append(("executemany", sql, list(seq)))
+
+    def fetchall(self):
+        return self._queue.pop(0)
+
+
+class _DbConn:
+    def __init__(self, fetchall_queue, log):
+        self._cursor = _DbCursor(fetchall_queue, log)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def cursor(self):
+        return self._cursor
+
+
+def _te_source(pairs, closes, log):
+    from collector.sources.plugins import EtfTrackingErrorSource
+
+    return EtfTrackingErrorSource(
+        "etf_tracking_error",
+        conn_factory=lambda: _DbConn([pairs, closes], log),
+    )
+
+
+def _days(n, start=dt.date(2026, 1, 5)):
+    """n 个「交易日」（连续自然日充当即可——窗口裁剪在 SQL 侧已被 Fake 豁免，pandas tail 不依赖历法）。"""
+    return [start + dt.timedelta(days=i) for i in range(n)]
+
+
+def _price_path(start, daily_factors):
+    """逐日因子连乘出价格路径：len(daily_factors) 个收盘价（首个因子只定基期水平，不影响收益差）。"""
+    prices, p = [], float(start)
+    for f in daily_factors:
+        p *= f
+        prices.append(round(p, 6))
+    return prices
+
+
+def _close_rows(days, code, closes):
+    return list(zip(days, [code] * len(days), closes, strict=True))
+
+
+def test_etf_tracking_error_identical_series_yields_zero():
+    """ETF 恒等于指数（两序列同值，非常数价格路径）→ 日收益差恒 0 → 误差 0。
+
+    指数侧 close 用 Decimal 构造（psycopg NUMERIC 还原契约）——源内须转 float 才能算
+    pct_change/std，防真实库 Decimal 算术 TypeError 回归。
+    """
+    from decimal import Decimal
+
+    log = []
+    days = _days(250)
+    wandering = _price_path(1000.0, [1.0 + (0.004 if i % 3 == 0 else -0.002) for i in range(250)])
+    closes = _close_rows(days, "510300", wandering) + _close_rows(
+        days, "000300", [Decimal(str(v)) for v in wandering]
+    )
+    _te_source([("510300", "000300")], closes, log).fetch({})
+    assert log[-1][0] == "executemany"
+    assert log[-1][2] == [(0.0, "510300")]
+
+
+def test_etf_tracking_error_alternating_deviation_annualizes_sqrt252():
+    """ETF 日收益相对指数交替 ±0.1%（指数平价）→ std(差, ddof=1)≈0.001 → 误差≈0.1%×√252。
+
+    注：不能构造「每日恒多 0.1%」——差恒定则 std=0（那是年化超额收益，非跟踪误差）；
+    交替 ±0.1% 的偏离幅度即 0.1%/日，年化乘 √252 由本测试锚定。
+    """
+    log = []
+    days = _days(250)
+    idx = [1000.0] * 250
+    etf = _price_path(1000.0, [1.001 if i % 2 == 0 else 0.999 for i in range(250)])
+    closes = _close_rows(days, "510300", etf) + _close_rows(days, "000300", idx)
+    _te_source([("510300", "000300")], closes, log).fetch({})
+    (value,) = [v for v, _ in log[-1][2]]
+    assert value == pytest.approx(0.001 * math.sqrt(252), rel=0.01)
+
+
+def test_etf_tracking_error_insufficient_samples_writes_null():
+    """有效共同交易日 <120 → 回写 null（全量重算幂等：参与集逐行 UPDATE，缺样本置 null 而非漏行）。"""
+    log = []
+    days119 = _days(119)
+    wander119 = _price_path(1000.0, [1.001 if i % 2 == 0 else 0.999 for i in range(119)])
+    closes = (
+        _close_rows(days119, "159999", wander119)
+        + _close_rows(days119, "399999", wander119)
+        # 同批另一只样本充足（250 日恒等）→ 正常出值，证明缺样本只影响自身行
+        + _close_rows(_days(250), "510300", [1000.0] * 250)
+        + _close_rows(_days(250), "000300", [1000.0] * 250)
+    )
+    _te_source([("159999", "399999"), ("510300", "000300")], closes, log).fetch({})
+    assert dict((code, value) for value, code in log[-1][2]) == {"159999": None, "510300": 0.0}
+
+
+def test_etf_tracking_error_missing_index_rows_writes_null():
+    """指数码在 index_close_history 无行（513100 → NDX100 等海外码）→ join 空 → null。"""
+    log = []
+    closes = _close_rows(_days(250), "513100", _price_path(1.0, [1.0001] * 250))  # 只有 ETF 日线
+    _te_source([("513100", "NDX100")], closes, log).fetch({})
+    assert log[-1][2] == [(None, "513100")]
+
+
+def test_etf_tracking_error_skips_funds_without_tracking_index():
+    """tracking_index_code null（货币/商品现货）→ 不在参与集：读映射 SQL 显式排除，UPDATE 不含该行。"""
+    log = []
+    closes = _close_rows(_days(250), "510300", [1000.0] * 250) + _close_rows(_days(250), "000300", [1000.0] * 250)
+    # FakeDB 只回非 null 映射（511860 货币 null 不入结果集），SQL 侧的排除条件由断言钉住
+    _te_source([("510300", "000300")], closes, log).fetch({})
+    pairs_sql = log[0][1]
+    assert "tracking_index_code IS NOT NULL" in pairs_sql
+    assert {code for _, code in log[-1][2]} == {"510300"}
+
+
+def test_etf_tracking_error_returns_empty_frame_and_updates_column():
+    """fetch 恒返回空帧（走 writer 0 行写路径，避免 etf_basic 共享 upsert 触碰目录列）；
+    回写 SQL 只 UPDATE tracking_error_1y 单列。"""
+    log = []
+    closes = _close_rows(_days(250), "510300", [1000.0] * 250) + _close_rows(_days(250), "000300", [1000.0] * 250)
+    df = _te_source([("510300", "000300")], closes, log).fetch({})
+    assert len(df) == 0
+    assert list(df.columns) == ["fund_code", "tracking_error_1y"]
+    update_sql = log[-1][1]
+    assert "UPDATE etf_basic SET tracking_error_1y" in update_sql
+    assert "tracking_index_code" not in update_sql
+
+
+def test_etf_tracking_error_empty_participant_set_no_update():
+    """etf_basic 无 tracking_index_code 非 null 行（冷启动）→ 不发 UPDATE，返回空帧。"""
+    log = []
+    df = _te_source([], [], log).fetch({})
+    assert len(df) == 0
+    assert all(entry[0] != "executemany" for entry in log)
+
+
+def test_etf_tracking_error_supports_range_false():
+    from collector.sources.plugins import EtfTrackingErrorSource
+
+    assert EtfTrackingErrorSource.supports_range is False

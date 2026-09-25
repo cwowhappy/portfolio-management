@@ -1,6 +1,7 @@
 import datetime as dt
 import json
 import logging
+import math
 import re
 import time
 import urllib.request
@@ -620,6 +621,102 @@ class TrackingIndexCloseSource(Source):
         if not frames:
             return pd.DataFrame(columns=self._CLOSE_COLUMNS)
         return pd.concat(frames, ignore_index=True)
+
+
+# ------------------------------------------- MS-14 P3 Task 15 ETF 跟踪误差近1年重算 etf_tracking_error
+#
+# 口径（设计规格 §3.1 决策 #3，权威）：窗口=近 1 年（250 交易日，join 后最近 251 个共同收盘 →
+# 250 个日收益差）；std(ETF日收益 − 指数日收益, ddof=1) × √252；日收益=收盘价环比（市场价口径，
+# 与 index_close_history 同源）；有效共同交易日样本 <120 → null。对齐：两序列按 trading_day
+# inner join 后各自 pct_change（等价于「共同交易日上的各自收益」，指数缺失日的 ETF 收益自然跳过，
+# 不插值）。
+# 写路径：共享 etf_basic upsert 不触碰 tracking_error_1y（writer.py 注记），本源在 fetch 内
+# 自行 UPDATE 该列（读+回写同连接同事务）；参与集 = tracking_index_code 非 null 的基金逐行回写
+# （值或 null——全量重算幂等自愈），tracking_index_code null（货币/商品现货）与指数码无日线行
+# （NDX100/N225 等 82 码探测不可得）自然降级 null。fetch 恒返回空帧走 writer 0 行写路径。
+ETF_TRACKING_WINDOW_ROWS = 251  # join 后保留的最近共同交易日数（251 收盘 → 250 收益差）
+ETF_TRACKING_MIN_SAMPLES = 120  # 有效共同交易日下限（<120 → null，设计规格 §3.1）
+ETF_ANNUALIZATION = math.sqrt(252)  # 日频 std → 年化
+
+ETF_TRACKING_PAIRS_SQL = (
+    "SELECT fund_code, tracking_index_code FROM etf_basic "
+    "WHERE tracking_index_code IS NOT NULL AND tracking_index_code <> ''"
+)
+# 400 自然日读窗：250 交易日 ≈ 365 自然日 + 节假日余量；窗口精确裁剪（tail 251）在 pandas 侧。
+ETF_TRACKING_CLOSES_SQL = (
+    "SELECT trading_day, index_code, close FROM index_close_history "
+    "WHERE index_code = ANY(%s) AND trading_day >= CURRENT_DATE - 400"
+)
+ETF_TRACKING_UPDATE_SQL = "UPDATE etf_basic SET tracking_error_1y = %s WHERE fund_code = %s"
+
+
+class EtfTrackingErrorSource(Source):
+    """ETF 跟踪误差近1年重算（MS-14 P3 Task 15，DB→DB 日更）：读 index_close_history 两序列
+    （ETF 日线 index_code=6位基金码 + 跟踪指数日线）对齐自算，回写 etf_basic.tracking_error_1y。
+
+    supports_range=False：常规调度即全量重算（每日幂等），不走 backfill CLI。
+    """
+
+    supports_range = False
+
+    _EMPTY_COLUMNS = ["fund_code", "tracking_error_1y"]
+
+    def __init__(self, source_id, conn_factory):
+        self.source_id = source_id
+        self.conn_factory = conn_factory
+
+    @staticmethod
+    def _tracking_error(joined):
+        """join 对齐后的两收盘序列 → 年化跟踪误差；样本不足返回 None。
+
+        joined 需已按 trading_day 升序：tail(251) 取窗口，pct_change(fill_method=None)
+        在共同交易日上环比（不插值，指数缺失日的 ETF 收益自然跳过）。
+        """
+        window = joined.tail(ETF_TRACKING_WINDOW_ROWS)
+        if len(window) < ETF_TRACKING_MIN_SAMPLES:
+            return None
+        diff = window["close_etf"].pct_change(fill_method=None) - window["close_idx"].pct_change(
+            fill_method=None
+        )
+        return round(float(diff.std(ddof=1)) * ETF_ANNUALIZATION, 6)
+
+    def fetch(self, params):
+        with self.conn_factory() as conn, conn.cursor() as cur:
+            cur.execute(ETF_TRACKING_PAIRS_SQL)
+            pairs = cur.fetchall()
+            if not pairs:
+                return pd.DataFrame(columns=self._EMPTY_COLUMNS)
+            codes = sorted({fund for fund, _ in pairs} | {index for _, index in pairs})
+            cur.execute(ETF_TRACKING_CLOSES_SQL, (codes,))
+            rows = cur.fetchall()
+            closes = pd.DataFrame(rows, columns=["trading_day", "index_code", "close"])
+            # NUMERIC 列经 psycopg 还原为 decimal.Decimal（对象 dtype，pct_change/std 无法做
+            # float 算术）；统一转 float64，测试侧已是 float 时为幂等 no-op。
+            closes["close"] = closes["close"].astype(float)
+            series = {
+                code: g[["trading_day", "close"]].sort_values("trading_day")
+                for code, g in closes.groupby("index_code")
+            }
+            updates = []
+            for fund_code, index_code in pairs:
+                etf, index = series.get(fund_code), series.get(index_code)
+                if etf is None or index is None:
+                    updates.append((None, fund_code))  # 指数日线无行（海外码等）→ null
+                    continue
+                joined = etf.merge(
+                    index, on="trading_day", how="inner", suffixes=("_etf", "_idx")
+                )
+                updates.append((self._tracking_error(joined), fund_code))
+            cur.executemany(ETF_TRACKING_UPDATE_SQL, updates)
+        computed = sum(1 for value, _ in updates if value is not None)
+        logger.info(
+            "%s: 跟踪误差重算完成，参与 %d 只（非 null %d 只，样本<120 或指数缺行置 null %d 只）",
+            self.source_id,
+            len(updates),
+            computed,
+            len(updates) - computed,
+        )
+        return pd.DataFrame(columns=self._EMPTY_COLUMNS)
 
 
 class IndustryUniverseSource(Source):

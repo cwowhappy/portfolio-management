@@ -30,6 +30,7 @@ from collector.sources.plugins import (
     BondIndexCloseSource,
     EtfBasicSource,
     EtfCloseSource,
+    EtfTrackingErrorSource,
     GoldEtfCloseSource,
     IndexCloseSource,
     IndexConstituentSource,
@@ -307,6 +308,7 @@ def build_registries(config):
             "tracking_index_close": TrackingIndexCloseSource(
                 "tracking_index_close", conn_factory=conn_factory, pro_factory=pro
             ),
+            "etf_tracking_error": EtfTrackingErrorSource("etf_tracking_error", conn_factory=conn_factory),
             "industry_valuation_backfill": IndustryValuationBackfillSource(
                 "industry_valuation_backfill", conn_factory=conn_factory
             ),

@@ -22,6 +22,7 @@ EXPECTED_TASKS = {
     "bond_index_close",
     "etf_basic",
     "etf_close",
+    "etf_tracking_error",
     "gold_etf_close",
     "index_close",
     "index_constituent",
