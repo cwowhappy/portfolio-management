@@ -35,15 +35,15 @@ class MarketHttpDataSourceTest {
         assertThat(source.overview()).isSameAs(node);
     }
 
-    @DisplayName("兜底方法委托新浪与腾讯")
+    @DisplayName("新浪兜底与腾讯K线委托对应客户端")
     @Test
-    void whenFallbackMethodCalled_thenDelegatesToSinaAndTencent() {
+    void whenSinaFallbackAndTencentKlineCalled_thenDelegatesToCorrespondingClients() {
         when(sina.rawQuote("sh", "600519")).thenReturn("txt");
-        assertThat(source.rawQuote("sh", "600519")).isEqualTo("txt");
+        assertThat(source.sinaQuote("sh", "600519")).isEqualTo("txt");
         when(sina.rawIndices()).thenReturn("idx");
-        assertThat(source.rawIndices()).isEqualTo("idx");
+        assertThat(source.sinaIndices()).isEqualTo("idx");
         when(tencent.kline("sh600519", "day", 120)).thenReturn(node);
-        assertThat(source.fallbackKline("sh600519", "day", 120)).isSameAs(node);
+        assertThat(source.tencentKline("sh600519", "day", 120)).isSameAs(node);
         verify(tencent).kline("sh600519", "day", 120);
     }
 

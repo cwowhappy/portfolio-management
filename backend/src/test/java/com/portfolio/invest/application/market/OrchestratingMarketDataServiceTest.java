@@ -3,7 +3,9 @@ package com.portfolio.invest.application.market;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -32,7 +34,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-/** 行情编排：解析、东财主源降级新浪/腾讯、财务估值兜底、入参校验（无缓存）。 */
+/** 行情编排：解析、腾讯主源降级东财/新浪、财务估值兜底、入参校验（无缓存）。 */
 class OrchestratingMarketDataServiceTest {
 
     private final MarketDataSource source = mock(MarketDataSource.class);
@@ -42,6 +44,13 @@ class OrchestratingMarketDataServiceTest {
     @BeforeEach
     void setUp() {
         service = new OrchestratingMarketDataService(source);
+        // 腾讯主源默认置为不可用：未显式覆盖的用例自动走「东财→新浪」既有路径
+        when(source.tencentQuote(anyString()))
+                .thenThrow(new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "腾讯行情挂了"));
+        when(source.tencentKline(anyString(), anyString(), anyInt()))
+                .thenThrow(new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "腾讯K线挂了"));
+        when(source.tencentIndices())
+                .thenThrow(new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "腾讯指数挂了"));
     }
 
     private JsonNode fixture(String name) throws IOException {
@@ -91,32 +100,43 @@ class OrchestratingMarketDataServiceTest {
 
     // ———— quote ————
 
-    @DisplayName("quote主源成功")
+    @DisplayName("quote腾讯主源成功")
     @Test
-    void givenPrimaryQuote_whenQuote_thenReturnQuote() throws IOException {
-        when(source.quote("1.600519")).thenReturn(fixture("eastmoney-quote.json"));
+    void givenTencentQuote_whenQuote_thenReturnTencentQuote() throws IOException {
+        // doReturn 覆盖 setUp 的 anyString() 抛异常默认桩：when(...) 形式会先触发旧桩抛出，无法完成覆桩
+        doReturn(fixtureText("tencent-quote.txt")).when(source).tencentQuote("sh600519");
         Quote q = service.quote("600519");
         assertThat(q.name()).isEqualTo("贵州茅台");
-        assertThat(q.price()).isEqualTo(1415.0);
-        assertThat(q.pe()).isEqualTo(21.35);
-        assertThat(q.pb()).isEqualTo(7.82);
+        assertThat(q.price()).isEqualTo(1237.00);
+        assertThat(q.pe()).isEqualTo(18.99);
+        assertThat(q.pb()).isEqualTo(6.15);
+        verify(source).tencentQuote("sh600519");
     }
 
-    @DisplayName("quote主源失败降级新浪")
+    @DisplayName("quote腾讯失败降级东财")
     @Test
-    void givenPrimaryQuoteFails_whenQuote_thenFallbackToSina() throws IOException {
+    void givenTencentQuoteFails_whenQuote_thenFallbackToEastmoney() throws IOException {
+        // setUp 已将 tencentQuote 置为抛异常，此处只补东财桩
+        when(source.quote("1.600519")).thenReturn(fixture("eastmoney-quote.json"));
+        Quote q = service.quote("600519");
+        assertThat(q.price()).isEqualTo(1415.0);
+        verify(source).quote("1.600519");
+    }
+
+    @DisplayName("quote腾讯东财均失败降级新浪")
+    @Test
+    void givenTencentAndEastmoneyFail_whenQuote_thenFallbackToSina() throws IOException {
         when(source.quote("1.600519"))
                 .thenThrow(new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "东财挂了"));
-        when(source.rawQuote("sh", "600519")).thenReturn(fixtureText("sina-quote.txt"));
+        when(source.sinaQuote("sh", "600519")).thenReturn(fixtureText("sina-quote.txt"));
         Quote q = service.quote("600519");
-        assertThat(q.name()).isEqualTo("贵州茅台");
         assertThat(q.price()).isEqualTo(1415.0);
-        verify(source).rawQuote("sh", "600519");
+        verify(source).sinaQuote("sh", "600519");
     }
 
     // ———— kline ————
 
-    @DisplayName("kline周期映射到东财klt")
+    @DisplayName("kline降级东财时周期映射到东财klt")
     @Test
     void givenKlinePeriods_whenKline_thenMapToEastmoneyKlt() throws IOException {
         when(source.kline(eq("1.600519"), anyInt(), anyInt())).thenReturn(fixture("eastmoney-kline.json"));
@@ -128,7 +148,7 @@ class OrchestratingMarketDataServiceTest {
         verify(source).kline("1.600519", 103, 60);
     }
 
-    @DisplayName("kline周期缺省与非法规整")
+    @DisplayName("kline降级东财时周期缺省与非法规整")
     @Test
     void givenDefaultOrInvalidPeriodAndLimit_whenKline_thenNormalize() throws IOException {
         when(source.kline(eq("1.600519"), anyInt(), anyInt())).thenReturn(fixture("eastmoney-kline.json"));
@@ -143,16 +163,24 @@ class OrchestratingMarketDataServiceTest {
                 .isInstanceOf(MarketDataException.class).hasMessageContaining("period 仅支持");
     }
 
-    @DisplayName("kline主源失败降级腾讯")
+    @DisplayName("kline腾讯主源成功")
     @Test
-    void givenPrimaryKlineFails_whenKline_thenFallbackToTencent() throws IOException {
-        when(source.kline("1.600519", 101, 120))
-                .thenThrow(new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "东财K线挂了"));
-        when(source.fallbackKline("sh600519", "day", 120)).thenReturn(fixture("tencent-kline.json"));
+    void givenTencentKline_whenKline_thenReturnTencentBars() throws IOException {
+        // doReturn 覆盖 setUp 的 any 匹配抛异常默认桩（when 形式会被旧桩先行打断）
+        doReturn(fixture("tencent-kline.json")).when(source).tencentKline("sh600519", "day", 120);
         List<KlineBar> bars = service.kline("600519", "day", 120);
         assertThat(bars).hasSize(3);
         assertThat(bars.get(0).date()).isEqualTo("2026-08-14");
-        verify(source).fallbackKline("sh600519", "day", 120);
+        verify(source).tencentKline("sh600519", "day", 120);
+    }
+
+    @DisplayName("kline腾讯失败降级东财")
+    @Test
+    void givenTencentKlineFails_whenKline_thenFallbackToEastmoney() throws IOException {
+        when(source.kline("1.600519", 101, 120)).thenReturn(fixture("eastmoney-kline.json"));
+        List<KlineBar> bars = service.kline("600519", "day", 120);
+        assertThat(bars).isNotEmpty();
+        verify(source).kline("1.600519", 101, 120);
     }
 
     // ———— financials（估值兜底） ————
@@ -426,7 +454,7 @@ class OrchestratingMarketDataServiceTest {
     void givenNameFetchFails_whenNews_thenFallbackToCodeSearch() throws IOException {
         when(source.quote("1.600519"))
                 .thenThrow(new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "挂了"));
-        when(source.rawQuote("sh", "600519"))
+        when(source.sinaQuote("sh", "600519"))
                 .thenThrow(new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "新浪也挂了"));
         when(source.news("600519", 10)).thenReturn(fixture("eastmoney-news.json"));
         assertThat(service.news("600519", 10)).isNotEmpty();
@@ -435,7 +463,7 @@ class OrchestratingMarketDataServiceTest {
 
     // ———— overview ————
 
-    @DisplayName("overview主源成功")
+    @DisplayName("overview降级东财主源成功")
     @Test
     void givenPrimaryOverview_whenOverview_thenReturnIndices() throws IOException {
         when(source.overview()).thenReturn(fixture("eastmoney-overview.json"));
@@ -444,14 +472,35 @@ class OrchestratingMarketDataServiceTest {
         verify(source).overview();
     }
 
-    @DisplayName("overview主源失败降级新浪")
+    @DisplayName("overview降级东财主源失败降级新浪")
     @Test
     void givenPrimaryOverviewFails_whenOverview_thenFallbackToSina() throws IOException {
         when(source.overview()).thenThrow(new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "挂了"));
-        when(source.rawIndices()).thenReturn(fixtureText("sina-indices.txt"));
+        when(source.sinaIndices()).thenReturn(fixtureText("sina-indices.txt"));
         MarketOverview o = service.overview();
         assertThat(o.indices()).hasSize(3);
-        verify(source).rawIndices();
+        verify(source).sinaIndices();
+    }
+
+    @DisplayName("overview腾讯主源成功")
+    @Test
+    void givenTencentIndices_whenOverview_thenReturnTencentOverview() throws IOException {
+        // doReturn 覆盖 setUp 的抛异常默认桩（when 形式会被旧桩先行打断）
+        doReturn(fixtureText("tencent-indices.txt")).when(source).tencentIndices();
+        MarketOverview o = service.overview();
+        assertThat(o.indices()).hasSize(3);
+        assertThat(o.indices().get(0).name()).isEqualTo("上证指数");
+        verify(source).tencentIndices();
+    }
+
+    @DisplayName("overview腾讯东财均失败降级新浪")
+    @Test
+    void givenTencentAndEastmoneyOverviewFail_whenOverview_thenFallbackToSina() throws IOException {
+        when(source.overview()).thenThrow(new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "挂了"));
+        when(source.sinaIndices()).thenReturn(fixtureText("sina-indices.txt"));
+        MarketOverview o = service.overview();
+        assertThat(o.indices()).hasSize(3);
+        verify(source).sinaIndices();
     }
 
     // ———— 探活 ————
@@ -462,6 +511,7 @@ class OrchestratingMarketDataServiceTest {
         when(source.quote("1.600519")).thenReturn(fixture("eastmoney-quote.json"));
         assertThat(service.probeQuoteLatencyMs()).isGreaterThanOrEqualTo(0);
         verify(source).quote("1.600519");
+        verify(source).tencentQuote("sh600519"); // 主源先探腾讯（setUp 桩抛异常后走东财）
     }
 
     @DisplayName("probeQuoteLatencyMs用注入时钟测量耗时")
@@ -490,7 +540,7 @@ class OrchestratingMarketDataServiceTest {
         when(source.quote("1.600519")).thenReturn(fixture("eastmoney-quote.json"));
         when(source.quote("0.000858"))
                 .thenThrow(new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "东财挂了"));
-        when(source.rawQuote("sz", "000858"))
+        when(source.sinaQuote("sz", "000858"))
                 .thenThrow(new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "新浪也挂了"));
 
         var result = service.quoteBatch(List.of("600519", "000858"));
@@ -509,7 +559,7 @@ class OrchestratingMarketDataServiceTest {
         try {
             when(source.quote("0.000858"))
                     .thenThrow(new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "东财挂了"));
-            when(source.rawQuote("sz", "000858"))
+            when(source.sinaQuote("sz", "000858"))
                     .thenThrow(new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "新浪也挂了"));
 
             assertThat(service.quoteBatch(List.of("000858"))).isEmpty();

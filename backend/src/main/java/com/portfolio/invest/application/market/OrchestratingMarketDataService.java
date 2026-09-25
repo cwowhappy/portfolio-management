@@ -24,7 +24,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-/** 行情编排：主源（东财）失败降级新浪/腾讯；无缓存（缓存见 CachedMarketDataService）。 */
+/** 行情编排：主源（腾讯）失败降级东财，行情/指数再降新浪；无缓存（缓存见 CachedMarketDataService）。 */
 @Service
 public class OrchestratingMarketDataService implements MarketDataService {
 
@@ -75,10 +75,14 @@ public class OrchestratingMarketDataService implements MarketDataService {
     }
 
     private Quote fetchQuoteFresh(StockRef ref) {
+        String symbol = ref.sinaPrefix() + ref.code();
         return withFallback(
-                () -> MarketDataParser.parseQuote(source.quote(ref.secid())),
-                () -> MarketDataParser.parseSinaQuote(source.rawQuote(ref.sinaPrefix(), ref.code()), ref.code()),
-                e -> log.info("东财行情失败({}), 降级新浪: {}", ref.code(), e.getMessage()));
+                () -> withFallback(
+                        () -> MarketDataParser.parseTencentQuote(source.tencentQuote(symbol), ref.code()),
+                        () -> MarketDataParser.parseQuote(source.quote(ref.secid())),
+                        e -> log.info("腾讯行情失败({}), 降级东财: {}", ref.code(), e.getMessage())),
+                () -> MarketDataParser.parseSinaQuote(source.sinaQuote(ref.sinaPrefix(), ref.code()), ref.code()),
+                e -> log.info("腾讯与东财行情均失败({}), 降级新浪: {}", ref.code(), e.getMessage()));
     }
 
     @Override
@@ -89,9 +93,9 @@ public class OrchestratingMarketDataService implements MarketDataService {
         int n = MarketParams.clampLimit(limit, MarketParams.KLINE_MIN_LIMIT, MarketParams.KLINE_DEFAULT_LIMIT, MarketParams.MAX_LIMIT);
         String symbol = ref.sinaPrefix() + ref.code();
         return withFallback(
+                () -> MarketDataParser.parseTencentKline(source.tencentKline(symbol, periodNorm, n), symbol, periodNorm),
                 () -> MarketDataParser.parseKline(source.kline(ref.secid(), klt, n)),
-                () -> MarketDataParser.parseTencentKline(source.fallbackKline(symbol, periodNorm, n), symbol, periodNorm),
-                e -> log.info("东财K线失败({}), 降级腾讯: {}", ref.code(), e.getMessage()));
+                e -> log.info("腾讯K线失败({}), 降级东财: {}", ref.code(), e.getMessage()));
     }
 
     @Override
@@ -167,9 +171,12 @@ public class OrchestratingMarketDataService implements MarketDataService {
     @Override
     public MarketOverview overview() {
         return withFallback(
-                () -> MarketDataParser.buildOverview(source.overview()),
-                () -> MarketDataParser.buildSinaOverview(source.rawIndices()),
-                e -> log.info("东财指数失败({}), 降级新浪", e.getMessage()));
+                () -> withFallback(
+                        () -> MarketDataParser.buildTencentOverview(source.tencentIndices()),
+                        () -> MarketDataParser.buildOverview(source.overview()),
+                        e -> log.info("腾讯指数失败, 降级东财: {}", e.getMessage())),
+                () -> MarketDataParser.buildSinaOverview(source.sinaIndices()),
+                e -> log.info("腾讯与东财指数均失败, 降级新浪: {}", e.getMessage()));
     }
 
     @Override
