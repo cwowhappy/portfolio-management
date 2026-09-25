@@ -421,6 +421,13 @@ export interface IndustryStock {
   prosperity: Prosperity | null;
 }
 
+// —— 行业关注（/api/industry-watch/**，独立前缀需登录，与后端 IndustryWatchView 对齐）——
+
+export interface IndustryWatchItem {
+  industryCode: string;
+  addedAt: string;
+}
+
 // —— 投资知识库（/api/wiki/**，与后端 WikiController 的 View 对齐）——
 
 export type WikiEntryType = "BOOK_NOTE" | "CONCEPT" | "RESEARCH_NOTE";

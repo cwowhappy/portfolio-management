@@ -10,9 +10,11 @@ const PROSPERITY_LABEL: Record<Prosperity, string> = { UP: "↑", FLAT: "→", D
 /** 景气/分位口径提示（回溯近似显式化，需求 §三.A）。 */
 const PERCENTILE_NOTE = "当前值在近 5 年序列经验分布中的百分位（高=贵）；历史按当前申万 2021 分类成分回溯重算";
 
-export default function IndustryBoardTable({ items, onSelect }: {
+export default function IndustryBoardTable({ items, onSelect, watchedCodes, onToggleWatch }: {
   items: IndustryBoardItem[];
   onSelect?: (industryCode: string) => void;
+  watchedCodes?: Set<string>;
+  onToggleWatch?: (industryCode: string) => void;
 }) {
   const [sort, setSort] = useState<SortKey>("pe");
   const sorted = [...items].sort((a, b) => (b[sort] ?? 0) - (a[sort] ?? 0));
@@ -26,6 +28,7 @@ export default function IndustryBoardTable({ items, onSelect }: {
       <table className="w-full text-sm">
         <thead className="text-[color:var(--color-ink-dim)]">
           <tr>
+            <th className="w-8 py-1" aria-label="关注" />
             <th className="text-left py-1">行业</th>
             {cols.map(([k, label]) => (
               <th key={k} className="text-right py-1 cursor-pointer"
@@ -40,6 +43,18 @@ export default function IndustryBoardTable({ items, onSelect }: {
         <tbody className="tabular">
           {sorted.map((i) => (
             <tr key={i.industryCode} className="border-t border-[color:var(--color-line-soft)]">
+              <td className="py-2 text-center">
+                {onToggleWatch && (
+                  <button
+                    type="button"
+                    className="text-base leading-none"
+                    aria-label={watchedCodes?.has(i.industryCode) ? `取消关注 ${i.industryCode}` : `关注 ${i.industryCode}`}
+                    onClick={() => onToggleWatch(i.industryCode)}
+                  >
+                    {watchedCodes?.has(i.industryCode) ? "★" : "☆"}
+                  </button>
+                )}
+              </td>
               <td className="text-left py-2">
                 {onSelect ? (
                   <button className="text-[color:var(--color-up)] hover:underline"

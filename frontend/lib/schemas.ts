@@ -409,6 +409,13 @@ export const IndustryStockSchema = z.object({
   prosperity: ProsperitySchema.nullable(),
 });
 
+// —— 行业关注（/api/industry-watch/**，与后端 IndustryWatchController 的 View 对齐）——
+
+export const IndustryWatchItemSchema = z.object({
+  industryCode: z.string(),
+  addedAt: z.string(),
+});
+
 // —— 投资知识库（/api/wiki/**，与后端 WikiController 的 View 对齐）——
 
 export const WikiEntryTypeSchema = z.enum(["BOOK_NOTE", "CONCEPT", "RESEARCH_NOTE"]);
