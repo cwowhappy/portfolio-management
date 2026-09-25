@@ -94,6 +94,32 @@ class WatchlistApplicationServiceTest {
                         e -> assertThat(e.code()).isEqualTo(ScreeningErrorCode.WATCHLIST_LIMIT_EXCEEDED));
     }
 
+    @DisplayName("添加：ETF 代码不在股票快照但在 etf_basic → 放行保存")
+    @Test
+    void givenEtfCodeNotInStockSnapshotButInEtfBasic_whenAdd_thenSaved() {
+        when(watchlist.existsByUserIdAndStockCode(1L, "518880")).thenReturn(false);
+        when(screening.findStocksByCodes(List.of("518880"))).thenReturn(List.of());
+        when(screening.existsFund("518880")).thenReturn(true);
+        when(watchlist.countByUserId(1L)).thenReturn(0L);
+
+        service.add(1L, "518880");
+
+        verify(watchlist).save(any()); // ETF 无股票快照行也允许加入自选
+    }
+
+    @DisplayName("添加：股票快照与 etf_basic 都不在 → INVALID_STOCK 照旧")
+    @Test
+    void givenUnknownEverywhere_whenAdd_thenInvalidStock() {
+        when(watchlist.existsByUserIdAndStockCode(1L, "999999")).thenReturn(false);
+        when(screening.findStocksByCodes(List.of("999999"))).thenReturn(List.of());
+        when(screening.existsFund("999999")).thenReturn(false);
+
+        assertThatThrownBy(() -> service.add(1L, "999999"))
+                .isInstanceOfSatisfying(ScreeningException.class,
+                        e -> assertThat(e.code()).isEqualTo(ScreeningErrorCode.INVALID_STOCK));
+        verify(watchlist, never()).save(any());
+    }
+
     @DisplayName("移除：幂等（不存在亦成功）")
     @Test
     void whenRemove_thenAlwaysOk() {

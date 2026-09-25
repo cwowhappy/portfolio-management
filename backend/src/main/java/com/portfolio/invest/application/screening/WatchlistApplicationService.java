@@ -61,7 +61,9 @@ public class WatchlistApplicationService {
         if (watchlistRepository.existsByUserIdAndStockCode(userId, stockCode)) {
             return; // 幂等：重复添加直接成功
         }
-        if (screeningRepository.findStocksByCodes(List.of(stockCode)).isEmpty()) {
+        // 存在性并集：股票最新快照 ∪ etf_basic 目录（ETF 代码不在股票快照，凭目录命中放行）
+        if (screeningRepository.findStocksByCodes(List.of(stockCode)).isEmpty()
+                && !screeningRepository.existsFund(stockCode)) {
             throw new ScreeningException(ScreeningErrorCode.INVALID_STOCK, "未知股票代码: " + stockCode);
         }
         if (watchlistRepository.countByUserId(userId) >= WatchlistItem.MAX_SIZE) {

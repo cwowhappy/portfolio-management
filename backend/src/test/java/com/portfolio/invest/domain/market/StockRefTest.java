@@ -52,4 +52,24 @@ class StockRefTest {
         assertThat(StockRef.Exchange.of("000001", "1")).isEqualTo(StockRef.Exchange.SH); // 东财 mkt 号兜底
         assertThat(StockRef.Exchange.BJ.displayName()).isEqualTo("北交所");
     }
+
+    @DisplayName("沪市 ETF/基金 5 段判沪市：腾讯 sh 前缀与东财 secid 均正确")
+    @Test
+    void givenShanghaiEtfCode_whenStockRefFrom_thenNormalizeShanghaiFields() {
+        for (String code : new String[]{"510300", "518880", "588000"}) {
+            StockRef r = StockRef.from(code);
+            assertThat(r.market()).as("%s market", code).isEqualTo("1");
+            assertThat(r.secid()).as("%s secid", code).isEqualTo("1." + code);
+            assertThat(r.sinaPrefix()).as("%s sinaPrefix", code).isEqualTo("sh");
+            assertThat(r.secuCode()).as("%s secuCode", code).isEqualTo(code + ".SH");
+        }
+    }
+
+    @DisplayName("深市基金 15/16/18 段仍判深市")
+    @Test
+    void givenShenzhenFundCode_whenExchangeOf_thenShenzhen() {
+        assertThat(StockRef.Exchange.of("159915", null)).isEqualTo(StockRef.Exchange.SZ);
+        assertThat(StockRef.Exchange.of("162411", null)).isEqualTo(StockRef.Exchange.SZ);
+        assertThat(StockRef.Exchange.of("184801", null)).isEqualTo(StockRef.Exchange.SZ);
+    }
 }

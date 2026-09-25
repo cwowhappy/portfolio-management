@@ -117,6 +117,13 @@ public class ScreeningRepositoryImpl implements ScreeningRepository {
     }
 
     @Override
+    public boolean existsFund(String fundCode) {
+        Integer count = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM etf_basic WHERE fund_code = ?", Integer.class, fundCode);
+        return count != null && count > 0;
+    }
+
+    @Override
     public List<StockSearchHit> searchLatestSnapshot(String keyword, int limit) {
         String sql = """
                 SELECT d.stock_code, d.stock_name, m.industry_name, d.pe_ttm, d.pb, d.total_mv

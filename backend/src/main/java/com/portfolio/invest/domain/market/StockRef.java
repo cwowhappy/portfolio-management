@@ -58,6 +58,9 @@ public record StockRef(String code, String market, String secid, String sinaPref
         }
 
         public static Exchange of(String code, String mktNum) {
+            if (code.startsWith("5")) {
+                return SH; // 沪市 ETF/基金段（510/511/512/513/515/516/517/518/560-589 等）；深市基金是 15/16/18 段，无 5 开头
+            }
             if (code.startsWith("6") || code.startsWith("9")) {
                 return SH;
             }
