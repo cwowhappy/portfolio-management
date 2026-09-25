@@ -108,6 +108,31 @@ def test_index_close_history_upsert_idempotent(pg_conn):
     assert float(rows[0][0]) == 3910.5
 
 
+def test_etf_basic_upsert_idempotent(pg_conn):
+    """冲突键 (fund_code)（MS-14 P3 Task 13，Flyway V18）：周更 upsert 更新目录字段、
+    刷新 updated_at，且不清 tracking_error_1y（该列由 Task 15 误差任务单独回写）。"""
+    store = Store()
+    rec = {
+        "fund_code": "510300",
+        "fund_name": "沪深300ETF华泰柏瑞",
+        "fee_rate": 0.2,
+        "scale": 948.7,
+        "tracking_index_code": "000300",
+        "tracking_index_name": "沪深300指数",
+        "category": "宽基",
+    }
+    store.upsert(pg_conn, "etf_basic", [rec])
+    # 模拟 Task 15 已写入跟踪误差
+    pg_conn.execute("UPDATE etf_basic SET tracking_error_1y=0.012345 WHERE fund_code='510300'")
+    store.upsert(pg_conn, "etf_basic", [{**rec, "fee_rate": 0.15}])
+    rows = pg_conn.execute(
+        "SELECT fee_rate, tracking_error_1y FROM etf_basic WHERE fund_code='510300'"
+    ).fetchall()
+    assert len(rows) == 1
+    assert float(rows[0][0]) == 0.15
+    assert float(rows[0][1]) == 0.012345  # 周更不触碰误差列
+
+
 def test_index_constituent_replaces_members_on_rerun(pg_conn):
     """C-9：半年任务重跑是快照语义——先删后插，被调出指数的成员不再残留旧行，
     且不影响本次未涉及的其它指数。"""

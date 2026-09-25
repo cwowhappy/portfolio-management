@@ -1,6 +1,8 @@
 import datetime as dt
+import json
 import re
 import time
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
 import akshare as ak
@@ -246,6 +248,191 @@ class GoldEtfCloseSource(Source):
         df = df.rename(columns={"trade_date": "trading_day"})
         df["index_code"], df["index_name"] = "518880", "华安黄金ETF"
         return df[["trading_day", "index_code", "index_name", "close"]]
+
+
+# ------------------------------------------- MS-14 P3 Task 13 ETF 目录/费率/规模 etf_basic
+#
+# 源口径（09-调研报告/2026-09-26-ETF数据源探测.md §七，字段样例均实测）：
+# - 枚举：akshare fund_etf_category_sina("ETF基金")——场内 ETF 专列（1685 只），天然全为场内
+#   标的，无需 ISEXCHG 过滤（§七勘误后口径）；代码带 sh/sz 前缀，6 位化后即 fund_code。
+# - enrich：天天基金移动端 FundMNDetailInformation 逐只（Datas 单基金 JSON，UA+Referer 即可
+#   无需 cookie）——SHORTNAME→fund_name、MGREXP+TRUSTEXP→fee_rate（合计年化%）、
+#   ENDNAV→scale（元→亿元 ÷1e8）、INDEXCODE/INDEXNAME→tracking_index_*、FTYPE→category。
+#   单只失败/超时该行字段置 null 不阻断整批（整体失败由 validator/retry 兜底）。
+ETF_DETAIL_URL = (
+    "https://fundmobapi.eastmoney.com/FundMNewApi/FundMNDetailInformation"
+    "?FCODE={code}&deviceid=Wap&plat=Wap&product=EFund&version=6.2.8"
+)
+ETF_DETAIL_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+    "Referer": "https://fund.eastmoney.com/",
+}
+ETF_DETAIL_TIMEOUT = 15  # 单只请求超时（秒）
+ETF_ENRICH_INTERVAL = 0.3  # 逐只保守限速：~1685 只 ≈ 9 分钟（周更可接受，报告 §2.2）
+
+# 非证券指数的跟踪标的码 → tracking_index_code/name 置 null（不参与 Task 15 误差计算）：
+# SGE 贵金属现货（AU9999 黄金/AG 白银）；商品期货价格指数（DCESMFI 等）按 INDEXNAME 含
+# 期货/现货识别。海外证券指数码（NDX100/N225/SPAHLVCP）保留展示，误差计算侧自然降级 null。
+ETF_SPOT_INDEX_PREFIXES = ("AU", "AG")
+
+# category 关键词规则（常量化钉住，作用于 FTYPE|INDEXNAME|基金名 联合文本，按序先命中先出）。
+# FTYPE 实测五类：指数型-股票/指数型-其他/指数型-固收/指数型-海外股票/货币型-普通货币。
+# 已知不精确处（关键词法的固有取舍，1685 只中个位数）：黄金产业股票指数含「黄金」误入商品；
+# 一带一路/央企等主题未列举归宽基。
+ETF_QDII_KEYWORDS = (
+    "QDII", "海外", "纳斯达克", "纳指", "中概", "日经", "恒生", "港股", "标普500", "道琼斯",
+    "德国", "法国", "印度", "越南", "沙特", "亚太", "亚洲",
+)
+ETF_BOND_KEYWORDS = ("债", "固收", "存单", "短融")
+ETF_COMMODITY_KEYWORDS = ("商品", "黄金", "白银", "货币", "期货", "豆粕", "原油")
+ETF_INDUSTRY_KEYWORDS = (
+    "行业", "主题",
+    "半导体", "芯片", "医药", "医疗", "生物", "创新药", "中药", "消费", "食品", "饮料", "白酒", "酒",
+    "新能源", "光伏", "电池", "军工", "国防", "证券", "券商", "银行", "保险", "地产", "房地产",
+    "建筑", "建材", "钢铁", "煤炭", "化工", "石油", "石化", "计算机", "传媒", "游戏", "通信",
+    "电子", "汽车", "家电", "农业", "养殖", "环保", "电力", "交通", "物流", "旅游", "教育",
+    "科技", "人工智能", "机器人", "软件", "信息", "互联网", "航空", "港口", "有色", "金属",
+    "机械", "设备", "养老",
+)
+
+_ETF_FUND_CODE = re.compile(r"(\d{6})")
+
+ETF_BASIC_COLUMNS = [
+    "fund_code",
+    "fund_name",
+    "fee_rate",
+    "scale",
+    "tracking_index_code",
+    "tracking_index_name",
+    "category",
+]
+
+
+def _default_etf_catalog():
+    """新浪场内 ETF 目录（1 次调用全集枚举）。"""
+    return ak.fund_etf_category_sina(symbol="ETF基金")
+
+
+def _default_etf_detail(code):
+    """天天基金移动端 Detail 端点：返回 Datas 单基金 dict（ErrCode!=0 或异常由调用方容错）。"""
+    req = urllib.request.Request(ETF_DETAIL_URL.format(code=code), headers=ETF_DETAIL_HEADERS)
+    with urllib.request.urlopen(req, timeout=ETF_DETAIL_TIMEOUT) as resp:
+        payload = json.loads(resp.read().decode("utf-8"))
+    if payload.get("ErrCode") != 0:
+        return {}
+    data = payload.get("Datas")
+    return data if isinstance(data, dict) else {}
+
+
+def _etf_rate(value):
+    """费率字段（实测形如 "0.15%" / "--"）→ 百分数 float；不可解析返回 None。"""
+    if value is None:
+        return None
+    s = str(value).strip().rstrip("%").strip()
+    if not s or s == "--":
+        return None
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def _etf_fee_rate(detail):
+    """管理费+托管费合计（年化%）：两值均解析成功才输出，任一缺失/不可解析 → None
+    （宁缺毋低估——部分合计会让费率上限筛选漏杀）。"""
+    mgmt, trust = _etf_rate(detail.get("MGREXP")), _etf_rate(detail.get("TRUSTEXP"))
+    if mgmt is None or trust is None:
+        return None
+    return round(mgmt + trust, 4)
+
+
+def _etf_scale(detail):
+    """ENDNAV（元，字符串，实测 510300="94872183996.4"）→ 亿元；缺失/不可解析 → None。"""
+    raw = detail.get("ENDNAV")
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s or s == "--":
+        return None
+    try:
+        return round(float(s) / 1e8, 4)
+    except ValueError:
+        return None
+
+
+def _etf_tracking_index_code(detail):
+    """证券指数码才保留：空/`--`（货币）、AU*/AG* 现货前缀、INDEXNAME 含期货/现货
+    （大商所豆粕期货价格指数等）→ None，且 tracking_index_name 一并置 null。"""
+    code = str(detail.get("INDEXCODE") or "").strip()
+    name = str(detail.get("INDEXNAME") or "").strip()
+    if not code or code == "--":
+        return None
+    if code.upper().startswith(ETF_SPOT_INDEX_PREFIXES):
+        return None
+    if "期货" in name or "现货" in name:
+        return None
+    return code
+
+
+def _etf_category(ftype, index_name, fund_name=""):
+    """FTYPE + INDEXNAME + 基金名（enrich 失败时的兜底信号）→ 宽基/行业/商品/债券/QDII/其他。
+    关键词规则常量化（ETF_*_KEYWORDS），优先级 QDII → 债券 → 商品 → 行业 → 宽基，
+    无任何分类信号 → 其他。"""
+    text = "|".join(str(x or "") for x in (ftype, index_name, fund_name))
+    if any(k in text for k in ETF_QDII_KEYWORDS):
+        return "QDII"
+    if any(k in text for k in ETF_BOND_KEYWORDS):
+        return "债券"
+    if any(k in text for k in ETF_COMMODITY_KEYWORDS):
+        return "商品"
+    if any(k in text for k in ETF_INDUSTRY_KEYWORDS):
+        return "行业"
+    if not text.strip("|"):
+        return "其他"
+    return "宽基"
+
+
+class EtfBasicSource(Source):
+    """ETF 目录/费率/规模（MS-14 P3 Task 13，周更）：新浪目录枚举 + 移动端 Detail 逐只 enrich。
+
+    supports_range=False：目录是「当前全集快照」语义，无历史区间可回填（backfill 拒绝）。
+    """
+
+    supports_range = False
+
+    def __init__(self, source_id, catalog_fetch=None, detail_fetch=None, sleep_fn=time.sleep):
+        self.source_id = source_id
+        self.catalog_fetch = catalog_fetch or _default_etf_catalog
+        self.detail_fetch = detail_fetch or _default_etf_detail
+        self.sleep_fn = sleep_fn
+
+    def fetch(self, params):
+        catalog = self.catalog_fetch()
+        codes = catalog["代码"].astype(str).str.extract(_ETF_FUND_CODE, expand=False)
+        catalog_names = catalog["名称"].astype(str)
+        rows = []
+        for code, fallback_name in zip(codes, catalog_names, strict=True):
+            try:
+                detail = self.detail_fetch(code) or {}
+            except Exception:  # 单只失败/超时 → 该行 enrich 字段 null，不阻断整批
+                detail = {}
+            fund_name = str(detail.get("SHORTNAME") or "").strip() or fallback_name
+            if not fund_name:  # 目录与 enrich 均无名：无展示价值的行直接跳过
+                continue
+            index_code = _etf_tracking_index_code(detail)
+            rows.append(
+                {
+                    "fund_code": code,
+                    "fund_name": fund_name,
+                    "fee_rate": _etf_fee_rate(detail),
+                    "scale": _etf_scale(detail),
+                    "tracking_index_code": index_code,
+                    "tracking_index_name": str(detail.get("INDEXNAME") or "").strip() if index_code else None,
+                    "category": _etf_category(detail.get("FTYPE"), detail.get("INDEXNAME"), fund_name),
+                }
+            )
+            self.sleep_fn(ETF_ENRICH_INTERVAL)
+        return pd.DataFrame(rows, columns=ETF_BASIC_COLUMNS)
 
 
 class IndustryUniverseSource(Source):

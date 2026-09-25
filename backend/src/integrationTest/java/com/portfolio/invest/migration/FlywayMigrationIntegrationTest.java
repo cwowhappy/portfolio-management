@@ -30,7 +30,7 @@ class FlywayMigrationIntegrationTest extends PostgresTestSupport {
         List<String> versions = jdbcTemplate.queryForList(
                 "SELECT version FROM flyway_schema_history WHERE type = 'SQL' ORDER BY installed_rank",
                 String.class);
-        assertThat(versions).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17");
+        assertThat(versions).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18");
 
         Integer failed = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM flyway_schema_history WHERE success = false", Integer.class);
@@ -128,6 +128,23 @@ class FlywayMigrationIntegrationTest extends PostgresTestSupport {
         assertColumn("industry_watch", "industry_code", "character varying", false);
         assertColumn("industry_watch", "added_at", "timestamp with time zone", false);
         assertUniqueColumns("industry_watch", "user_id,industry_code");
+    }
+
+    @DisplayName("ETF 筛选基础表契约（V18）")
+    @Test
+    void whenSchemaMigrated_thenEtfBasicTableMatchesContract() {
+        // V18：collector etf_basic 周更任务写入（跨服务契约，同 V3/V4 口径），
+        // tracking_error_1y 由 Task 15 误差任务回写（可空）
+        assertPrimaryKey("etf_basic", "fund_code");
+        assertColumn("etf_basic", "fund_code", "character varying", false);
+        assertColumn("etf_basic", "fund_name", "character varying", false);
+        assertColumn("etf_basic", "fee_rate", "numeric", true, 8, 4);
+        assertColumn("etf_basic", "scale", "numeric", true, 18, 4);
+        assertColumn("etf_basic", "tracking_index_code", "character varying", true);
+        assertColumn("etf_basic", "tracking_index_name", "character varying", true);
+        assertColumn("etf_basic", "category", "character varying", false);
+        assertColumn("etf_basic", "tracking_error_1y", "numeric", true, 10, 6);
+        assertColumn("etf_basic", "updated_at", "timestamp with time zone", false);
     }
 
     private void assertColumn(String table, String column, String dataType, boolean nullable) {

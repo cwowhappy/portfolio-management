@@ -373,3 +373,224 @@ def test_gold_etf_close_supports_range_for_backfill():
     from collector.sources.plugins import GoldEtfCloseSource
 
     assert GoldEtfCloseSource.supports_range is True
+
+
+# ------------------------------------- MS-14 P3 Task 13 ETF 目录/费率/规模 etf_basic
+
+
+def _etf_catalog_frame():
+    """新浪目录样例（实测 1685×13，代码带 sh/sz 前缀，名称列为 enrich 失败时的回退名）。"""
+    return pd.DataFrame(
+        {
+            "代码": [
+                "sh510300",
+                "sz159915",
+                "sh518880",
+                "sh511860",
+                "sh513100",
+                "sh511010",
+                "sz159985",
+                "sh512880",
+            ],
+            "名称": ["300ETF", "创业板ETF", "黄金ETF", "货币ETF", "纳指ETF", "国债ETF", "豆粕ETF", "银行ETF"],
+        }
+    )
+
+
+def _etf_detail_map():
+    """天天基金移动端 FundMNDetailInformation Datas 实测样例（2026-09-26 探测报告 §2.2）。"""
+    return {
+        "510300": {  # 宽基：费率合计 0.15+0.05，规模 元→亿元
+            "FCODE": "510300",
+            "SHORTNAME": "沪深300ETF华泰柏瑞",
+            "FTYPE": "指数型-股票",
+            "INDEXCODE": "000300",
+            "INDEXNAME": "沪深300指数",
+            "MGREXP": "0.15%",
+            "TRUSTEXP": "0.05%",
+            "ENDNAV": "94872183996.4",
+        },
+        "159915": {  # 宽基：ENDNAV 缺失（"--"）→ scale NaN 不阻断
+            "FCODE": "159915",
+            "SHORTNAME": "创业板ETF易方达",
+            "FTYPE": "指数型-股票",
+            "INDEXCODE": "399006",
+            "INDEXNAME": "创业板指数(价格)",
+            "MGREXP": "0.50%",
+            "TRUSTEXP": "0.10%",
+            "ENDNAV": "--",
+        },
+        "518880": {  # 商品：INDEXCODE=AU9999（SGE 现货）→ tracking 双列 null
+            "FCODE": "518880",
+            "SHORTNAME": "黄金ETF华安",
+            "FTYPE": "指数型-其他",
+            "INDEXCODE": "AU9999",
+            "INDEXNAME": "黄金9999",
+            "MGREXP": "0.50%",
+            "TRUSTEXP": "0.10%",
+            "ENDNAV": "86208039412.35",
+        },
+        "511860": {  # 货币：INDEXCODE "--" → tracking 双列 null，FTYPE 货币 → category 商品
+            "FCODE": "511860",
+            "SHORTNAME": "货币ETF博时",
+            "FTYPE": "货币型-普通货币",
+            "INDEXCODE": "--",
+            "INDEXNAME": "--",
+            "MGREXP": "0.30%",
+            "TRUSTEXP": "0.09%",
+            "ENDNAV": "40663587.14",
+        },
+        "513100": {  # QDII：海外指数码 NDX100 非证券指数码但属证券指数 → 保留展示
+            "FCODE": "513100",
+            "SHORTNAME": "纳指ETF国泰",
+            "FTYPE": "指数型-海外股票",
+            "INDEXCODE": "NDX100",
+            "INDEXNAME": "纳斯达克100指数",
+            "MGREXP": "0.60%",
+            "TRUSTEXP": "0.20%",
+            "ENDNAV": "19468268721.53",
+        },
+        "511010": {  # 债券：FTYPE 固收（不含「债」字）→ 债券
+            "FCODE": "511010",
+            "SHORTNAME": "国债ETF国泰",
+            "FTYPE": "指数型-固收",
+            "INDEXCODE": "000140",
+            "INDEXNAME": "上证5年期国债指数",
+            "MGREXP": "0.15%",
+            "TRUSTEXP": "0.05%",
+            "ENDNAV": "5117244931.52",
+        },
+        "159985": {  # 商品：商品期货指数（DCESMFI/期货价格指数）→ tracking 双列 null + 商品
+            "FCODE": "159985",
+            "SHORTNAME": "豆粕ETF华夏",
+            "FTYPE": "指数型-其他",
+            "INDEXCODE": "DCESMFI",
+            "INDEXNAME": "大商所豆粕期货价格指数",
+            "MGREXP": "0.50%",
+            "TRUSTEXP": "0.10%",
+            "ENDNAV": "2978370883.87",
+        },
+    }
+
+
+def _etf_source(sleep_log=None):
+    from collector.sources.plugins import EtfBasicSource
+
+    details = _etf_detail_map()
+
+    def fake_detail(code):
+        if code == "512880":
+            raise TimeoutError("enrich 单只失败样例")  # 不阻断整批
+        return details[code]
+
+    return EtfBasicSource(
+        "etf_basic",
+        catalog_fetch=lambda: _etf_catalog_frame(),
+        detail_fetch=fake_detail,
+        sleep_fn=(sleep_log.append if sleep_log is not None else (lambda s: None)),
+    )
+
+
+def test_etf_basic_maps_columns_and_category_rules():
+    """七列契约 + 费率合计/规模换算/缺失置 NaN/非证券指数码置 null/category 规则。"""
+    df = _etf_source().fetch({})
+    assert set(df.columns) == {
+        "fund_code",
+        "fund_name",
+        "fee_rate",
+        "scale",
+        "tracking_index_code",
+        "tracking_index_name",
+        "category",
+    }
+    by_code = df.set_index("fund_code")
+
+    # 宽基 510300：费率 0.15+0.05=0.20；规模 94872183996.4 元 → 948.7218 亿
+    assert by_code.loc["510300", "fund_name"] == "沪深300ETF华泰柏瑞"
+    assert by_code.loc["510300", "fee_rate"] == 0.20
+    assert round(by_code.loc["510300", "scale"], 4) == 948.7218
+    assert by_code.loc["510300", "tracking_index_code"] == "000300"
+    assert by_code.loc["510300", "tracking_index_name"] == "沪深300指数"
+    assert by_code.loc["510300", "category"] == "宽基"
+
+    # 宽基 159915：ENDNAV 缺失 → scale 为 NaN（不阻断）
+    assert pd.isna(by_code.loc["159915", "scale"])
+    assert by_code.loc["159915", "fee_rate"] == 0.60  # 0.50+0.10
+    assert by_code.loc["159915", "category"] == "宽基"
+
+    # 商品 518880：AU9999 非证券指数 → tracking 双列 null；黄金9999 → 商品
+    assert pd.isna(by_code.loc["518880", "tracking_index_code"])
+    assert pd.isna(by_code.loc["518880", "tracking_index_name"])
+    assert by_code.loc["518880", "category"] == "商品"
+    assert by_code.loc["518880", "fee_rate"] == 0.60
+
+    # 货币 511860：INDEXCODE "--" → tracking 双列 null；FTYPE 货币 → 商品（口径见任务 13 brief）
+    assert pd.isna(by_code.loc["511860", "tracking_index_code"])
+    assert by_code.loc["511860", "category"] == "商品"
+    assert round(by_code.loc["511860", "scale"], 4) == 0.4066  # 40663587.14 元 → 亿
+
+    # QDII 513100：FTYPE 海外 → QDII；NDX100 海外证券指数码保留展示（误差计算侧自然降级）
+    assert by_code.loc["513100", "category"] == "QDII"
+    assert by_code.loc["513100", "tracking_index_code"] == "NDX100"
+    assert by_code.loc["513100", "tracking_index_name"] == "纳斯达克100指数"
+
+    # 债券 511010：FTYPE 固收 → 债券
+    assert by_code.loc["511010", "category"] == "债券"
+
+    # 商品期货 159985：DCESMFI（大商所豆粕期货价格指数）→ tracking 双列 null + 商品
+    assert pd.isna(by_code.loc["159985", "tracking_index_code"])
+    assert pd.isna(by_code.loc["159985", "tracking_index_name"])
+    assert by_code.loc["159985", "category"] == "商品"
+
+
+def test_etf_basic_enrich_failure_keeps_row_with_catalog_fallback():
+    """单只 enrich 失败/超时：该行费率/规模/指数 null 不阻断整批；fund_name 回退新浪目录名，
+    category 退化为基金名关键词推断（512880 银行ETF → 行业）。"""
+    df = _etf_source().fetch({})
+    assert len(df) == 8  # 失败行保留，整批 8 行
+    row = df[df["fund_code"] == "512880"].iloc[0]
+    assert row["fund_name"] == "银行ETF"  # SHORTNAME 缺失 → 目录名称列兜底
+    assert pd.isna(row["fee_rate"])
+    assert pd.isna(row["scale"])
+    assert pd.isna(row["tracking_index_code"])
+    assert row["category"] == "行业"
+
+
+def test_etf_basic_fee_rate_requires_both_parts():
+    """费率=管理+托管合计：任一部分缺失/不可解析 → null（宁缺毋低估，防费率筛选漏杀）。"""
+    from collector.sources.plugins import _etf_fee_rate
+
+    assert _etf_fee_rate({"MGREXP": "0.50%", "TRUSTEXP": "0.10%"}) == 0.60
+    assert _etf_fee_rate({"MGREXP": "0.50%", "TRUSTEXP": "--"}) is None
+    assert _etf_fee_rate({"MGREXP": "--", "TRUSTEXP": "--"}) is None
+    assert _etf_fee_rate({}) is None
+
+
+def test_etf_basic_category_rule_constants():
+    """category 常量规则钉住（探测报告 §2.2 七品类实测口径）。"""
+    from collector.sources.plugins import _etf_category
+
+    assert _etf_category("指数型-股票", "沪深300指数") == "宽基"
+    assert _etf_category("指数型-股票", "中证银行指数") == "行业"
+    assert _etf_category("指数型-股票", "上证科创板50成份指数") == "宽基"  # 科创板=宽基非行业
+    assert _etf_category("指数型-股票", "中证半导体指数") == "行业"
+    assert _etf_category("指数型-海外股票", "纳斯达克100指数") == "QDII"
+    assert _etf_category(None, None, "纳指ETF") == "QDII"  # 基金名兜底
+    assert _etf_category("指数型-固收", "上证5年期国债指数") == "债券"
+    assert _etf_category("指数型-其他", "黄金9999") == "商品"
+    assert _etf_category("货币型-普通货币", "--") == "商品"  # 货币口径归商品（brief 定则）
+    assert _etf_category(None, None) == "其他"  # 无任何分类信号
+    assert _etf_category("指数型-股票", "中证红利指数") == "宽基"  # 策略指数归宽基
+
+
+def test_etf_basic_sleeps_between_enrich_calls():
+    """逐只 enrich 之间保守限速 0.3s（~1685 只 ≈ 9 分钟周更，探测报告 §2.2）。"""
+    sleeps = []
+    _etf_source(sleep_log=sleeps).fetch({})
+    assert sleeps == [0.3] * 8  # 目录 8 只逐只 enrich
+
+
+def test_etf_basic_supports_range_false():
+    from collector.sources.plugins import EtfBasicSource
+
+    assert EtfBasicSource.supports_range is False

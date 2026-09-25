@@ -28,6 +28,7 @@ from collector.scheduler.runner import TaskRunner
 from collector.sources.plugins import (
     AllASpotBackupSource,
     BondIndexCloseSource,
+    EtfBasicSource,
     GoldEtfCloseSource,
     IndexCloseSource,
     IndexConstituentSource,
@@ -257,6 +258,17 @@ def _field_columns():
                 "close": {"from": "close", "type": "numeric"},
             }
         ),
+        "field_mapping_etf_basic": FieldMappingConverter(
+            {
+                "fund_code": {"from": "fund_code", "type": "str"},
+                "fund_name": {"from": "fund_name", "type": "str"},
+                "fee_rate": {"from": "fee_rate", "type": "numeric"},
+                "scale": {"from": "scale", "type": "numeric"},
+                "tracking_index_code": {"from": "tracking_index_code", "type": "str"},
+                "tracking_index_name": {"from": "tracking_index_name", "type": "str"},
+                "category": {"from": "category", "type": "str"},
+            }
+        ),
     }
 
 
@@ -288,6 +300,7 @@ def build_registries(config):
             "industry_index_close": IndustryIndexCloseSource("industry_index_close"),
             "bond_index_close": BondIndexCloseSource("bond_index_close", pro_factory=pro),
             "gold_etf_close": GoldEtfCloseSource("gold_etf_close", pro_factory=pro),
+            "etf_basic": EtfBasicSource("etf_basic"),
             "industry_valuation_backfill": IndustryValuationBackfillSource(
                 "industry_valuation_backfill", conn_factory=conn_factory
             ),

@@ -20,6 +20,7 @@ TASKS_DIR = Path(__file__).resolve().parent.parent / "tasks"
 EXPECTED_TASKS = {
     "all_a_valuation",
     "bond_index_close",
+    "etf_basic",
     "gold_etf_close",
     "index_close",
     "index_constituent",

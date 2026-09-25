@@ -26,15 +26,17 @@ FLYWAY_DIR = COLLECTOR_DIR.parent / "backend" / "src" / "main" / "resources" / "
 # V7 建个股基本面两表（stock_valuation_daily / stock_financial）；
 # V13 补 stock_valuation_daily.close 列并建 index_close_history（MS-07），排在最后
 # V15 补 stock_financial.revenue 营收列（MS-09）。
+# V18 建 etf_basic（MS-14 P3 Task 13，collector etf_basic 周更任务目标表）。
 FLYWAY_SQL_FILES = (
     "V3__valuation.sql",
     "V4__valuation_curve.sql",
     "V7__stock_fundamental.sql",
     "V13__analytics_close.sql",
     "V15__stock_financial_revenue.sql",
+    "V18__etf_screening.sql",
 )
 
-# 13 张表：4 运维（alembic）+ 9 业务目标（Flyway V3/V4/V7/V13；旧 treasury_yield 已被 V4 删除）
+# 14 张表：4 运维（alembic）+ 10 业务目标（Flyway V3/V4/V7/V13/V18；旧 treasury_yield 已被 V4 删除）
 ALL_TABLES = (
     "collector_task_run",
     "collector_source_health",
@@ -49,6 +51,7 @@ ALL_TABLES = (
     "stock_valuation_daily",
     "stock_financial",
     "index_close_history",
+    "etf_basic",
 )
 
 

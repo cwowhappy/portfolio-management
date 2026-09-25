@@ -65,6 +65,17 @@ UPSERT_SQL = {
         VALUES (%s, %s, %s, %s)
         ON CONFLICT (trading_day, index_code) DO UPDATE SET close=EXCLUDED.close
     """,
+    # tracking_error_1y 由 etf_tracking_error 任务（Task 15）单独回写，此处不触碰；
+    # updated_at 插入走 DEFAULT now()，更新侧显式刷新。
+    "etf_basic": """
+        INSERT INTO etf_basic
+          (fund_code, fund_name, fee_rate, scale, tracking_index_code, tracking_index_name, category)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (fund_code) DO UPDATE SET
+          fund_name=EXCLUDED.fund_name, fee_rate=EXCLUDED.fee_rate, scale=EXCLUDED.scale,
+          tracking_index_code=EXCLUDED.tracking_index_code, tracking_index_name=EXCLUDED.tracking_index_name,
+          category=EXCLUDED.category, updated_at=now()
+    """,
 }
 
 TABLE_COLUMNS = {
@@ -99,6 +110,15 @@ TABLE_COLUMNS = {
         "revenue",
     ],
     "index_close_history": ["trading_day", "index_code", "index_name", "close"],
+    "etf_basic": [
+        "fund_code",
+        "fund_name",
+        "fee_rate",
+        "scale",
+        "tracking_index_code",
+        "tracking_index_name",
+        "category",
+    ],
 }
 
 
