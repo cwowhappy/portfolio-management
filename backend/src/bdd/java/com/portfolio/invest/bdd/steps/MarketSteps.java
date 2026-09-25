@@ -13,6 +13,7 @@ import com.portfolio.invest.domain.market.MarketDataException;
 import com.portfolio.invest.domain.market.StockRef;
 import com.portfolio.invest.infrastructure.market.EastmoneyClient;
 import com.portfolio.invest.infrastructure.market.SinaClient;
+import com.portfolio.invest.infrastructure.market.TencentClient;
 import io.cucumber.java.zh_cn.假如;
 import io.cucumber.java.zh_cn.当;
 import io.cucumber.java.zh_cn.那么;
@@ -22,7 +23,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 /**
  * 行情降级步骤：走真实 HTTP（/api/market/** 为匿名放行端点），
- * 主源（东财）与备源（新浪）均为 {@code @MockitoBean} mock，不打真实网络。
+ * 主源（腾讯）、兜底（东财）与末级备源（新浪）均为 {@code @MockitoBean} mock，不打真实网络。
  */
 public class MarketSteps {
 
@@ -36,7 +37,16 @@ public class MarketSteps {
     SinaClient sinaClient;
 
     @Autowired
+    TencentClient tencentClient;
+
+    @Autowired
     ScenarioContext ctx;
+
+    @假如("腾讯行情源发生故障")
+    public void 腾讯故障() {
+        when(tencentClient.quote(anyString())).thenThrow(
+                new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "腾讯主源不可用（模拟故障）"));
+    }
 
     @假如("东方财富行情源发生故障")
     public void 东财故障() {

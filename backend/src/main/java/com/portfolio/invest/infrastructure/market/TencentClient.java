@@ -8,28 +8,34 @@ import com.portfolio.invest.domain.market.MarketDataException;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
+import java.nio.charset.Charset;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
-/** 腾讯行情 K线兜底（东财 push2his 不可用时）。前复权，支持 day/week/month。 */
+/** 腾讯行情客户端：实时行情/指数速览主源（GBK 文本）+ K线（前复权）。 */
 @Component
 public class TencentClient {
 
+    private static final Charset GBK = Charset.forName("GBK");
+
     private final RestClient client;
     private final HttpExecutor executor;
+    private final HttpExecutor quoteExecutor;
     private final ObjectMapper mapper = new ObjectMapper();
 
     @Autowired
     public TencentClient(InvestProperties props, HttpClient http, RateLimiter limiter) {
         this.client = RestClientFactory.builder(http, props, "https://gu.qq.com/").build();
         this.executor = HttpExecutor.fromProps(limiter, props, "腾讯K线");
+        this.quoteExecutor = HttpExecutor.fromProps(limiter, props, "腾讯行情");
     }
 
     /** 测试注入：直接提供 RestClient，退避为 0 且不限流。 */
     TencentClient(RestClient client) {
         this.client = client;
         this.executor = HttpExecutor.forTests(new RateLimiter(1000), "腾讯K线");
+        this.quoteExecutor = HttpExecutor.forTests(new RateLimiter(1000), "腾讯行情");
     }
 
     /** symbol 形如 sh600519；period ∈ day/week/month。 */
@@ -48,5 +54,25 @@ public class TencentClient {
         } catch (IOException e) {
             throw new MarketDataException(MarketDataErrorCode.BAD_RESPONSE, "腾讯K线响应解析失败", e);
         }
+    }
+
+    /** 腾讯实时行情（主源）。symbol 形如 sh600519；返回 GBK 解码后的原始文本行。 */
+    public String quote(String symbol) {
+        return fetchText("https://qt.gtimg.cn/q=" + symbol);
+    }
+
+    /** 腾讯指数速览（主源）：s_sh000001/s_sz399001/s_sz399006 三指数。 */
+    public String indices() {
+        return fetchText("https://qt.gtimg.cn/q=s_sh000001,s_sz399001,s_sz399006");
+    }
+
+    private String fetchText(String url) {
+        return quoteExecutor.execute(() -> {
+            byte[] bytes = client.get().uri(URI.create(url)).retrieve().body(byte[].class);
+            if (bytes == null || bytes.length == 0) {
+                throw new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "腾讯行情接口返回空");
+            }
+            return new String(bytes, GBK);
+        });
     }
 }

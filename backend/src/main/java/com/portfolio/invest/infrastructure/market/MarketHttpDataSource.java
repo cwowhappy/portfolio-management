@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.portfolio.invest.domain.market.MarketDataSource;
 import org.springframework.stereotype.Component;
 
-/** MarketDataSource 端口的 HTTP 实现：委托东财主源 + 新浪/腾讯兜底。 */
+/** MarketDataSource 端口的 HTTP 实现：腾讯主源 + 东财/新浪兜底。 */
 @Component
 public class MarketHttpDataSource implements MarketDataSource {
 
@@ -24,9 +24,11 @@ public class MarketHttpDataSource implements MarketDataSource {
     @Override public JsonNode financials(String secuCode) { return eastmoney.financials(secuCode); }
     @Override public JsonNode news(String keyword, int limit) { return eastmoney.news(keyword, limit); }
     @Override public JsonNode overview() { return eastmoney.overview(); }
-    @Override public String rawQuote(String sinaPrefix, String code) { return sina.rawQuote(sinaPrefix, code); }
-    @Override public String rawIndices() { return sina.rawIndices(); }
-    @Override public JsonNode fallbackKline(String symbol, String period, int limit) {
+    @Override public String sinaQuote(String sinaPrefix, String code) { return sina.rawQuote(sinaPrefix, code); }
+    @Override public String sinaIndices() { return sina.rawIndices(); }
+    @Override public JsonNode tencentKline(String symbol, String period, int limit) {
         return tencent.kline(symbol, period, limit);
     }
+    @Override public String tencentQuote(String symbol) { return tencent.quote(symbol); }
+    @Override public String tencentIndices() { return tencent.indices(); }
 }
