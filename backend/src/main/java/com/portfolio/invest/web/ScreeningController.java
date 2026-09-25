@@ -1,6 +1,8 @@
 package com.portfolio.invest.web;
 
 import com.portfolio.invest.application.screening.ScreeningApplicationService;
+import com.portfolio.invest.domain.screening.FundScreeningCriteria;
+import com.portfolio.invest.domain.screening.FundScreeningResult;
 import com.portfolio.invest.domain.screening.ScreeningCriteria;
 import com.portfolio.invest.domain.screening.ScreeningErrorCode;
 import com.portfolio.invest.domain.screening.ScreeningException;
@@ -106,5 +108,44 @@ public class ScreeningController {
                         "attachment; filename=\"screening-" + stamp + ".csv\"")
                 .contentType(MediaType.parseMediaType("text/csv;charset=UTF-8"))
                 .body(ScreeningCsv.toCsv(rows));
+    }
+
+    /** ETF 四维筛选（feeRateMax 年化%、scaleMin 亿元、trackingErrorMax 小数如 0.05=5%、category 六桶白名单）。 */
+    @GetMapping("/funds")
+    public List<FundScreeningResult> funds(
+            @RequestParam(required = false) BigDecimal feeRateMax,
+            @RequestParam(required = false) BigDecimal scaleMin,
+            @RequestParam(required = false) BigDecimal trackingErrorMax,
+            @RequestParam(required = false) String category,
+            @RequestParam(defaultValue = "tracking_error_1y") String sortBy,
+            @RequestParam(defaultValue = "ASC") SortDirection sortDirection,
+            @RequestParam(defaultValue = "200") int limit) {
+        var criteria = new FundScreeningCriteria(
+                feeRateMax, scaleMin, trackingErrorMax, category, sortBy, sortDirection, limit);
+        return screeningApplicationService.funds(criteria);
+    }
+
+    /**
+     * ETF 筛选结果导出 CSV（公开；参数与 /funds 完全一致，复用同一查询与缓存——导出口径与页面必然一致）。
+     */
+    @GetMapping(value = "/funds/export", produces = "text/csv;charset=UTF-8")
+    public ResponseEntity<byte[]> exportFunds(
+            @RequestParam(required = false) BigDecimal feeRateMax,
+            @RequestParam(required = false) BigDecimal scaleMin,
+            @RequestParam(required = false) BigDecimal trackingErrorMax,
+            @RequestParam(required = false) String category,
+            @RequestParam(defaultValue = "tracking_error_1y") String sortBy,
+            @RequestParam(defaultValue = "ASC") SortDirection sortDirection,
+            @RequestParam(defaultValue = "200") int limit) {
+        var criteria = new FundScreeningCriteria(
+                feeRateMax, scaleMin, trackingErrorMax, category, sortBy, sortDirection, limit);
+        var rows = screeningApplicationService.funds(criteria); // 同校验（NO_CONDITION 等）同缓存
+        String stamp = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
+                .withZone(ZoneId.systemDefault()).format(Instant.now());
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"fund-screening-" + stamp + ".csv\"")
+                .contentType(MediaType.parseMediaType("text/csv;charset=UTF-8"))
+                .body(ScreeningCsv.toFundCsv(rows));
     }
 }

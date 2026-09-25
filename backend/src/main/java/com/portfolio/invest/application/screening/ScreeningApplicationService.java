@@ -2,6 +2,8 @@ package com.portfolio.invest.application.screening;
 
 import com.portfolio.invest.application.cache.ApplicationCache;
 import com.portfolio.invest.config.InvestProperties;
+import com.portfolio.invest.domain.screening.FundScreeningCriteria;
+import com.portfolio.invest.domain.screening.FundScreeningResult;
 import com.portfolio.invest.domain.screening.ScreeningCriteria;
 import com.portfolio.invest.domain.screening.ScreeningErrorCode;
 import com.portfolio.invest.domain.screening.ScreeningException;
@@ -63,6 +65,27 @@ public class ScreeningApplicationService {
         return repository.searchLatestSnapshot(keyword, limit);
     }
 
+    /** ETF 四维筛选（etf_basic 目录读）：校验与缓存口径同 screen，key 前缀区分两域。 */
+    public List<FundScreeningResult> funds(FundScreeningCriteria criteria) {
+        if (!criteria.hasAnyCondition()) {
+            throw new ScreeningException(ScreeningErrorCode.NO_CONDITION, "至少需要一个筛选条件");
+        }
+        if (criteria.sortBy() == null || !FundScreeningCriteria.SORTABLE_FIELDS.contains(criteria.sortBy())) {
+            throw new ScreeningException(ScreeningErrorCode.INVALID_SORT, "不支持的排序字段: " + criteria.sortBy());
+        }
+        if (criteria.limit() < 1 || criteria.limit() > 200) {
+            throw new ScreeningException(ScreeningErrorCode.INVALID_LIMIT, "结果上限需在 1~200 之间");
+        }
+        String key = fundCacheKey(criteria);
+        List<FundScreeningResult> hit = cache.get(key);
+        if (hit != null) {
+            return hit;
+        }
+        List<FundScreeningResult> result = repository.findFunds(criteria);
+        cache.put(key, result, cacheTtl);
+        return result;
+    }
+
     /** 匿名公开端点的宽扫结果按完整查询条件为 key 缓存，避免同一筛选反复对全市场宽扫。 */
     private static String cacheKey(ScreeningCriteria c) {
         StringJoiner joiner = new StringJoiner("|");
@@ -75,5 +98,13 @@ public class ScreeningApplicationService {
                 .add(String.valueOf(c.industryCode())).add(String.valueOf(c.indexCode())).add(c.sortBy())
                 .add(String.valueOf(c.sortDirection())).add(String.valueOf(c.limit()));
         return "screening:stocks:" + joiner;
+    }
+
+    private static String fundCacheKey(FundScreeningCriteria c) {
+        StringJoiner joiner = new StringJoiner("|");
+        joiner.add(String.valueOf(c.feeRateMax())).add(String.valueOf(c.scaleMin()))
+                .add(String.valueOf(c.trackingErrorMax())).add(String.valueOf(c.category()))
+                .add(c.sortBy()).add(String.valueOf(c.sortDirection())).add(String.valueOf(c.limit()));
+        return "screening:funds:" + joiner;
     }
 }

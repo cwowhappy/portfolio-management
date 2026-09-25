@@ -1,5 +1,6 @@
 package com.portfolio.invest.web;
 
+import com.portfolio.invest.domain.screening.FundScreeningResult;
 import com.portfolio.invest.domain.screening.StockScreeningResult;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -10,8 +11,10 @@ import java.util.List;
 final class ScreeningCsv {
 
     private static final String HEADER = "代码,名称,PE-TTM,PB,股息率,ROE,ROA,毛利率,资产负债率,流动比率,营收增速,净利增速,总市值(亿),换手率";
+    private static final String FUND_HEADER = "代码,名称,费率(%),规模(亿元),跟踪指数,类别,跟踪误差(%)";
     private static final byte[] BOM = {(byte) 0xEF, (byte) 0xBB, (byte) 0xBF};
     private static final BigDecimal YI = new BigDecimal("100000000"); // 亿元换算
+    private static final BigDecimal HUNDRED = new BigDecimal("100"); // TE 小数→百分数
 
     private ScreeningCsv() {}
 
@@ -34,6 +37,28 @@ final class ScreeningCsv {
                     .append(r.totalMv() == null ? "" : r.totalMv().divide(YI, 2, RoundingMode.HALF_UP).toPlainString()).append(',')
                     .append(num(r.turnoverRate())).append("\r\n");
         }
+        return withBom(sb);
+    }
+
+    /** ETF 筛选导出：fee_rate/scale 原值（%/亿元），tracking_error_1y 小数×100 两位小数；null 输出空串。 */
+    static byte[] toFundCsv(List<FundScreeningResult> rows) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(FUND_HEADER).append("\r\n");
+        for (var r : rows) {
+            sb.append(escape(r.fundCode())).append(',')
+                    .append(escape(r.fundName())).append(',')
+                    .append(num(r.feeRate())).append(',')
+                    .append(num(r.scale())).append(',')
+                    .append(escape(r.trackingIndexName())).append(',')
+                    .append(escape(r.category())).append(',')
+                    .append(r.trackingError1y() == null ? ""
+                            : r.trackingError1y().multiply(HUNDRED).setScale(2, RoundingMode.HALF_UP).toPlainString())
+                    .append("\r\n");
+        }
+        return withBom(sb);
+    }
+
+    private static byte[] withBom(StringBuilder sb) {
         byte[] body = sb.toString().getBytes(StandardCharsets.UTF_8);
         byte[] out = new byte[BOM.length + body.length];
         System.arraycopy(BOM, 0, out, 0, BOM.length);
