@@ -196,6 +196,8 @@ Run: `cd backend && ./gradlew integrationTest --tests '*FlywayMigrationIntegrati
 
 - [ ] **Step 1~5:** 失败测试（Mockito，含错误码断言 `assertThatThrownBy`）→ 实现 → PASS。Commit `feat(industry): 策展单条 CRUD 服务与错误码（MS-10 P1）`
 
+> 偏差注记（2026-09-26）：① service 签名定为 `save(Long id, SaveUnlistedCompanyCommand cmd)`——计划原文「save(cmd)（id null 插入否则更新）」自相矛盾（命令内无 id 字段无从判插入/更新），id 由控制器路径参数传入；② 端口 `UnlistedCompanyRepository` 增补 `UnlistedCompany save(UnlistedCompany)`（按 id merge、回带库生成 id——POST 需返回落库实体，upsert 只回 UpsertOutcome 不够），仓储集成测试同步补两用例。
+
 ---
 
 ### Task 8: 写侧 Controller + 模板 + 异常分支 + WebMvc 切片

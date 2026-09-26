@@ -100,4 +100,33 @@ class UnlistedCompanyRepositoryImplTest {
     void givenNeverExistedId_whenDeleteById_thenNoThrow() {
         assertThatCode(() -> repository.deleteById(999_999_999L)).doesNotThrowAnyException();
     }
+
+    @DisplayName("save 插入：回带库生成 id 且可再查")
+    @Test
+    void givenCompanyWithoutId_whenSave_thenReturnedWithGeneratedId() {
+        var saved = repository.save(company("测试存公司", FundingRound.A,
+                LocalDate.of(2026, 1, 1), new BigDecimal("1.00"), "赛道"));
+
+        assertThat(saved.id()).isNotNull();
+        assertThat(repository.findById(saved.id())).isPresent();
+        assertThat(repository.findById(saved.id()).orElseThrow().companyName()).isEqualTo("测试存公司");
+    }
+
+    @DisplayName("save 按 id 更新：同 id 落库改写字段（含幂等键字段改名），不新增行")
+    @Test
+    void givenExistingCompanyId_whenSaveWithSameId_thenFieldsUpdatedNoNewRow() {
+        var inserted = repository.save(company("测试改id公司", FundingRound.A,
+                LocalDate.of(2026, 1, 1), new BigDecimal("1.00"), "旧赛道"));
+
+        var updated = repository.save(new UnlistedCompany(inserted.id(), "801770", "测试改id公司新名",
+                "新赛道", FundingRound.D, LocalDate.of(2026, 7, 7), new BigDecimal("9.99"),
+                "新简介", "新来源", Instant.now()));
+
+        assertThat(updated.id()).isEqualTo(inserted.id());
+        assertThat(repository.countByIndustry("801770")).isEqualTo(1); // 同 id 更新不新增
+        var reloaded = repository.findById(inserted.id()).orElseThrow();
+        assertThat(reloaded.companyName()).isEqualTo("测试改id公司新名");
+        assertThat(reloaded.latestRound()).isEqualTo(FundingRound.D);
+        assertThat(reloaded.totalFundingYi()).isEqualByComparingTo("9.99");
+    }
 }

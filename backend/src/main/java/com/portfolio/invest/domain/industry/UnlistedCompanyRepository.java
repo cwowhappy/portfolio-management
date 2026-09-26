@@ -18,6 +18,9 @@ public interface UnlistedCompanyRepository {
 
     UpsertOutcome upsert(UnlistedCompany company);
 
+    /** 单条 CRUD 落库（id null 插入 / 按 id 更新——管理界面路径，与 CSV upsert 语义区分），回带库 id。 */
+    UnlistedCompany save(UnlistedCompany company);
+
     Optional<UnlistedCompany> findById(Long id);
 
     void deleteById(Long id);

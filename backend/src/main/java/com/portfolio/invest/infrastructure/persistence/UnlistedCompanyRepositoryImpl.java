@@ -52,6 +52,12 @@ public class UnlistedCompanyRepositoryImpl implements UnlistedCompanyRepository 
     }
 
     @Override
+    public UnlistedCompany save(UnlistedCompany company) {
+        // 单条 CRUD 路径：JPA save 按 id merge/insert，回写库生成 id（与 CSV upsert 的幂等键语义区分）
+        return jpa.save(IndustryUnlistedCompanyJpaEntity.fromDomain(company)).toDomain();
+    }
+
+    @Override
     public Optional<UnlistedCompany> findById(Long id) {
         return jpa.findById(id).map(IndustryUnlistedCompanyJpaEntity::toDomain);
     }
