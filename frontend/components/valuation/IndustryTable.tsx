@@ -18,7 +18,7 @@ export default function IndustryTable({ industries, onSelect }: {
           <tr>
             <th className="text-left py-1">行业</th>
             {([["pe", "PE"], ["pb", "PB"], ["roe", "ROE"], ["dividendYield", "股息率"]] as const).map(([k, label]) => (
-              <th key={k} className="text-right py-1 cursor-pointer" onClick={() => setSort(k)}>{label}{sort === k ? " ↓" : ""}</th>
+              <th key={k} className="text-right py-1 cursor-pointer" onClick={() => setSort(k)}>{label}{sort === k ? " ↑" : ""}</th>
             ))}
           </tr>
         </thead>

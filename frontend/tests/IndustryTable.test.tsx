@@ -38,4 +38,14 @@ describe("IndustryTable", () => {
     fireEvent.click(screen.getByText(/PB/));
     expect(industryRows()).toEqual(["银行", "证券", "医药"]);
   });
+
+  it("激活排序列表头箭头指升序 ↑（issue #39：升序曾误配 ↓）", () => {
+    render(<IndustryTable industries={industries} />);
+    // 默认 PE 升序 → 表头 PE ↑
+    expect(screen.getByText("PE ↑")).toBeTruthy();
+    fireEvent.click(screen.getByText(/PB/));
+    expect(screen.getByText("PB ↑")).toBeTruthy();
+    // 本表恒升序（无降序态），全表不得出现 ↓
+    expect(screen.queryByText(/↓/)).toBeNull();
+  });
 });
