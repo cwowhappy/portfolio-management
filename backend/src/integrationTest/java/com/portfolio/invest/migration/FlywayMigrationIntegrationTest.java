@@ -30,7 +30,7 @@ class FlywayMigrationIntegrationTest extends PostgresTestSupport {
         List<String> versions = jdbcTemplate.queryForList(
                 "SELECT version FROM flyway_schema_history WHERE type = 'SQL' ORDER BY installed_rank",
                 String.class);
-        assertThat(versions).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18");
+        assertThat(versions).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19");
 
         Integer failed = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM flyway_schema_history WHERE success = false", Integer.class);
@@ -145,6 +145,29 @@ class FlywayMigrationIntegrationTest extends PostgresTestSupport {
         assertColumn("etf_basic", "category", "character varying", false);
         assertColumn("etf_basic", "tracking_error_1y", "numeric", true, 10, 6);
         assertColumn("etf_basic", "updated_at", "timestamp with time zone", false);
+    }
+
+    @DisplayName("未上市策展与融资事件表契约（V19）")
+    @Test
+    void whenSchemaMigrated_thenIndustryUnlistedTablesMatchContract() {
+        // V19：MS-10 未上市策展 + 融资事件（决策 #1/#3），全局公共研究数据无 user 归属；
+        // 幂等键 UNIQUE(industry_code, company_name) / UNIQUE(event_date, company_name, round) 支撑 CSV upsert
+        assertPrimaryKey("industry_unlisted_company", "id");
+        assertColumn("industry_unlisted_company", "industry_code", "character varying", false);
+        assertColumn("industry_unlisted_company", "company_name", "character varying", false);
+        assertColumn("industry_unlisted_company", "latest_round", "character varying", false);
+        assertColumn("industry_unlisted_company", "total_funding_yi", "numeric", true, 14, 2);
+        assertColumn("industry_unlisted_company", "last_funding_date", "date", true);
+        assertColumn("industry_unlisted_company", "updated_at", "timestamp with time zone", false);
+        assertUniqueColumns("industry_unlisted_company", "industry_code,company_name");
+
+        assertPrimaryKey("industry_funding_event", "id");
+        assertColumn("industry_funding_event", "event_date", "date", false);
+        assertColumn("industry_funding_event", "round", "character varying", false);
+        assertColumn("industry_funding_event", "amount_yi", "numeric", true, 14, 2);
+        assertColumn("industry_funding_event", "industry_code", "character varying", false);
+        assertColumn("industry_funding_event", "source_title", "character varying", false);
+        assertUniqueColumns("industry_funding_event", "event_date,company_name,round");
     }
 
     private void assertColumn(String table, String column, String dataType, boolean nullable) {
