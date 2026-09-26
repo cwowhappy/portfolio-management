@@ -42,6 +42,14 @@ describe("FundResultsTable", () => {
     expect(screen.getByText("3.18")).toBeTruthy();
   });
 
+  it("TE>30% 遮蔽为「—（疑似拆分/异常）」不展示假精度", () => {
+    renderTable({
+      results: [{ ...ROW, fundCode: "159970", fundName: "半导体ETF", trackingError1y: 0.4512 }],
+    });
+    expect(screen.getByText("—（疑似拆分/异常）")).toBeTruthy();
+    expect(screen.queryByText("45.12")).toBeNull();
+  });
+
   it("feeRate/scale/trackingError1y 为 null 时渲染「—」", () => {
     renderTable({
       results: [{ ...ROW, feeRate: null, scale: null, trackingError1y: null }],

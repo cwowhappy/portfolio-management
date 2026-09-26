@@ -51,7 +51,7 @@ public class MarketSteps {
     @假如("东方财富行情源发生故障")
     public void 东财故障() {
         when(eastmoneyClient.quote(anyString())).thenThrow(
-                new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "主源不可用（模拟故障）"));
+                new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "东财兜底不可用（模拟故障）"));
     }
 
     // 正则而非 cucumber 表达式：{string} 无法匹配括号内不带引号的中文名称
@@ -80,7 +80,7 @@ public class MarketSteps {
     @那么("行情实际由备源新浪提供")
     public void 备源断言() {
         StockRef ref = StockRef.from(ctx.getLastQueriedCode());
-        // 主源被请求过一次（失败后降级），备源被请求过一次（真正提供了数据）
+        // 兜底东财被请求过一次（主源腾讯失败后降级到东财），末级备源新浪被请求过一次（真正提供了数据）
         verify(eastmoneyClient, times(1)).quote(ref.secid());
         verify(sinaClient, times(1)).rawQuote(ref.sinaPrefix(), ref.code());
     }

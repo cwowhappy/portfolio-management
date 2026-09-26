@@ -33,6 +33,8 @@ for pos in 3 4 5 6 31 32 33 34 37; do
   [[ "${TXF[$pos]}" =~ ^-?[0-9]+([.][0-9]+)?$ ]] || fail "位置[$pos]非数值(${TXF[$pos]})：上游接口漂移"
 done
 [[ "${TXF[30]}" =~ ^[0-9]{14}$ ]] || fail "时间戳位置[30]非14位数字(${TXF[30]})：上游接口漂移"
+# 估值位置[39/46]（PE/PB）非空断言以 600519 恒有估值为前提：改探其他标的（指数/场内基金）时
+# PE/PB 可合法为空，需放宽为允许空串（PR #52 终审 deferred #7，issue #54 留档）
 for pos in 39 46; do
   [[ "${TXF[$pos]}" =~ ^-?[0-9]+([.][0-9]+)?$ ]] || fail "估值位置[$pos]非数值(${TXF[$pos]})：上游接口漂移"
 done
@@ -54,6 +56,9 @@ if [ -z "${DEEPSEEK_API_KEY:-}" ]; then
 elif [ -z "${ADMIN_USERNAME:-}" ] || [ -z "${ADMIN_PASSWORD:-}" ]; then
   echo "  - 未设置 ADMIN_USERNAME/ADMIN_PASSWORD，跳过对话冒烟（/agui/run 需登录，在 .env 配置后重跑）"
 else
+  # 按次唯一 threadId（issue #57）：固定 threadId 会撞上残留未应答 HITL 中断，
+  # 使该 thread 永久 RUN_ERROR AGUI_INTERRUPT_CONTRACT_ERROR 且重启不自愈（须删 .agentscope/state）
+  RUN_TAG=$(date +%s)
   COOKIE_JAR=$(mktemp)
   # fail() 即 exit 1：EXIT trap 保证管理员会话 cookie 不因任何断言失败路径残留在磁盘
   trap 'rm -f "$COOKIE_JAR"' EXIT
@@ -63,7 +68,7 @@ else
     | grep -q '"username"' || { rm -f "$COOKIE_JAR"; fail "管理员登录失败"; }
   RESP=$(curl -s --max-time 120 -b "$COOKIE_JAR" -X POST "$BASE/agui/run" \
     -H "Content-Type: application/json" \
-    -d "{\"threadId\":\"smoke\",\"runId\":\"smoke-1\",\"messages\":[{\"id\":\"m1\",\"role\":\"user\",\"content\":\"用一句话介绍你自己\"}],\"state\":{},\"tools\":[]}")
+    -d "{\"threadId\":\"smoke-$RUN_TAG\",\"runId\":\"smoke-1\",\"messages\":[{\"id\":\"m1\",\"role\":\"user\",\"content\":\"用一句话介绍你自己\"}],\"state\":{},\"tools\":[]}")
   echo "$RESP" | grep -q "TEXT_MESSAGE" && pass "Agent 流式回答" || fail "Agent 回答异常: $RESP"
 
   # MS-12：5 个新工具链路（明确指令降低模型不调工具的偶发；「只用内置工具」防 LLM 顺手
@@ -73,7 +78,7 @@ else
     local resp
     resp=$(curl -s --max-time 120 -b "$COOKIE_JAR" -X POST "$BASE/agui/run" \
       -H "Content-Type: application/json" \
-      -d "{\"threadId\":\"smoke-ms12\",\"runId\":\"$run_id\",\"messages\":[{\"id\":\"m-$run_id\",\"role\":\"user\",\"content\":\"$question\"}],\"state\":{},\"tools\":[]}")
+      -d "{\"threadId\":\"$run_id-$RUN_TAG\",\"runId\":\"$run_id\",\"messages\":[{\"id\":\"m-$run_id\",\"role\":\"user\",\"content\":\"$question\"}],\"state\":{},\"tools\":[]}")
     echo "$resp" | grep -q "TOOL_CALL_START" && pass "$label 工具调用" || fail "$label 未观察到工具调用: $(echo "$resp" | head -c 200)"
     echo "$resp" | grep -q "TEXT_MESSAGE" && pass "$label 文本回答" || fail "$label 无文本回答"
   }

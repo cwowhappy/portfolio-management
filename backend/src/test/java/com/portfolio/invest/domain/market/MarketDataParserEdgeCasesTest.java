@@ -175,13 +175,17 @@ class MarketDataParserEdgeCasesTest {
                 .hasMessageContaining("腾讯行情价格无效");
     }
 
-    @DisplayName("parseTencentQuote时间戳空或畸形返回空串")
+    @DisplayName("parseTencentQuote时间戳空、畸形或语义非法返回空串")
     @Test
     void givenBlankOrMalformedTime_whenParseTencentQuote_thenTimeEmpty() {
         assertThat(MarketDataParser.parseTencentQuote(
                 tencentQuoteWith(f -> { f[30] = ""; return f; }), "600519").time()).isEmpty();
         assertThat(MarketDataParser.parseTencentQuote(
                 tencentQuoteWith(f -> { f[30] = "abc"; return f; }), "600519").time()).isEmpty();
+        // 14 位但语义非法（月 99）：LocalDateTime.parse 抛 DateTimeParseException，
+        // 须与畸形同口径返回空串，否则穿透 withFallback（只捕 MarketDataException）直达 500（issue #53）
+        assertThat(MarketDataParser.parseTencentQuote(
+                tencentQuoteWith(f -> { f[30] = "99999999999999"; return f; }), "600519").time()).isEmpty();
     }
 
     @DisplayName("parseTencentQuote空PE/PB返回null")

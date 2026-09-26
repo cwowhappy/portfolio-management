@@ -179,7 +179,9 @@ class OrchestratingMarketDataServiceTest {
     void givenTencentKlineFails_whenKline_thenFallbackToEastmoney() throws IOException {
         when(source.kline("1.600519", 101, 120)).thenReturn(fixture("eastmoney-kline.json"));
         List<KlineBar> bars = service.kline("600519", "day", 120);
-        assertThat(bars).isNotEmpty();
+        // verify 已锁路由（东财兜底），内容断言加强：3 柱 + 首柱日期（与解析器用例同 fixture）
+        assertThat(bars).hasSize(3);
+        assertThat(bars.get(0).date()).isEqualTo("2026-08-14");
         verify(source).kline("1.600519", 101, 120);
     }
 
@@ -463,18 +465,18 @@ class OrchestratingMarketDataServiceTest {
 
     // ———— overview ————
 
-    @DisplayName("overview降级东财主源成功")
+    @DisplayName("overview兜底东财成功")
     @Test
-    void givenPrimaryOverview_whenOverview_thenReturnIndices() throws IOException {
+    void givenEastmoneyOverviewFallback_whenOverview_thenReturnIndices() throws IOException {
         when(source.overview()).thenReturn(fixture("eastmoney-overview.json"));
         MarketOverview o = service.overview();
         assertThat(o.indices()).isNotEmpty();
         verify(source).overview();
     }
 
-    @DisplayName("overview降级东财主源失败降级新浪")
+    @DisplayName("overview兜底东财失败降级新浪")
     @Test
-    void givenPrimaryOverviewFails_whenOverview_thenFallbackToSina() throws IOException {
+    void givenEastmoneyOverviewFallbackFails_whenOverview_thenFallbackToSina() throws IOException {
         when(source.overview()).thenThrow(new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "挂了"));
         when(source.sinaIndices()).thenReturn(fixtureText("sina-indices.txt"));
         MarketOverview o = service.overview();
