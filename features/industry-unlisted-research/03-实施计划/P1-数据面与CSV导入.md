@@ -1,6 +1,7 @@
 # P1 · 数据面与 CSV 导入（MS-10）实施计划
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> 勾选注记（2026-09-26）：P1 批交付时仅回填了偏差注记、漏勾选（P2/P3 批各有勾选收口提交），26 步勾选系当日全分支终审后补齐——提交证据链 be38d45…daca839。
 
 **Goal:** 未上市策展企业与融资事件两张表（V19+种子）+ 领域/仓储/策展写服务 + 两类 CSV 导入（upsert 幂等、行号+原因清单）+ `/api/industry-curation/**` 登录态端点 + Next 代理 multipart 路由——P2 前端消费的数据面全部就绪。
 
@@ -31,7 +32,7 @@
 **Interfaces:**
 - Produces（后续所有任务的表契约）：`industry_unlisted_company`、`industry_funding_event`，DDL 逐列照设计规格 §二 V19（幂等键 UNIQUE(industry_code, company_name) / UNIQUE(event_date, company_name, round)）。
 
-- [ ] **Step 1: 写失败测试（版本清单 + 两表契约断言）**
+- [x] **Step 1: 写失败测试（版本清单 + 两表契约断言）**
 
 ```java
 // whenFlywayMigrates_thenAllAppliedWithNoFailures 的 containsExactly 追加 "19"
@@ -59,20 +60,20 @@ void whenSchemaMigrated_thenIndustryUnlistedTablesMatchContract() {
 }
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `cd backend && ./gradlew integrationTest --tests '*FlywayMigrationIntegrationTest*'`
 Expected: FAIL（V19 不存在，版本清单少 "19"）。
 
-- [ ] **Step 3: 写 V19（DDL 照设计规格 §二 + 头注释说明用途与决策出处 + 种子 INSERT）**
+- [x] **Step 3: 写 V19（DDL 照设计规格 §二 + 头注释说明用途与决策出处 + 种子 INSERT）**
 
 种子：10 家示例策展企业（电子 801080 ×5、医药生物 801150 ×5，轮次覆盖 B/C+/D/战略投资/未知，1 家 last_funding_date 为 NULL）+ 20 条融资事件（两行业近 24 月分布，含 amount/investors/source_url 为 NULL 的行；幂等键不得重复）。种子企业名用「示例××科技」前缀防与真实数据混淆。
 
-- [ ] **Step 4: 迁移测试通过**
+- [x] **Step 4: 迁移测试通过**
 
 Run: `cd backend && ./gradlew integrationTest --tests '*FlywayMigrationIntegrationTest*'` → PASS。
 
-- [ ] **Step 5: Commit** `feat(industry): V19 未上市策展与融资事件表+种子（MS-10 P1）`
+- [x] **Step 5: Commit** `feat(industry): V19 未上市策展与融资事件表+种子（MS-10 P1）`
 
 ---
 
@@ -94,9 +95,9 @@ Run: `cd backend && ./gradlew integrationTest --tests '*FlywayMigrationIntegrati
   - `interface UnlistedCompanyRepository`：`List<UnlistedCompany> findByIndustry(String industryCode)`（lastFundingDate DESC NULLS LAST，同日按轮次序倒序）/ `long countByIndustry(String)` / `UpsertOutcome upsert(UnlistedCompany c)`（`record UpsertOutcome(boolean inserted)`）/ `Optional<UnlistedCompany> findById(Long)` / `void deleteById(Long)`
   - `interface FundingEventRepository`：`List<FundingEvent> findByIndustrySince(String industryCode, LocalDate since)` / `UpsertOutcome upsert(FundingEvent e)` / `void deleteById(Long)`
 
-- [ ] **Step 1: 失败测试**——FundingRoundTest：parse 合法 15 值、parse 非法抛 IAE、label 中文对齐、order 声明序（`assertThat(FundingRound.SEED.order()).isLessThan(FundingRound.A.order())` 等）。
-- [ ] **Step 2:** `./gradlew test --tests '*FundingRoundTest*'` FAIL → **Step 3:** 实现枚举（纯 JUnit 零 Spring）→ **Step 4:** PASS。
-- [ ] **Step 5:** Commit `feat(industry): FundingRound 枚举与未上市聚合/端口（MS-10 P1）`
+- [x] **Step 1: 失败测试**——FundingRoundTest：parse 合法 15 值、parse 非法抛 IAE、label 中文对齐、order 声明序（`assertThat(FundingRound.SEED.order()).isLessThan(FundingRound.A.order())` 等）。
+- [x] **Step 2:** `./gradlew test --tests '*FundingRoundTest*'` FAIL → **Step 3:** 实现枚举（纯 JUnit 零 Spring）→ **Step 4:** PASS。
+- [x] **Step 5:** Commit `feat(industry): FundingRound 枚举与未上市聚合/端口（MS-10 P1）`
 
 ---
 
@@ -112,13 +113,13 @@ Run: `cd backend && ./gradlew integrationTest --tests '*FlywayMigrationIntegrati
 - 照抄 `IndustryWatchRepositoryImpl.java:8-40` 模式：`@Repository` 不挂 @Transactional、构造注入 JpaRepository、`toDomain()/fromDomain()` 静态映射；upsert = 先按幂等键 `findBy...` 存在则更新非键字段并 save、否则插入（照 :29-34 先查后插注释风格）。
 - JpaEntity 映射注意：`FundingRound` ↔ VARCHAR 存**枚举名**（`@Enumerated(EnumType.STRING)` 不用——record 域与实体分离，fromDomain/toDomain 手写 `FundingRound.valueOf(...)`）。
 
-- [ ] **Step 1: 失败测试**（`@DataJpaTest @AutoConfigureTestDatabase(replace=NONE) @ImportAutoConfiguration(FlywayAutoConfiguration.class) @Import(UnlistedCompanyRepositoryImpl.class)` + `@ServiceConnection static PostgreSQLContainer<?> postgres = PostgresTestSupport.postgres();`，照 `IndustryWatchRepositoryImplTest.java:24-31`）：
+- [x] **Step 1: 失败测试**（`@DataJpaTest @AutoConfigureTestDatabase(replace=NONE) @ImportAutoConfiguration(FlywayAutoConfiguration.class) @Import(UnlistedCompanyRepositoryImpl.class)` + `@ServiceConnection static PostgreSQLContainer<?> postgres = PostgresTestSupport.postgres();`，照 `IndustryWatchRepositoryImplTest.java:24-31`）：
   - findByIndustry 排序（构造 3 家：日期不同/同日不同轮次/日期 NULL）；
   - upsert 首插 inserted=true、同键重导更新非键字段 inserted=false 且字段变化生效；
   - deleteById 幂等（删不存在不抛）。
   - FundingEvent 仓储同构（Since 窗口过滤 + upsert）。
-- [ ] **Step 2:** integrationTest FAIL → **Step 3:** 实现 → **Step 4:** PASS。
-- [ ] **Step 5:** Commit `feat(industry): 未上市/融资事件 JPA 仓储与 upsert（MS-10 P1）`
+- [x] **Step 2:** integrationTest FAIL → **Step 3:** 实现 → **Step 4:** PASS。
+- [x] **Step 5:** Commit `feat(industry): 未上市/融资事件 JPA 仓储与 upsert（MS-10 P1）`
 
 ---
 
@@ -133,9 +134,9 @@ Run: `cd backend && ./gradlew integrationTest --tests '*FlywayMigrationIntegrati
 - 表头八列（设计规格 §五模板即权威）：`industry_code,company_name,segment,latest_round,last_funding_date,total_funding_yi,summary,source_note`；必填 industry_code/company_name/latest_round；`latest_round` L2 层 `FundingRound.parse` 失败转行错误；`last_funding_date ≤ today`；金额 NUMERIC。
 - 类头/常量/BOM 剥离/Commons CSV format 全照 `CsvImportParser.java:20-66` 注释与结构（MAX_DATA_ROWS=2000、FILE_LEVEL_ROW=0）。
 
-- [ ] **Step 1: 失败测试**——已知答案样例 `EIGHT_COLUMN_CSV` 内嵌文本块（全 8 列 happy path + 各错误行：表头列序错（文件级）、轮次非法、日期晚于今日、必填空、行数超限、BOM 头剥离后正常）。
-- [ ] **Step 2/3/4:** FAIL → 实现 → PASS（`./gradlew test --tests '*UnlistedCompanyCsvParserTest*'`）。
-- [ ] **Step 5:** Commit `feat(industry): 策展企业 CSV 解析器 L1/L2（MS-10 P1）`
+- [x] **Step 1: 失败测试**——已知答案样例 `EIGHT_COLUMN_CSV` 内嵌文本块（全 8 列 happy path + 各错误行：表头列序错（文件级）、轮次非法、日期晚于今日、必填空、行数超限、BOM 头剥离后正常）。
+- [x] **Step 2/3/4:** FAIL → 实现 → PASS（`./gradlew test --tests '*UnlistedCompanyCsvParserTest*'`）。
+- [x] **Step 5:** Commit `feat(industry): 策展企业 CSV 解析器 L1/L2（MS-10 P1）`
 
 > 偏差注记（2026-09-26）：`CurationImportResult.java`（原列于 Task 6 Files）提前到 Task 4 创建——两解析器 ParseOutcome 的错误类型即 `CurationImportResult.RowError`（Task 6 要求 parser 错误「直传」结果，须同型），避免另建第三类型再映射。
 
@@ -151,7 +152,7 @@ Run: `cd backend && ./gradlew integrationTest --tests '*FlywayMigrationIntegrati
 - Produces: 同 Task 4 形状；`record ParsedFundingEvent(int rowNumber, LocalDate eventDate, String companyName, FundingRound round, BigDecimal amountYi, String investors, String industryCode, String segment, String sourceTitle, String sourceUrl)`。
 - 表头九列：`event_date,company_name,round,amount_yi,investors,industry_code,segment,source_title,source_url`；必填 event_date/company_name/round/industry_code/source_title；`event_date ≤ today`。
 
-- [ ] **Step 1~5:** 同 Task 4 模式（样例 `NINE_COLUMN_CSV` + 错误行全覆盖）。Commit `feat(industry): 融资事件 CSV 解析器 L1/L2（MS-10 P1）`
+- [x] **Step 1~5:** 同 Task 4 模式（样例 `NINE_COLUMN_CSV` + 错误行全覆盖）。Commit `feat(industry): 融资事件 CSV 解析器 L1/L2（MS-10 P1）`
 
 > 偏差注记（2026-09-26）：设计规格 §五 事件模板示例行轮次原文「B+」与 FundingRound 枚举 CSV 输入格式（下划线大写 `B_PLUS`，Task 2 契约）矛盾——以枚举格式为准，模板/解析器测试/集成测试三处样例统一写 `B_PLUS`（CsvImportParserTest 矩阵勘误同类先例），设计规格 §五 示例已同步回写。
 
@@ -175,8 +176,8 @@ Run: `cd backend && ./gradlew integrationTest --tests '*FlywayMigrationIntegrati
   3. L5：文件内幂等键重复（第二行起）→ 行错误；
   4. 执行：逐条 `repository.upsert`，累计 inserted/updated；**全量预检通过才执行**（all-or-nothing）。
 
-- [ ] **Step 1: 失败测试**（纯 JUnit + Mockito 构造注入，照 `IndustryWatchApplicationServiceTest.java:22-50`）：六用例——全成功插入、重导同文件全 updated、L3 行错误零落库（verify upsert never）、L5 键重复、parser 错误直传、混合 inserted+updated 计数。
-- [ ] **Step 2~4:** FAIL → 实现 → PASS。**Step 5:** Commit `feat(industry): 策展/融资 CSV 导入编排 upsert（MS-10 P1）`
+- [x] **Step 1: 失败测试**（纯 JUnit + Mockito 构造注入，照 `IndustryWatchApplicationServiceTest.java:22-50`）：六用例——全成功插入、重导同文件全 updated、L3 行错误零落库（verify upsert never）、L5 键重复、parser 错误直传、混合 inserted+updated 计数。
+- [x] **Step 2~4:** FAIL → 实现 → PASS。**Step 5:** Commit `feat(industry): 策展/融资 CSV 导入编排 upsert（MS-10 P1）`
 
 ---
 
@@ -194,7 +195,7 @@ Run: `cd backend && ./gradlew integrationTest --tests '*FlywayMigrationIntegrati
   - 校验：existsIndustry（行业不存在 → `IndustryException(INDUSTRY_NOT_FOUND)`，照 `IndustryApplicationService.java:94-96` 文案口径）；latestRound `FundingRound.parse`（非法 → `IndustryException(INVALID_ROUND)`）。
 - Consumes: Task 3 仓储、IndustryErrorCode（既有 `IndustryErrorCode.java:6-8` 三常量）。
 
-- [ ] **Step 1~5:** 失败测试（Mockito，含错误码断言 `assertThatThrownBy`）→ 实现 → PASS。Commit `feat(industry): 策展单条 CRUD 服务与错误码（MS-10 P1）`
+- [x] **Step 1~5:** 失败测试（Mockito，含错误码断言 `assertThatThrownBy`）→ 实现 → PASS。Commit `feat(industry): 策展单条 CRUD 服务与错误码（MS-10 P1）`
 
 > 偏差注记（2026-09-26）：① service 签名定为 `save(Long id, SaveUnlistedCompanyCommand cmd)`——计划原文「save(cmd)（id null 插入否则更新）」自相矛盾（命令内无 id 字段无从判插入/更新），id 由控制器路径参数传入；② 端口 `UnlistedCompanyRepository` 增补 `UnlistedCompany save(UnlistedCompany)`（按 id merge、回带库生成 id——POST 需返回落库实体，upsert 只回 UpsertOutcome 不够），仓储集成测试同步补两用例。
 
@@ -218,9 +219,9 @@ Run: `cd backend && ./gradlew integrationTest --tests '*FlywayMigrationIntegrati
 - `record UnlistedCompanyView(...)`（web 层 DTO，字段同 UnlistedCompany 但 round 用 label？**否**——透出枚举名+label 双字段，前端排序用枚举序）落 `application/industry`（照 `IndustryWatchView.java:6` 位置先例）。
 - 鉴权：`Authentication auth` 参数（不调用 currentUserId 也保留参数？**不保留**——无用户语义，方法不收 auth 参数，路由级鉴权已由前缀达成；javadoc 说明）。
 
-- [ ] **Step 1: 失败测试**（`@WebMvcTest(IndustryCurationController.class)` + MockMvc，照 `PortfolioImportControllerTest.java:43-44`；multipart 用例 `.multipart("/api/industry-curation/companies/import").file(...)`，模板用例断言 Content-Disposition）；含 401 未认证（`.with(unauthenticated())` 401）与文件级 400 两分支。
-- [ ] **Step 2~4:** FAIL → 实现 → PASS（`./gradlew test --tests '*IndustryCurationControllerTest*'` + `check` 全量回归）。
-- [ ] **Step 5:** Commit `feat(industry): /api/industry-curation 写侧端点与模板（MS-10 P1）`
+- [x] **Step 1: 失败测试**（`@WebMvcTest(IndustryCurationController.class)` + MockMvc，照 `PortfolioImportControllerTest.java:43-44`；multipart 用例 `.multipart("/api/industry-curation/companies/import").file(...)`，模板用例断言 Content-Disposition）；含 401 未认证（`.with(unauthenticated())` 401）与文件级 400 两分支。
+- [x] **Step 2~4:** FAIL → 实现 → PASS（`./gradlew test --tests '*IndustryCurationControllerTest*'` + `check` 全量回归）。
+- [x] **Step 5:** Commit `feat(industry): /api/industry-curation 写侧端点与模板（MS-10 P1）`
 
 ---
 
@@ -231,8 +232,8 @@ Run: `cd backend && ./gradlew integrationTest --tests '*FlywayMigrationIntegrati
 
 **Interfaces:** 照 `CsvImportIntegrationTest.java:35-36`（`@SpringBootTest extends PostgresTestSupport`）：JdbcTemplate 种子行业映射行（申万 801080/801150 若 `industry_valuation` 无该行业行则先插，**注意 BDD 共享口径**：shenwan_industry_mapping 全表 UNIQUE 须用未被占用的测试代码段）——实际上 existsIndustry 查的是哪个表？核对 `IndustryRepositoryImpl.existsIndustry` 实现后照实种子；样例 CSV 与 Parser 测试同源；断言：首导 inserted=N 表计数快照、重导 updated=N 且字段更新、错误文件六表计数不变、AfterEach 清本测试写入行（`DELETE FROM industry_unlisted_company WHERE company_name LIKE '集成测试%'`，不动 V19 种子）。
 
-- [ ] **Step 1~4:** 写测试（对拍手算基准）→ FAIL（服务已实现时应直接 PASS——此时改为「先写测试红」不可行，照实记录：集成测试为验收性测试，实现已在前置任务 TDD 完成，本任务红态以「故意断错字段」自证测试有效性后修正）→ PASS。
-- [ ] **Step 5:** Commit `test(industry): 策展/融资导入全链集成实证（MS-10 P1）`
+- [x] **Step 1~4:** 写测试（对拍手算基准）→ FAIL（服务已实现时应直接 PASS——此时改为「先写测试红」不可行，照实记录：集成测试为验收性测试，实现已在前置任务 TDD 完成，本任务红态以「故意断错字段」自证测试有效性后修正）→ PASS。
+- [x] **Step 5:** Commit `test(industry): 策展/融资导入全链集成实证（MS-10 P1）`
 
 > 偏差注记（2026-09-26）：计划原文「六表计数不变」系 MS-14 措辞残留——本域仅两张表（industry_unlisted_company/industry_funding_event），测试实现为 twoTableCounts 两表哨兵前缀计数对拍；红态自证按计划口径执行（首导 inserted 断言先故意写 99 跑红再修正为 3）。
 
@@ -245,9 +246,9 @@ Run: `cd backend && ./gradlew integrationTest --tests '*FlywayMigrationIntegrati
 
 **Interfaces:** 逐字照 `frontend/app/api/portfolio/[...path]/route.ts:1-28`（resolve 前缀改 `/api/industry-curation`；GET/POST[multipart 分支 arrayBuffer+显式 contentType]/PUT/DELETE 四导出；`export const dynamic = "force-dynamic"`）。仓库无 route 级 vitest 先例（portfolio 同款也无），本路由由 P2 e2e 导入用例端到端覆盖——不补 route 单测（与现状一致）。
 
-- [ ] **Step 1:** 实现（无独立测试步骤，`pnpm build` 或 P2 e2e 验证）。
-- [ ] **Step 2:** `cd frontend && pnpm build` 通过（确认 route 类型正确）。
-- [ ] **Step 3:** Commit `feat(web): industry-curation 代理路由 multipart 透传（MS-10 P1）`
+- [x] **Step 1:** 实现（无独立测试步骤，`pnpm build` 或 P2 e2e 验证）。
+- [x] **Step 2:** `cd frontend && pnpm build` 通过（确认 route 类型正确）。
+- [x] **Step 3:** Commit `feat(web): industry-curation 代理路由 multipart 透传（MS-10 P1）`
 
 ---
 
