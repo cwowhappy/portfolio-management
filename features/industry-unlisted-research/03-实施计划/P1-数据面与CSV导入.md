@@ -137,6 +137,8 @@ Run: `cd backend && ./gradlew integrationTest --tests '*FlywayMigrationIntegrati
 - [ ] **Step 2/3/4:** FAIL → 实现 → PASS（`./gradlew test --tests '*UnlistedCompanyCsvParserTest*'`）。
 - [ ] **Step 5:** Commit `feat(industry): 策展企业 CSV 解析器 L1/L2（MS-10 P1）`
 
+> 偏差注记（2026-09-26）：`CurationImportResult.java`（原列于 Task 6 Files）提前到 Task 4 创建——两解析器 ParseOutcome 的错误类型即 `CurationImportResult.RowError`（Task 6 要求 parser 错误「直传」结果，须同型），避免另建第三类型再映射。
+
 ---
 
 ### Task 5: 融资事件 CSV 解析器（L1/L2）
