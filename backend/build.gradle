@@ -203,6 +203,10 @@ tasks.named('test') {
     // 每次跑测试即生成 test 单任务覆盖率报告；全量聚合报告与门槛（指令/分支 ≥ 80%）
     // 由 `check` 任务触发，聚焦测试（--tests X）只生成报告、不触发门槛
     finalizedBy jacocoTestReport
+    // ArchUnit 测试源集约定检查扫描 build/classes/java/integrationTest（TestSourceSetConventionsTest），
+    // 而独立 JvmTestSuite 的编译产物不被 test 任务连带产出——全新 clone `clean test` 曾必挂（issue #24）。
+    // 显式挂依赖保证检查输入先于 test 就位，替代此前对 check→integrationTest 调度顺序的偶然依赖。
+    dependsOn 'integrationTestClasses'
 }
 
 tasks.named('check') {
