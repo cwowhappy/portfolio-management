@@ -483,6 +483,35 @@ export const CurationImportResultSchema = z.object({
   rowErrors: z.array(CurationRowErrorSchema),
 });
 
+// —— 产业链（/api/industry/{code}/chains，MS-10 P3，与后端 ChainView 嵌套对齐）——
+// tier 双字段：tier 为 ChainTier 枚举名（构建器映射用），tierLabel 中文渲染用；
+// memberType 为 "LISTED"/"UNLISTED"（后端 CHECK 口径字符串）；stockCode/unlistedCompanyId
+// 按成员类型二选一非空，schema 层统一 nullable 不做互斥（后端已校验）。
+
+export const ChainMemberViewSchema = z.object({
+  id: z.number(),
+  memberType: z.string(),
+  stockCode: z.string().nullable(),
+  unlistedCompanyId: z.number().nullable(),
+  displayName: z.string(),
+});
+
+export const ChainStageViewSchema = z.object({
+  id: z.number(),
+  tier: z.string(),
+  tierLabel: z.string(),
+  name: z.string(),
+  sortOrder: z.number(),
+  members: z.array(ChainMemberViewSchema),
+});
+
+export const ChainViewSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+  description: z.string().nullable(),
+  stages: z.array(ChainStageViewSchema),
+});
+
 // —— 投资知识库（/api/wiki/**，与后端 WikiController 的 View 对齐）——
 
 export const WikiEntryTypeSchema = z.enum(["BOOK_NOTE", "CONCEPT", "RESEARCH_NOTE"]);

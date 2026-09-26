@@ -8,6 +8,7 @@ import type { IndustryStock } from "@/lib/types";
 import ResearchNoteDialog from "@/components/wiki/ResearchNoteDialog";
 import IndustryStockTable from "./IndustryStockTable";
 import UnlistedPanel from "./unlisted/UnlistedPanel";
+import ChainPanel from "./chain/ChainPanel";
 
 const PROSPERITY_LABEL = { UP: "↑", FLAT: "→", DOWN: "↓" } as const;
 
@@ -17,7 +18,7 @@ type SortKey = (typeof SORT_KEYS)[number];
 const isSortKey = (key: string): key is SortKey =>
   (SORT_KEYS as readonly string[]).includes(key);
 
-// 下钻页三 tab（MS-10 P2）：上市公司（既有）/ 未上市与融资（MS-10）/ 产业链（P3 激活）。
+// 下钻页三 tab（MS-10 P2/P3）：上市公司（既有）/ 未上市与融资 / 产业链（图谱+编辑器）。
 type Tab = "listed" | "unlisted" | "chain";
 
 export default function IndustryDrilldown({ industryCode }: { industryCode: string }) {
@@ -86,7 +87,7 @@ export default function IndustryDrilldown({ industryCode }: { industryCode: stri
         )}
       </div>
 
-      {/* 三 tab 组（样式逐字照 ScreenerBoard 先例）；「产业链」P3 激活，本批次占位禁用态 */}
+      {/* 三 tab 组（样式逐字照 ScreenerBoard 先例）；「产业链」MS-10 P3 激活 */}
       <div className="flex gap-2 text-sm">
         <button
           data-testid="tab-listed"
@@ -104,9 +105,8 @@ export default function IndustryDrilldown({ industryCode }: { industryCode: stri
         </button>
         <button
           data-testid="tab-chain"
-          disabled
-          title="产业链图谱建设中（MS-10 P3）"
-          className="rounded-md px-3 py-1.5 text-[color:var(--color-ink-dim)] disabled:cursor-not-allowed disabled:opacity-50"
+          className={`rounded-md px-3 py-1.5 ${tab === "chain" ? "bg-[color:var(--color-panel)] text-[color:var(--color-ink)]" : "text-[color:var(--color-ink-dim)] hover:bg-[color:var(--color-panel)]/60"}`}
+          onClick={() => setTab("chain")}
         >
           产业链
         </button>
@@ -118,6 +118,7 @@ export default function IndustryDrilldown({ industryCode }: { industryCode: stri
         )
       )}
       {tab === "unlisted" && <UnlistedPanel industryCode={industryCode} industryName={industryName} />}
+      {tab === "chain" && <ChainPanel industryCode={industryCode} industryName={industryName} />}
     </div>
   );
 }

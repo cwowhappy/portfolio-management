@@ -3,8 +3,14 @@
 // FormData 交给浏览器生成 boundary；非 2xx 抛 body.message；响应在边界用 zod 校验
 // （CurationImportResult 双计数契约——与 MS-14 ImportResult 不同源，勿混用）。
 
-import { CurationImportResultSchema, UnlistedCompanySchema } from "./schemas";
-import type { CurationImportResult, SaveUnlistedCompanyInput, UnlistedCompany } from "./types";
+import { ChainViewSchema, CurationImportResultSchema, UnlistedCompanySchema } from "./schemas";
+import type {
+  CurationImportResult,
+  SaveChainInput,
+  SaveUnlistedCompanyInput,
+  ChainView,
+  UnlistedCompany,
+} from "./types";
 import { request } from "./http";
 
 /** 模板下载直连同源代理（透传 Content-Disposition，<a download> 触发浏览器原生下载）。 */
@@ -30,6 +36,18 @@ export function deleteUnlistedCompany(id: number): Promise<void> {
 
 export function deleteFundingEvent(id: number): Promise<void> {
   return request<void>(`/api/industry-curation/funding-events/${id}`, "DELETE");
+}
+
+/** 产业链全文档保存（MS-10 P3）：id 有值走 PUT /chains/{id}，否则 POST /chains。 */
+export function saveChain(cmd: SaveChainInput): Promise<ChainView> {
+  const path = cmd.id == null
+    ? "/api/industry-curation/chains"
+    : `/api/industry-curation/chains/${cmd.id}`;
+  return request<ChainView>(path, cmd.id == null ? "POST" : "PUT", cmd, ChainViewSchema);
+}
+
+export function deleteChain(id: number): Promise<void> {
+  return request<void>(`/api/industry-curation/chains/${id}`, "DELETE");
 }
 
 export async function importUnlistedCompanies(file: File): Promise<CurationImportResult> {

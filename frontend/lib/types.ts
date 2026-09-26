@@ -526,6 +526,50 @@ export interface CurationImportResult {
   rowErrors: { row: number; reason: string }[];
 }
 
+// —— 产业链（/api/industry/{code}/chains，MS-10 P3，与后端 ChainView 嵌套对齐）——
+
+export interface ChainMemberView {
+  id: number;
+  memberType: string;
+  stockCode: string | null;
+  unlistedCompanyId: number | null;
+  displayName: string;
+}
+
+export interface ChainStageView {
+  id: number;
+  tier: string;
+  tierLabel: string;
+  name: string;
+  sortOrder: number;
+  members: ChainMemberView[];
+}
+
+export interface ChainView {
+  id: number;
+  name: string;
+  description: string | null;
+  stages: ChainStageView[];
+}
+
+/** 产业链全文档保存命令（POST/PUT /api/industry-curation/chains，id 有值为 PUT）。 */
+export interface SaveChainInput {
+  id?: number;
+  name: string;
+  description: string | null;
+  stages: Array<{
+    tier: string;
+    name: string;
+    sortOrder: number;
+    members: Array<{
+      memberType: string;
+      stockCode: string | null;
+      unlistedCompanyId: number | null;
+      displayName: string;
+    }>;
+  }>;
+}
+
 // —— 投资知识库（/api/wiki/**，与后端 WikiController 的 View 对齐）——
 
 export type WikiEntryType = "BOOK_NOTE" | "CONCEPT" | "RESEARCH_NOTE";
