@@ -1,7 +1,10 @@
 package com.portfolio.invest.bdd.steps;
 
 import com.portfolio.invest.application.industry.IndustryApplicationService;
+import com.portfolio.invest.application.industry.UnlistedCompanyView;
+import com.portfolio.invest.application.industry.UnlistedResearchApplicationService;
 import com.portfolio.invest.domain.industry.IndustryException;
+import io.cucumber.java.After;
 import io.cucumber.java.zh_cn.假如;
 import io.cucumber.java.zh_cn.当;
 import io.cucumber.java.zh_cn.那么;
@@ -15,8 +18,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 public class IndustrySteps {
 
+    /** 本场景策展种子行名前缀（@After 清账按此前缀删，永不触及 V19 迁移种子）。 */
+    private static final String BDD_COMPANY_PREFIX = "BDD测试";
+
     @Autowired
     private IndustryApplicationService industryService;
+
+    @Autowired
+    private UnlistedResearchApplicationService unlistedService;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -76,5 +85,53 @@ public class IndustrySteps {
     public void 未找到断言() {
         assertThat(ctx.getIndustryError()).isNotNull();
         assertThat(ctx.getIndustryError().code()).isEqualTo("INDUSTRY_NOT_FOUND");
+    }
+
+    /**
+     * 公开查询策展名单（MS-10 P2）：种 industry_unlisted_company 自有行（V19 表），不碰
+     * industry_valuation 共享口径。行业存在性依赖 shenwan_industry_mapping——插入自有
+     * 占位映射行使场景与执行顺序解耦（stock_code 全表 UNIQUE，601997 未被任何场景占用；
+     * 该股无 stock_valuation_daily 行，不影响成员排名口径）。
+     */
+    @假如("银行业有两家策展未上市企业且最新轮次分别为 B 轮与 D 轮")
+    @Transactional
+    public void 种子策展企业() {
+        jdbcTemplate.update(
+                "INSERT INTO shenwan_industry_mapping(stock_code, stock_name, industry_code, industry_name) VALUES (?,?,?,?)",
+                "601997", "BDD策展占位", "801780", "银行");
+        jdbcTemplate.update("""
+                INSERT INTO industry_unlisted_company
+                    (industry_code, company_name, segment, latest_round, last_funding_date, total_funding_yi, summary, source_note)
+                VALUES (?,?,?,?,?,?,?,?)
+                """,
+                "801780", BDD_COMPANY_PREFIX + "光子", "光模块", "D",
+                Date.valueOf("2026-08-15"), new BigDecimal("80.00"), "800G 光模块厂商", "BDD 种子");
+        jdbcTemplate.update("""
+                INSERT INTO industry_unlisted_company
+                    (industry_code, company_name, segment, latest_round, last_funding_date, total_funding_yi, summary, source_note)
+                VALUES (?,?,?,?,?,?,?,?)
+                """,
+                "801780", BDD_COMPANY_PREFIX + "华芯", "半导体设备", "B",
+                Date.valueOf("2026-06-15"), new BigDecimal("12.50"), "刻蚀设备新锐", "BDD 种子");
+    }
+
+    @After
+    public void 清理策展种子() {
+        jdbcTemplate.update("DELETE FROM industry_unlisted_company WHERE company_name LIKE ?", BDD_COMPANY_PREFIX + "%");
+    }
+
+    @当("用户查看银行业未上市策展名单")
+    public void 查看策展名单() {
+        ctx.setUnlistedResults(unlistedService.companies("801780"));
+    }
+
+    @那么("名单首家应是 {string} 且轮次标签为 {string}")
+    public void 策展名单断言(String companyName, String roundLabel) {
+        assertThat(ctx.getUnlistedResults()).isNotEmpty();
+        // 排序口径：lastFundingDate DESC——光子（2026-08-15）先于华芯（2026-06-15）
+        UnlistedCompanyView first = ctx.getUnlistedResults().get(0);
+        assertThat(first.companyName()).isEqualTo(companyName);
+        assertThat(first.latestRound()).isEqualTo("D");
+        assertThat(first.latestRoundLabel()).isEqualTo(roundLabel);
     }
 }

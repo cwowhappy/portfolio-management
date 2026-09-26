@@ -1,6 +1,7 @@
 package com.portfolio.invest.bdd.steps;
 
 import com.portfolio.invest.application.portfolio.PortfolioOverviewView;
+import com.portfolio.invest.application.industry.UnlistedCompanyView;
 import com.portfolio.invest.domain.industry.IndustryException;
 import com.portfolio.invest.domain.industry.IndustryStock;
 import com.portfolio.invest.domain.screening.ScreeningException;
@@ -45,6 +46,7 @@ public class ScenarioContext {
     private List<StockScreeningResult> screeningResults;
     private ScreeningException screeningError;
     private List<IndustryStock> industryResults;
+    private List<UnlistedCompanyView> unlistedResults;
     private IndustryException industryError;
 
     public String getUsername() {
@@ -209,6 +211,14 @@ public class ScenarioContext {
 
     public void setIndustryResults(List<IndustryStock> industryResults) {
         this.industryResults = industryResults;
+    }
+
+    public List<UnlistedCompanyView> getUnlistedResults() {
+        return unlistedResults;
+    }
+
+    public void setUnlistedResults(List<UnlistedCompanyView> unlistedResults) {
+        this.unlistedResults = unlistedResults;
     }
 
     public IndustryException getIndustryError() {
