@@ -23,7 +23,11 @@ export default function FundResultsTable({ results, sortBy, sortDirection, onSor
   onToggleWatchlist?: (fundCode: string) => void;
 }) {
   // TE 后端为小数（0.0318 = 3.18%），展示 ×100 两位小数；null=未知「—」
-  const fmtTe = (v: number | null) => (v == null ? "—" : (v * 100).toFixed(2));
+  // TE>30% 疑似份额拆分污染（issue #56）：行仍参与筛选/排序计算，但不展示假精度
+  const TE_SUSPECT_THRESHOLD = 0.3;
+  const TE_SUSPECT_MASK = "—（疑似拆分/异常）";
+  const isSuspectTe = (v: number | null) => v != null && v > TE_SUSPECT_THRESHOLD;
+  const fmtTe = (v: number | null) => (isSuspectTe(v) ? TE_SUSPECT_MASK : v == null ? "—" : (v * 100).toFixed(2));
   return (
     <div className="rounded-2xl border border-[color:var(--color-line)] bg-[color:var(--color-panel)]/70 p-5 overflow-x-auto">
       <div className="font-[family-name:var(--font-display)] text-[15px] mb-3">筛选结果（{results.length}）</div>
@@ -61,7 +65,10 @@ export default function FundResultsTable({ results, sortBy, sortDirection, onSor
               <td className="text-right">{r.scale ?? "—"}</td>
               <td className="text-left">{r.trackingIndexName ?? "—"}</td>
               <td className="text-left">{r.category ?? "—"}</td>
-              <td className="text-right">{fmtTe(r.trackingError1y)}</td>
+              <td className="text-right" title={isSuspectTe(r.trackingError1y)
+                ? "跟踪误差>30%：疑似份额拆分或数据异常已遮蔽（该行仍参与筛选计算）" : undefined}>
+                {fmtTe(r.trackingError1y)}
+              </td>
             </tr>
           ))}
         </tbody>

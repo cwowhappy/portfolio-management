@@ -1,4 +1,5 @@
 import { test, expect, type APIRequestContext } from "@playwright/test";
+import fs from "node:fs";
 import { registerAndApprove, TEST_PASSWORD, uniqueUsername } from "./helpers";
 
 const hasAdminSeed = !!(process.env.ADMIN_USERNAME && process.env.ADMIN_PASSWORD);
@@ -71,6 +72,12 @@ test.describe("/screener 价值筛选器", () => {
     await page.getByTestId("fund-export-csv").click();
     const d = await download;
     expect(d.suggestedFilename()).toMatch(/^fund-screening-\d{8}-\d{6}\.csv$/);
+
+    // 口径注（issue #56）：表头末列口径 + 注释行（CI 空库仅表头也含两片段）
+    const path = await d.path();
+    const csvText = path ? fs.readFileSync(path, "utf-8").replace(/^\uFEFF/, "") : "";
+    expect(csvText).toContain("跟踪误差(%,收盘价口径)");
+    expect(csvText).toContain("# 注：跟踪误差为收盘价口径（含分红/折溢价噪声）与官方净值口径不可直接对比");
   });
 });
 
@@ -104,8 +111,8 @@ test.describe("/screener 基金 tab（MS-14 P3 数据链路）", () => {
     const rows = page.locator("table tbody tr");
     await expect(rows.first()).toBeVisible();
     expect(await rows.count()).toBeGreaterThanOrEqual(1);
-    // TE 列（行末格）：收盘价口径 ×100 两位小数（如 3.18），未知为「—」
-    await expect(rows.first().locator("td").last()).toHaveText(/^(\d+\.\d{2}|—)$/);
+    // TE 列（行末格）：收盘价口径 ×100 两位小数（如 3.18），未知为「—」，疑似拆分遮蔽（issue #56）
+    await expect(rows.first().locator("td").last()).toHaveText(/^(\d+\.\d{2}|—|—（疑似拆分\/异常）)$/);
 
     // ⭐ 加入自选（aria-label 随状态翻转）
     const row510300 = rows.filter({ hasText: "510300" });
@@ -119,6 +126,28 @@ test.describe("/screener 基金 tab（MS-14 P3 数据链路）", () => {
     const wlRow = panel.locator("tr", { hasText: "510300" }).first();
     await expect(wlRow).toBeVisible({ timeout: 15_000 });
     await expect(panel.getByTestId("watchlist-price-510300")).toHaveText(/^(\d+\.\d{2}|—)$/);
+  });
+
+  /** TE 遮蔽门控：探测降序首行是否 TE>0.3（CI 空库无数据则跳过；接口非 200 不门控，让回归可见失败）。 */
+  async function fundHasSuspectTe(request: APIRequestContext): Promise<boolean> {
+    const res = await request.get("/api/screening/funds?trackingErrorMax=5&sortBy=tracking_error_1y&sortDirection=DESC&limit=1");
+    if (!res.ok()) return true;
+    const body: unknown = await res.json();
+    const first = Array.isArray(body) ? (body[0] as { trackingError1y?: number | null }) : null;
+    return !!first && typeof first.trackingError1y === "number" && first.trackingError1y > 0.3;
+  }
+
+  test("TE>30% 行遮蔽为疑似拆分/异常，不展示假精度数值", async ({ page, request }) => {
+    test.skip(!(await fundHasSuspectTe(request)), "库中无 TE>30% 基金（CI 空库），跳过遮蔽用例");
+    await page.goto("/screener");
+    await page.getByTestId("tab-fund").click();
+    // TE < 5（=500%）放行高 TE 行；提交后默认 TE 升序，点表头翻降序 → 首行即最高 TE
+    await page.getByLabel("跟踪误差 <（小数，0.05=5%）").fill("5");
+    await page.locator("form button[type=\"submit\"]").click();
+    await expect(page.getByText(/筛选结果（\d+/)).toBeVisible({ timeout: 15_000 });
+    await page.getByRole("columnheader", { name: /跟踪误差/ }).click();
+    await expect(page.locator("table tbody tr").first().locator("td").last())
+      .toHaveText("—（疑似拆分/异常）");
   });
 });
 
