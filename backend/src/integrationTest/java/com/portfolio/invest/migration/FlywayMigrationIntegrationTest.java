@@ -30,7 +30,7 @@ class FlywayMigrationIntegrationTest extends PostgresTestSupport {
         List<String> versions = jdbcTemplate.queryForList(
                 "SELECT version FROM flyway_schema_history WHERE type = 'SQL' ORDER BY installed_rank",
                 String.class);
-        assertThat(versions).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "19.1");
+        assertThat(versions).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "19.1", "20");
 
         Integer failed = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM flyway_schema_history WHERE success = false", Integer.class);
@@ -168,6 +168,32 @@ class FlywayMigrationIntegrationTest extends PostgresTestSupport {
         assertColumn("industry_funding_event", "industry_code", "character varying", false);
         assertColumn("industry_funding_event", "source_title", "character varying", false);
         assertUniqueColumns("industry_funding_event", "event_date,company_name,round");
+    }
+
+    @DisplayName("产业链三表契约（V20）")
+    @Test
+    void whenSchemaMigrated_thenIndustryChainTablesMatchContract() {
+        // V20：MS-10 F11 产业链三级 链/环节/成员（决策 #6）；行业关联由成员派生无关联表（§九#3），
+        // stage/member 级联由 ON DELETE CASCADE 保证（全文档替换的删除路径）；
+        // member 的 LISTED/UNLISTED 二选一 CHECK 属行为约束，由 Task 2 仓储集成测试验证
+        assertPrimaryKey("industry_chain", "id");
+        assertColumn("industry_chain", "name", "character varying", false);
+        assertColumn("industry_chain", "description", "character varying", true);
+        assertUniqueColumns("industry_chain", "name");
+
+        assertPrimaryKey("industry_chain_stage", "id");
+        assertColumn("industry_chain_stage", "chain_id", "bigint", false);
+        assertColumn("industry_chain_stage", "tier", "character varying", false);
+        assertColumn("industry_chain_stage", "name", "character varying", false);
+        assertColumn("industry_chain_stage", "sort_order", "integer", false);
+        assertUniqueColumns("industry_chain_stage", "chain_id,tier,name");
+
+        assertPrimaryKey("industry_chain_member", "id");
+        assertColumn("industry_chain_member", "stage_id", "bigint", false);
+        assertColumn("industry_chain_member", "member_type", "character varying", false);
+        assertColumn("industry_chain_member", "stock_code", "character varying", true);
+        assertColumn("industry_chain_member", "unlisted_company_id", "bigint", true);
+        assertColumn("industry_chain_member", "display_name", "character varying", false);
     }
 
     private void assertColumn(String table, String column, String dataType, boolean nullable) {
