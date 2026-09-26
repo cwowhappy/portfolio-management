@@ -16,6 +16,9 @@ vi.mock("@/lib/industryUnlistedApi", () => ({
   fetchFundingEvents: eventsMock,
 }));
 
+// Panel 登录态挂 CurationPanel（Task 7）；本套用例固定未登录视角（登录态集成见 CurationPanel.test）
+vi.mock("@/lib/auth", () => ({ useAuth: vi.fn(() => ({ user: null, loading: false })) }));
+
 // LandscapeChart 自带 stocks+策展双端点编排（Task 6 独立测试覆盖），Panel 测试置壳隔离
 vi.mock("@/components/industry/unlisted/LandscapeChart", () => ({
   default: () => <div data-testid="landscape-chart" />,
