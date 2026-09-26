@@ -31,8 +31,9 @@ import org.springframework.web.multipart.MultipartFile;
  * 零安全配置改动（照 IndustryWatchController 先例）。
  * 策展为全局研究数据无 user 归属（设计规格 §九#1）：方法不收 Authentication 参数、
  * 不按人过滤——路由级鉴权已由前缀达成，无用户语义可取。
- * 错误双层语义（照 MS-14）：文件级（空/超 1MB/表头不匹配）→ 400 ApiError；行级 → 200 +
- * CurationImportResult 双计数与行错误清单。
+ * 错误双层语义（照 MS-14，2026-09-26 评审定案）：400 ApiError 仅限空文件/超 1MB（controller 级）；
+ * 解析层文件级错误（表头不匹配/无数据行/超 2000 行）与行级错误一律 200 + CurationImportResult
+ * 双计数与行错误清单（文件级错误行号 row=0）。
  */
 @RestController
 @RequestMapping("/api/industry-curation")
