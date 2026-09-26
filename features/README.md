@@ -41,6 +41,7 @@
 | [analytics](analytics/) | MS-07（已交付 2026-09-16，PR #35） | M12 收益与风险分析 | `/analytics` |
 | [rebalancing-screening](rebalancing-screening/) | MS-08（已交付 2026-09-17，PR #36） | M07 资产组合配置、M09 价值投资筛选器 | `/allocation` `/screener`（扩展） |
 | [industry-listed-research](industry-listed-research/) | MS-09（已交付 2026-09-18，PR #38） | M10 行业研究中心 | `/industry`（扩展）`/industry/[industryCode]`（新增） |
+| [industry-unlisted-research](industry-unlisted-research/) | MS-10（进行中） | M10 行业研究中心 | `/industry/[industryCode]`（扩展） |
 | [wiki-knowledge-base](wiki-knowledge-base/) | MS-11（已交付 2026-09-22，PR #40） | M13 投资知识库 | `/wiki`（新增）`/industry/[industryCode]`（扩展） |
 | [ai-research-tools-phase2](ai-research-tools-phase2/) | MS-12（已交付 2026-09-23，PR #42） | M05 AI 投研能力二期 | 对话内核扩展（5 个内置工具 + 提示词 + 工具卡） |
 | [risk-attribution-backtest](risk-attribution-backtest/) | MS-13（已交付 2026-09-24，PR #51） | M12 收益与风险分析、M07 资产组合配置 | `/analytics`（扩展）`/allocation`（扩展） |
