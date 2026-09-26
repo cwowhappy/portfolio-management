@@ -1,8 +1,11 @@
 package com.portfolio.invest.web;
 
+import com.portfolio.invest.application.industry.ChainView;
 import com.portfolio.invest.application.industry.CurationImportResult;
 import com.portfolio.invest.application.industry.IndustryCurationApplicationService;
 import com.portfolio.invest.application.industry.IndustryCurationImportService;
+import com.portfolio.invest.application.industry.IndustryChainApplicationService;
+import com.portfolio.invest.application.industry.SaveChainCommand;
 import com.portfolio.invest.application.industry.SaveUnlistedCompanyCommand;
 import com.portfolio.invest.application.industry.UnlistedCompanyView;
 import com.portfolio.invest.domain.industry.IndustryErrorCode;
@@ -43,11 +46,14 @@ public class IndustryCurationController {
 
     private final IndustryCurationApplicationService curationService;
     private final IndustryCurationImportService importService;
+    private final IndustryChainApplicationService chainService;
 
     public IndustryCurationController(IndustryCurationApplicationService curationService,
-                                      IndustryCurationImportService importService) {
+                                      IndustryCurationImportService importService,
+                                      IndustryChainApplicationService chainService) {
         this.curationService = curationService;
         this.importService = importService;
+        this.chainService = chainService;
     }
 
     @PostMapping("/companies")
@@ -109,6 +115,23 @@ public class IndustryCurationController {
     @DeleteMapping("/funding-events/{id}")
     public ResponseEntity<Void> deleteFundingEvent(@PathVariable Long id) {
         curationService.deleteFundingEvent(id); // 服务幂等
+        return ResponseEntity.noContent().build();
+    }
+
+    /** 产业链全文档保存（MS-10 P3，设计规格 §四）：stages+members 嵌套整体替换，POST 新建。 */
+    @PostMapping("/chains")
+    public ChainView createChain(@Valid @RequestBody SaveChainCommand cmd) {
+        return chainService.save(null, cmd);
+    }
+
+    @PutMapping("/chains/{id}")
+    public ChainView updateChain(@PathVariable Long id, @Valid @RequestBody SaveChainCommand cmd) {
+        return chainService.save(id, cmd);
+    }
+
+    @DeleteMapping("/chains/{id}")
+    public ResponseEntity<Void> deleteChain(@PathVariable Long id) {
+        chainService.deleteChain(id); // 服务幂等：删不存在亦成功
         return ResponseEntity.noContent().build();
     }
 

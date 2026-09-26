@@ -17,9 +17,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.portfolio.invest.application.industry.ChainView;
 import com.portfolio.invest.application.industry.CurationImportResult;
 import com.portfolio.invest.application.industry.IndustryCurationApplicationService;
 import com.portfolio.invest.application.industry.IndustryCurationImportService;
+import com.portfolio.invest.application.industry.IndustryChainApplicationService;
+import com.portfolio.invest.application.industry.SaveChainCommand;
 import com.portfolio.invest.application.industry.SaveUnlistedCompanyCommand;
 import com.portfolio.invest.domain.industry.FundingRound;
 import com.portfolio.invest.domain.industry.IndustryErrorCode;
@@ -80,6 +83,10 @@ class IndustryCurationControllerTest {
 
     @MockitoBean
     private IndustryCurationImportService importService;
+
+    // MS-10 P3：产业链全文档三端点挂同控制器，一并打桩
+    @MockitoBean
+    private IndustryChainApplicationService chainService;
 
     /** 路由级鉴权已由独立前缀达成，控制器方法不收 auth 参数；切片仍需已认证主体过安全链。 */
     private Authentication auth() {
@@ -274,6 +281,110 @@ class IndustryCurationControllerTest {
 
         mvc.perform(multipart("/api/industry-curation/companies/import")
                         .file(csvFile(COMPANY_CSV)).with(csrf()))
+                .andExpect(status().isUnauthorized());
+    }
+
+    // —— 产业链全文档三端点（MS-10 P3，设计规格 §四写侧）——
+
+    private static final String CHAIN_SAVE_BODY = """
+            {"name":"测试链","description":"描述","stages":[
+              {"tier":"UPSTREAM","name":"锂矿","sortOrder":1,
+               "members":[{"memberType":"LISTED","stockCode":"300750","displayName":"宁德时代"}]}]}
+            """;
+
+    private static ChainView chainView(Long id) {
+        return new ChainView(id, "测试链", "描述", List.of(new ChainView.StageView(11L, "UPSTREAM",
+                "上游", "锂矿", 1, List.of(new ChainView.MemberView(21L, "LISTED", "300750",
+                null, "宁德时代")))));
+    }
+
+    @Test
+    @DisplayName("POST /chains：200 返回整包 ChainView（嵌套 stages/members）")
+    void givenValidChainCommand_whenPostChains_thenView() throws Exception {
+        when(chainService.save(eq(null), any(SaveChainCommand.class))).thenReturn(chainView(42L));
+
+        mvc.perform(post("/api/industry-curation/chains").with(authentication(auth())).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content(CHAIN_SAVE_BODY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(42))
+                .andExpect(jsonPath("$.name").value("测试链"))
+                .andExpect(jsonPath("$.stages[0].tier").value("UPSTREAM"))
+                .andExpect(jsonPath("$.stages[0].tierLabel").value("上游"))
+                .andExpect(jsonPath("$.stages[0].members[0].stockCode").value("300750"));
+    }
+
+    @Test
+    @DisplayName("PUT /chains/{id}：以路径 id 全文档替换返回 200；DELETE 204 委托服务")
+    void givenChainId_whenPutAndDelete_thenReplacedAndDelegated() throws Exception {
+        when(chainService.save(eq(5L), any(SaveChainCommand.class))).thenReturn(chainView(5L));
+
+        mvc.perform(put("/api/industry-curation/chains/5").with(authentication(auth())).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content(CHAIN_SAVE_BODY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(5));
+
+        mvc.perform(delete("/api/industry-curation/chains/5")
+                        .with(authentication(auth())).with(csrf()))
+                .andExpect(status().isNoContent());
+        verify(chainService).deleteChain(5L);
+    }
+
+    @Test
+    @DisplayName("链命令结构性缺失（无环节/无成员）：400 INVALID_REQUEST（Bean Validation）")
+    void givenStructurallyInvalidChain_whenPostChains_then400InvalidRequest() throws Exception {
+        mvc.perform(post("/api/industry-curation/chains").with(authentication(auth())).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"无环节链\",\"stages\":[]}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+
+        verifyNoInteractions(chainService);
+    }
+
+    @Test
+    @DisplayName("链名冲突：409 INDUSTRY_CHAIN_DUPLICATE（照 UNLISTED_DUPLICATE→CONFLICT 先例）")
+    void givenDuplicateChainName_whenPostChains_then409Conflict() throws Exception {
+        when(chainService.save(eq(null), any(SaveChainCommand.class))).thenThrow(
+                new IndustryException(IndustryErrorCode.CHAIN_DUPLICATE, "已存在同名产业链"));
+
+        mvc.perform(post("/api/industry-curation/chains").with(authentication(auth())).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content(CHAIN_SAVE_BODY))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("INDUSTRY_CHAIN_DUPLICATE"));
+    }
+
+    @Test
+    @DisplayName("PUT 不存在的链：404 INDUSTRY_CHAIN_NOT_FOUND")
+    void givenMissingChain_whenPutChains_then404() throws Exception {
+        when(chainService.save(eq(99L), any(SaveChainCommand.class))).thenThrow(
+                new IndustryException(IndustryErrorCode.CHAIN_NOT_FOUND, "产业链不存在: 99"));
+
+        mvc.perform(put("/api/industry-curation/chains/99").with(authentication(auth())).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content(CHAIN_SAVE_BODY))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("INDUSTRY_CHAIN_NOT_FOUND"));
+    }
+
+    @Test
+    @DisplayName("tier 非枚举名：400 INDUSTRY_INVALID_TIER")
+    void givenInvalidTier_whenPostChains_then400() throws Exception {
+        when(chainService.save(eq(null), any(SaveChainCommand.class))).thenThrow(
+                new IndustryException(IndustryErrorCode.INVALID_TIER, "环节层级无效: 上游"));
+
+        mvc.perform(post("/api/industry-curation/chains").with(authentication(auth())).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content(CHAIN_SAVE_BODY))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INDUSTRY_INVALID_TIER"));
+    }
+
+    @Test
+    @DisplayName("未登录访问链写端点：401")
+    void givenAnonymous_whenAccessChainEndpoints_then401() throws Exception {
+        mvc.perform(post("/api/industry-curation/chains").with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content(CHAIN_SAVE_BODY))
+                .andExpect(status().isUnauthorized());
+
+        mvc.perform(delete("/api/industry-curation/chains/5").with(csrf()))
                 .andExpect(status().isUnauthorized());
     }
 }

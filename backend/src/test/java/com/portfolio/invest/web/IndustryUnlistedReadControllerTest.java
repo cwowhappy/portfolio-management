@@ -6,8 +6,10 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.portfolio.invest.application.industry.ChainView;
 import com.portfolio.invest.application.industry.FundingEventView;
 import com.portfolio.invest.application.industry.IndustryApplicationService;
+import com.portfolio.invest.application.industry.IndustryChainApplicationService;
 import com.portfolio.invest.application.industry.UnlistedCompanyView;
 import com.portfolio.invest.application.industry.UnlistedOverviewView;
 import com.portfolio.invest.application.industry.UnlistedResearchApplicationService;
@@ -46,6 +48,10 @@ class IndustryUnlistedReadControllerTest {
 
     @MockitoBean
     private UnlistedResearchApplicationService unlistedService;
+
+    // MS-10 P3：产业链读端点与三读端点同控制器共存，一并打桩
+    @MockitoBean
+    private IndustryChainApplicationService chainService;
 
     // SecurityConfig 装配所需依赖（切片内无真实实现）
     @MockitoBean
@@ -152,5 +158,32 @@ class IndustryUnlistedReadControllerTest {
         mvc.perform(get("/api/industry/801080/unlisted/funding-events").param("months", "61"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INDUSTRY_INVALID_LIMIT"));
+    }
+
+    @DisplayName("chains 公开端点（MS-10 P3）：200 嵌套 ChainView（tier 双字段）、行业不存在 404")
+    @Test
+    void givenChains_whenGetChains_thenReturnNestedViews() throws Exception {
+        when(chainService.chains("801730")).thenReturn(List.of(new ChainView(1L, "锂电池", "链描述",
+                List.of(new ChainView.StageView(11L, "UPSTREAM", "上游", "锂矿", 1,
+                        List.of(new ChainView.MemberView(21L, "LISTED", "300750", null, "宁德时代")))))));
+
+        mvc.perform(get("/api/industry/801730/chains"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(1))
+                .andExpect(jsonPath("$[0].name").value("锂电池"))
+                .andExpect(jsonPath("$[0].description").value("链描述"))
+                .andExpect(jsonPath("$[0].stages[0].tier").value("UPSTREAM"))
+                .andExpect(jsonPath("$[0].stages[0].tierLabel").value("上游"))
+                .andExpect(jsonPath("$[0].stages[0].name").value("锂矿"))
+                .andExpect(jsonPath("$[0].stages[0].sortOrder").value(1))
+                .andExpect(jsonPath("$[0].stages[0].members[0].memberType").value("LISTED"))
+                .andExpect(jsonPath("$[0].stages[0].members[0].stockCode").value("300750"))
+                .andExpect(jsonPath("$[0].stages[0].members[0].displayName").value("宁德时代"));
+
+        when(chainService.chains("999999"))
+                .thenThrow(new IndustryException("INDUSTRY_NOT_FOUND", "行业不存在: 999999"));
+        mvc.perform(get("/api/industry/999999/chains"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("INDUSTRY_NOT_FOUND"));
     }
 }

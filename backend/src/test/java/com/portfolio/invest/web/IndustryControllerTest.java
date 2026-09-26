@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.portfolio.invest.application.industry.IndustryApplicationService;
 import com.portfolio.invest.application.industry.IndustryBoardView;
+import com.portfolio.invest.application.industry.IndustryChainApplicationService;
 import com.portfolio.invest.application.industry.UnlistedResearchApplicationService;
 import com.portfolio.invest.domain.industry.IndustryException;
 import com.portfolio.invest.domain.industry.Prosperity;
@@ -26,14 +27,16 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 class IndustryControllerTest {
 
     private final IndustryApplicationService service = mock(IndustryApplicationService.class);
-    // MS-10 P2 起控制器共存注入未上市读服务（未上市端点切片见 IndustryUnlistedReadControllerTest）
+    // MS-10 P2 起控制器共存注入未上市读服务、P3 注入链服务（各自端点切片见对应 *ControllerTest）
     private final UnlistedResearchApplicationService unlistedService =
             mock(UnlistedResearchApplicationService.class);
+    private final IndustryChainApplicationService chainService =
+            mock(IndustryChainApplicationService.class);
     private MockMvc mvc;
 
     @BeforeEach
     void setUp() {
-        mvc = MockMvcBuilders.standaloneSetup(new IndustryController(service, unlistedService))
+        mvc = MockMvcBuilders.standaloneSetup(new IndustryController(service, unlistedService, chainService))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
     }

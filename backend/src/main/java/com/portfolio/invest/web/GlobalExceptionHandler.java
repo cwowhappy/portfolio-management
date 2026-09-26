@@ -163,12 +163,16 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> industry(com.portfolio.invest.domain.industry.IndustryException e) {
         HttpStatus status = switch (e.code()) {
             case com.portfolio.invest.domain.industry.IndustryErrorCode.INDUSTRY_NOT_FOUND,
-                 com.portfolio.invest.domain.industry.IndustryErrorCode.UNLISTED_NOT_FOUND -> HttpStatus.NOT_FOUND;
-            case com.portfolio.invest.domain.industry.IndustryErrorCode.UNLISTED_DUPLICATE -> HttpStatus.CONFLICT;
+                 com.portfolio.invest.domain.industry.IndustryErrorCode.UNLISTED_NOT_FOUND,
+                 com.portfolio.invest.domain.industry.IndustryErrorCode.CHAIN_NOT_FOUND -> HttpStatus.NOT_FOUND;
+            case com.portfolio.invest.domain.industry.IndustryErrorCode.UNLISTED_DUPLICATE,
+                 com.portfolio.invest.domain.industry.IndustryErrorCode.CHAIN_DUPLICATE -> HttpStatus.CONFLICT;
             case com.portfolio.invest.domain.industry.IndustryErrorCode.INVALID_SORT,
                  com.portfolio.invest.domain.industry.IndustryErrorCode.INVALID_LIMIT,
                  com.portfolio.invest.domain.industry.IndustryErrorCode.INVALID_ROUND,
-                 com.portfolio.invest.domain.industry.IndustryErrorCode.INVALID_CSV -> HttpStatus.BAD_REQUEST;
+                 com.portfolio.invest.domain.industry.IndustryErrorCode.INVALID_CSV,
+                 com.portfolio.invest.domain.industry.IndustryErrorCode.INVALID_TIER,
+                 com.portfolio.invest.domain.industry.IndustryErrorCode.INVALID_MEMBER -> HttpStatus.BAD_REQUEST;
             default -> {
                 log.warn("未识别的行业研究错误码 {}，按 400 处理: {}", e.code(), e.getMessage());
                 yield HttpStatus.BAD_REQUEST;

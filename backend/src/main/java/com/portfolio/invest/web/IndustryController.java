@@ -1,7 +1,9 @@
 package com.portfolio.invest.web;
 
+import com.portfolio.invest.application.industry.ChainView;
 import com.portfolio.invest.application.industry.FundingEventView;
 import com.portfolio.invest.application.industry.IndustryApplicationService;
+import com.portfolio.invest.application.industry.IndustryChainApplicationService;
 import com.portfolio.invest.application.industry.IndustryBoardView;
 import com.portfolio.invest.application.industry.UnlistedCompanyView;
 import com.portfolio.invest.application.industry.UnlistedOverviewView;
@@ -30,11 +32,14 @@ public class IndustryController {
 
     private final IndustryApplicationService industryApplicationService;
     private final UnlistedResearchApplicationService unlistedResearchService;
+    private final IndustryChainApplicationService chainService;
 
     public IndustryController(IndustryApplicationService industryApplicationService,
-                              UnlistedResearchApplicationService unlistedResearchService) {
+                              UnlistedResearchApplicationService unlistedResearchService,
+                              IndustryChainApplicationService chainService) {
         this.industryApplicationService = industryApplicationService;
         this.unlistedResearchService = unlistedResearchService;
+        this.chainService = chainService;
     }
 
     /** 行业板面（估值 + 5 年窗口分位 + 景气标注及原始输入）。 */
@@ -69,6 +74,12 @@ public class IndustryController {
     @GetMapping("/{industryCode}/unlisted/overview")
     public UnlistedOverviewView unlistedOverview(@PathVariable String industryCode) {
         return unlistedResearchService.overview(industryCode);
+    }
+
+    /** 行业相关产业链（F11，MS-10 P3）：成员派生关联，整包返回（量小不缓存不片段化）。 */
+    @GetMapping("/{industryCode}/chains")
+    public List<ChainView> chains(@PathVariable String industryCode) {
+        return chainService.chains(industryCode);
     }
 }
 
