@@ -41,16 +41,20 @@ class IndustryControllerTest {
                 .build();
     }
 
-    @DisplayName("board返回行业视图")
+    @DisplayName("board返回行业视图与景气原始输入（prosperityInputs 序列化）")
     @Test
     void whenGetBoard_thenReturnBoardViews() throws Exception {
         when(service.board()).thenReturn(List.of(new IndustryBoardView(
-                "801780", "银行", new BigDecimal("5.5"), null, null, null, null, null, Prosperity.UP, null)));
+                "801780", "银行", new BigDecimal("5.5"), null, null, null, null, null, Prosperity.UP,
+                new IndustryBoardView.ProsperityInputs(new BigDecimal("1"), new BigDecimal("10"), 2))));
 
         mvc.perform(get("/api/industry/board"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].industryCode").value("801780"))
-                .andExpect(jsonPath("$[0].prosperity").value("UP"));
+                .andExpect(jsonPath("$[0].prosperity").value("UP"))
+                .andExpect(jsonPath("$[0].prosperityInputs.roeDeltaMedian").value(1))
+                .andExpect(jsonPath("$[0].prosperityInputs.revenueYoyMedian").value(10))
+                .andExpect(jsonPath("$[0].prosperityInputs.sampleSize").value(2));
     }
 
     @DisplayName("stocks缺省参数默认total_mv/DESC/1000")
@@ -84,5 +88,16 @@ class IndustryControllerTest {
         mvc.perform(get("/api/industry/801780/stocks").param("sortBy", "pe"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INDUSTRY_INVALID_SORT"));
+    }
+
+    @DisplayName("stocks超上限limit返回400")
+    @Test
+    void givenLimitAboveMax_whenGetStocks_thenReturn400() throws Exception {
+        when(service.stocks(eq("801780"), any(), any(), eq(1001)))
+                .thenThrow(new IndustryException("INDUSTRY_INVALID_LIMIT", "limit 须在 1~1000 之间"));
+
+        mvc.perform(get("/api/industry/801780/stocks").param("limit", "1001"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INDUSTRY_INVALID_LIMIT"));
     }
 }

@@ -332,6 +332,8 @@ def test_stock_financial_merges_income_revenue(monkeypatch):
     src = plugins.StockFinancialSource("sf", pro_factory=lambda: FakePro())
     df = src.fetch({})
 
+    # 手推行数：2 个有效股 × 2 个报告期 = 4 行；income 去重后 end_date 唯一，左并合并不增行
+    assert len(df) == 4
     assert "revenue" in df.columns
     assert sorted(income_fetched) == ["000858.SZ", "600519.SH"]  # 每个有效股都拉了 income
     # 20260630：去重取 update_flag 最大、并列 ann_date 更晚的行（8M）；0 行（7M）与并列早行（7.5M）均不污染
@@ -345,6 +347,128 @@ def test_stock_financial_merges_income_revenue(monkeypatch):
     # fina_indicator 有、income 无匹配（000858 的 20260331）：revenue 为 NaN，不阻断其余列
     row_q1_858 = df[(df["stock_code"] == "000858") & (df["report_date"] == "20260331")].iloc[0]
     assert pd.isna(row_q1_858["revenue"])
+
+
+def test_stock_financial_income_all_filtered_out_keeps_revenue_nan(monkeypatch):
+    """issue #39 二组：income 有行但全被过滤 → revenue 走 NaN，不阻断其余指标。
+
+    两条真实过滤路径各锚定一股：600519 全部 report_type='6'（母公司）被合并口径
+    过滤清空；000858 合并口径但报告期全在截断前（20251231 < cutoff 20260331）被
+    end_date 过滤清空。income 原始帧非空、过滤后为空，revenue 须全 NaN 且行不丢。"""
+    monkeypatch.setattr(plugins, "_last_n_periods", lambda n: ["20260331", "20260630"])
+
+    def _all_filtered_income_frame(ts_code):
+        if ts_code == "600519.SH":
+            # 全部 report_type='6'：被 report_type == INCOME_MERGED_REPORT_TYPE 过滤清空
+            rows = [
+                {
+                    "ts_code": ts_code,
+                    "end_date": end_date,
+                    "report_type": "6",
+                    "revenue": 3_000_000.0,
+                    "ann_date": "20260520",
+                    "update_flag": "1",
+                }
+                for end_date in ("20260331", "20260630")
+            ]
+        else:
+            # 合并口径但 end_date 全在 cutoff 前：被 end_date >= cutoff 过滤清空
+            rows = [
+                {
+                    "ts_code": ts_code,
+                    "end_date": "20251231",
+                    "report_type": "1",
+                    "revenue": 5_000_000.0,
+                    "ann_date": "20260430",
+                    "update_flag": "1",
+                }
+            ]
+        return pd.DataFrame(rows)
+
+    class FakePro:
+        def fina_indicator(self, ts_code=None):
+            return _financial_stock_frame(ts_code)
+
+        def income(self, ts_code=None, start_date=None, end_date=None, fields=None):
+            return _all_filtered_income_frame(ts_code)
+
+        def stock_basic(self, list_status=None, fields=None):
+            return _financial_stock_basic()
+
+    src = plugins.StockFinancialSource("sf", pro_factory=lambda: FakePro())
+    df = src.fetch({})
+
+    # fina_indicator 的行不因 income 全被过滤而丢失：2 股 × 2 期 = 4 行
+    assert len(df) == 4
+    assert df["revenue"].isna().all()  # 过滤后 income 为空 → revenue 全 NaN
+    assert df["roe"].notna().all()  # 其余指标照常并入，不被阻断
+
+
+@pytest.mark.parametrize(
+    "first_revenue,second_revenue",
+    [(7_500_000.0, 8_000_000.0), (8_000_000.0, 7_500_000.0)],
+)
+def test_stock_financial_income_full_tie_prefers_first_appearing_row(monkeypatch, first_revenue, second_revenue):
+    """issue #39 二组：update_flag 与 ann_date 完全并列时的决胜语义显式化。
+
+    调研定稿规则只定义到「update_flag 最大者、并列时 ann_date 更晚者」；两键完全并列时
+    现状未定义，且 sort_values 默认 quicksort 非稳定——胜者随输入行序漂移（组内并列行
+    多于两条时，胜者甚至可能是任意一行）。现显式定义为稳定语义：完全并列时保持原始
+    出现顺序，先出现的行胜。双向用例：调换两条候选并列行的输入顺序，胜者必须恒为
+    先出现者，与输入行序无关。"""
+    monkeypatch.setattr(plugins, "_last_n_periods", lambda n: ["20260331", "20260630"])
+
+    def _tied_income_frame(ts_code):
+        # end_date/report_type/update_flag/ann_date 全同的并列组，仅 revenue 不同：
+        # 两条候选行置首（双向调序），同键填充行殿后把组撑出小数组插入排序的稳定区，
+        # 使 quicksort 的并列乱序可复现暴露。
+        rows = [
+            {
+                "ts_code": ts_code,
+                "end_date": "20260630",
+                "report_type": "1",
+                "revenue": first_revenue,
+                "ann_date": "20260820",
+                "update_flag": "1",
+            },
+            {
+                "ts_code": ts_code,
+                "end_date": "20260630",
+                "report_type": "1",
+                "revenue": second_revenue,
+                "ann_date": "20260820",
+                "update_flag": "1",
+            },
+        ]
+        rows += [
+            {
+                "ts_code": ts_code,
+                "end_date": "20260630",
+                "report_type": "1",
+                "revenue": 1_000_000.0,
+                "ann_date": "20260820",
+                "update_flag": "1",
+            }
+        ] * 3
+        return pd.DataFrame(rows)
+
+    class FakePro:
+        def fina_indicator(self, ts_code=None):
+            return _financial_stock_frame(ts_code)
+
+        def income(self, ts_code=None, start_date=None, end_date=None, fields=None):
+            # 仅 600519 有并列组；000858 空 income 走全 NaN 路径（既有用例已覆盖）
+            return _tied_income_frame(ts_code) if ts_code == "600519.SH" else pd.DataFrame()
+
+        def stock_basic(self, list_status=None, fields=None):
+            return _financial_stock_basic()
+
+    src = plugins.StockFinancialSource("sf", pro_factory=lambda: FakePro())
+    df = src.fetch({})
+
+    row = df[(df["stock_code"] == "600519") & (df["report_date"] == "20260630")].iloc[0]
+    # 完全并列先者胜：无论两条候选行谁先到，恒取首行 revenue（× 单位系数 1.0）
+    assert row["revenue"] == pytest.approx(first_revenue * plugins.INCOME_REVENUE_SCALE)
 
 
 def test_last_n_periods_quarter_ends(monkeypatch):

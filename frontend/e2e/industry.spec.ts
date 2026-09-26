@@ -46,8 +46,12 @@ test.describe("/industry 行业研究（MS-09）", () => {
     await page.waitForURL(/\/industry\/801780/);
     const stocks = page.getByTestId("industry-stocks-table");
     await expect(stocks).toBeVisible({ timeout: 15_000 });
-    await expect(stocks.getByText(/成员排名（\d+/)).toBeVisible();
+    await expect(stocks.getByText(/成员排名（[1-9]\d*/)).toBeVisible();
     await expect(stocks.getByText(/总市值\(亿\)/)).toBeVisible();
+    // 数据不足空态：dev 库 stock_financial.revenue 采集器从未落值（59856 行 0 非空，只落
+    // revenue_yoy）→ 成员排名「营收(亿)」列对任意行业每一行都渲染「—」。宁弱而稳：选结构性
+    // 缺口而非个别行巧合——板面 31 行行业景气全非空，景气列「—」断言对现状不成立
+    await expect(stocks.getByText("—").first()).toBeVisible();
   });
 
   test("下钻页排序切换", async ({ page, request }) => {
@@ -71,7 +75,7 @@ test.describe("/industry 行业研究（MS-09）", () => {
     await page.goto("/industry/801780");
     const stocks = page.getByTestId("industry-stocks-table");
     await expect(stocks).toBeVisible({ timeout: 15_000 });
-    await expect(stocks.getByText(/成员排名（\d+/)).toBeVisible();
+    await expect(stocks.getByText(/成员排名（[1-9]\d*/)).toBeVisible();
     await expect(page.getByRole("heading", { name: /银行/ })).toBeVisible();
     await expect(page.getByText(/← 行业榜单/)).toBeVisible();
   });

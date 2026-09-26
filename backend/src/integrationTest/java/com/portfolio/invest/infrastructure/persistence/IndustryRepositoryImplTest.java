@@ -56,6 +56,19 @@ class IndustryRepositoryImplTest {
         assertThat(repository.existsIndustry("999999")).isFalse();
     }
 
+    @DisplayName("历史序列 since 边界：trading_day 恰等于 since 的行被包含（>= 语义）")
+    @Test
+    @Transactional
+    @Sql(statements = {
+        "INSERT INTO industry_valuation (trading_day, industry_code, industry_name, pe, pb, roe, dividend_yield) VALUES"
+                + " ('2025-01-01','801780','银行',4.5,0.6,10.0,3.0),('2024-12-31','801780','银行',4.4,0.55,9.9,2.9)"
+    }, executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
+    void givenRowExactlyOnSince_whenFindValuationHistorySince_thenBoundaryRowIncluded() {
+        var history = repository.findValuationHistorySince(LocalDate.of(2025, 1, 1));
+        // 恰等边界行（2025-01-01）必须在内、前一日在外——钉住 >= 语义，防边界漂移为 >
+        assertThat(history).extracting("tradingDay").containsExactly(LocalDate.of(2025, 1, 1));
+    }
+
     @DisplayName("行业成员排名：最新交易日 + DISTINCT ON 最新报告期财务 + 不足8季不标注景气")
     @Test
     @Transactional
