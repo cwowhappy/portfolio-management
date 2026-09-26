@@ -8,14 +8,16 @@ import com.portfolio.invest.domain.industry.IndustryRepository;
 import com.portfolio.invest.domain.industry.UnlistedCompany;
 import com.portfolio.invest.domain.industry.UnlistedCompanyRepository;
 import java.time.Instant;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 策展单条 CRUD 服务（设计规格 §四写侧，决策 #1 内嵌管理）：全局研究数据无 user 归属
  * （§九#1），入口不带用户参数、不按人过滤。save 双态：id=null 插入、否则按 id 更新
- * （更新前 findById 不存在抛 UNLISTED_NOT_FOUND）；行业白名单与轮次枚举校验先行。
- * 删除委托仓储（仓储自身幂等）。
+ * （更新前 findById 不存在抛 UNLISTED_NOT_FOUND）；行业白名单与轮次枚举校验先行；
+ * 撞 UNIQUE(industry_code, company_name) 的 DataIntegrityViolationException 转译
+ * UNLISTED_DUPLICATE（409，照 wiki DUPLICATE_METRIC 先例）。删除委托仓储（仓储自身幂等）。
  */
 @Service
 public class IndustryCurationApplicationService {
@@ -43,9 +45,15 @@ public class IndustryCurationApplicationService {
         if (id != null && companyRepository.findById(id).isEmpty()) {
             throw new IndustryException(IndustryErrorCode.UNLISTED_NOT_FOUND, "策展企业不存在: " + id);
         }
-        return companyRepository.save(new UnlistedCompany(id, cmd.industryCode(), cmd.companyName(),
-                cmd.segment(), round, cmd.lastFundingDate(), cmd.totalFundingYi(),
-                cmd.summary(), cmd.sourceNote(), Instant.now()));
+        try {
+            return companyRepository.save(new UnlistedCompany(id, cmd.industryCode(), cmd.companyName(),
+                    cmd.segment(), round, cmd.lastFundingDate(), cmd.totalFundingYi(),
+                    cmd.summary(), cmd.sourceNote(), Instant.now()));
+        } catch (DataIntegrityViolationException e) {
+            // UNIQUE(industry_code, company_name) 兜底：插入撞键或更新改名撞键 → 友好 409
+            //（照 PrincipleRuleApplicationService.createRule 的 DUPLICATE_METRIC 先例）
+            throw new IndustryException(IndustryErrorCode.UNLISTED_DUPLICATE, "该行业已存在同名策展企业");
+        }
     }
 
     @Transactional

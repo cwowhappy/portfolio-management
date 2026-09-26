@@ -164,6 +164,7 @@ public class GlobalExceptionHandler {
         HttpStatus status = switch (e.code()) {
             case com.portfolio.invest.domain.industry.IndustryErrorCode.INDUSTRY_NOT_FOUND,
                  com.portfolio.invest.domain.industry.IndustryErrorCode.UNLISTED_NOT_FOUND -> HttpStatus.NOT_FOUND;
+            case com.portfolio.invest.domain.industry.IndustryErrorCode.UNLISTED_DUPLICATE -> HttpStatus.CONFLICT;
             case com.portfolio.invest.domain.industry.IndustryErrorCode.INVALID_SORT,
                  com.portfolio.invest.domain.industry.IndustryErrorCode.INVALID_LIMIT,
                  com.portfolio.invest.domain.industry.IndustryErrorCode.INVALID_ROUND,

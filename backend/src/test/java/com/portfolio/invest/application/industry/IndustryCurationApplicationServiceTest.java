@@ -20,6 +20,7 @@ import java.time.LocalDate;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.dao.DataIntegrityViolationException;
 
 /**
  * 策展单条 CRUD 服务单测（Mockito 构造注入，照 IndustryWatchApplicationServiceTest 先例）：
@@ -55,6 +56,35 @@ class IndustryCurationApplicationServiceTest {
         verify(companyRepository).save(captor.capture());
         assertThat(captor.getValue().id()).isNull(); // 插入路径 id 由库生成
         assertThat(captor.getValue().latestRound()).isEqualTo(com.portfolio.invest.domain.industry.FundingRound.B);
+    }
+
+    @DisplayName("新增撞 UNIQUE(industry_code, company_name)：仓储 DIVE 转译 INDUSTRY_UNLISTED_DUPLICATE（照 wiki DUPLICATE_METRIC 先例）")
+    @Test
+    void givenDuplicateKeyOnInsert_whenSave_thenDuplicateCodeException() {
+        when(industryRepository.existsIndustry("801730")).thenReturn(true);
+        when(companyRepository.save(any(UnlistedCompany.class)))
+                .thenThrow(new DataIntegrityViolationException("duplicate key"));
+
+        assertThatThrownBy(() -> service.save(null, CMD))
+                .isInstanceOfSatisfying(IndustryException.class, e -> {
+                    assertThat(e.code()).isEqualTo(IndustryErrorCode.UNLISTED_DUPLICATE);
+                    assertThat(e.getMessage()).isEqualTo("该行业已存在同名策展企业");
+                });
+    }
+
+    @DisplayName("更新改名撞同键：同样转译 INDUSTRY_UNLISTED_DUPLICATE（save 单通道兜底两路径）")
+    @Test
+    void givenDuplicateKeyOnUpdate_whenSave_thenDuplicateCodeException() {
+        when(industryRepository.existsIndustry("801730")).thenReturn(true);
+        when(companyRepository.findById(5L)).thenReturn(java.util.Optional.of(new UnlistedCompany(5L,
+                "801730", "旧名", null, com.portfolio.invest.domain.industry.FundingRound.A, null,
+                null, null, null, Instant.now())));
+        when(companyRepository.save(any(UnlistedCompany.class)))
+                .thenThrow(new DataIntegrityViolationException("duplicate key"));
+
+        assertThatThrownBy(() -> service.save(5L, CMD))
+                .isInstanceOfSatisfying(IndustryException.class,
+                        e -> assertThat(e.code()).isEqualTo(IndustryErrorCode.UNLISTED_DUPLICATE));
     }
 
     @DisplayName("更新（id 非空）：findById 命中后以同 id 落库")

@@ -22,6 +22,8 @@ import com.portfolio.invest.application.industry.IndustryCurationApplicationServ
 import com.portfolio.invest.application.industry.IndustryCurationImportService;
 import com.portfolio.invest.application.industry.SaveUnlistedCompanyCommand;
 import com.portfolio.invest.domain.industry.FundingRound;
+import com.portfolio.invest.domain.industry.IndustryErrorCode;
+import com.portfolio.invest.domain.industry.IndustryException;
 import com.portfolio.invest.domain.industry.UnlistedCompany;
 import com.portfolio.invest.domain.user.User;
 import com.portfolio.invest.domain.user.UserRole;
@@ -136,6 +138,19 @@ class IndustryCurationControllerTest {
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
 
         verifyNoInteractions(curationService);
+    }
+
+    @Test
+    @DisplayName("同行业同名企业冲突：409 INDUSTRY_UNLISTED_DUPLICATE（照 wiki DUPLICATE_METRIC→CONFLICT 先例）")
+    void givenDuplicateCompany_whenPostCompanies_then409Conflict() throws Exception {
+        when(curationService.save(eq(null), any(SaveUnlistedCompanyCommand.class))).thenThrow(
+                new IndustryException(IndustryErrorCode.UNLISTED_DUPLICATE, "该行业已存在同名策展企业"));
+
+        mvc.perform(post("/api/industry-curation/companies").with(authentication(auth())).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content(SAVE_BODY))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("INDUSTRY_UNLISTED_DUPLICATE"))
+                .andExpect(jsonPath("$.message").value("该行业已存在同名策展企业"));
     }
 
     @Test
