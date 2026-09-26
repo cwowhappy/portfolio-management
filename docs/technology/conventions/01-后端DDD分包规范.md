@@ -1,6 +1,6 @@
 # 后端分包规范（backend package conventions）
 
-- 状态：已确认（2026-08-18，2026-08-21 更新为 DDD 分层，2026-09-12 对齐现状：分层域扩至 10 个，2026-09-18 登记 industry 域：扩至 11 个，2026-09-22 登记 wiki 域：扩至 12 个；同日补登 MS-07 漏登记的 analytics 域：扩至 13 个，控制器清单对齐 16 个；2026-09-26 MS-14 后对齐：screening 扩 ETF 筛选、industry 扩行业关注——**均无新包**，控制器清单对齐 17 个）
+- 状态：已确认（2026-08-18，2026-08-21 更新为 DDD 分层，2026-09-12 对齐现状：分层域扩至 10 个，2026-09-18 登记 industry 域：扩至 11 个，2026-09-22 登记 wiki 域：扩至 12 个；同日补登 MS-07 漏登记的 analytics 域：扩至 13 个，控制器清单对齐 16 个；2026-09-26 MS-14 后对齐：screening 扩 ETF 筛选、industry 扩行业关注——**均无新包**，控制器清单对齐 17 个；同日补登 MS-10 漏登记的 `IndustryCurationController`（issue #39 文档卫生）：控制器清单对齐 **18 个**，与 `web` 包实测一致）
 - 适用范围：`backend` 单模块 Spring Boot 应用，根包 `com.portfolio.invest`
 - 强制方式：ArchUnit 架构测试（`PackageConventionsTest`），违反即构建失败
 - 相关文档：[ADR-0001 Agent 框架选型](../decisions/0001-agent-framework.md) · [ADR-0002 交互协议](../decisions/0002-interaction-protocol.md) · [ADR-0003 行情数据源](../decisions/0003-market-data-source.md) · [ADR-0009 后端分层 DDD](../decisions/0009-backend-ddd-layering.md)
@@ -38,7 +38,7 @@ com.portfolio.invest                    # 根包：仅启动类
 - **理由**：与 Spring Boot 官方建议一致——主类置于根包，使 `@ComponentScan` 无需额外配置即可覆盖全部子包；根包不放业务代码，避免业务类挂在"无名分"的位置、规避扫描边界歧义。
 
 ### web（接入层）
-- **作用**：HTTP 边界。`@RestController` 共 17 个（Auth/UserAdmin/Conversation/Market/Health/Valuation/Portfolio/Journal/Allocation/Analytics/Screening/Watchlist/McpConfig/SkillConfig/Industry/IndustryWatch/Wiki；2026-09-26 MS-14 新增 IndustryWatch——P1 CSV 导入两端点并入 Portfolio、P3 ETF 筛选两端点并入 Screening，无其他新控制器）、`@RestControllerAdvice`（`GlobalExceptionHandler` 异常→HTTP 状态映射）、`@Component`（`InvestAguiRuntimeContextResolver`：AG-UI 运行时上下文解析）、Web 专属响应体（`ApiError`）与出入参 DTO（`web.dto`）。
+- **作用**：HTTP 边界。`@RestController` 共 18 个（Auth/UserAdmin/Conversation/Market/Health/Valuation/Portfolio/Journal/Allocation/Analytics/Screening/Watchlist/McpConfig/SkillConfig/Industry/IndustryWatch/Wiki/IndustryCuration；2026-09-26 MS-14 新增 IndustryWatch——P1 CSV 导入两端点并入 Portfolio、P3 ETF 筛选两端点并入 Screening；同日补登 MS-10 的 IndustryCuration——`/api/industry-curation` 策展写接口 11 端点，此前漏登记，见 issue #39）。其余同前：`@RestControllerAdvice`（`GlobalExceptionHandler` 异常→HTTP 状态映射）、`@Component`（`InvestAguiRuntimeContextResolver`：AG-UI 运行时上下文解析）、Web 专属响应体（`ApiError`）与出入参 DTO（`web.dto`）。
 - **定位**：系统最外层，**只能被调用、不能调用别人的业务逻辑实现**——只做路由、参数校验、把用例服务/领域异常翻译成 HTTP 语义；不承载业务规则、不直接访问外部数据源。
 - **理由**：接入层与业务解耦后，协议演进（REST→gRPC/消息）不影响业务；顶层不被依赖是分层架构的根规则。
 
