@@ -19,7 +19,8 @@ import java.util.Objects;
  * RFC 4180（容忍 BOM，字符解码由调用方完成）。L1 文件级：表头八列精确匹配、数据行 ≤2000、
  * 存在数据行；L2 行级：必填列（industry_code/company_name/latest_round）非空、
  * latest_round ∈ FundingRound 枚举、last_funding_date 严格 yyyy-MM-dd 且 ≤ 今日、
- * total_funding_yi NUMERIC。所有行错误一次聚齐返回（rows 与 errors 互斥——有错误即全量
+ * total_funding_yi NUMERIC(14,2)（整数位 ≥10^12 拒绝）、文本列按 V19 列长上限校验
+ * （超长报行错误，不待落库约束炸）。所有行错误一次聚齐返回（rows 与 errors 互斥——有错误即全量
  * 拒绝，与编排层 all-or-nothing 口径一致，不做首错即停）。
  * 行号 = CSV 记录序号（表头为 1、首个数据行为 2；被忽略的空行不计）。
  * L3 引用（行业码白名单）与 L5 幂等键重复在编排层 {@link IndustryCurationImportService}。
@@ -48,6 +49,16 @@ public final class UnlistedCompanyCsvParser {
     private static final int COL_TOTAL_FUNDING_YI = 5;
     private static final int COL_SUMMARY = 6;
     private static final int COL_SOURCE_NOTE = 7;
+
+    /** 文本列长上限（V19 DDL，照 CsvImportParser MAX_NOTE_LENGTH 先例：L2 前置拦截超长，给人话行错误）。 */
+    private static final int MAX_INDUSTRY_CODE_LENGTH = 16;
+    private static final int MAX_COMPANY_NAME_LENGTH = 128;
+    private static final int MAX_SEGMENT_LENGTH = 64;
+    private static final int MAX_SUMMARY_LENGTH = 256;
+    private static final int MAX_SOURCE_NOTE_LENGTH = 128;
+
+    /** total_funding_yi NUMERIC(14,2) 整数位溢出阈值：|值| ≥ 10^12（12 位整数满额后再进位即溢出）。 */
+    private static final BigDecimal NUMERIC_OVERFLOW_THRESHOLD = new BigDecimal("1000000000000");
 
     /** 单行解析产物（行号 + 八列；可选列空白落 null）。 */
     public record ParsedCompany(int rowNumber, String industryCode, String companyName, String segment,
@@ -124,6 +135,11 @@ public final class UnlistedCompanyCsvParser {
             problems.add("最近融资日期不能晚于今日");
         }
         BigDecimal totalFundingYi = optionalDecimal(record.get(COL_TOTAL_FUNDING_YI), "累计融资额", problems);
+        requireMaxLength(industryCode, "行业代码", MAX_INDUSTRY_CODE_LENGTH, problems);
+        requireMaxLength(companyName, "企业名称", MAX_COMPANY_NAME_LENGTH, problems);
+        requireMaxLength(record.get(COL_SEGMENT), "细分赛道", MAX_SEGMENT_LENGTH, problems);
+        requireMaxLength(record.get(COL_SUMMARY), "简介", MAX_SUMMARY_LENGTH, problems);
+        requireMaxLength(record.get(COL_SOURCE_NOTE), "来源标注", MAX_SOURCE_NOTE_LENGTH, problems);
         if (!problems.isEmpty()) {
             List<CurationImportResult.RowError> errors = problems.stream()
                     .map(problem -> rowError(rowNumber, problem))
@@ -159,13 +175,18 @@ public final class UnlistedCompanyCsvParser {
         }
     }
 
-    /** L2 金额：可选 NUMERIC，空=未披露。 */
+    /** L2 金额：可选 NUMERIC(14,2)，空=未披露；整数位 ≥10^12 落库必溢出，前置报行错误。 */
     private static BigDecimal optionalDecimal(String raw, String column, List<String> problems) {
         if (isBlank(raw)) {
             return null;
         }
         try {
-            return new BigDecimal(raw.strip());
+            BigDecimal value = new BigDecimal(raw.strip());
+            if (value.abs().compareTo(NUMERIC_OVERFLOW_THRESHOLD) >= 0) {
+                problems.add(column + "超出 NUMERIC(14,2) 范围「" + raw + "」");
+                return null;
+            }
+            return value;
         } catch (NumberFormatException e) {
             problems.add(column + "列数值无效「" + raw + "」");
             return null;
@@ -175,6 +196,13 @@ public final class UnlistedCompanyCsvParser {
     private static void requireNonBlank(String raw, String message, List<String> problems) {
         if (isBlank(raw)) {
             problems.add(message);
+        }
+    }
+
+    /** L2 列长上限（V19 DDL）：超长在解析层报人话错误，避免落库才炸。 */
+    private static void requireMaxLength(String raw, String column, int maxLength, List<String> problems) {
+        if (raw != null && raw.length() > maxLength) {
+            problems.add(column + "超长（≤" + maxLength + " 字符）");
         }
     }
 

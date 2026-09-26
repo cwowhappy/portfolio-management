@@ -156,4 +156,91 @@ class FundingEventCsvParserTest {
         assertThat(rejected.rows()).isEmpty();
         assertThat(rejected.errors()).hasSize(1);
     }
+
+    @Test
+    @DisplayName("L2：文本列恰好 V19 上限长度通过、超一字符报「超长」行错误")
+    void givenColumnLengthBoundaries_whenParse_thenExactLimitPassesAndOneOverFails() {
+        assertLengthBoundary(1, "企业名称", 128);      // company_name VARCHAR(128)
+        assertLengthBoundary(4, "投资方", 256);        // investors VARCHAR(256)
+        assertLengthBoundary(5, "行业代码", 16);       // industry_code VARCHAR(16)
+        assertLengthBoundary(6, "细分赛道", 64);       // segment VARCHAR(64)
+        assertLengthBoundary(7, "来源标题", 256);      // source_title VARCHAR(256)
+        assertLengthBoundary(8, "来源URL", 512);       // source_url VARCHAR(512)
+    }
+
+    /** 边界断言：恰好 max 字符通过、max+1 报「XX超长（≤max 字符）」（照 CsvImportParserTest 备注超长先例）。 */
+    private void assertLengthBoundary(int colIndex, String label, int max) {
+        var exact = parser.parse(eventRowWith(colIndex, "长".repeat(max)), TODAY);
+        assertThat(exact.errors()).as("%s 恰好 %d 字符应通过", label, max).isEmpty();
+        assertThat(exact.rows()).hasSize(1);
+
+        var over = parser.parse(eventRowWith(colIndex, "长".repeat(max + 1)), TODAY);
+        assertThat(over.rows()).as("%s 超限应全量拒绝", label).isEmpty();
+        assertThat(over.errors()).hasSize(1);
+        assertThat(over.errors().get(0).row()).isEqualTo(2);
+        assertThat(over.errors().get(0).reason())
+                .contains(label + "超长").contains("≤" + max + " 字符");
+    }
+
+    @Test
+    @DisplayName("L2：金额 NUMERIC(14,2) 边界——满精度 12 位整数通过、≥10^12 报行错误")
+    void givenAmountBoundaries_whenParse_thenFullPrecisionPassesAndOverflowFails() {
+        var ok = parser.parse(eventRowWith(3, "999999999999.99"), TODAY); // NUMERIC(14,2) 满精度
+        assertThat(ok.errors()).isEmpty();
+        assertThat(ok.rows().get(0).amountYi()).isEqualByComparingTo("999999999999.99");
+
+        var over = parser.parse(eventRowWith(3, "1000000000000"), TODAY); // 整数位 13 位 ≥10^12 超限
+        assertThat(over.rows()).isEmpty();
+        assertThat(over.errors()).hasSize(1);
+        assertThat(over.errors().get(0).row()).isEqualTo(2);
+        assertThat(over.errors().get(0).reason()).contains("金额").contains("NUMERIC(14,2)");
+    }
+
+    @Test
+    @DisplayName("L1/L2：CRLF 行尾内容正常解析且行尾 CR 不残留字段值（RFC 4180）")
+    void givenCrlfLineEndings_whenParse_thenRowsParsed() {
+        var out = parser.parse(HEADER_LINE
+                + "\r\n2026-08-15,某生物科技公司,B_PLUS,3.20,高瓴·红杉,801150,CXO,睿兽分析2026-08月报,\r\n", TODAY);
+
+        assertThat(out.errors()).isEmpty();
+        assertThat(out.rows()).hasSize(1);
+        assertThat(out.rows().get(0).companyName()).isEqualTo("某生物科技公司");
+        assertThat(out.rows().get(0).sourceTitle()).isEqualTo("睿兽分析2026-08月报");
+    }
+
+    @Test
+    @DisplayName("L2：数据行间夹空行——空行不计、行号连续（ignoreEmptyLines 口径）")
+    void givenBlankLineBetweenDataRows_whenParse_thenRowNumbersContinuous() {
+        String csv = HEADER_LINE + "\n"
+                + "2026-01-01,某甲公司,B,1.00,投资方,801150,赛道,来源标题,\n"
+                + "\n"
+                + "2026-01-02,某乙公司,B,2.00,投资方,801150,赛道,来源标题,\n";
+
+        var out = parser.parse(csv, TODAY);
+
+        assertThat(out.errors()).isEmpty();
+        assertThat(out.rows()).extracting(FundingEventCsvParser.ParsedFundingEvent::rowNumber)
+                .containsExactly(2, 3); // 空行被忽略且不占行号，行号连续
+    }
+
+    @Test
+    @DisplayName("L1：空串与纯空白输入为文件级「无数据行」错误")
+    void givenEmptyOrWhitespaceContent_whenParse_thenFileLevelError() {
+        for (String content : new String[] {"", "   \n\n"}) {
+            var out = parser.parse(content, TODAY);
+
+            assertThat(out.errors()).as("内容 [%s] 应报无数据行", content).hasSize(1);
+            assertThat(out.errors().get(0).row()).isZero();
+            assertThat(out.errors().get(0).reason()).contains("无数据行");
+            assertThat(out.rows()).isEmpty();
+        }
+    }
+
+    /** 标准九列样例行中替换第 colIndex 列为 value 后拼成完整 CSV（列长/数值边界用例）。 */
+    private static String eventRowWith(int colIndex, String value) {
+        String[] cols = {"2026-08-15", "某生物科技公司", "B_PLUS", "3.20",
+                "高瓴·红杉", "801150", "CXO", "睿兽分析2026-08月报", ""};
+        cols[colIndex] = value;
+        return HEADER_LINE + "\n" + String.join(",", cols) + "\n";
+    }
 }

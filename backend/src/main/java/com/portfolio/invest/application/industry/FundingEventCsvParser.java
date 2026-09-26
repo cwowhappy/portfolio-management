@@ -19,7 +19,8 @@ import java.util.Objects;
  * RFC 4180（容忍 BOM，字符解码由调用方完成）。L1 文件级：表头九列精确匹配、数据行 ≤2000、
  * 存在数据行；L2 行级：必填列（event_date/company_name/round/industry_code/source_title）
  * 非空、round ∈ FundingRound 枚举（下划线大写）、event_date 严格 yyyy-MM-dd 且 ≤ 今日、
- * amount_yi NUMERIC（空=未披露）。所有行错误一次聚齐返回（rows 与 errors 互斥）。
+ * amount_yi NUMERIC(14,2)（空=未披露，整数位 ≥10^12 拒绝）、文本列按 V19 列长上限校验
+ * （超长报行错误，不待落库约束炸）。所有行错误一次聚齐返回（rows 与 errors 互斥）。
  * 行号 = CSV 记录序号（表头为 1；被忽略的空行不计）。
  * L3 引用（行业码白名单）与 L5 幂等键重复在编排层 {@link IndustryCurationImportService}。
  */
@@ -48,6 +49,17 @@ public final class FundingEventCsvParser {
     private static final int COL_SEGMENT = 6;
     private static final int COL_SOURCE_TITLE = 7;
     private static final int COL_SOURCE_URL = 8;
+
+    /** 文本列长上限（V19 DDL，照 CsvImportParser MAX_NOTE_LENGTH 先例：L2 前置拦截超长，给人话行错误）。 */
+    private static final int MAX_COMPANY_NAME_LENGTH = 128;
+    private static final int MAX_INVESTORS_LENGTH = 256;
+    private static final int MAX_INDUSTRY_CODE_LENGTH = 16;
+    private static final int MAX_SEGMENT_LENGTH = 64;
+    private static final int MAX_SOURCE_TITLE_LENGTH = 256;
+    private static final int MAX_SOURCE_URL_LENGTH = 512;
+
+    /** amount_yi NUMERIC(14,2) 整数位溢出阈值：|值| ≥ 10^12（12 位整数满额后再进位即溢出）。 */
+    private static final BigDecimal NUMERIC_OVERFLOW_THRESHOLD = new BigDecimal("1000000000000");
 
     /** 单行解析产物（行号 + 九列；可选列空白落 null）。 */
     public record ParsedFundingEvent(int rowNumber, LocalDate eventDate, String companyName,
@@ -125,6 +137,12 @@ public final class FundingEventCsvParser {
         BigDecimal amountYi = optionalDecimal(record.get(COL_AMOUNT_YI), "金额", problems);
         requireNonBlank(record.get(COL_INDUSTRY_CODE), "行业代码不能为空", problems);
         requireNonBlank(record.get(COL_SOURCE_TITLE), "来源标题不能为空", problems);
+        requireMaxLength(record.get(COL_COMPANY_NAME), "企业名称", MAX_COMPANY_NAME_LENGTH, problems);
+        requireMaxLength(record.get(COL_INVESTORS), "投资方", MAX_INVESTORS_LENGTH, problems);
+        requireMaxLength(record.get(COL_INDUSTRY_CODE), "行业代码", MAX_INDUSTRY_CODE_LENGTH, problems);
+        requireMaxLength(record.get(COL_SEGMENT), "细分赛道", MAX_SEGMENT_LENGTH, problems);
+        requireMaxLength(record.get(COL_SOURCE_TITLE), "来源标题", MAX_SOURCE_TITLE_LENGTH, problems);
+        requireMaxLength(record.get(COL_SOURCE_URL), "来源URL", MAX_SOURCE_URL_LENGTH, problems);
         if (!problems.isEmpty()) {
             List<CurationImportResult.RowError> errors = problems.stream()
                     .map(problem -> rowError(rowNumber, problem))
@@ -161,13 +179,18 @@ public final class FundingEventCsvParser {
         }
     }
 
-    /** L2 金额：可选 NUMERIC，空=未披露。 */
+    /** L2 金额：可选 NUMERIC(14,2)，空=未披露；整数位 ≥10^12 落库必溢出，前置报行错误。 */
     private static BigDecimal optionalDecimal(String raw, String column, List<String> problems) {
         if (isBlank(raw)) {
             return null;
         }
         try {
-            return new BigDecimal(raw.strip());
+            BigDecimal value = new BigDecimal(raw.strip());
+            if (value.abs().compareTo(NUMERIC_OVERFLOW_THRESHOLD) >= 0) {
+                problems.add(column + "超出 NUMERIC(14,2) 范围「" + raw + "」");
+                return null;
+            }
+            return value;
         } catch (NumberFormatException e) {
             problems.add(column + "列数值无效「" + raw + "」");
             return null;
@@ -177,6 +200,13 @@ public final class FundingEventCsvParser {
     private static void requireNonBlank(String raw, String message, List<String> problems) {
         if (isBlank(raw)) {
             problems.add(message);
+        }
+    }
+
+    /** L2 列长上限（V19 DDL）：超长在解析层报人话错误，避免落库才炸。 */
+    private static void requireMaxLength(String raw, String column, int maxLength, List<String> problems) {
+        if (raw != null && raw.length() > maxLength) {
+            problems.add(column + "超长（≤" + maxLength + " 字符）");
         }
     }
 
