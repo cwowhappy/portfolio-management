@@ -7,11 +7,14 @@ import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
-/** 筛选结果 CSV 序列化（web 层表现职责）：UTF-8 + BOM、CRLF 行尾、RFC 4180 转义、总市值换算亿元。 */
+/** 筛选结果 CSV 序列化（web 层表现职责）：UTF-8 + BOM、CRLF 行尾、RFC 4180 转义、总市值换算亿元；
+ * 基金 CSV 表头后带 TE 收盘价口径注行（issue #56）。 */
 final class ScreeningCsv {
 
     private static final String HEADER = "代码,名称,PE-TTM,PB,股息率,ROE,ROA,毛利率,资产负债率,流动比率,营收增速,净利增速,总市值(亿),换手率";
-    private static final String FUND_HEADER = "代码,名称,费率(%),规模(亿元),跟踪指数,类别,跟踪误差(%)";
+    private static final String FUND_HEADER = "代码,名称,费率(%),规模(亿元),跟踪指数,类别,跟踪误差(%,收盘价口径)";
+    /** TE 口径注（issue #56）：收盘价自算含分红/折溢价噪声；刻意无 ASCII 逗号，保单单元格免转义。 */
+    private static final String FUND_TE_NOTE = "# 注：跟踪误差为收盘价口径（含分红/折溢价噪声）与官方净值口径不可直接对比";
     private static final byte[] BOM = {(byte) 0xEF, (byte) 0xBB, (byte) 0xBF};
     private static final BigDecimal YI = new BigDecimal("100000000"); // 亿元换算
     private static final BigDecimal HUNDRED = new BigDecimal("100"); // TE 小数→百分数
@@ -44,6 +47,7 @@ final class ScreeningCsv {
     static byte[] toFundCsv(List<FundScreeningResult> rows) {
         StringBuilder sb = new StringBuilder();
         sb.append(FUND_HEADER).append("\r\n");
+        sb.append(FUND_TE_NOTE).append("\r\n");
         for (var r : rows) {
             sb.append(escape(r.fundCode())).append(',')
                     .append(escape(r.fundName())).append(',')
