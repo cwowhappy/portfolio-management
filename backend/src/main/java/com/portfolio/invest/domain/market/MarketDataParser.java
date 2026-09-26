@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -373,7 +374,11 @@ public final class MarketDataParser {
         if (s == null || !s.matches("\\d{14}")) {
             return "";
         }
-        return LocalDateTime.parse(s, DateTimeFormatter.ofPattern("yyyyMMddHHmmss")).format(TIME_FMT);
+        try {
+            return LocalDateTime.parse(s, DateTimeFormatter.ofPattern("yyyyMMddHHmmss")).format(TIME_FMT);
+        } catch (DateTimeParseException e) {
+            return ""; // 14 位但语义非法（如月 99）：与畸形返回空串同口径，不穿透降级链（issue #53）
+        }
     }
 
     /** 正数可空字段（PE/PB）：空串/非数值/≤0 → null。 */
