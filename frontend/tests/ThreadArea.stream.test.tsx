@@ -27,6 +27,8 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@copilotkit/react-core/v2", () => ({
+  // RuntimeProvider 引入的 chat 配置 provider（threadId 绑定，ADR-0012）：透传渲染即可
+  CopilotChatConfigurationProvider: ({ children }: { children: React.ReactNode }) => children,
   useAgent: () => ({ agent: mocks.agent, isReady: mocks.isReady }),
   useCopilotKit: () => ({ copilotkit: { runAgent: mocks.runAgent } }),
   useDefaultRenderTool: ({ render }: { render: (p: Record<string, unknown>) => React.ReactNode }) => {
@@ -90,6 +92,8 @@ describe("ThreadArea 流中断与错误场景", () => {
     mocks.runAgent.mockRejectedValue(new Error("HTTP 502"));
     renderThread();
     await waitFor(() => expect(screen.getByText("部分回答")).toBeTruthy());
+    // issue #27 闸门：发送需等当前线程回灌完成（setMessages 被调即回灌落地）
+    await waitFor(() => expect(mocks.agent.setMessages).toHaveBeenCalled());
 
     const ta = screen.getByPlaceholderText(composerPlaceholder);
     fireEvent.change(ta, { target: { value: "继续" } });
@@ -109,6 +113,8 @@ describe("ThreadArea 流中断与错误场景", () => {
     mocks.runAgent.mockRejectedValue("boom");
     renderThread();
     await waitFor(() => expect(screen.getByPlaceholderText(composerPlaceholder)).toBeTruthy());
+    // issue #27 闸门：发送需等当前线程回灌完成（setMessages 被调即回灌落地）
+    await waitFor(() => expect(mocks.agent.setMessages).toHaveBeenCalled());
     fireEvent.click(screen.getByText(/贵州茅台/));
     await waitFor(() => expect(screen.getByText("请求失败，请稍后重试")).toBeTruthy());
   });
@@ -117,6 +123,8 @@ describe("ThreadArea 流中断与错误场景", () => {
     mocks.runAgent.mockRejectedValueOnce(new Error("HTTP 502")).mockResolvedValue(undefined);
     renderThread();
     await waitFor(() => expect(screen.getByPlaceholderText(composerPlaceholder)).toBeTruthy());
+    // issue #27 闸门：发送需等当前线程回灌完成（setMessages 被调即回灌落地）
+    await waitFor(() => expect(mocks.agent.setMessages).toHaveBeenCalled());
 
     fireEvent.click(screen.getByText(/贵州茅台/));
     await waitFor(() => expect(screen.getByText("HTTP 502")).toBeTruthy());

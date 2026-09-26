@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   runAgent: vi.fn(),
   isReady: true,
   useAgentProps: null as Record<string, unknown> | null,
+  chatConfigProps: null as Record<string, unknown> | null,
   defaultToolRender: null as null | ((props: Record<string, unknown>) => React.ReactNode),
   renderToolCall: vi.fn(),
   interruptProps: null as { interrupts: unknown[]; resolve: (p: unknown, id?: string) => void } | null,
@@ -26,6 +27,16 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@copilotkit/react-core/v2", () => ({
+  // RuntimeProvider 的 threadId 绑定探针（issue #26）：捕获 chat 配置 provider 的 props
+  CopilotChatConfigurationProvider: ({
+    children,
+    ...props
+  }: {
+    children: React.ReactNode;
+  } & Record<string, unknown>) => {
+    mocks.chatConfigProps = props;
+    return children;
+  },
   useAgent: (props?: Record<string, unknown>) => {
     mocks.useAgentProps = props ?? null;
     return { agent: mocks.agent, isReady: mocks.isReady };
@@ -78,6 +89,7 @@ beforeEach(() => {
   mocks.agent.isRunning = false;
   mocks.isReady = true;
   mocks.useAgentProps = null;
+  mocks.chatConfigProps = null;
   mocks.runAgent.mockReset();
   mocks.agent.addMessage.mockReset();
   mocks.agent.setMessages.mockReset();
@@ -114,6 +126,8 @@ describe("ThreadArea", () => {
   it("点击示例问题发送消息并启动 Agent", async () => {
     renderThread();
     await waitFor(() => expect(screen.getByText("问行情 · 看走势 · 读财报")).toBeTruthy());
+    // issue #27 闸门：发送需等当前线程回灌完成（setMessages 被调即回灌落地）
+    await waitFor(() => expect(mocks.agent.setMessages).toHaveBeenCalled());
     fireEvent.click(screen.getByText(/贵州茅台/));
     expect(mocks.agent.addMessage).toHaveBeenCalledWith({
       id: expect.any(String),
@@ -132,6 +146,69 @@ describe("ThreadArea", () => {
     expect(mocks.runAgent).not.toHaveBeenCalled();
   });
 
+  it("历史回灌完成前发送被闸门拦住，回灌完成后放行且全程不掐流（issue #27）", async () => {
+    // 历史回灌 GET 挂起，模拟 dev 首次编译 >1.5s 窗口内用户登录后立发消息：
+    // 现状 isReady 即放行 → runAgent 在途时回灌完成 → abortRun() 掐断流 + 消息被清空。
+    let resolveHydrate!: (r: Response) => void;
+    const hydrateGate = new Promise<Response>((res) => {
+      resolveHydrate = res;
+    });
+    const json = (body: unknown) =>
+      new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    const noContent = () => new Response(null, { status: 204 });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        if (url === "/api/conversations" && method === "GET")
+          return json([{ id: "t1", title: "会话", updatedAt: 2 }]);
+        if (url === "/api/conversations" && method === "POST")
+          return json({ id: "x", title: "新会话", updatedAt: 3 });
+        if (url === "/api/conversations/t1/messages" && method === "GET") return hydrateGate;
+        if (url === "/api/conversations/t1/messages" && method === "PUT") return noContent();
+        return json({ message: "not found" });
+      }),
+    );
+
+    renderThread();
+    await waitFor(() => expect(screen.getByText("问行情 · 看走势 · 读财报")).toBeTruthy());
+    // 回灌未完成：发送须被前置闸门拦住
+    fireEvent.click(screen.getByText(/贵州茅台/));
+    expect(mocks.agent.addMessage).not.toHaveBeenCalled();
+    expect(mocks.runAgent).not.toHaveBeenCalled();
+    // 放行回灌（空历史）→ 闸门开启
+    resolveHydrate(json([]));
+    await waitFor(() => expect(mocks.agent.setMessages).toHaveBeenCalled());
+    // 回灌完成后同一消息可正常发送
+    fireEvent.click(screen.getByText(/贵州茅台/));
+    await waitFor(() => expect(mocks.runAgent).toHaveBeenCalled());
+    // 竞态根源路径（回灌完成即 abortRun 在途运行）全程不得出现
+    expect(mocks.agent.abortRun).not.toHaveBeenCalled();
+  });
+
+  it("chat 配置 threadId 绑定会话表 id，切线程同步（issue #26：AG-UI 线程与会话解耦修复）", async () => {
+    api = installConversationsApi({
+      list: [
+        { id: "t1", title: "会话一", updatedAt: 2 },
+        { id: "t2", title: "会话二", updatedAt: 1 },
+      ],
+    });
+    render(
+      <RuntimeProvider>
+        <ThreadSwitchHarness targetId="t2" />
+      </RuntimeProvider>,
+    );
+    // 挂载后选中列表第一项 t1 → chat 配置 threadId 必须等于会话表 id（而非自铸 UUID）
+    await waitFor(() => expect(mocks.chatConfigProps?.threadId).toBe("t1"));
+    // 切到 t2 → 配置 threadId 同步切换
+    fireEvent.click(screen.getByText("切到 t2"));
+    await waitFor(() => expect(mocks.chatConfigProps?.threadId).toBe("t2"));
+  });
+
   it("AI 请求遇 401（如使用中被停用）触发 onUnauthorized 跳登录", async () => {
     const onUnauthorized = vi.fn();
     mocks.runAgent.mockRejectedValue(Object.assign(new Error("Unauthorized"), { status: 401 }));
@@ -141,6 +218,8 @@ describe("ThreadArea", () => {
       </RuntimeProvider>,
     );
     await waitFor(() => expect(screen.getByText("问行情 · 看走势 · 读财报")).toBeTruthy());
+    // issue #27 闸门：发送需等当前线程回灌完成（setMessages 被调即回灌落地）
+    await waitFor(() => expect(mocks.agent.setMessages).toHaveBeenCalled());
     fireEvent.click(screen.getByText(/贵州茅台/));
     await waitFor(() => expect(onUnauthorized).toHaveBeenCalled());
     // 401 不当作普通错误横幅展示（应走登录跳转）
@@ -156,6 +235,8 @@ describe("ThreadArea", () => {
       </RuntimeProvider>,
     );
     await waitFor(() => expect(screen.getByText("问行情 · 看走势 · 读财报")).toBeTruthy());
+    // issue #27 闸门：发送需等当前线程回灌完成（setMessages 被调即回灌落地）
+    await waitFor(() => expect(mocks.agent.setMessages).toHaveBeenCalled());
     fireEvent.click(screen.getByText(/贵州茅台/));
     expect(await screen.findByText(/上游限流/)).toBeTruthy();
     expect(onUnauthorized).not.toHaveBeenCalled();

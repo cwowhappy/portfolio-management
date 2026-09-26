@@ -428,6 +428,12 @@ export default function ThreadArea({ llmReady, onUnauthorized }: {
   const currentThreadIdRef = useRef(currentThreadId);
   // agent.messages 当前内容归属的线程：成功回灌某线程历史后更新。为 null 表示尚未回灌任何线程。
   const hydratedThreadIdRef = useRef<string | null>(null);
+  // 同一事实的渲染态镜像：Composer 禁发与 send 闸门依赖渲染周期（ref 不触发重渲染）。
+  // issue #27：isReady 只代表 agent 就绪（恰是回灌开始的时刻），回灌 loadMessages 窗口内
+  // 发送会在回灌完成时被 abortRun() 掐断在途运行——发送必须再等「当前线程回灌完成」。
+  // 回灌失败不开启闸门：agent.messages 仍属旧线程，放行会把旧线程内容串写进本线程；
+  // 切走再切回即重试回灌。
+  const [hydratedThreadId, setHydratedThreadId] = useState<string | null>(null);
 
   // 同步最新线程到 ref，供异步 flush 前比对 pending.threadId
   useEffect(() => {
@@ -442,7 +448,8 @@ export default function ThreadArea({ llmReady, onUnauthorized }: {
   const send = useCallback(
     async (text: string) => {
       const t = text.trim();
-      if (!t || agent.isRunning || !isReady) return;
+      // 回灌未完成禁发（issue #27 就绪竞态闸门，含 EmptyState 示例问题路径）
+      if (!t || agent.isRunning || !isReady || hydratedThreadId !== currentThreadId) return;
       setSendError(null);
       agent.addMessage({ id: newThreadId(), role: "user", content: t });
       try {
@@ -457,7 +464,7 @@ export default function ThreadArea({ llmReady, onUnauthorized }: {
         setSendError(toSendErrorText(e));
       }
     },
-    [agent, copilotkit, isReady, onUnauthorized],
+    [agent, copilotkit, isReady, onUnauthorized, hydratedThreadId, currentThreadId],
   );
 
   // FR-8：@ag-ui/client 0.0.59 对流内 RUN_ERROR 事件 resolve（而非 reject）runAgent 的 promise，
@@ -488,6 +495,7 @@ export default function ThreadArea({ llmReady, onUnauthorized }: {
         if (agent.isRunning) agent.abortRun(); // 切换线程时停止旧流，避免跨线程串写
         agent.setMessages(historyToAgentMessages(history));
         hydratedThreadIdRef.current = threadId;
+        setHydratedThreadId(threadId);
       } catch (e) {
         if (!cancelled) console.error("[ThreadArea] 加载会话历史失败", threadId, e);
         // 回灌失败不 setMessages：hydrated 仍指向旧线程，防抖不会把旧内容写进本线程
@@ -628,7 +636,7 @@ export default function ThreadArea({ llmReady, onUnauthorized }: {
       )}
       <Composer
         isRunning={agent.isRunning}
-        ready={isReady}
+        ready={isReady && hydratedThreadId === currentThreadId}
         onSend={(t) => void send(t)}
         onStop={() => agent.abortRun()}
       />
