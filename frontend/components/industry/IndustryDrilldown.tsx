@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/auth";
 import type { IndustryStock } from "@/lib/types";
 import ResearchNoteDialog from "@/components/wiki/ResearchNoteDialog";
 import IndustryStockTable from "./IndustryStockTable";
+import UnlistedPanel from "./unlisted/UnlistedPanel";
 
 const PROSPERITY_LABEL = { UP: "↑", FLAT: "→", DOWN: "↓" } as const;
 
@@ -116,11 +117,7 @@ export default function IndustryDrilldown({ industryCode }: { industryCode: stri
           <IndustryStockTable stocks={stocks} sortBy={sortBy} sortDirection={dir} onSort={onSort} />
         )
       )}
-      {tab === "unlisted" && (
-        // MS-10 P2 Task 5 起由 UnlistedPanel 承载（全景卡/名单/融资/格局）；
-        // 本任务仅 tab 壳占位，保证 tab 切换先行落地可测。
-        <div className="p-8 text-sm text-[color:var(--color-ink-dim)]">未上市与融资内容装载中</div>
-      )}
+      {tab === "unlisted" && <UnlistedPanel industryCode={industryCode} industryName={industryName} />}
     </div>
   );
 }
