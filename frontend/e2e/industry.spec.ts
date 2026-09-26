@@ -48,9 +48,15 @@ test.describe("/industry 行业研究（MS-09）", () => {
     await expect(stocks).toBeVisible({ timeout: 15_000 });
     await expect(stocks.getByText(/成员排名（[1-9]\d*/)).toBeVisible();
     await expect(stocks.getByText(/总市值\(亿\)/)).toBeVisible();
-    // 数据不足空态：dev 库 stock_financial.revenue 采集器从未落值（59856 行 0 非空，只落
-    // revenue_yoy）→ 成员排名「营收(亿)」列对任意行业每一行都渲染「—」。宁弱而稳：选结构性
-    // 缺口而非个别行巧合——板面 31 行行业景气全非空，景气列「—」断言对现状不成立
+    // 营收历史注记：2026-09-26 前 dev 库 revenue 曾全空（income 合码 9-17 晚于末次采集 9-05，任务未重跑），
+    // 彼时以「营收列恒 —」为空态锚；补数后改为下方双锚（有数锚 + 仍有空态行）。
+    // 营收链路端到端有数（2026-09-26 补数后口径）：营收列仅在有值时渲染「报告期角标
+    // yyyy-mm-dd」（IndustryStockTable revenueReportDate span），角标存在 ⟺ revenue 非空——
+    // 结构性锚点，跨季度稳定。取银行业总市值第一的工商银行（601398，必披露营收）。
+    const icbcRow = stocks.getByRole("row").filter({ hasText: "工商银行" }).first();
+    await expect(icbcRow.getByText(/^\d{4}-\d{2}-\d{2}$/)).toBeVisible();
+    // 数据不足空态仍须覆盖：营收未披露（income 无合并口径匹配）的行渲染「—」——
+    // 50 行首页存在此类行（少数披露不全个股），仅断言存在性
     await expect(stocks.getByText("—").first()).toBeVisible();
   });
 
