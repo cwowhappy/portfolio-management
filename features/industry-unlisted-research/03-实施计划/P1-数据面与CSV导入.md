@@ -234,6 +234,8 @@ Run: `cd backend && ./gradlew integrationTest --tests '*FlywayMigrationIntegrati
 - [ ] **Step 1~4:** 写测试（对拍手算基准）→ FAIL（服务已实现时应直接 PASS——此时改为「先写测试红」不可行，照实记录：集成测试为验收性测试，实现已在前置任务 TDD 完成，本任务红态以「故意断错字段」自证测试有效性后修正）→ PASS。
 - [ ] **Step 5:** Commit `test(industry): 策展/融资导入全链集成实证（MS-10 P1）`
 
+> 偏差注记（2026-09-26）：计划原文「六表计数不变」系 MS-14 措辞残留——本域仅两张表（industry_unlisted_company/industry_funding_event），测试实现为 twoTableCounts 两表哨兵前缀计数对拍；红态自证按计划口径执行（首导 inserted 断言先故意写 99 跑红再修正为 3）。
+
 ---
 
 ### Task 10: Next 代理路由（multipart 透传）
