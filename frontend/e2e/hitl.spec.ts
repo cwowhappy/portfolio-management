@@ -3,7 +3,10 @@ import { existsSync, readFileSync, rmSync } from "node:fs";
 import { registerAndApprove, TEST_PASSWORD, uniqueUsername } from "./helpers";
 
 // #25 回归钉：真实浏览器 → 真实后端（codec 修复后线上无 expiresAt）→ 真实 MCP server 全链路（非 mock）。
-// 依赖 E2E_HITL_MCP_URL（playwright webServer 自动注入/CI 提供），未配置时整组跳过。
+// 依赖测试进程 process.env 里有 E2E_HITL_MCP_URL，未配置时整组跳过。注意来源不包括 playwright
+// webServer.env（playwright.config.ts 只把该变量注入被拉起的 MCP 子进程，测试进程本身看不见）：
+// CI 由 e2e job 级 env 提供（ci.yml :124），本地须手工 export（或写入根 .env——playwright.config
+// 启动时会载入）；后端侧则由 scripts/e2e-backend.sh 对缺省值兜底，与本跳过门控无关。
 // serial：两条用例共享同一 NOTES 落盘文件（MCP server 单实例），并行会互相清盘串写。
 test.describe.serial("MCP 写工具审批（HITL）", () => {
   test.skip(!process.env.E2E_HITL_MCP_URL, "未配置 E2E_HITL_MCP_URL，跳过 HITL 审批用例");

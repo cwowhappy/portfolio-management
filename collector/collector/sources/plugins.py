@@ -1065,9 +1065,11 @@ class StockFinancialSource(Source):
                 income_df = income_df[income_df["report_type"] == INCOME_MERGED_REPORT_TYPE]
                 income_df = income_df[income_df["end_date"] >= cutoff]
                 # 同 end_date 多行的真实来源是 update_flag 0/1 并存：按 (update_flag, ann_date)
-                # 排序后每组取末行 = update_flag 最大者、并列时 ann_date 更晚者（调研报告定稿规则）。
-                income_df = income_df.sort_values(["update_flag", "ann_date"])
-                income_df = income_df.drop_duplicates(subset=["end_date"], keep="last")
+                # 降序稳定排序后每组取首行 = update_flag 最大者、并列时 ann_date 更晚者（调研报告定稿规则）；
+                # 两键完全并列时按稳定语义保持原始出现顺序、先出现的行胜（issue #39 显式化：
+                # 默认 quicksort 非稳定，完全并列的胜者会随输入行序漂移，故必须 kind="stable"）。
+                income_df = income_df.sort_values(["update_flag", "ann_date"], ascending=False, kind="stable")
+                income_df = income_df.drop_duplicates(subset=["end_date"], keep="first")
                 income_df = income_df.assign(revenue=income_df["revenue"] * INCOME_REVENUE_SCALE)
                 df = df.merge(income_df[["end_date", "revenue"]], on="end_date", how="left")
             if "revenue" not in df.columns:
