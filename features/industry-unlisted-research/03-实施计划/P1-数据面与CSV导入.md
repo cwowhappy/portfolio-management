@@ -153,6 +153,8 @@ Run: `cd backend && ./gradlew integrationTest --tests '*FlywayMigrationIntegrati
 
 - [ ] **Step 1~5:** 同 Task 4 模式（样例 `NINE_COLUMN_CSV` + 错误行全覆盖）。Commit `feat(industry): 融资事件 CSV 解析器 L1/L2（MS-10 P1）`
 
+> 偏差注记（2026-09-26）：设计规格 §五 事件模板示例行轮次原文「B+」与 FundingRound 枚举 CSV 输入格式（下划线大写 `B_PLUS`，Task 2 契约）矛盾——以枚举格式为准，模板/解析器测试/集成测试三处样例统一写 `B_PLUS`（CsvImportParserTest 矩阵勘误同类先例），设计规格 §五 示例已同步回写。
+
 ---
 
 ### Task 6: 导入编排服务（L3 引用 + L5 键内重复 + upsert 执行）
