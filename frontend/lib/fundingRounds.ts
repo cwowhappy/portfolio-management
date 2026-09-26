@@ -1,6 +1,7 @@
 // FundingRound 轮次表（后端 domain/industry/FundingRound.java 枚举的同源镜像）：
 // 策展编辑下拉（15 项全量）与全景卡轮次分布标签用；数组序 = 后端 order()（声明序，早→晚）。
-// 双文件镜像有漂移风险——由 UnlistedCompanyDialog/OverviewCard 测试锁定 15 项与顺序。
+// 双文件镜像有漂移风险——由 tests/fundingRounds.test.ts 全量 toEqual + 顺序断言锁定
+//（2026-09-26 评审收口：组件测试并不锁定本表，此前注释失实）。
 export const FUNDING_ROUNDS = [
   { value: "SEED", label: "种子轮" },
   { value: "ANGEL", label: "天使轮" },
