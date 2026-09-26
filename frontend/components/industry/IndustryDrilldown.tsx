@@ -16,6 +16,9 @@ type SortKey = (typeof SORT_KEYS)[number];
 const isSortKey = (key: string): key is SortKey =>
   (SORT_KEYS as readonly string[]).includes(key);
 
+// 下钻页三 tab（MS-10 P2）：上市公司（既有）/ 未上市与融资（MS-10）/ 产业链（P3 激活）。
+type Tab = "listed" | "unlisted" | "chain";
+
 export default function IndustryDrilldown({ industryCode }: { industryCode: string }) {
   const [stocks, setStocks] = useState<IndustryStock[]>([]);
   const [industryName, setIndustryName] = useState<string>("");
@@ -24,6 +27,7 @@ export default function IndustryDrilldown({ industryCode }: { industryCode: stri
   const [loading, setLoading] = useState(true);
   const [sortBy, setSortBy] = useState<SortKey>("total_mv");
   const [dir, setDir] = useState<"ASC" | "DESC">("DESC");
+  const [tab, setTab] = useState<Tab>("listed");
   const { user } = useAuth();
 
   useEffect(() => {
@@ -80,8 +84,42 @@ export default function IndustryDrilldown({ industryCode }: { industryCode: stri
           </span>
         )}
       </div>
-      {loading ? <div className="h-40 rounded-2xl skeleton" aria-label="加载中" /> : (
-        <IndustryStockTable stocks={stocks} sortBy={sortBy} sortDirection={dir} onSort={onSort} />
+
+      {/* 三 tab 组（样式逐字照 ScreenerBoard 先例）；「产业链」P3 激活，本批次占位禁用态 */}
+      <div className="flex gap-2 text-sm">
+        <button
+          data-testid="tab-listed"
+          className={`rounded-md px-3 py-1.5 ${tab === "listed" ? "bg-[color:var(--color-panel)] text-[color:var(--color-ink)]" : "text-[color:var(--color-ink-dim)] hover:bg-[color:var(--color-panel)]/60"}`}
+          onClick={() => setTab("listed")}
+        >
+          上市公司
+        </button>
+        <button
+          data-testid="tab-unlisted"
+          className={`rounded-md px-3 py-1.5 ${tab === "unlisted" ? "bg-[color:var(--color-panel)] text-[color:var(--color-ink)]" : "text-[color:var(--color-ink-dim)] hover:bg-[color:var(--color-panel)]/60"}`}
+          onClick={() => setTab("unlisted")}
+        >
+          未上市与融资
+        </button>
+        <button
+          data-testid="tab-chain"
+          disabled
+          title="产业链图谱建设中（MS-10 P3）"
+          className="rounded-md px-3 py-1.5 text-[color:var(--color-ink-dim)] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          产业链
+        </button>
+      </div>
+
+      {tab === "listed" && (
+        loading ? <div className="h-40 rounded-2xl skeleton" aria-label="加载中" /> : (
+          <IndustryStockTable stocks={stocks} sortBy={sortBy} sortDirection={dir} onSort={onSort} />
+        )
+      )}
+      {tab === "unlisted" && (
+        // MS-10 P2 Task 5 起由 UnlistedPanel 承载（全景卡/名单/融资/格局）；
+        // 本任务仅 tab 壳占位，保证 tab 切换先行落地可测。
+        <div className="p-8 text-sm text-[color:var(--color-ink-dim)]">未上市与融资内容装载中</div>
       )}
     </div>
   );

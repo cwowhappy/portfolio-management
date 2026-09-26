@@ -86,4 +86,23 @@ describe("IndustryDrilldown", () => {
     // 行业上下文（榜单名「银行」）预填进弹窗标题，验证 props 正确传入
     expect((screen.getByTestId("research-note-title") as HTMLInputElement).value).toBe("银行 研究结论");
   });
+
+  it("三 tab 化（MS-10 P2）：默认上市公司视图，切未上市隐藏成员表，产业链占位禁用", async () => {
+    render(<IndustryDrilldown industryCode="801780" />);
+    await screen.findByTestId("industry-stocks-table");
+    // 三 tab 均渲染，默认激活上市公司
+    expect(screen.getByTestId("tab-listed")).toBeTruthy();
+    expect(screen.getByTestId("tab-unlisted")).toBeTruthy();
+    expect(screen.getByTestId("tab-chain")).toBeTruthy();
+    expect(screen.getByText("未上市与融资")).toBeTruthy();
+    // 切「未上市与融资」：上市公司成员表让位（数据拉取 effect 不动，纯渲染切换）
+    fireEvent.click(screen.getByTestId("tab-unlisted"));
+    expect(screen.queryByTestId("industry-stocks-table")).toBeNull();
+    // 切回上市公司：成员表回归（不重复请求——数据仍在 state）
+    fireEvent.click(screen.getByTestId("tab-listed"));
+    expect(screen.getByTestId("industry-stocks-table")).toBeTruthy();
+    expect(fetchIndustryStocksMock).toHaveBeenCalledTimes(1);
+    // 「产业链」P3 激活，本批次占位禁用态
+    expect((screen.getByTestId("tab-chain") as HTMLButtonElement).disabled).toBe(true);
+  });
 });
