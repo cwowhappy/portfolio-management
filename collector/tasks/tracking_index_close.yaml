@@ -1,0 +1,17 @@
+task_code: tracking_index_close
+task_name: ETF跟踪指数收盘
+# etf_basic DISTINCT tracking_index_code（478 个去重码）循环 index_daily，后缀候选逐一探测；
+# 海外/港股/极新国证码（实测 82 个）探测不可得跳过并计数（日志留痕）——实测可得 396 个/日，
+# min_rows=300 为留 ~25% 余量的下限（初值 50 为实测前的宽松占位，2026-09-26 实跑后校准）。
+source_ids:
+  - { source_id: tracking_index_close, type: plugin, class: tracking_index_close }
+converter: field_mapping_index_close
+calc: null
+validator:
+  - { check: min_rows, value: 300, level: hard }
+target_table: index_close_history
+schedule: { type: cron, cron: "50 15 * * 1-5" }
+enabled: true
+trading_day_gated: true
+retry_max: 3
+retry_backoff: exponential

@@ -4,6 +4,7 @@ import com.portfolio.invest.application.portfolio.CreateGroupCommand;
 import com.portfolio.invest.application.portfolio.EditTradeCommand;
 import com.portfolio.invest.application.portfolio.GroupView;
 import com.portfolio.invest.application.portfolio.PortfolioApplicationService;
+import com.portfolio.invest.application.portfolio.PortfolioImportService;
 import com.portfolio.invest.application.portfolio.PositionView;
 import com.portfolio.invest.application.portfolio.BuyCommand;
 import com.portfolio.invest.application.portfolio.RenameGroupCommand;
@@ -37,11 +38,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class PortfolioControllerTest {
 
     private final PortfolioApplicationService service = mock(PortfolioApplicationService.class);
+    private final PortfolioImportService importService = mock(PortfolioImportService.class);
     private MockMvc mvc;
 
     @BeforeEach
     void setUp() {
-        mvc = MockMvcBuilders.standaloneSetup(new PortfolioController(service))
+        mvc = MockMvcBuilders.standaloneSetup(new PortfolioController(service, importService))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
     }

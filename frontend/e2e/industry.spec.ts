@@ -1,4 +1,5 @@
 import { test, expect, type APIRequestContext } from "@playwright/test";
+import { registerAndApprove, TEST_PASSWORD, uniqueUsername } from "./helpers";
 
 test.describe("/industry 行业估值", () => {
   test("公开访问并渲染对比表与热力图", async ({ page }) => {
@@ -73,5 +74,79 @@ test.describe("/industry 行业研究（MS-09）", () => {
     await expect(stocks.getByText(/成员排名（\d+/)).toBeVisible();
     await expect(page.getByRole("heading", { name: /银行/ })).toBeVisible();
     await expect(page.getByText(/← 行业榜单/)).toBeVisible();
+  });
+});
+
+// 关注持久化需注册用户并经种子管理员审核（照 portfolio.spec 的 ADMIN seed 门控范式）
+const hasAdminSeed = !!(process.env.ADMIN_USERNAME && process.env.ADMIN_PASSWORD);
+const SKIP_NO_ADMIN = "未配置 ADMIN_USERNAME/ADMIN_PASSWORD（无种子管理员），跳过关注持久化用例";
+
+test.describe("/industry 行业对比与关注（MS-14 P2）", () => {
+  test("公开切对比视图：搜索过滤、勾选两行业渲染并排对比表", async ({ page, request }) => {
+    test.skip(!(await boardHasData(request)), SKIP_NO_DATA);
+    await page.goto("/industry");
+    await page.getByTestId("view-compare").click();
+    const picker = page.getByTestId("industry-compare-picker");
+    await expect(picker).toBeVisible({ timeout: 15_000 });
+    // 行业列表默认渲染多家行业（申万一级），搜索框可用
+    const rows = picker.locator("label");
+    expect(await rows.count()).toBeGreaterThan(1);
+    // 搜索「银行」：列表过滤至仅剩银行一行（名称 includes 匹配，非银金融等被滤除）
+    await picker.getByLabel("搜索行业").fill("银行");
+    await expect(rows).toHaveCount(1);
+    await expect(rows).toContainText("银行");
+    // 勾选银行；清空搜索后从列表头部另勾一个非银行行业
+    await rows.locator("input").check();
+    await picker.getByLabel("搜索行业").fill("");
+    let otherName = "";
+    for (let i = 0; i < (await rows.count()); i++) {
+      const name = (await rows.nth(i).innerText()).trim();
+      if (!name || name === "银行") continue;
+      await rows.nth(i).locator("input").check();
+      otherName = name;
+      break;
+    }
+    expect(otherName).toBeTruthy();
+    // 对比表渲染：thead 1 行 + 两家选中行业各 1 行
+    const table = page.getByTestId("industry-compare-table");
+    await expect(table).toBeVisible();
+    await expect(table).toContainText("银行");
+    await expect(table).toContainText(otherName);
+    await expect(table.getByRole("row")).toHaveCount(3);
+  });
+
+  test("登录后关注银行：对比视图默认勾选，刷新后仍默认勾选（持久化）", async ({ page, request }) => {
+    test.skip(!(await boardHasData(request)), SKIP_NO_DATA);
+    test.skip(!hasAdminSeed, SKIP_NO_ADMIN);
+    await registerAndApprove(page, uniqueUsername("indw"), TEST_PASSWORD);
+    await page.goto("/industry");
+    // 榜单视图 ⭐ 关注银行（801780）：aria-label 随关注态由「关注」翻转为「取消关注」
+    const board = page.getByTestId("industry-board-table");
+    await board.getByRole("button", { name: "关注 801780" }).click();
+    await expect(board.getByRole("button", { name: "取消关注 801780" })).toBeVisible({ timeout: 15_000 });
+    // 切对比视图：关注集默认勾选（未手动改动前 selected 派生自 watchedCodes）
+    await page.getByTestId("view-compare").click();
+    const picker = page.getByTestId("industry-compare-picker");
+    await expect(picker).toBeVisible({ timeout: 15_000 });
+    await expect(picker.locator("label", { hasText: "银行" }).locator("input")).toBeChecked();
+    // reload：视图状态回榜单，重切对比后关注集来自后端 industry_watch → 银行仍默认勾选
+    await page.reload();
+    await page.getByTestId("view-compare").click();
+    await expect(page.getByTestId("industry-compare-picker").locator("label", { hasText: "银行" }).locator("input")).toBeChecked();
+    // 清理：对比视图 ⭐ 取关银行（防污染后续运行；用户本身已按次唯一）
+    await picker.getByRole("button", { name: "取消关注 801780" }).click();
+    await expect(picker.getByRole("button", { name: "关注 801780" })).toBeVisible({ timeout: 15_000 });
+  });
+
+  test("未登录点 ⭐ 跳转登录页并携带 redirect=/industry", async ({ page, request }) => {
+    test.skip(!(await boardHasData(request)), SKIP_NO_DATA);
+    // ⭐ 随行业行渲染，空库无行可点 → 同样走 boardHasData 门控
+    await page.goto("/industry");
+    await page.getByTestId("view-compare").click();
+    await page.getByTestId("industry-compare-picker").getByRole("button", { name: "关注 801780" }).click();
+    await expect(page).toHaveURL(/\/login/);
+    const url = new URL(page.url());
+    expect(url.searchParams.get("redirect")).toBe("/industry");
+    await expect(page.getByPlaceholder("用户名")).toBeVisible();
   });
 });

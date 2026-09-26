@@ -3,13 +3,16 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { buildExportHref, fetchScreenedStocks } from "@/lib/screeningApi";
-import { addToWatchlist, fetchWatchlist } from "@/lib/watchlistApi";
+import { buildFundExportHref, fetchFundScreening } from "@/lib/fundScreeningApi";
+import { addToWatchlist, fetchWatchlist, removeFromWatchlist } from "@/lib/watchlistApi";
 import { fetchValuationIndustries } from "@/lib/valuationApi";
 import { useAuth } from "@/lib/auth";
-import type { IndustryValuation, ScreeningParams, ScreeningStock } from "@/lib/types";
+import type { FundScreeningParams, FundScreeningResult, IndustryValuation, ScreeningParams, ScreeningStock } from "@/lib/types";
 import Disclaimer from "@/components/Disclaimer";
 import ScreeningForm from "./ScreeningForm";
 import ScreeningResultsTable from "./ScreeningResultsTable";
+import FundScreeningForm from "./FundScreeningForm";
+import FundResultsTable from "./FundResultsTable";
 import WatchlistPanel from "./WatchlistPanel";
 
 const INDEX_LABELS: Record<string, string> = { "000300": "沪深300", "000905": "中证500" };
@@ -20,7 +23,7 @@ export default function ScreenerBoard() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { user } = useAuth();
-  const [tab, setTab] = useState<"screener" | "watchlist">("screener");
+  const [tab, setTab] = useState<"screener" | "fund" | "watchlist">("screener");
   const [params, setParams] = useState<ScreeningParams>(() => {
     const industryCode = searchParams.get("industryCode") ?? undefined;
     return {
@@ -35,6 +38,15 @@ export default function ScreenerBoard() {
   const [watchlistCodes, setWatchlistCodes] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // 基金 tab 独立状态（与个股互不残留）；默认排序与后端一致：tracking_error_1y ASC
+  const [fundParams, setFundParams] = useState<FundScreeningParams>({
+    sortBy: "tracking_error_1y",
+    sortDirection: "ASC",
+    limit: 200,
+  });
+  const [fundResults, setFundResults] = useState<FundScreeningResult[] | null>(null);
+  const [fundError, setFundError] = useState<string | null>(null);
+  const [fundLoading, setFundLoading] = useState(false);
 
   useEffect(() => {
     fetchValuationIndustries("pe").then(setIndustries).catch(() => {});
@@ -78,15 +90,42 @@ export default function ScreenerBoard() {
     if (results) submit(next);
   };
 
-  // 未登录点 ⭐ → 登录后回到 /screener；已登录 → 加入自选并更新集合
+  // 基金筛选提交（至少一条件预检在 FundScreeningForm 内，与后端 NO_CONDITION 对齐）
+  const submitFund = useCallback(async (next?: FundScreeningParams) => {
+    const p = next ?? fundParams;
+    setFundLoading(true); setFundError(null);
+    try { setFundResults(await fetchFundScreening(p)); }
+    catch (e) { setFundError(e instanceof Error ? e.message : "筛选失败"); setFundResults(null); }
+    finally { setFundLoading(false); }
+  }, [fundParams]);
+
+  const updateFundParam = (key: keyof FundScreeningParams, value: string) => {
+    setFundParams((prev) => ({ ...prev, [key]: value === "" ? undefined : value }));
+  };
+
+  const onSortFund = (sortKey: string) => {
+    const dir = fundParams.sortBy === sortKey && fundParams.sortDirection === "ASC" ? "DESC" : "ASC";
+    const next = { ...fundParams, sortBy: sortKey, sortDirection: dir as "ASC" | "DESC" };
+    setFundParams(next);
+    if (fundResults) submitFund(next);
+  };
+
+  // 未登录点 ⭐ → 登录后回到 /screener；已登录 → toggle：已自选移除、未自选加入（个股/基金 tab 共用）
   const onToggleWatchlist = (stockCode: string) => {
     if (!user) {
       router.push("/login?redirect=/screener");
       return;
     }
-    addToWatchlist(stockCode)
-      .then(() => setWatchlistCodes((prev) => new Set(prev).add(stockCode)))
-      .catch((e) => setError(e instanceof Error ? e.message : "加入自选失败"));
+    const inList = watchlistCodes.has(stockCode);
+    const action = inList ? removeFromWatchlist(stockCode) : addToWatchlist(stockCode);
+    action
+      .then(() => setWatchlistCodes((prev) => {
+        const next = new Set(prev);
+        if (inList) next.delete(stockCode);
+        else next.add(stockCode);
+        return next;
+      }))
+      .catch((e) => setError(e instanceof Error ? e.message : inList ? "移除自选失败" : "加入自选失败"));
   };
 
   return (
@@ -102,6 +141,13 @@ export default function ScreenerBoard() {
           筛选
         </button>
         <button
+          data-testid="tab-fund"
+          className={`rounded-md px-3 py-1.5 ${tab === "fund" ? "bg-[color:var(--color-panel)] text-[color:var(--color-ink)]" : "text-[color:var(--color-ink-dim)] hover:bg-[color:var(--color-panel)]/60"}`}
+          onClick={() => setTab("fund")}
+        >
+          基金
+        </button>
+        <button
           data-testid="tab-watchlist"
           className={`rounded-md px-3 py-1.5 ${tab === "watchlist" ? "bg-[color:var(--color-panel)] text-[color:var(--color-ink)]" : "text-[color:var(--color-ink-dim)] hover:bg-[color:var(--color-panel)]/60"}`}
           onClick={() => setTab("watchlist")}
@@ -112,6 +158,28 @@ export default function ScreenerBoard() {
 
       {tab === "watchlist" ? (
         <WatchlistPanel authenticated={!!user} />
+      ) : tab === "fund" ? (
+        <>
+          <FundScreeningForm params={fundParams} onChange={updateFundParam} onSubmit={() => submitFund()} loading={fundLoading} />
+          {fundError && <div className="text-sm text-[color:var(--color-up)]">{fundError}</div>}
+          {fundResults && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-end">
+                <a
+                  data-testid="fund-export-csv"
+                  href={buildFundExportHref(fundParams)}
+                  download
+                  className="rounded-lg border border-[color:var(--color-line)] px-3 py-1.5 text-sm text-[color:var(--color-ink-dim)] hover:bg-[color:var(--color-panel)]"
+                >
+                  导出 CSV
+                </a>
+              </div>
+              <FundResultsTable results={fundResults} sortBy={fundParams.sortBy ?? "tracking_error_1y"}
+                sortDirection={fundParams.sortDirection ?? "ASC"} onSort={onSortFund}
+                watchlistCodes={watchlistCodes} onToggleWatchlist={onToggleWatchlist} />
+            </div>
+          )}
+        </>
       ) : (
         <>
           <ScreeningForm params={params} industries={industries} onChange={updateParam} onSubmit={() => submit()} loading={loading} />

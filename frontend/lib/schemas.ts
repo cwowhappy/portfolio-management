@@ -190,6 +190,12 @@ export const IndustryDistributionSchema = z.object({ slices: z.array(IndustrySli
 export const ConcentrationHoldingSchema = z.object({ stockCode: z.string(), stockName: z.string(), marketValue: z.number(), ratio: z.number() });
 export const ConcentrationSchema = z.object({ holdings: z.array(ConcentrationHoldingSchema), top5Ratio: z.number() });
 
+// CSV 批量导入结果（POST /api/portfolio/import，rowErrors 空=全部成功）
+export const ImportRowErrorSchema = z.object({ row: z.number(), reason: z.string() });
+export const ImportResultSchema = z.object({
+  importedCount: z.number(), rowErrors: z.array(ImportRowErrorSchema),
+});
+
 // —— 资产配置（/api/allocation/**，与后端 AllocationController 的 DTO 对齐）——
 
 export const AssetClassSchema = z.enum(["STOCK", "BOND", "GOLD", "CASH", "REITS"]);
@@ -261,6 +267,19 @@ export const ScreeningStockSchema = z.object({
   netprofitYoy: z.number().nullable(),
   totalMv: z.number().nullable(),
   turnoverRate: z.number().nullable(),
+});
+
+// —— ETF 基金筛选（/api/screening/funds，与后端 FundScreeningResult 对齐）——
+// feeRate（年化%）、scale（亿元）、trackingError1y（小数、收盘价口径）可 null=未知「—」；
+// trackingIndexName/category 后端虽为非空 String，仍按 nullable 容错（目录字段缺源时兜底「—」）。
+export const FundScreeningResultSchema = z.object({
+  fundCode: z.string(),
+  fundName: z.string(),
+  feeRate: z.number().nullable(),
+  scale: z.number().nullable(),
+  trackingIndexName: z.string().nullable(),
+  category: z.string().nullable(),
+  trackingError1y: z.number().nullable(),
 });
 
 // —— 自选观察（/api/watchlist/**，与后端 WatchlistController 的 DTO 对齐）——
@@ -401,6 +420,13 @@ export const IndustryStockSchema = z.object({
   pb: z.number().nullable(),
   dividendYield: z.number().nullable(),
   prosperity: ProsperitySchema.nullable(),
+});
+
+// —— 行业关注（/api/industry-watch/**，与后端 IndustryWatchController 的 View 对齐）——
+
+export const IndustryWatchItemSchema = z.object({
+  industryCode: z.string(),
+  addedAt: z.string(),
 });
 
 // —— 投资知识库（/api/wiki/**，与后端 WikiController 的 View 对齐）——

@@ -1,0 +1,18 @@
+task_code: etf_tracking_error
+task_name: ETF跟踪误差近1年重算
+# 纯本地 DB→DB 日更重算（无外部调用，幂等自愈）：读 index_close_history 两序列（ETF 日线 +
+# 跟踪指数日线）inner join 对齐算 std(日收益差, ddof=1)×√252，源内 UPDATE
+# etf_basic.tracking_error_1y（共享 etf_basic upsert 不触碰该列，见 writer.py 注记）；
+# fetch 恒返回空帧走 0 行写路径，稳态正常——validator 置 null（照 industry_valuation_backfill 先例）。
+# cron 30 16 晚于 tracking_index_close（15:50）与 etf_close（15:55），当日两上游日线已落地。
+source_ids:
+  - { source_id: etf_tracking_error, type: plugin, class: etf_tracking_error }
+converter: field_mapping_etf_basic
+calc: null
+validator: null
+target_table: etf_basic
+schedule: { type: cron, cron: "30 16 * * 1-5" }
+enabled: true
+trading_day_gated: true
+retry_max: 3
+retry_backoff: exponential

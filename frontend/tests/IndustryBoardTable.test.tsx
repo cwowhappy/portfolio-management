@@ -49,3 +49,26 @@ describe("IndustryBoardTable", () => {
     expect(onSelect).toHaveBeenCalledWith("801780");
   });
 });
+
+describe("IndustryBoardTable ⭐ 关注列", () => {
+  it("空集合渲染 ☆，点击调 onToggleWatch（父层跳登录逻辑不在此测）", () => {
+    const onToggleWatch = vi.fn();
+    render(<IndustryBoardTable items={ITEMS} watchedCodes={new Set()} onToggleWatch={onToggleWatch} />);
+    expect(screen.getByRole("button", { name: "关注 801780" }).textContent).toBe("☆");
+    fireEvent.click(screen.getByRole("button", { name: "关注 801780" }));
+    expect(onToggleWatch).toHaveBeenCalledWith("801780");
+  });
+
+  it("已关注渲染实心 ★，点击同样回调 onToggleWatch（父层走取关）", () => {
+    const onToggleWatch = vi.fn();
+    render(<IndustryBoardTable items={ITEMS} watchedCodes={new Set(["801780"])} onToggleWatch={onToggleWatch} />);
+    expect(screen.getByRole("button", { name: "取消关注 801780" }).textContent).toBe("★");
+    fireEvent.click(screen.getByRole("button", { name: "取消关注 801780" }));
+    expect(onToggleWatch).toHaveBeenCalledWith("801780");
+  });
+
+  it("未传 onToggleWatch 时不渲染关注列（向后兼容纯展示用法）", () => {
+    render(<IndustryBoardTable items={ITEMS} onSelect={() => {}} />);
+    expect(screen.queryByRole("button", { name: /关注 801780/ })).toBeNull();
+  });
+});

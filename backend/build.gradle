@@ -84,6 +84,8 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-flyway'
     implementation 'org.flywaydb:flyway-core'
     implementation 'org.flywaydb:flyway-database-postgresql'
+    // CSV 批量导入解析（M08-F12）：仅 application 层使用，domain 保持零第三方依赖（设计规格 §1.4）
+    implementation 'org.apache.commons:commons-csv:1.11.0'
 
     // AgentScope Java 2.0.3（权限确认 HITL → AG-UI interrupt 映射自 2.0.3 实现，PR #2495）
     implementation 'io.agentscope:agentscope-core:2.0.3'

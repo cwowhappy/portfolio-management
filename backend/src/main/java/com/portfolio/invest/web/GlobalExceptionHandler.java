@@ -115,6 +115,7 @@ public class GlobalExceptionHandler {
                  com.portfolio.invest.domain.screening.ScreeningErrorCode.INVALID_SORT,
                  com.portfolio.invest.domain.screening.ScreeningErrorCode.INVALID_LIMIT,
                  com.portfolio.invest.domain.screening.ScreeningErrorCode.INVALID_INDEX,
+                 com.portfolio.invest.domain.screening.ScreeningErrorCode.INVALID_CATEGORY,
                  com.portfolio.invest.domain.screening.ScreeningErrorCode.WATCHLIST_LIMIT_EXCEEDED,
                  com.portfolio.invest.domain.screening.ScreeningErrorCode.INVALID_STOCK -> HttpStatus.BAD_REQUEST;
             default -> {

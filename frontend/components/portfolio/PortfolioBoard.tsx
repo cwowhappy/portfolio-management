@@ -10,6 +10,7 @@ import IndustryBar from "@/components/portfolio/IndustryBar";
 import ConcentrationList from "@/components/portfolio/ConcentrationList";
 import BuyForm from "@/components/portfolio/BuyForm";
 import GroupManager from "@/components/portfolio/GroupManager";
+import ImportDialog from "@/components/portfolio/ImportDialog";
 
 export default function PortfolioBoard() {
   const [overview, setOverview] = useState<PortfolioOverview | null>(null);
@@ -63,6 +64,8 @@ export default function PortfolioBoard() {
       </div>
       <BuyForm groups={groups} onChanged={reload} />
       <GroupManager groups={groups} onChanged={reload} />
+      {/* 工具区：批量导入（成功导入后 reload 重拉全量） */}
+      <ImportDialog onImported={reload} />
       {/* 分组切换 */}
       <div className="flex gap-2" data-testid="group-tabs">
         <button className="rounded-md px-3 py-1.5 text-sm" onClick={() => setActiveGroup(null)}>全部</button>

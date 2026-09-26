@@ -977,4 +977,65 @@ class PortfolioApplicationServiceTest {
 
         assertThat(view.slices()).isEmpty();
     }
+
+    @DisplayName("买入日期晚于今日被拒绝")
+    @Test
+    void givenFutureTradeDate_whenBuy_thenRejectInvalidInput() {
+        assertThatThrownBy(() -> service.buy(1L, new BuyCommand(1L, "600519", "贵州茅台",
+                LocalDate.now().plusDays(1), new BigDecimal("1680.00"),
+                new BigDecimal("100"), BigDecimal.ZERO)))
+                .isInstanceOfSatisfying(PortfolioException.class,
+                        e -> {
+                            assertThat(e.code()).isEqualTo(PortfolioErrorCode.INVALID_INPUT);
+                            assertThat(e.getMessage()).contains("日期不能晚于今日");
+                        });
+    }
+
+    @DisplayName("卖出日期晚于今日被拒绝")
+    @Test
+    void givenFutureTradeDate_whenSell_thenRejectInvalidInput() {
+        assertThatThrownBy(() -> service.sell(1L, new SellCommand(5L, LocalDate.now().plusDays(1),
+                new BigDecimal("120"), new BigDecimal("40"), BigDecimal.ZERO)))
+                .isInstanceOfSatisfying(PortfolioException.class,
+                        e -> {
+                            assertThat(e.code()).isEqualTo(PortfolioErrorCode.INVALID_INPUT);
+                            assertThat(e.getMessage()).contains("日期不能晚于今日");
+                        });
+    }
+
+    @DisplayName("现金分红除息日晚于今日被拒绝")
+    @Test
+    void givenFutureExDate_whenAddCashDividend_thenRejectInvalidInput() {
+        assertThatThrownBy(() -> service.addCashDividend(1L, new CashDividendCommand(5L,
+                LocalDate.now().plusDays(1), new BigDecimal("1.5"))))
+                .isInstanceOfSatisfying(PortfolioException.class,
+                        e -> {
+                            assertThat(e.code()).isEqualTo(PortfolioErrorCode.INVALID_INPUT);
+                            assertThat(e.getMessage()).contains("日期不能晚于今日");
+                        });
+    }
+
+    @DisplayName("送股除息日晚于今日被拒绝")
+    @Test
+    void givenFutureExDate_whenAddStockDividend_thenRejectInvalidInput() {
+        assertThatThrownBy(() -> service.addStockDividend(1L, new StockDividendCommand(5L,
+                LocalDate.now().plusDays(1), new BigDecimal("0.5"))))
+                .isInstanceOfSatisfying(PortfolioException.class,
+                        e -> {
+                            assertThat(e.code()).isEqualTo(PortfolioErrorCode.INVALID_INPUT);
+                            assertThat(e.getMessage()).contains("日期不能晚于今日");
+                        });
+    }
+
+    @DisplayName("现金流水日期晚于今日被拒绝")
+    @Test
+    void givenFutureTxDate_whenAddCashTransaction_thenRejectInvalidInput() {
+        assertThatThrownBy(() -> service.addCashTransaction(1L, new CashTransactionCommand(1L,
+                CashTransactionType.DEPOSIT, new BigDecimal("10000"), LocalDate.now().plusDays(1), null)))
+                .isInstanceOfSatisfying(PortfolioException.class,
+                        e -> {
+                            assertThat(e.code()).isEqualTo(PortfolioErrorCode.INVALID_INPUT);
+                            assertThat(e.getMessage()).contains("日期不能晚于今日");
+                        });
+    }
 }

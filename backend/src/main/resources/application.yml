@@ -1,6 +1,12 @@
 spring:
   application:
     name: invest-agent
+  servlet:
+    multipart:
+      # CSV 导入端点自校 1MB；容器上限放宽到 2MB——Boot 默认 max-file-size 恰为 1MB，
+      # 会把带 multipart 封包开销的边界文件在解析层之前先拒（MaxUploadSizeExceededException）
+      max-file-size: 2MB
+      max-request-size: 2MB
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/invest}
     username: ${POSTGRES_USER:invest}

@@ -1,6 +1,8 @@
 package com.portfolio.invest.application.screening;
 
 import com.portfolio.invest.application.cache.ApplicationCache;
+import com.portfolio.invest.domain.screening.FundScreeningCriteria;
+import com.portfolio.invest.domain.screening.FundScreeningResult;
 import com.portfolio.invest.domain.screening.ScreeningCriteria;
 import com.portfolio.invest.domain.screening.ScreeningErrorCode;
 import com.portfolio.invest.domain.screening.ScreeningException;
@@ -127,5 +129,78 @@ class ScreeningApplicationServiceTest {
         service.screen(c2);
         verify(cache).put(org.mockito.ArgumentMatchers.contains("000300"), any(), any(Duration.class));
         verify(cache).put(org.mockito.ArgumentMatchers.contains("000905"), any(), any(Duration.class));
+    }
+
+    private FundScreeningCriteria fundCriteria(BigDecimal feeRateMax) {
+        return new FundScreeningCriteria(feeRateMax, null, null, null, "tracking_error_1y", SortDirection.ASC, 200);
+    }
+
+    @DisplayName("基金空条件抛出异常")
+    @Test
+    void givenEmptyFundCondition_whenFunds_thenThrowException() {
+        ScreeningException ex = catchThrowableOfType(() -> service.funds(fundCriteria(null)), ScreeningException.class);
+        assertThat(ex).isNotNull().hasMessageContaining("至少需要一个筛选条件");
+        assertThat(ex.code()).isEqualTo(ScreeningErrorCode.NO_CONDITION);
+    }
+
+    @DisplayName("基金非法排序字段抛出异常")
+    @Test
+    void givenInvalidFundSortField_whenFunds_thenThrowException() {
+        var c = new FundScreeningCriteria(new BigDecimal("0.6"), null, null, null,
+                "pe_ttm", SortDirection.ASC, 200); // 个股排序字段不属于基金白名单
+        ScreeningException ex = catchThrowableOfType(() -> service.funds(c), ScreeningException.class);
+        assertThat(ex).isNotNull().hasMessageContaining("不支持的排序字段");
+        assertThat(ex.code()).isEqualTo(ScreeningErrorCode.INVALID_SORT);
+    }
+
+    @DisplayName("基金上限越界抛出异常")
+    @Test
+    void givenFundLimitOutOfRange_whenFunds_thenThrowException() {
+        var c = new FundScreeningCriteria(new BigDecimal("0.6"), null, null, null,
+                "tracking_error_1y", SortDirection.ASC, 500);
+        ScreeningException ex = catchThrowableOfType(() -> service.funds(c), ScreeningException.class);
+        assertThat(ex).isNotNull().hasMessageContaining("结果上限");
+        assertThat(ex.code()).isEqualTo(ScreeningErrorCode.INVALID_LIMIT);
+    }
+
+    @DisplayName("基金合法条件委托仓库")
+    @Test
+    void givenValidFundCondition_whenFunds_thenDelegateToRepository() {
+        var c = new FundScreeningCriteria(new BigDecimal("0.6"), new BigDecimal("100"), null, "宽基",
+                "fee_rate", SortDirection.DESC, 50);
+        when(repo.findFunds(c)).thenReturn(List.of(
+                new FundScreeningResult("510300", "沪深300ETF", new BigDecimal("0.6"), new BigDecimal("1200.5"),
+                        "沪深300", "宽基", new BigDecimal("0.0318"))));
+        var results = service.funds(c);
+        assertThat(results).hasSize(1);
+        verify(repo).findFunds(c);
+    }
+
+    @DisplayName("基金相同条件命中缓存不再查仓库")
+    @Test
+    void givenSameFundConditionCached_whenFundsTwice_thenSkipRepository() {
+        var c = fundCriteria(new BigDecimal("0.6"));
+        var results = List.of(
+                new FundScreeningResult("510300", "沪深300ETF", new BigDecimal("0.6"), new BigDecimal("1200.5"),
+                        "沪深300", "宽基", new BigDecimal("0.0318")));
+        when(repo.findFunds(c)).thenReturn(results);
+        when(cache.get(anyString())).thenReturn(null).thenReturn(results);
+
+        assertThat(service.funds(c)).hasSize(1);
+        assertThat(service.funds(c)).hasSize(1);
+
+        verify(repo, times(1)).findFunds(c);
+        verify(cache).put(anyString(), eq(results), any(Duration.class));
+    }
+
+    @DisplayName("基金缓存键与个股缓存键隔离：互不误命中")
+    @Test
+    void givenFundAndStockQuery_whenCached_thenKeyPrefixesDiffer() {
+        when(repo.findFunds(any())).thenReturn(List.of());
+        when(repo.findStocks(any())).thenReturn(List.of());
+        service.funds(fundCriteria(new BigDecimal("0.6")));
+        service.screen(criteria(new BigDecimal("20")));
+        verify(cache).put(org.mockito.ArgumentMatchers.contains("screening:funds:"), any(), any(Duration.class));
+        verify(cache).put(org.mockito.ArgumentMatchers.contains("screening:stocks:"), any(), any(Duration.class));
     }
 }

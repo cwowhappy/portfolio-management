@@ -1,5 +1,7 @@
 package com.portfolio.invest.infrastructure.persistence;
 
+import com.portfolio.invest.domain.screening.FundScreeningCriteria;
+import com.portfolio.invest.domain.screening.FundScreeningResult;
 import com.portfolio.invest.domain.screening.ScreeningCriteria;
 import com.portfolio.invest.domain.screening.ScreeningRepository;
 import com.portfolio.invest.domain.screening.StockSearchHit;
@@ -43,6 +45,18 @@ public class ScreeningRepositoryImpl implements ScreeningRepository {
             WHERE d.trading_day = (SELECT max(trading_day) FROM stock_valuation_daily)
             """;
 
+    private static final Map<String, String> FUND_SORT_COLUMNS = Map.of(
+            "fee_rate", "fee_rate",
+            "scale", "scale",
+            "tracking_error_1y", "tracking_error_1y");
+
+    /** etf_basic 无快照日维度；WHERE true 仅为下方动态 and() 拼接提供锚点。 */
+    private static final String FUND_BASE_SQL = """
+            SELECT fund_code, fund_name, fee_rate, scale, tracking_index_name, category, tracking_error_1y
+            FROM etf_basic
+            WHERE true
+            """;
+
     private final JdbcTemplate jdbc;
 
     public ScreeningRepositoryImpl(JdbcTemplate jdbc) {
@@ -76,6 +90,23 @@ public class ScreeningRepositoryImpl implements ScreeningRepository {
     }
 
     @Override
+    public List<FundScreeningResult> findFunds(FundScreeningCriteria c) {
+        StringBuilder sql = new StringBuilder(FUND_BASE_SQL);
+        List<Object> args = new ArrayList<>();
+        // nullable 列直接数值比较：null 行不命中（「未知值不命中数值条件」，与 findStocks 同口径）
+        and(sql, args, "fee_rate <= ?", c.feeRateMax());
+        and(sql, args, "scale >= ?", c.scaleMin());
+        and(sql, args, "tracking_error_1y <= ?", c.trackingErrorMax());
+        and(sql, args, "category = ?", c.category());
+
+        sql.append(" ORDER BY ").append(FUND_SORT_COLUMNS.get(c.sortBy())).append(" ")
+                .append(c.sortDirection().name()).append(" NULLS LAST LIMIT ?");
+        args.add(c.limit());
+
+        return jdbc.query(sql.toString(), FUND_ROW_MAPPER, args.toArray());
+    }
+
+    @Override
     public List<StockScreeningResult> findStocksByCodes(List<String> codes) {
         if (codes == null || codes.isEmpty()) {
             return List.of();
@@ -83,6 +114,13 @@ public class ScreeningRepositoryImpl implements ScreeningRepository {
         String placeholders = String.join(",", java.util.Collections.nCopies(codes.size(), "?"));
         String sql = BASE_SQL + " AND d.stock_code IN (" + placeholders + ") ORDER BY d.stock_code";
         return jdbc.query(sql, ROW_MAPPER, codes.toArray());
+    }
+
+    @Override
+    public boolean existsFund(String fundCode) {
+        Integer count = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM etf_basic WHERE fund_code = ?", Integer.class, fundCode);
+        return count != null && count > 0;
     }
 
     @Override
@@ -111,6 +149,14 @@ public class ScreeningRepositoryImpl implements ScreeningRepository {
                     rs.getBigDecimal("debt_to_assets"), rs.getBigDecimal("current_ratio"),
                     rs.getBigDecimal("revenue_yoy"), rs.getBigDecimal("netprofit_yoy"),
                     rs.getBigDecimal("total_mv"), rs.getBigDecimal("turnover_rate"));
+
+    /** ETF 目录行映射（findFunds 专用）。 */
+    private static final org.springframework.jdbc.core.RowMapper<FundScreeningResult> FUND_ROW_MAPPER = (rs, i) ->
+            new FundScreeningResult(
+                    rs.getString("fund_code"), rs.getString("fund_name"),
+                    rs.getBigDecimal("fee_rate"), rs.getBigDecimal("scale"),
+                    rs.getString("tracking_index_name"), rs.getString("category"),
+                    rs.getBigDecimal("tracking_error_1y"));
 
     private void and(StringBuilder sql, List<Object> args, String clause, Object value) {
         if (value != null) {
