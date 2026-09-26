@@ -6,6 +6,7 @@ import type { FundingEvent, UnlistedCompany, UnlistedOverview } from "@/lib/type
 import UnlistedOverviewCard from "./UnlistedOverviewCard";
 import UnlistedCompanyTable from "./UnlistedCompanyTable";
 import FundingEventTable from "./FundingEventTable";
+import LandscapeChart from "./LandscapeChart";
 
 /**
  * 「未上市与融资」tab 编排（MS-10 P2）：拉三公开读端点（cancelled 模式照
@@ -23,9 +24,16 @@ export default function UnlistedPanel({ industryCode, industryName }: {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // 请求键（=行业码）变更即在渲染期置回加载态（照 IndustryDrilldown 成员表先例，
+  // 避开 react-hooks/set-state-in-effect 的 effect 内同步 setState）
+  const [prevCode, setPrevCode] = useState(industryCode);
+  if (prevCode !== industryCode) {
+    setPrevCode(industryCode);
+    setLoading(true);
+  }
+
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
     Promise.all([
       fetchUnlistedOverview(industryCode),
       fetchUnlistedCompanies(industryCode),
@@ -71,6 +79,7 @@ export default function UnlistedPanel({ industryCode, industryName }: {
         <>
           <UnlistedCompanyTable companies={companies} eventsByCompany={eventsByCompany} />
           <FundingEventTable events={events} />
+          <LandscapeChart industryCode={industryCode} />
         </>
       )}
     </div>

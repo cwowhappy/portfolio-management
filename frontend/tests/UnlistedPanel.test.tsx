@@ -16,6 +16,11 @@ vi.mock("@/lib/industryUnlistedApi", () => ({
   fetchFundingEvents: eventsMock,
 }));
 
+// LandscapeChart 自带 stocks+策展双端点编排（Task 6 独立测试覆盖），Panel 测试置壳隔离
+vi.mock("@/components/industry/unlisted/LandscapeChart", () => ({
+  default: () => <div data-testid="landscape-chart" />,
+}));
+
 afterEach(() => {
   cleanup();
   overviewMock.mockReset();
