@@ -118,6 +118,9 @@ public class IndustrySteps {
     @After
     public void 清理策展种子() {
         jdbcTemplate.update("DELETE FROM industry_unlisted_company WHERE company_name LIKE ?", BDD_COMPANY_PREFIX + "%");
+        // 卫生行（P2 评审收口 #5）：策展场景自种的 601997 占位映射一并清理——
+        // stock_code 全表 UNIQUE，残留会使同库重跑该场景时插入撞唯一键
+        jdbcTemplate.update("DELETE FROM shenwan_industry_mapping WHERE stock_code = '601997'");
     }
 
     @当("用户查看银行业未上市策展名单")
