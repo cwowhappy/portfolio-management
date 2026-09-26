@@ -60,7 +60,7 @@ class ScreeningCsvTest {
                 new FundScreeningResult("159915", "创业板ETF", null, null, null, "宽基", null)));
         String text = new String(csv, StandardCharsets.UTF_8);
         assertThat(csv[0]).isEqualTo((byte) 0xEF); // BOM EF BB BF
-        assertThat(text).contains("代码,名称,费率(%),规模(亿元),跟踪指数,类别,跟踪误差(%,收盘价口径)");
+        assertThat(text).contains("代码,名称,费率(%),规模(亿元),跟踪指数,类别,跟踪误差(%，收盘价口径)");
         assertThat(text).contains("# 注：跟踪误差为收盘价口径（含分红/折溢价噪声）与官方净值口径不可直接对比");
         assertThat(text).contains("510300,沪深300ETF,0.60,1200.50,沪深300,宽基,3.18");
         assertThat(text).contains("159915,创业板ETF,,,,宽基,");
@@ -81,7 +81,7 @@ class ScreeningCsvTest {
     void givenNoFundRows_whenToFundCsv_thenHeaderAndNoteOnly() {
         String text = new String(ScreeningCsv.toFundCsv(List.of()), StandardCharsets.UTF_8);
         assertThat(text.substring(1).stripTrailing())
-                .isEqualTo("代码,名称,费率(%),规模(亿元),跟踪指数,类别,跟踪误差(%,收盘价口径)"
+                .isEqualTo("代码,名称,费率(%),规模(亿元),跟踪指数,类别,跟踪误差(%，收盘价口径)"
                         + "\r\n# 注：跟踪误差为收盘价口径（含分红/折溢价噪声）与官方净值口径不可直接对比");
     }
 }

@@ -76,7 +76,7 @@ test.describe("/screener 价值筛选器", () => {
     // 口径注（issue #56）：表头末列口径 + 注释行（CI 空库仅表头也含两片段）
     const path = await d.path();
     const csvText = path ? fs.readFileSync(path, "utf-8").replace(/^\uFEFF/, "") : "";
-    expect(csvText).toContain("跟踪误差(%,收盘价口径)");
+    expect(csvText).toContain("跟踪误差(%，收盘价口径)");
     expect(csvText).toContain("# 注：跟踪误差为收盘价口径（含分红/折溢价噪声）与官方净值口径不可直接对比");
   });
 });

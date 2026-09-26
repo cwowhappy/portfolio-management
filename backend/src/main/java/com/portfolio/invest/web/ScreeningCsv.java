@@ -12,7 +12,7 @@ import java.util.List;
 final class ScreeningCsv {
 
     private static final String HEADER = "代码,名称,PE-TTM,PB,股息率,ROE,ROA,毛利率,资产负债率,流动比率,营收增速,净利增速,总市值(亿),换手率";
-    private static final String FUND_HEADER = "代码,名称,费率(%),规模(亿元),跟踪指数,类别,跟踪误差(%,收盘价口径)";
+    private static final String FUND_HEADER = "代码,名称,费率(%),规模(亿元),跟踪指数,类别,跟踪误差(%，收盘价口径)";
     /** TE 口径注（issue #56）：收盘价自算含分红/折溢价噪声；刻意无 ASCII 逗号，保单单元格免转义。 */
     private static final String FUND_TE_NOTE = "# 注：跟踪误差为收盘价口径（含分红/折溢价噪声）与官方净值口径不可直接对比";
     private static final byte[] BOM = {(byte) 0xEF, (byte) 0xBB, (byte) 0xBF};
