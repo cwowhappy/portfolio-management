@@ -1,9 +1,9 @@
 // ★ 全仓库唯一 echarts.use() 注册点（子路径 import 见 ESLint 规则，eslint.config.mjs 禁裸 'echarts' 入口）。
-// 页面（Pie/Bar/Line）、聊天流阶段（candlestick + dataZoom，见 05 §4.4）与行业下钻
-// 竞争格局（Scatter，MS-10 F09）均已注册；graph（产业链）P3 再加。
+// 页面（Pie/Bar/Line）、聊天流阶段（candlestick + dataZoom，见 05 §4.4）、行业下钻
+// 竞争格局（Scatter，MS-10 F09）与产业链图谱（Graph，MS-10 F11）均已注册。
 // 偏差记录：不加 DatasetComponent——builders 不用 dataset transform，YAGNI。
 import * as echarts from "echarts/core";
-import { PieChart, BarChart, LineChart, CandlestickChart, ScatterChart } from "echarts/charts";
+import { PieChart, BarChart, LineChart, CandlestickChart, ScatterChart, GraphChart } from "echarts/charts";
 import {
   TooltipComponent,
   GridComponent,
@@ -19,6 +19,7 @@ import type {
   LineSeriesOption,
   CandlestickSeriesOption,
   ScatterSeriesOption,
+  GraphSeriesOption,
 } from "echarts/charts";
 import type {
   TooltipComponentOption,
@@ -33,6 +34,7 @@ echarts.use([
   LineChart,
   CandlestickChart,
   ScatterChart,
+  GraphChart,
   TooltipComponent,
   GridComponent,
   LegendComponent,
@@ -49,6 +51,7 @@ export type ECOption = ComposeOption<
   | LineSeriesOption
   | CandlestickSeriesOption
   | ScatterSeriesOption
+  | GraphSeriesOption
   | TooltipComponentOption
   | GridComponentOption
   | LegendComponentOption

@@ -208,3 +208,70 @@ export function buildScatterOption(spec: LandscapeSpec, colors: [string, string]
     ],
   };
 }
+
+// —— 产业链力导向图（MS-10 F11，页面私有 spec——不进 chat ChartSpec 联合，设计规格 §九#6）——
+
+/** 产业链 spec：tier 三档节点（listed 区分 symbol；stockCode 供点击跳行情台；sub 为 tooltip 附注）。 */
+export type ChainGraphSpec = {
+  kind: "chain";
+  name: string;
+  nodes: Array<{
+    id: string;
+    name: string;
+    tier: "UPSTREAM" | "MIDSTREAM" | "DOWNSTREAM";
+    listed: boolean;
+    stockCode?: string;
+    sub?: string;
+  }>;
+};
+
+/** 三 tier 默认色（chart-theme SSR_FALLBACK 字面值：accent/up/inkDim；运行时由调用方传 colors 覆盖）。 */
+const CHAIN_TIER_COLORS: [string, string, string] = ["#3fb8d8", "#e85b55", "#96a4b7"];
+/** tier → category 档位（与 categories/legend 声明序一致：上游/中游/下游）。 */
+const TIER_CATEGORY: Record<ChainGraphSpec["nodes"][number]["tier"], number> = {
+  UPSTREAM: 0,
+  MIDSTREAM: 1,
+  DOWNSTREAM: 2,
+};
+
+/**
+ * 产业链力导向图：节点按 tier 分色分组（category 三档），无 edges——环节串接语义由
+ * category 排布表达（设计规格 §六）；listed 用 circle、未上市用 diamond 区分；force
+ * repulsion 200 / edgeLength 60~120（十级节点量级的松散布局）。纯函数，jsdom 可测。
+ */
+export function buildGraphOption(
+  spec: ChainGraphSpec,
+  colors: [string, string, string] = CHAIN_TIER_COLORS,
+): ECOption {
+  const tierNames = ["上游", "中游", "下游"];
+  const asNode = (p: unknown) => (p as { data?: { name?: string; sub?: string } }).data ?? {};
+  return {
+    tooltip: {
+      trigger: "item",
+      formatter: (p: unknown) => {
+        const d = asNode(p);
+        return d.sub ? `${d.name}｜${d.sub}` : (d.name ?? "");
+      },
+    },
+    legend: { data: tierNames },
+    series: [
+      {
+        type: "graph",
+        layout: "force",
+        name: spec.name,
+        categories: tierNames.map((name) => ({ name })),
+        color: colors,
+        label: { show: true },
+        force: { repulsion: 200, edgeLength: [60, 120] },
+        data: spec.nodes.map((n) => ({
+          id: n.id,
+          name: n.name,
+          category: TIER_CATEGORY[n.tier],
+          symbol: n.listed ? "circle" : "diamond",
+          ...(n.stockCode != null ? { stockCode: n.stockCode } : {}),
+          ...(n.sub != null ? { sub: n.sub } : {}),
+        })),
+      },
+    ],
+  };
+}
