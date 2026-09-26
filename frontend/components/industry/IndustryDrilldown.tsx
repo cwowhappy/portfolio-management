@@ -7,6 +7,8 @@ import { useAuth } from "@/lib/auth";
 import type { IndustryStock } from "@/lib/types";
 import ResearchNoteDialog from "@/components/wiki/ResearchNoteDialog";
 import IndustryStockTable from "./IndustryStockTable";
+import UnlistedPanel from "./unlisted/UnlistedPanel";
+import ChainPanel from "./chain/ChainPanel";
 
 const PROSPERITY_LABEL = { UP: "↑", FLAT: "→", DOWN: "↓" } as const;
 
@@ -16,6 +18,9 @@ type SortKey = (typeof SORT_KEYS)[number];
 const isSortKey = (key: string): key is SortKey =>
   (SORT_KEYS as readonly string[]).includes(key);
 
+// 下钻页三 tab（MS-10 P2/P3）：上市公司（既有）/ 未上市与融资 / 产业链（图谱+编辑器）。
+type Tab = "listed" | "unlisted" | "chain";
+
 export default function IndustryDrilldown({ industryCode }: { industryCode: string }) {
   const [stocks, setStocks] = useState<IndustryStock[]>([]);
   const [industryName, setIndustryName] = useState<string>("");
@@ -24,6 +29,7 @@ export default function IndustryDrilldown({ industryCode }: { industryCode: stri
   const [loading, setLoading] = useState(true);
   const [sortBy, setSortBy] = useState<SortKey>("total_mv");
   const [dir, setDir] = useState<"ASC" | "DESC">("DESC");
+  const [tab, setTab] = useState<Tab>("listed");
   const { user } = useAuth();
 
   useEffect(() => {
@@ -80,9 +86,39 @@ export default function IndustryDrilldown({ industryCode }: { industryCode: stri
           </span>
         )}
       </div>
-      {loading ? <div className="h-40 rounded-2xl skeleton" aria-label="加载中" /> : (
-        <IndustryStockTable stocks={stocks} sortBy={sortBy} sortDirection={dir} onSort={onSort} />
+
+      {/* 三 tab 组（样式逐字照 ScreenerBoard 先例）；「产业链」MS-10 P3 激活 */}
+      <div className="flex gap-2 text-sm">
+        <button
+          data-testid="tab-listed"
+          className={`rounded-md px-3 py-1.5 ${tab === "listed" ? "bg-[color:var(--color-panel)] text-[color:var(--color-ink)]" : "text-[color:var(--color-ink-dim)] hover:bg-[color:var(--color-panel)]/60"}`}
+          onClick={() => setTab("listed")}
+        >
+          上市公司
+        </button>
+        <button
+          data-testid="tab-unlisted"
+          className={`rounded-md px-3 py-1.5 ${tab === "unlisted" ? "bg-[color:var(--color-panel)] text-[color:var(--color-ink)]" : "text-[color:var(--color-ink-dim)] hover:bg-[color:var(--color-panel)]/60"}`}
+          onClick={() => setTab("unlisted")}
+        >
+          未上市与融资
+        </button>
+        <button
+          data-testid="tab-chain"
+          className={`rounded-md px-3 py-1.5 ${tab === "chain" ? "bg-[color:var(--color-panel)] text-[color:var(--color-ink)]" : "text-[color:var(--color-ink-dim)] hover:bg-[color:var(--color-panel)]/60"}`}
+          onClick={() => setTab("chain")}
+        >
+          产业链
+        </button>
+      </div>
+
+      {tab === "listed" && (
+        loading ? <div className="h-40 rounded-2xl skeleton" aria-label="加载中" /> : (
+          <IndustryStockTable stocks={stocks} sortBy={sortBy} sortDirection={dir} onSort={onSort} />
+        )
       )}
+      {tab === "unlisted" && <UnlistedPanel industryCode={industryCode} industryName={industryName} />}
+      {tab === "chain" && <ChainPanel industryCode={industryCode} industryName={industryName} />}
     </div>
   );
 }

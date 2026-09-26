@@ -150,3 +150,148 @@ test.describe("/industry 行业对比与关注（MS-14 P2）", () => {
     await expect(page.getByPlaceholder("用户名")).toBeVisible();
   });
 });
+
+/**
+ * MS-10 未上市与融资（P2）：V19 种子行业 801080 电子（策展 5 家恒定——V19.1 只改日期不改
+ * 行数）；公开读侧双态断言（.or() 写法照 analytics.spec 先例——未策展行业出 unlisted-empty，
+ * 种子行业出全景卡）；登录态策展增删与导入行错误走 registerAndApprove + 管理员种子门控。
+ */
+test.describe("/industry 未上市与融资（MS-10）", () => {
+  test("公开切未上市 tab：V19 种子行业全景卡有值（策展头部数=接口口径）且竞争格局 canvas 存在", async ({ page, request }) => {
+    test.skip(!(await boardHasData(request)), SKIP_NO_DATA);
+    // 解耦共享库残留/用户新增行（P2 评审收口 #3）：策展头部数以 overview 接口当下值为准，
+    // 不再断言 V19 种子常量 5——接口非 200 直接失败暴露真实回归（照 boardHasData 口径注释）
+    const overviewRes = await request.get("/api/industry/801080/unlisted/overview");
+    expect(overviewRes.ok()).toBeTruthy();
+    const overviewJson = (await overviewRes.json()) as { curatedCount: number };
+
+    await page.goto("/industry/801080");
+    await page.getByTestId("tab-unlisted").click();
+    // 双态兜底（口径照 analytics.spec .or() 先例）：种子库全景卡 / 未策展空态至少其一可见
+    const overview = page.getByTestId("unlisted-overview");
+    await expect(overview.or(page.getByTestId("unlisted-empty"))).toBeVisible({ timeout: 20_000 });
+    // 本地真库 + V19 种子：全景卡有值——上市数 >0（textContent 连排，正则锚定指标名后数值）、
+    // 策展头部数 = 接口 curatedCount（页面与接口同库直查，读侧无缓存 §九#4）、口径脚注在场
+    await expect(overview).toBeVisible();
+    await expect(overview).toContainText(/上市公司[1-9]\d* 家/);
+    await expect(overview).toContainText(`策展头部企业${overviewJson.curatedCount} 家`);
+    await expect(overview).toContainText("策展名单与月度摘录融资事件，非全量口径");
+    // F09 竞争格局气泡：ECharts canvas 真渲染（非仅容器 div）
+    await expect(page.getByTestId("landscape-chart").locator("canvas")).toBeVisible({ timeout: 15_000 });
+  });
+
+  test("登录后新增策展企业→表格可见→删除后消失", async ({ page, request }) => {
+    test.skip(!(await boardHasData(request)), SKIP_NO_DATA);
+    test.skip(!hasAdminSeed, SKIP_NO_ADMIN);
+    await registerAndApprove(page, uniqueUsername("ms10"), TEST_PASSWORD);
+    await page.goto("/industry/801080");
+    await page.getByTestId("tab-unlisted").click();
+    await expect(page.getByTestId("unlisted-companies-table")).toBeVisible({ timeout: 15_000 });
+
+    const name = `E2E策展${Date.now().toString(36)}`;
+    await page.getByTestId("curation-edit-open").click();
+    await page.getByTestId("unlisted-company-dialog").getByLabel("企业名称（必填）").fill(name);
+    // 页头「保存研究结论」入口同为含「保存」的按钮名——限定对话框内精确匹配
+    await page.getByTestId("unlisted-company-dialog").getByRole("button", { name: "保存", exact: true }).click();
+    const table = page.getByTestId("unlisted-companies-table");
+    await expect(table.getByText(name)).toBeVisible({ timeout: 15_000 });
+
+    // 行内删除（管理列）→ 名字从名单消失
+    //（playwright 1.62 实测 getByRole 第二参 hasText 不生效，须显式 .filter()）
+    await table.getByRole("row").filter({ hasText: name })
+      .getByRole("button", { name: "删除" }).click();
+    await expect(table.getByText(name)).toHaveCount(0, { timeout: 15_000 });
+  });
+
+  test("批量导入行错误：表头对、行错轮次 → 行级错误清单含行号", async ({ page, request }) => {
+    test.skip(!(await boardHasData(request)), SKIP_NO_DATA);
+    test.skip(!hasAdminSeed, SKIP_NO_ADMIN);
+    await registerAndApprove(page, uniqueUsername("ms10e"), TEST_PASSWORD);
+    await page.goto("/industry/801080");
+    await page.getByTestId("tab-unlisted").click();
+    await expect(page.getByTestId("curation-panel")).toBeVisible({ timeout: 15_000 });
+
+    // 表头八列精确匹配（L1 过），数据行轮次非法（L2 行级错）——all-or-nothing 不落库
+    const badCsv = [
+      "industry_code,company_name,segment,latest_round,last_funding_date,total_funding_yi,summary,source_note",
+      `801080,E2E错轮次企业,半导体设备,X轮,2026-08-15,10.00,e2e 行错误用例,e2e`,
+      "",
+    ].join("\n");
+    await page.getByTestId("curation-import-open").click();
+    await page.getByTestId("curation-import-dialog").getByLabel("CSV 文件")
+      .setInputFiles({ name: "bad-round.csv", mimeType: "text/csv", buffer: Buffer.from(badCsv, "utf-8") });
+    // 入口按钮「批量导入」含「导入」字样——限定对话框内精确匹配
+    await page.getByTestId("curation-import-dialog").getByRole("button", { name: "导入", exact: true }).click();
+    const errors = page.getByTestId("curation-import-row-errors");
+    await expect(errors).toBeVisible({ timeout: 15_000 });
+    await expect(errors).toContainText("2"); // 表头为行 1，首个数据行行号 2
+    await expect(errors).toContainText(/轮次/);
+  });
+
+  test("竞争格局：种子行业 landscape-chart 容器与 canvas 在场", async ({ page, request }) => {
+    test.skip(!(await boardHasData(request)), SKIP_NO_DATA);
+    await page.goto("/industry/801080");
+    await page.getByTestId("tab-unlisted").click();
+    await expect(page.getByTestId("landscape-chart")).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("landscape-chart").locator("canvas")).toBeVisible({ timeout: 15_000 });
+  });
+});
+
+/**
+ * MS-10 产业链图谱（P3）：V20 种子保证锂电池链经上市成员行业映射（300750 宁德时代 等 →
+ * 801730 电力设备）派生出现在该行业下钻页；登录态全文档编辑器建链→图卡出现→删除链消失。
+ */
+test.describe("/industry 产业链图谱（MS-10 P3）", () => {
+  test("公开切产业链 tab：V20 种子锂电池链图卡与 canvas 在场", async ({ page, request }) => {
+    test.skip(!(await boardHasData(request)), SKIP_NO_DATA);
+    await page.goto("/industry/801730");
+    await page.getByTestId("tab-chain").click();
+    // V20 种子链 id 稳定（锂电池=1），但共享 dev 库可能有用户新链——按卡片文本锚定锂电池
+    const card = page.locator('[data-testid^="chain-card-"]').filter({ hasText: "锂电池" });
+    await expect(card).toBeVisible({ timeout: 20_000 });
+    await expect(card.locator("canvas")).toBeVisible({ timeout: 15_000 });
+    // 链描述头在场（V20 种子描述含「动力电池全产业链」）
+    await expect(card).toContainText("动力电池全产业链");
+  });
+
+  test("登录后新建链（两环节各一上市成员）→ 图卡出现 → 编辑器删除链消失", async ({ page, request }) => {
+    test.skip(!(await boardHasData(request)), SKIP_NO_DATA);
+    test.skip(!hasAdminSeed, SKIP_NO_ADMIN);
+    await registerAndApprove(page, uniqueUsername("ms10c"), TEST_PASSWORD);
+    await page.goto("/industry/801730");
+    await page.getByTestId("tab-chain").click();
+    // tab 内容就绪双态（.or() 先例）：V20 种子图卡 / 未映射行业空态至少其一可见
+    await expect(page.locator('[data-testid^="chain-card-"]').first()
+      .or(page.getByTestId("chain-empty"))).toBeVisible({ timeout: 20_000 });
+
+    const chainName = `E2E链${Date.now().toString(36)}`;
+    await page.getByTestId("chain-add").click();
+    const dialog = page.getByTestId("chain-editor-dialog");
+    await dialog.getByLabel("链名（必填）").fill(chainName);
+    // 第一环节（默认一成员）：环节名 + 上市成员代码/展示名
+    await dialog.getByTestId("stage-name-0").fill("锂矿");
+    await dialog.getByTestId("member-code-0-0").fill("300750");
+    await dialog.getByTestId("member-name-0-0").fill("宁德时代");
+    // 添加第二环节 + 另一上市成员
+    await dialog.getByTestId("chain-add-stage").click();
+    await dialog.getByTestId("stage-name-1").fill("整车");
+    await dialog.getByTestId("member-code-1-0").fill("000625");
+    await dialog.getByTestId("member-name-1-0").fill("长安汽车");
+    await dialog.getByRole("button", { name: "保存", exact: true }).click();
+
+    // 全文档保存成功 → 图卡出现且 canvas 真渲染
+    const card = page.locator('[data-testid^="chain-card-"]').filter({ hasText: chainName });
+    await expect(card).toBeVisible({ timeout: 20_000 });
+    await expect(card.locator("canvas")).toBeVisible({ timeout: 15_000 });
+
+    // 行内编辑 → 删除链（window.confirm 由 dialog handler 接受）→ 图卡消失
+    const cardTestId = await card.getAttribute("data-testid");
+    const chainId = cardTestId!.split("-").pop();
+    await page.getByTestId(`chain-edit-${chainId}`).click();
+    // Playwright 默认 dismiss 对话框会使 confirm 返回 false——显式 accept
+    page.once("dialog", (d) => d.accept());
+    await page.getByTestId("chain-delete").click();
+    await expect(page.locator('[data-testid^="chain-card-"]').filter({ hasText: chainName }))
+      .toHaveCount(0, { timeout: 15_000 });
+  });
+});

@@ -5,15 +5,19 @@ import { useAuth } from "@/lib/auth";
 import type { IndustryBoardItem, IndustryStock } from "@/lib/types";
 
 // vi.hoisted：vi.mock 工厂被提升到静态 import 前，mock 引用须同层提升（仓库既有教训）。
-const { fetchIndustryBoardMock, fetchIndustryStocksMock } = vi.hoisted(() => ({
+const { fetchIndustryBoardMock, fetchIndustryStocksMock, fetchIndustryChainsMock } = vi.hoisted(() => ({
   fetchIndustryBoardMock: vi.fn(),
   fetchIndustryStocksMock: vi.fn(),
+  fetchIndustryChainsMock: vi.fn(),
 }));
 
 vi.mock("@/lib/industryApi", () => ({
   fetchIndustryBoard: fetchIndustryBoardMock,
   fetchIndustryStocks: fetchIndustryStocksMock,
 }));
+
+// MS-10 P3：「产业链」tab 激活后 ChainPanel 拉链端点（默认空数组——空态确定性）
+vi.mock("@/lib/industryChainApi", () => ({ fetchIndustryChains: fetchIndustryChainsMock }));
 
 // 组件新增 useAuth()（保存研究结论入口），本测试无 AuthProvider，照 ScreenerBoard 惯例 mock。
 vi.mock("@/lib/auth", () => ({ useAuth: vi.fn() }));
@@ -23,6 +27,7 @@ afterEach(() => {
   cleanup();
   fetchIndustryBoardMock.mockReset();
   fetchIndustryStocksMock.mockReset();
+  fetchIndustryChainsMock.mockReset();
 });
 
 const boardRow: IndustryBoardItem = {
@@ -41,6 +46,7 @@ describe("IndustryDrilldown", () => {
     vi.mocked(useAuth).mockReturnValue({ user: null, loading: false } as ReturnType<typeof useAuth>);
     fetchIndustryBoardMock.mockResolvedValue([boardRow]);
     fetchIndustryStocksMock.mockResolvedValue([stock("601398", "工商银行")]);
+    fetchIndustryChainsMock.mockResolvedValue([]);
   });
 
   it("页头含行业名/成员数/景气，成员表带报告期角标", async () => {
@@ -85,5 +91,28 @@ describe("IndustryDrilldown", () => {
     fireEvent.click(screen.getByTestId("research-note-open"));
     // 行业上下文（榜单名「银行」）预填进弹窗标题，验证 props 正确传入
     expect((screen.getByTestId("research-note-title") as HTMLInputElement).value).toBe("银行 研究结论");
+  });
+
+  it("三 tab 化（MS-10 P2/P3）：默认上市公司视图，未上市/产业链切换互斥，链 tab 空态可见", async () => {
+    render(<IndustryDrilldown industryCode="801780" />);
+    await screen.findByTestId("industry-stocks-table");
+    // 三 tab 均渲染且可用（产业链 P3 起激活），默认激活上市公司
+    expect(screen.getByTestId("tab-listed")).toBeTruthy();
+    expect(screen.getByTestId("tab-unlisted")).toBeTruthy();
+    expect(screen.getByTestId("tab-chain")).toBeTruthy();
+    expect(screen.getByText("未上市与融资")).toBeTruthy();
+    expect((screen.getByTestId("tab-chain") as HTMLButtonElement).disabled).toBe(false);
+    // 切「未上市与融资」：上市公司成员表让位（数据拉取 effect 不动，纯渲染切换）
+    fireEvent.click(screen.getByTestId("tab-unlisted"));
+    expect(screen.queryByTestId("industry-stocks-table")).toBeNull();
+    // 切回上市公司：成员表回归（不重复请求——数据仍在 state）
+    fireEvent.click(screen.getByTestId("tab-listed"));
+    expect(screen.getByTestId("industry-stocks-table")).toBeTruthy();
+    expect(fetchIndustryStocksMock).toHaveBeenCalledTimes(1);
+    // 切「产业链」（MS-10 P3）：成员表让位，ChainPanel 拉链端点渲染空态
+    fireEvent.click(screen.getByTestId("tab-chain"));
+    expect(screen.queryByTestId("industry-stocks-table")).toBeNull();
+    expect(await screen.findByTestId("chain-empty")).toBeTruthy();
+    expect(fetchIndustryChainsMock).toHaveBeenCalledWith("801780");
   });
 });

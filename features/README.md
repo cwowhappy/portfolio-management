@@ -23,7 +23,7 @@
 - 索引表「里程碑」列三态格式：`MS-XX（进行中）` / `MS-XX（已交付 YYYY-MM-DD，PR #N）` / `跨 MS-XX~YY（<性质>，<状态>）`。
 - **交付回填 checklist**（PR 合并后依序执行）：
   1. 模块文档（docs/function/modules/）功能点置 ✅ + 交付说明；
-  2. [功能模块概览](../docs/function/00-功能模块概览.md) 看板（已完成/待开发/进度）；
+  2. [功能模块概览](../docs/function/00-功能模块概览.md) 看板（已完成/待开发/进度）；**及 [01-产品概览](../docs/function/01-产品概览.md) §6 In/Out 范围清单**（若交付改变了版本边界——2026-09-26 MS-10 终审发现本 checklist 漏此文件致 Out 残留，补入）；
   3. [产品落地计划](../docs/plans/2026-08-27-产品落地计划.md)：里程碑节状态 + 基线表 + 变更记录行 + 风险表；
   4. 本 README 索引行补「已交付 日期 + PR #N」；
   5. `08-复盘总结/复盘总结.md` 回填（含计划偏差清单）。
@@ -41,6 +41,7 @@
 | [analytics](analytics/) | MS-07（已交付 2026-09-16，PR #35） | M12 收益与风险分析 | `/analytics` |
 | [rebalancing-screening](rebalancing-screening/) | MS-08（已交付 2026-09-17，PR #36） | M07 资产组合配置、M09 价值投资筛选器 | `/allocation` `/screener`（扩展） |
 | [industry-listed-research](industry-listed-research/) | MS-09（已交付 2026-09-18，PR #38） | M10 行业研究中心 | `/industry`（扩展）`/industry/[industryCode]`（新增） |
+| [industry-unlisted-research](industry-unlisted-research/) | MS-10（已交付 2026-09-26，PR #60） | M10 行业研究中心 | `/industry/[industryCode]`（扩展：三 tab 化） |
 | [wiki-knowledge-base](wiki-knowledge-base/) | MS-11（已交付 2026-09-22，PR #40） | M13 投资知识库 | `/wiki`（新增）`/industry/[industryCode]`（扩展） |
 | [ai-research-tools-phase2](ai-research-tools-phase2/) | MS-12（已交付 2026-09-23，PR #42） | M05 AI 投研能力二期 | 对话内核扩展（5 个内置工具 + 提示词 + 工具卡） |
 | [risk-attribution-backtest](risk-attribution-backtest/) | MS-13（已交付 2026-09-24，PR #51） | M12 收益与风险分析、M07 资产组合配置 | `/analytics`（扩展）`/allocation`（扩展） |
