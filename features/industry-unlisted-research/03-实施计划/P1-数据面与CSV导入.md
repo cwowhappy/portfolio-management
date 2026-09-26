@@ -14,7 +14,7 @@
 
 - 测试规约：方法名 `given|when|then` 前缀 + 中文 `@DisplayName`（`TestSourceSetConventionsTest.java:75-79`）；test 源集禁 Testcontainers；integrationTest 对真实 PG。
 - CSV 口径：RFC 4180、UTF-8（读侧容忍 BOM，写模板带 BOM）；上限 2000 数据行、1MB 文件。
-- **upsert 幂等**（设计规格 §九#2，与 MS-14 纯插入语义的关键差异）：命中幂等键更新非键字段，`CurationImportResult(insertedCount, updatedCount, rowErrors)` 200 返回；文件级错误（空/超限/表头不匹配）→ 400 `ApiError`。
+- **upsert 幂等**（设计规格 §九#2，与 MS-14 纯插入语义的关键差异）：命中幂等键更新非键字段，`CurationImportResult(insertedCount, updatedCount, rowErrors)` 200 返回；文件级错误两档（2026-09-26 评审定案：400 `ApiError` 仅限空文件/超 1MB controller 级校验，解析层文件级错误——表头不匹配/无数据行/超 2000 行——以 `rowErrors[row=0]` 走 200，对齐 MS-14 实现现状与前端 ImportDialog 渲染）。
 - 全局数据无 user 归属（设计规格 §九#1）：写侧仅校验登录（`Authentication` 参数即达成的路由级鉴权），不按人过滤。
 - 「今日」= 服务器默认时区 `LocalDate.now()`。
 - 覆盖率：后端 JaCoCo ≥0.80；`cd backend && ./gradlew check` 通过。

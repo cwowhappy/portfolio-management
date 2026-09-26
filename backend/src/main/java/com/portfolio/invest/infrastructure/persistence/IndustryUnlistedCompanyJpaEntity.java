@@ -82,8 +82,4 @@ public class IndustryUnlistedCompanyJpaEntity {
         this.sourceNote = incoming.sourceNote;
         this.updatedAt = incoming.updatedAt;
     }
-
-    Long id() {
-        return id;
-    }
 }
