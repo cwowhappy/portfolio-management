@@ -1,6 +1,10 @@
 "use client";
 
 import type { Message } from "@ag-ui/client";
+// 必须与 ThreadArea 等同用 v2 index 入口：v2/headless 与 index 是两套 chunk/context 实例，
+// provider 与 hooks 跨入口则 threadId 绑定失效（e2e 探针实测，见 ADR-0012）。index 的 css
+// 副作用由 vitest.config.ts 的 server.deps.inline 兜住。
+import { CopilotChatConfigurationProvider } from "@copilotkit/react-core/v2";
 import {
   createContext,
   useCallback,
@@ -229,9 +233,17 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   // 未解析出 threadId 前不渲染聊天内容（服务端/客户端首帧一致，避免 hydration 错误）
   if (!ready) return null;
 
+  // issue #26（2026-09-26 裁决方案 a）：AG-UI threadId 绑定会话表 id。
+  // 此前 unscoped useAgent 让 threadId 落到 chat 配置缺省 → CopilotKit 每次页面加载自铸新 UUID：
+  // 刷新即换线程，后端 stateStore 会话记忆（按 (userId, threadId) 键控）与 AguiResumeCoordinator
+  // 的 pending interrupt 随之与 UI 会话脱钩。在此把 chat 配置的 threadId 钉到会话表 id——
+  // 刷新/跨标签页续用同一线程：多轮记忆连续、HITL 恢复键一致（FR-8 场景A 恢复设计可达）。
+  // 代价（接受）：同一会话残留未决 interrupt 时，后续消息按 FR-8 契约错误引导开新会话。
   return (
-    <ChatRuntimeContext.Provider value={value}>
-      {children}
-    </ChatRuntimeContext.Provider>
+    <CopilotChatConfigurationProvider threadId={currentThreadId}>
+      <ChatRuntimeContext.Provider value={value}>
+        {children}
+      </ChatRuntimeContext.Provider>
+    </CopilotChatConfigurationProvider>
   );
 }
