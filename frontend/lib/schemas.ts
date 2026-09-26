@@ -429,6 +429,60 @@ export const IndustryWatchItemSchema = z.object({
   addedAt: z.string(),
 });
 
+// —— 未上市与融资（/api/industry/{code}/unlisted/**，MS-10 P2，与后端三 View 对齐）——
+// nullable 字段显式 .nullable()：V19 表 segment/lastFundingDate/totalFundingYi/summary/
+// sourceNote、事件 amountYi/investors/segment/sourceUrl 均可缺省（未披露）。
+
+export const UnlistedCompanySchema = z.object({
+  id: z.number(),
+  industryCode: z.string(),
+  companyName: z.string(),
+  segment: z.string().nullable(),
+  latestRound: z.string(),
+  latestRoundLabel: z.string(),
+  lastFundingDate: z.string().nullable(),
+  totalFundingYi: z.number().nullable(),
+  summary: z.string().nullable(),
+  sourceNote: z.string().nullable(),
+  updatedAt: z.string(),
+});
+
+export const FundingEventSchema = z.object({
+  id: z.number(),
+  eventDate: z.string(),
+  companyName: z.string(),
+  round: z.string(),
+  roundLabel: z.string(),
+  amountYi: z.number().nullable(),
+  investors: z.string().nullable(),
+  industryCode: z.string(),
+  segment: z.string().nullable(),
+  sourceTitle: z.string(),
+  sourceUrl: z.string().nullable(),
+  createdAt: z.string(),
+});
+
+export const RoundCountSchema = z.object({ round: z.string(), count: z.number() });
+
+export const UnlistedOverviewSchema = z.object({
+  listedCount: z.number(),
+  listedMarketCapYi: z.number(),
+  curatedCount: z.number(),
+  fundingEvents12m: z.number(),
+  roundDistribution: z.array(RoundCountSchema),
+  coverageNote: z.string(),
+});
+
+// —— 策展 CSV 导入结果（/api/industry-curation/**/import，MS-10 upsert 双计数——与
+//    MS-14 ImportResultSchema（单计数 importedCount）契约不同源，勿混用）——
+
+export const CurationRowErrorSchema = z.object({ row: z.number(), reason: z.string() });
+export const CurationImportResultSchema = z.object({
+  insertedCount: z.number(),
+  updatedCount: z.number(),
+  rowErrors: z.array(CurationRowErrorSchema),
+});
+
 // —— 投资知识库（/api/wiki/**，与后端 WikiController 的 View 对齐）——
 
 export const WikiEntryTypeSchema = z.enum(["BOOK_NOTE", "CONCEPT", "RESEARCH_NOTE"]);

@@ -460,6 +460,72 @@ export interface IndustryWatchItem {
   addedAt: string;
 }
 
+// —— 未上市与融资（/api/industry/{code}/unlisted/**，MS-10 P2，与后端三 View 对齐）——
+// 轮次双字段：latestRound/round 为 FundingRound 枚举名（排序用），*Label 为中文（渲染用）。
+
+export interface UnlistedCompany {
+  id: number;
+  industryCode: string;
+  companyName: string;
+  segment: string | null;
+  latestRound: string;
+  latestRoundLabel: string;
+  lastFundingDate: string | null;
+  totalFundingYi: number | null;
+  summary: string | null;
+  sourceNote: string | null;
+  updatedAt: string;
+}
+
+export interface FundingEvent {
+  id: number;
+  eventDate: string;
+  companyName: string;
+  round: string;
+  roundLabel: string;
+  amountYi: number | null;
+  investors: string | null;
+  industryCode: string;
+  segment: string | null;
+  sourceTitle: string;
+  sourceUrl: string | null;
+  createdAt: string;
+}
+
+export interface RoundCount {
+  round: string;
+  count: number;
+}
+
+export interface UnlistedOverview {
+  listedCount: number;
+  listedMarketCapYi: number;
+  curatedCount: number;
+  fundingEvents12m: number;
+  roundDistribution: RoundCount[];
+  coverageNote: string;
+}
+
+/** 策展企业单条保存命令（POST/PUT /api/industry-curation/companies，id 有值为 PUT）。 */
+export interface SaveUnlistedCompanyInput {
+  id?: number;
+  industryCode: string;
+  companyName: string;
+  segment: string | null;
+  latestRound: string;
+  lastFundingDate: string | null;
+  totalFundingYi: number | null;
+  summary: string | null;
+  sourceNote: string | null;
+}
+
+/** 策展 CSV 导入结果（upsert 双计数，与 MS-14 ImportResult 契约不同源）。 */
+export interface CurationImportResult {
+  insertedCount: number;
+  updatedCount: number;
+  rowErrors: { row: number; reason: string }[];
+}
+
 // —— 投资知识库（/api/wiki/**，与后端 WikiController 的 View 对齐）——
 
 export type WikiEntryType = "BOOK_NOTE" | "CONCEPT" | "RESEARCH_NOTE";
