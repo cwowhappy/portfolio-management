@@ -206,6 +206,9 @@ scripts/    smoke.sh 冒烟脚本
 | TUSHARE_TOKEN | - | 采集服务（collector）tushare 数据源 token（个股基本面 / 指数估值 / 申万映射；未填则仅 akshare 数据可用） |
 | FEISHU_BOT_WEBHOOK | - | 采集告警推飞书群自定义机器人（opt-in，优先于 COLLECTOR_ALERT_WEBHOOK；卡片消息，覆盖任务终态 failed/partial + 日终新鲜度巡检） |
 | FEISHU_BOT_SECRET | - | 飞书机器人签名密钥（群机器人安全设置选「签名校验」时必填） |
+| FEISHU_APP_ID / FEISHU_APP_SECRET | - | 飞书自建应用凭证（P1 原则预警推送；开放平台「证券投资助手」） |
+| FEISHU_ALERT_CHAT_ID | - | P1 预警目标群 chat_id（oc_ 前缀） |
+| FEISHU_OWNER_USERNAME | - | P1 巡检用户名（默认回落 ADMIN_USERNAME） |
 | COLLECTOR_ALERT_WEBHOOK | - | 采集告警通用 JSON POST webhook（opt-in 逃生通道；仅在未配置 FEISHU_BOT_WEBHOOK 时生效） |
 | MCP_SECRET_KEY | - | **规划中（二期），代码尚未实现**——当前 provider token 为 `auth_secret_enc` 明文直读；规划语义：MCP 系统 Token 的 AES-256-GCM 主密钥（base64 32 字节），缺失不阻断启动、加解密时报错 |
 
