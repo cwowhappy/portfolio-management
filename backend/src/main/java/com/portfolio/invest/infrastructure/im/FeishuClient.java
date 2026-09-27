@@ -52,29 +52,56 @@ public class FeishuClient {
 
     public boolean sendCard(String chatId, String title, String template, List<String> bodyLines) {
         InvestProperties.Im im = props.getIm();
-        if (im.getAppId() == null || im.getAppId().isBlank()
-                || im.getAppSecret() == null || im.getAppSecret().isBlank()
-                || chatId == null || chatId.isBlank()) {
+        if (im.getAppId() == null || im.getAppId().isBlank() || im.getAppSecret() == null
+                || im.getAppSecret().isBlank() || chatId == null || chatId.isBlank()) {
             log.warn("飞书未配置（appId/appSecret/chatId 缺失），跳过发送：{}", title);
             return false;
         }
+        try {
+            String content = mapper.writeValueAsString(Map.of(
+                    "config", Map.of("wide_screen_mode", true),
+                    "header", Map.of("title", Map.of("tag", "plain_text", "content", title),
+                            "template", template),
+                    "elements", List.of(Map.of("tag", "div",
+                            "text", Map.of("tag", "lark_md", "content", String.join("\n", bodyLines))))));
+            return postMessage("/open-apis/im/v1/messages?receive_id_type=chat_id",
+                    Map.of("receive_id", chatId, "msg_type", "interactive", "content", content), title);
+        } catch (Exception e) {
+            log.warn("飞书卡片构造失败（title={}）：{}", title, e.getMessage());
+            return false;
+        }
+    }
+
+    /** P2 对话回复：reply 到指定消息，纯文本。 */
+    public boolean sendReply(String messageId, String text) {
+        InvestProperties.Im im = props.getIm();
+        if (im.getAppId() == null || im.getAppId().isBlank() || im.getAppSecret() == null
+                || im.getAppSecret().isBlank() || messageId == null || messageId.isBlank()) {
+            log.warn("飞书未配置（appId/appSecret 缺失），跳过回复");
+            return false;
+        }
+        try {
+            String content = mapper.writeValueAsString(Map.of("text", text));
+            return postMessage("/open-apis/im/v1/messages/" + messageId + "/reply",
+                    Map.of("msg_type", "text", "content", content), "reply:" + messageId);
+        } catch (Exception e) {
+            log.warn("飞书回复构造失败（messageId={}）：{}", messageId, e.getMessage());
+            return false;
+        }
+    }
+
+    /** 公共发送：token 获取 + 2 次尝试（token 失效码 99991663/99991664 重取一次）+ 200/body-code 契约。 */
+    private boolean postMessage(String path, Map<String, Object> body, String logTag) {
         for (int attempt = 1; attempt <= 2; attempt++) {
             String tok = token();
             if (tok == null) {
                 return false;
             }
             try {
-                String content = mapper.writeValueAsString(Map.of(
-                        "config", Map.of("wide_screen_mode", true),
-                        "header", Map.of("title", Map.of("tag", "plain_text", "content", title),
-                                "template", template),
-                        "elements", List.of(Map.of("tag", "div",
-                                "text", Map.of("tag", "lark_md", "content", String.join("\n", bodyLines))))));
-                JsonNode resp = restClient.post()
-                        .uri("/open-apis/im/v1/messages?receive_id_type=chat_id")
+                JsonNode resp = restClient.post().uri(path)
                         .header("Authorization", "Bearer " + tok)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .body(Map.of("receive_id", chatId, "msg_type", "interactive", "content", content))
+                        .body(body)
                         .retrieve()
                         .body(JsonNode.class);
                 int code = resp == null ? -1 : resp.path("code").asInt(-1);
@@ -82,14 +109,14 @@ public class FeishuClient {
                     return true;
                 }
                 if (code == 99991663 || code == 99991664) {
-                    token.set(null); // token 失效：重取后重试一次
+                    token.set(null);
                     continue;
                 }
-                log.warn("飞书发送失败 code={} msg={}（title={}）", code,
-                        resp == null ? "-" : resp.path("msg").asText(), title);
+                log.warn("飞书发送失败 code={} msg={}（{}）", code,
+                        resp == null ? "-" : resp.path("msg").asText(), logTag);
                 return false;
-            } catch (Exception e) { // noqa 尽力而为：传输异常重试一次后放弃
-                log.warn("飞书发送异常（第 {} 次，title={}）：{}", attempt, title, e.getMessage());
+            } catch (Exception e) {
+                log.warn("飞书发送异常（第 {} 次，{}）：{}", attempt, logTag, e.getMessage());
             }
         }
         return false;

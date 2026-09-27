@@ -249,6 +249,8 @@ public class InvestProperties {
         private String chatId = "";
         private String ownerUsername = "";
         private String apiBase = "https://open.feishu.cn";
+        private String ownerOpenId = "";
+        private boolean dialogueEnabled = false;
 
         public String getAppId() { return appId; }
         public void setAppId(String appId) { this.appId = appId; }
@@ -260,6 +262,11 @@ public class InvestProperties {
         public void setOwnerUsername(String ownerUsername) { this.ownerUsername = ownerUsername; }
         public String getApiBase() { return apiBase; }
         public void setApiBase(String apiBase) { this.apiBase = apiBase; }
+
+        public String getOwnerOpenId() { return ownerOpenId; }
+        public void setOwnerOpenId(String ownerOpenId) { this.ownerOpenId = ownerOpenId; }
+        public boolean isDialogueEnabled() { return dialogueEnabled; }
+        public void setDialogueEnabled(boolean dialogueEnabled) { this.dialogueEnabled = dialogueEnabled; }
     }
 
     public static class Security {
