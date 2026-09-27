@@ -13,7 +13,6 @@ import static org.mockito.Mockito.when;
 
 import com.portfolio.invest.config.InvestProperties;
 import com.portfolio.invest.domain.user.User;
-import com.portfolio.invest.domain.user.UserErrorCode;
 import com.portfolio.invest.domain.user.UserException;
 import com.portfolio.invest.domain.user.UserRepository;
 import com.portfolio.invest.domain.user.UserRole;

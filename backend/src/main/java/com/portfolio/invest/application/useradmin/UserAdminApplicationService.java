@@ -91,7 +91,7 @@ public class UserAdminApplicationService {
             mailSender.send(view.email(), "九和投资邮箱绑定通知",
                     "管理员已将本邮箱绑定至九和投资账号 " + view.username() + "。此后可通过本邮箱自助重置密码。若非本人知晓，请联系管理员。");
         } catch (Exception e) {
-            log.warn("邮箱绑定告知邮件发送失败（已存库不影响绑定）: {}", e.getMessage());
+            log.warn("邮箱绑定告知邮件发送失败（已存库不影响绑定）", e);
         }
         return view;
     }

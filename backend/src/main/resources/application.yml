@@ -82,6 +82,7 @@ invest:
     smtp-password: ${MAIL_SMTP_PASSWORD:}
     from: ${MAIL_FROM:}
     test-fixed-code: ${MAIL_TEST_FIXED_CODE:}
+    test-mode: ${MAIL_TEST_MODE:false}
   market:
     connect-timeout: 3s
     read-timeout: 5s

@@ -1,11 +1,11 @@
 package com.portfolio.invest.infrastructure.mail;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 import com.portfolio.invest.config.InvestProperties;
 import org.junit.jupiter.api.DisplayName;
@@ -57,6 +57,7 @@ class SmtpMailSenderTest {
     void givenFixedCodeOnly_whenEnabled_thenTrue() {
         InvestProperties.Mail m = new InvestProperties.Mail();
         m.setTestFixedCode("123456");
+        m.setTestMode(true);
         assertThat(new SmtpMailSender(m, mock(JavaMailSender.class)).enabled()).isTrue();
     }
 
@@ -66,7 +67,27 @@ class SmtpMailSenderTest {
         JavaMailSender javaSender = mock(JavaMailSender.class);
         InvestProperties.Mail m = fullMail();
         m.setTestFixedCode("123456");
+        m.setTestMode(true);
         new SmtpMailSender(m, javaSender).send("to@x.com", "九和验证码", "您的验证码 123456");
         verify(javaSender, never()).send(any(SimpleMailMessage.class));
+    }
+
+    @DisplayName("固定码未开 test-mode（生产误配）：主构造器启动即失败")
+    @Test
+    void givenFixedCodeWithoutTestMode_whenConstruct_thenFailFast() {
+        InvestProperties props = new InvestProperties();
+        props.getMail().setTestFixedCode("123456");
+        assertThatThrownBy(() -> new SmtpMailSender(props))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("生产环境严禁");
+    }
+
+    @DisplayName("固定码 + test-mode 同开（e2e 正常接线）：主构造器构造成功")
+    @Test
+    void givenFixedCodeWithTestMode_whenConstruct_thenSucceed() {
+        InvestProperties props = new InvestProperties();
+        props.getMail().setTestFixedCode("123456");
+        props.getMail().setTestMode(true);
+        assertThat(new SmtpMailSender(props).enabled()).isTrue();
     }
 }

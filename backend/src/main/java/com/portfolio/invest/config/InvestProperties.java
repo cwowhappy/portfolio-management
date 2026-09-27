@@ -369,8 +369,10 @@ public class InvestProperties {
         private String smtpUsername = "";
         private String smtpPassword = "";
         private String from = "";
-        /** 仅 e2e/联调：非空时验证码恒为该值（生产必须留空）。 */
+        /** 仅 e2e/联调：非空时验证码恒为该值（生产必须留空，且须同时开 test-mode）。 */
         private String testFixedCode = "";
+        /** 固定码开关（MAIL_TEST_MODE）：test-fixed-code 非空但本开关未开时启动即失败——防固定码泄入生产 env。 */
+        private boolean testMode = false;
 
         public boolean configured() {
             return !smtpHost.isBlank() && !smtpUsername.isBlank()
@@ -389,5 +391,7 @@ public class InvestProperties {
         public void setFrom(String from) { this.from = from; }
         public String getTestFixedCode() { return testFixedCode; }
         public void setTestFixedCode(String testFixedCode) { this.testFixedCode = testFixedCode; }
+        public boolean isTestMode() { return testMode; }
+        public void setTestMode(boolean testMode) { this.testMode = testMode; }
     }
 }

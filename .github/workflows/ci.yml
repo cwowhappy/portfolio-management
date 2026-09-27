@@ -124,6 +124,8 @@ jobs:
       E2E_HITL_MCP_URL: http://127.0.0.1:8765/mcp
       # M01-F06 e2e：注册/找回验证码固定值（与 scripts/e2e-backend.sh 默认一致；生产严禁设置）
       MAIL_TEST_FIXED_CODE: "123456"
+      # 固定码开关：后端启动守卫要求 MAIL_TEST_MODE 显式同开（e2e-backend.sh 亦会 export）
+      MAIL_TEST_MODE: "1"
       # chat-tools 筛选等用例依赖行情样例数据：CI 库为空 schema，由后端启动时幂等应用
       # db/seed/e2e-seed.sql（DevMarketDataSeedRunner，库非空自动跳过；不含 industry_valuation，
       # 行业板面 MS-09 用例保持空库跳过门控）
