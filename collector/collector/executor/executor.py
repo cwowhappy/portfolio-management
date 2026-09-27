@@ -1,8 +1,16 @@
 import datetime as dt
+import threading
 import time
 
 from collector.model.health import SourceHealth
-from collector.model.run import MODE_INCREMENTAL, STATUS_FAILED, STATUS_PARTIAL, STATUS_SUCCESS, RunResult
+from collector.model.run import (
+    MODE_BACKFILL,
+    MODE_INCREMENTAL,
+    STATUS_FAILED,
+    STATUS_PARTIAL,
+    STATUS_SUCCESS,
+    RunResult,
+)
 from collector.repositories.health import HealthRepository
 from collector.repositories.runs import RunRepository
 from collector.sources.base import SourceError
@@ -14,6 +22,37 @@ class StoreError(Exception):
 
 class AllSourcesFailed(Exception):
     pass
+
+
+# P0-1 fetch 超时全局默认（30 分钟）：覆盖一切未显式配置的源；长任务（stock_financial
+# ~30-60 分钟、etf_basic ~16 分钟）在 YAML source 条目用 timeout_seconds 覆盖。
+DEFAULT_FETCH_TIMEOUT_SECONDS = 1800
+
+
+def _fetch_with_timeout(src, params, timeout_seconds):
+    """daemon 线程包裹 fetch：超时抛 SourceError 走换源；被放弃的线程随上游
+    socket 断开自然消亡（Python 无法强杀线程，daemon 保证不阻塞进程退出）。
+    timeout_seconds 为 None 时不包裹（backfill 豁免 / 显式禁用）。"""
+    if timeout_seconds is None:
+        return src.fetch(params)
+    result = {}
+    done = threading.Event()
+
+    def _worker():
+        try:
+            result["value"] = src.fetch(params)
+        except BaseException as e:  # noqa: BLE001 原样转交上层（含 SourceError）
+            result["error"] = e
+        finally:
+            done.set()
+
+    thread = threading.Thread(target=_worker, daemon=True, name=f"fetch-timeout-{src.source_id}")
+    thread.start()
+    if not done.wait(timeout_seconds):
+        raise SourceError(f"源 {src.source_id} fetch 超时（>{timeout_seconds}s），放弃等待")
+    if "error" in result:
+        raise result["error"]
+    return result.get("value")
 
 
 def _trading_day(params):
@@ -39,6 +78,7 @@ class Executor:
         params=None,
         source_used=None,
         rows_written=None,
+        rows_affected=None,
         error=None,
         message=None,
         record_kwargs=None,
@@ -49,13 +89,20 @@ class Executor:
         """
         if run_id is not None:
             run_repo.finish_run(
-                run_id, status, source_used=source_used, rows_written=rows_written, error=error, message=message
+                run_id,
+                status,
+                source_used=source_used,
+                rows_written=rows_written,
+                rows_affected=rows_affected,
+                error=error,
+                message=message,
             )
             return
         kwargs = {
             "params": params,
             "source_used": source_used,
             "rows_written": rows_written,
+            "rows_affected": rows_affected,
             "error": error,
             "message": message,
         }
@@ -88,9 +135,15 @@ class Executor:
         for src in candidates:
             started = time.monotonic()
             h = health.setdefault(src.source_id, SourceHealth(src.source_id))
+            # P0-1：增量模式套 fetch 超时（YAML 覆盖 > 全局默认）；backfill 区间回补
+            # 耗时不可预估，豁免（None 即不包裹）。
+            if mode == MODE_BACKFILL:
+                timeout = None
+            else:
+                timeout = (task.source_timeouts or {}).get(src.source_id) or DEFAULT_FETCH_TIMEOUT_SECONDS
             try:
                 try:
-                    raw = src.fetch(params)
+                    raw = _fetch_with_timeout(src, params, timeout)
                 except SourceError:
                     raise
                 except Exception as e:
@@ -131,7 +184,9 @@ class Executor:
                 latency = int((time.monotonic() - started) * 1000)
                 health_repo.save(self.selector.record_success(h, latency))
                 status = STATUS_PARTIAL if issues else STATUS_SUCCESS
-                msg = "; ".join(issues) or None
+                # P0-4：源侧观测警告（如股息率估算回退 NULL）合入 message，不改变终态
+                parts = list(issues) + list(getattr(src, "last_warnings", None) or [])
+                msg = "; ".join(parts) or None
                 self._finish_or_record(
                     run_repo,
                     task,
@@ -141,8 +196,10 @@ class Executor:
                     params=params,
                     source_used=src.source_id,
                     rows_written=rows,
+                    # P0-5：DB→DB 源（fetch 内自行 UPDATE）挂 last_affected_rows 上报实际影响行数
+                    rows_affected=getattr(src, "last_affected_rows", None),
                     message=msg,
-                    record_kwargs={"params", "source_used", "rows_written", "message"},
+                    record_kwargs={"params", "source_used", "rows_written", "rows_affected", "message"},
                 )
                 return RunResult(
                     task.task_code,

@@ -23,7 +23,9 @@ from collector.executor.selector import SourceSelector
 from collector.model.task import Collector
 from collector.repositories.runs import RunRepository
 from collector.repositories.tasks import TASK_COLS, TaskRepository
+from collector.scheduler.alerts import ALERT_WEBHOOK_ENV, alerter_from_env
 from collector.scheduler.calendar import TradingCalendar
+from collector.scheduler.patrol import run_freshness_patrol
 from collector.scheduler.runner import TaskRunner
 from collector.sources.plugins import (
     AllASpotBackupSource,
@@ -55,6 +57,8 @@ logger = logging.getLogger(__name__)
 CALENDAR_REFRESH_CRON = "10 3 1 * *"
 # 日历最新日期落后当天超过该天数时打 warning 留痕。
 CALENDAR_STALE_DAYS = 15
+# 新鲜度巡检（P0-3）：交易日 17:30——当日采集任务最晚 16:30 结束后再对账。
+PATROL_CRON = "30 17 * * 1-5"
 
 
 def load_task_defs(dir_path: str) -> list[dict]:
@@ -110,6 +114,8 @@ def assemble_collector(row, registries):
         trading_day_gated=row["trading_day_gated"],
         retry_max=row["retry_max"],
         retry_backoff=row["retry_backoff"],
+        # P0-1：source 条目的 timeout_seconds 提取为 {source_id: 秒}，executor 按 id 查
+        source_timeouts={s["source_id"]: s["timeout_seconds"] for s in row["source_ids"] if s.get("timeout_seconds")},
     )
 
 
@@ -129,7 +135,26 @@ def _run_task_job(runner, task):
         logger.exception("任务 %s 调度运行失败", task.task_code)
 
 
-def build_scheduler(tasks, runner, never_succeeded=None, calendar_refresher=None):
+def _freshness_patrol_job(database_url, alerter, calendar):
+    """P0-3 巡检 job：非交易日静默跳过；发现滞后走告警通道（未配置只留 warning 日志）。"""
+
+    def job():
+        if not calendar.is_trading_day(dt.date.today()):
+            logger.info("新鲜度巡检跳过：今日非交易日")
+            return
+        with psycopg.connect(database_url) as conn:
+            findings = run_freshness_patrol(conn)
+        if not findings:
+            logger.info("新鲜度巡检通过：8 张规则表全部就绪")
+            return
+        logger.warning("新鲜度巡检发现 %d 项滞后：%s", len(findings), findings)
+        if alerter is not None:
+            alerter.send({"type": "freshness_patrol", "date": dt.date.today().isoformat(), "stale": findings})
+
+    return job
+
+
+def build_scheduler(tasks, runner, never_succeeded=None, calendar_refresher=None, patrol_fn=None):
     scheduler = BlockingScheduler()
     now = dt.datetime.now()
     for task in tasks:
@@ -155,6 +180,15 @@ def build_scheduler(tasks, runner, never_succeeded=None, calendar_refresher=None
             coalesce=True,
             max_instances=1,
             misfire_grace_time=86400,
+        )
+    if patrol_fn is not None:
+        scheduler.add_job(
+            patrol_fn,
+            trigger=CronTrigger.from_crontab(PATROL_CRON),
+            id="freshness_patrol",
+            coalesce=True,
+            max_instances=1,
+            misfire_grace_time=3600,
         )
     return scheduler
 
@@ -380,12 +414,17 @@ def main():
     selector = SourceSelector()
     store = Store()
     executor = Executor(selector, store)
-    runner = TaskRunner(config.database_url, calendar, executor)
+    # P0-2 终态告警：COLLECTOR_ALERT_WEBHOOK 未配置时为 None，runner 走现状零开销路径
+    alerter = alerter_from_env()
+    if alerter is not None:
+        logger.info("终态告警已启用：%s", ALERT_WEBHOOK_ENV)
+    runner = TaskRunner(config.database_url, calendar, executor, alerter=alerter)
     scheduler = build_scheduler(
         tasks,
         runner,
         never_succeeded=never_succeeded,
         calendar_refresher=lambda: refresh_calendar_job(config.database_url),
+        patrol_fn=_freshness_patrol_job(config.database_url, alerter, calendar),
     )
     logger.info("调度器启动：%d 个任务，冷启动补跑 %d 个", len(tasks), len(never_succeeded))
     scheduler.start()

@@ -5,7 +5,7 @@ import time
 import psycopg
 
 from collector.executor.executor import AllSourcesFailed, StoreError
-from collector.model.run import STATUS_FAILED, STATUS_SKIPPED, RunResult
+from collector.model.run import STATUS_FAILED, STATUS_PARTIAL, STATUS_SKIPPED, RunResult
 from collector.repositories.runs import RunRepository
 
 logger = logging.getLogger(__name__)
@@ -40,11 +40,12 @@ def run_date(params) -> dt.date:
 
 
 class TaskRunner:
-    def __init__(self, database_url, calendar, executor, retry_max=3):
+    def __init__(self, database_url, calendar, executor, retry_max=3, alerter=None):
         self.database_url = database_url
         self.calendar = calendar
         self.executor = executor
         self.retry_max = retry_max  # task 未配置 retry_max 时的兜底
+        self.alerter = alerter  # P0-2 终态告警；None（未配置 webhook）时零开销走现状
 
     def run(self, task, mode="incremental", params=None, force=False):
         params = params or {}
@@ -75,7 +76,11 @@ class TaskRunner:
                 run_id = RunRepository(conn).start_run(task.task_code, mode, params)
                 try:
                     # 熔断计数按任务运行而非尝试次数：重试不再放大 consecutive_failures。
-                    return self.executor.run(task, mode, params, conn, count_failures=(attempt == 0), run_id=run_id)
+                    result = self.executor.run(task, mode, params, conn, count_failures=(attempt == 0), run_id=run_id)
+                    if result.status in (STATUS_FAILED, STATUS_PARTIAL):
+                        # P0-2：executor 正常返回但终态不健康（partial 剔行 / 全源熔断 failed）也告警。
+                        self._alert(task, mode, result.status, message=result.message)
+                    return result
                 except (AllSourcesFailed, StoreError) as e:
                     last_error = e
                     if attempt >= retry_max:
@@ -87,11 +92,28 @@ class TaskRunner:
                     # converter 等原生异常逃逸不会触发 executor 的 finish_run：这里兜底把 running 行
                     # 置为 failed，避免留下永远 running 的悬挂记录（FR-10 状态可观测）。
                     self._abort_run(conn, run_id, e)
+                    self._alert(task, mode, STATUS_FAILED, error=str(e))
                     raise
                 finally:
                     conn.execute(UNLOCK_SQL, (task.task_code,))
         logger.error("任务 %s 重试 %d 次后仍失败：%s", task.task_code, retry_max, last_error)
+        self._alert(task, mode, STATUS_FAILED, error=str(last_error))
         raise last_error
+
+    def _alert(self, task, mode, status, error=None, message=None):
+        """P0-2 终态告警：未配置 alerter 时零开销；发送失败由 alerter 内部兜底。"""
+        if self.alerter is None:
+            return
+        self.alerter.send(
+            {
+                "type": "task_run",
+                "task": task.task_code,
+                "status": status,
+                "mode": mode,
+                "error": error,
+                "message": message,
+            }
+        )
 
     def _record_skip(self, task, mode, params, message):
         """skipped（非交易日）也落一条 task_run，满足 FR-10「每次执行记录」。"""

@@ -1,8 +1,9 @@
 task_code: stock_financial
 task_name: 个股财务季数据
 # 备源后置：暂为单源（tushare fina_indicator），后续补 akshare 备源
+# timeout_seconds=5400：逐股 ~5400 只 × 2 接口 + 0.35s 限速，量级 30-60 分钟，覆盖默认 1800s
 source_ids:
-  - { source_id: stock_financial, type: plugin, class: stock_financial }
+  - { source_id: stock_financial, type: plugin, class: stock_financial, timeout_seconds: 5400 }
 converter: field_mapping_stock_financial
 calc: null
 validator:

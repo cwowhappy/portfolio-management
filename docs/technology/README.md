@@ -115,6 +115,7 @@ docs/technology/
 | [03-金融机构MCP服务参考.md](research/03-金融机构MCP服务参考.md) | 金融机构/券商 MCP 全景：国内官方（东财妙想/iFinD/Wind/Tushare/长桥/老虎）、国际（Alpha Vantage/FactSet/S&P 等）、A 股社区封装、接入方式与安全注意（2026-09-06 调研核实） |
 | [04-AGUI事件全景与三场景技术方案.md](research/04-AGUI事件全景与三场景技术方案.md) | AG-UI 协议 36 事件 + AgentScope 2.0.3 的 28 事件字段级全景、CopilotKit 1.70.1 消费/发射映射、HITL/富文本（Markdown·图表·文件）/用户问答三场景技术方案与风险清单（2026-09-10 调研核实） |
 | [05-富文本场景技术方案.md](research/05-富文本场景技术方案.md) | 聊天流富文本（文字/图片/表格/图表）落地细化：单一 ChartSpec 双端契约（table 为变体之一）、AgentScope ToolEmitter 双通道（全量走 SSE、摘要进 LLM）、ECharts 6 按需引入与自写 hook、TanStack Table v9、前置缺陷修复与实施顺序（2026-09-10） |
+| [06-证券数据来源与存储管理梳理.md](research/06-证券数据来源与存储管理梳理.md) | 证券数据全景盘点：四条链路（collector 落库/backend 实时直连/MCP/混合）× 六类外部源（tushare/akshare/东财/腾讯/新浪/MCP 三家）、17 个采集任务、14 张表的迁移双轨契约与写入语义；优劣势分析 + P0/P1/P2 优化建议 + 文档漂移清单（2026-09-27 双代理取证+主会话逐条复核） |
 | [agentscope/](research/agentscope/) | AgentScope 官方文档离线摘录（vendored，见其 [README](research/agentscope/README.md)）：`scripts/fetch_docs.py` 抓取，上游站内链接预期断链；P0 协议勘误以 mcp-hitl 验证记录为准 |
 | [copilotkit/](research/copilotkit/) | CopilotKit × AG-UI 协议 HITL 支持调研（一手来源核实，2026-09-08）：interrupt/resume 契约、useInterrupt 等 hooks、2.0.3 修复对照 |
 

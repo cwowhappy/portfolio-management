@@ -6,7 +6,7 @@
 
 ## 1. 概述
 
-内置工具（行情/估值等 7 个 `@Tool`）之外，Agent 需要机构级数据源（公告、研报、宏观 EDB、港美股、期货等）。本模块以 MCP 标准协议接入三家官方服务，设计要点：
+内置工具（行情/估值等 10 个 `@Tool`，见 InvestTools）之外，Agent 需要机构级数据源（公告、研报、宏观 EDB、港美股、期货等）。本模块以 MCP 标准协议接入三家官方服务，设计要点：
 
 - **内置 provider 目录**：妙想（东方财富 mx-ds）/ Tushare / Wind 三家由 `V10__mcp.sql` seed，用户**不可自定义 server**——`McpConfigController` 只读目录（`GET /providers`）+ 维护个人配置（`PUT/DELETE /configs`），无新增 provider 端点。
 - **用户级粒度**：用户按 provider 启用/停用，并可禁用 provider 内单个工具（`disabled_tools`）；Agent 每次对话按当前用户装配。
@@ -31,7 +31,7 @@ POST /agui/run
   → CurrentUserHolder.get() 取 userId（AgentConfig 注册 factory 时读取）
   → HarnessAgentFactory.build(userId)
   → UserToolkitFactory.build(userId)
-      ├─ 注册内置 7 个 @Tool（InvestTools）
+      ├─ 注册内置 10 个 @Tool（InvestTools）
       └─ 遍历启用 provider：
           · 用户未配置/未启用 → 跳过
           · auth_type≠NONE 且 token 空白 → 跳过（防半配置 provider 拖垮装配）
