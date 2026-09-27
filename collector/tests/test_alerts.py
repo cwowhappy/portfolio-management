@@ -115,8 +115,7 @@ def test_task_run_card_clips_long_error():
 
 def test_patrol_card_lists_findings_and_caps_at_eight():
     stale = [
-        {"kind": "trading_day", "table": f"t{i}", "latest": "2026-09-01", "expected": "2026-09-26"}
-        for i in range(10)
+        {"kind": "trading_day", "table": f"t{i}", "latest": "2026-09-01", "expected": "2026-09-26"} for i in range(10)
     ]
     card = _card_of({"type": "freshness_patrol", "date": "2026-09-26", "stale": stale})
     assert card["header"]["template"] == "orange"
