@@ -6,10 +6,19 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.portfolio.invest.domain.user.User;
 import com.portfolio.invest.domain.user.UserRepository;
+import com.portfolio.invest.domain.user.UserRole;
+import com.portfolio.invest.domain.user.UserStatus;
+import com.portfolio.invest.domain.user.VerificationCode;
+import com.portfolio.invest.domain.user.VerificationCodeRepository;
+import com.portfolio.invest.domain.user.VerificationPurpose;
+import com.portfolio.invest.infrastructure.security.SecurityConfig;
 import com.portfolio.invest.support.PostgresTestSupport;
 import com.portfolio.invest.support.RecordingMailSender;
 import com.portfolio.invest.support.TestCodes;
+import jakarta.servlet.http.Cookie;
+import java.time.Instant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -21,6 +30,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpSession;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest
@@ -39,6 +49,8 @@ class AuthControllerIntegrationTest extends PostgresTestSupport {
 
     @Autowired MockMvc mockMvc;
     @Autowired UserRepository userRepository;
+    @Autowired VerificationCodeRepository codeRepository;
+    @Autowired PasswordEncoder passwordEncoder;
     @Autowired RecordingMailSender mailStub;
 
     @BeforeEach
@@ -207,6 +219,116 @@ class AuthControllerIntegrationTest extends PostgresTestSupport {
                 .andExpect(jsonPath("$.message").value("密码不能为空"));
     }
 
+    @DisplayName("找回全流程：发码-重置-新密码登录-旧码复用作废")
+    @Test
+    void givenApprovedUser_whenResetPassword_thenLoginWithNewAndCodeBurned() throws Exception {
+        // 准备：三段式注册一个用户并 repo 直改 APPROVED（可找回前置）
+        register("reset_flow", "abc12345");
+        approve("reset_flow");
+
+        // 1) 找回发码 200 + 邮件发往已验证邮箱
+        mockMvc.perform(post("/api/auth/reset-code")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"identifier\":\"reset_flow\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("验证码已发送"));
+        var resetMail = mailStub.sent.get(mailStub.sent.size() - 1);
+        assertThat(resetMail.to()).isEqualTo("reset_flow@test.local");
+        String firstCode = TestCodes.extractSixDigits(resetMail.text());
+
+        // 2) 携码重置 200
+        mockMvc.perform(post("/api/auth/reset-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"identifier\":\"reset_flow\",\"code\":\"" + firstCode
+                                + "\",\"newPassword\":\"newpass99\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("密码已重置"));
+
+        // 3) 新密码登录 200
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"reset_flow\",\"password\":\"newpass99\"}"))
+                .andExpect(status().isOk());
+
+        // 4) 再发一次码（回拨旧码创建时间绕过 60s 发码冷却）后复用旧码 → 400 CODE_INVALID（用后即焚）
+        ageLatestResetCode("reset_flow@test.local");
+        mockMvc.perform(post("/api/auth/reset-code")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"identifier\":\"reset_flow@test.local\"}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/auth/reset-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"identifier\":\"reset_flow\",\"code\":\"" + firstCode
+                                + "\",\"newPassword\":\"newpass88\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("CODE_INVALID"));
+    }
+
+    @DisplayName("reset-code 账号不存在 404")
+    @Test
+    void givenUnknownIdentifier_whenResetCode_thenNotFound() throws Exception {
+        mockMvc.perform(post("/api/auth/reset-code")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"identifier\":\"no_such_reset_user\"}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("USER_NOT_FOUND"));
+    }
+
+    @DisplayName("reset-code ADMIN 403")
+    @Test
+    void givenAdminAccount_whenResetCode_thenForbidden() throws Exception {
+        seedAdmin("reset_admin", "admin12345", "reset_admin@test.local");
+
+        // 绑了邮箱的管理员仍拒绝：角色检查先于邮箱，管理员只能走后台改密
+        mockMvc.perform(post("/api/auth/reset-code")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"identifier\":\"reset_admin\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+    }
+
+    @DisplayName("重置后 remember-me 吊销")
+    @Test
+    void givenRememberMeCookie_whenResetPassword_thenCookieInvalid() throws Exception {
+        register("reset_remember", "abc12345");
+        approve("reset_remember");
+
+        var loginResult = mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"reset_remember\",\"password\":\"abc12345\",\"rememberMe\":true}"))
+                .andExpect(status().isOk())
+                .andReturn();
+        Cookie rememberMe = loginResult.getResponse().getCookie(SecurityConfig.REMEMBER_ME_COOKIE);
+        assertThat(rememberMe).isNotNull();
+
+        // 前置：仅凭 remember-me cookie（不带会话）可访问 me
+        var preCheck = mockMvc.perform(get("/api/auth/me").cookie(rememberMe))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.username").value("reset_remember"))
+                .andReturn();
+        // 持久化 remember-me 每次自动登录轮换 token 并下发新 cookie，取最新值继续
+        Cookie rotated = preCheck.getResponse().getCookie(SecurityConfig.REMEMBER_ME_COOKIE);
+        if (rotated != null) {
+            rememberMe = rotated;
+        }
+
+        // 自助重置密码（吊销全部 remember-me 令牌）
+        mockMvc.perform(post("/api/auth/reset-code")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"identifier\":\"reset_remember\"}"))
+                .andExpect(status().isOk());
+        String code = TestCodes.extractSixDigits(mailStub.sent.get(mailStub.sent.size() - 1).text());
+        mockMvc.perform(post("/api/auth/reset-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"identifier\":\"reset_remember\",\"code\":\"" + code
+                                + "\",\"newPassword\":\"newpass77\"}"))
+                .andExpect(status().isOk());
+
+        // 旧 cookie 对应令牌已删：仅凭 cookie 访问 me → 401
+        mockMvc.perform(get("/api/auth/me").cookie(rememberMe))
+                .andExpect(status().isUnauthorized());
+    }
+
     /** 三段式注册：发码（邮件桩取码）→ 携码注册；邮箱由用户名派生保证类内唯一。 */
     private void register(String username, String password) throws Exception {
         String email = username + "@test.local";
@@ -224,5 +346,21 @@ class AuthControllerIntegrationTest extends PostgresTestSupport {
     private void approve(String username) {
         var user = userRepository.findByUsername(username).orElseThrow();
         userRepository.save(user.approve());
+    }
+
+    /** 直存 APPROVED 管理员（参照 UserAdminControllerIntegrationTest.seedAdmin，附带已验证邮箱）。 */
+    private void seedAdmin(String username, String password, String email) {
+        userRepository.save(User.reconstitute(null, username, passwordEncoder.encode(password),
+                UserRole.ADMIN, UserStatus.APPROVED, true, email, true, Instant.now(), Instant.now()));
+    }
+
+    /** 回拨该邮箱最新 RESET 码的创建时间 70s：用后即焚用例需在同一测试内二次发码，绕过 60s 冷却。 */
+    private void ageLatestResetCode(String email) {
+        VerificationCode latest = codeRepository
+                .findTopByEmailAndPurposeOrderByCreatedAtDesc(email, VerificationPurpose.RESET)
+                .orElseThrow(() -> new AssertionError("缺少 RESET 码行: " + email));
+        codeRepository.save(VerificationCode.reconstitute(latest.id(), latest.email(), latest.purpose(),
+                latest.codeHash(), latest.attempts(), latest.usedAt(), latest.expiresAt(),
+                latest.createdAt().minusSeconds(70)));
     }
 }
