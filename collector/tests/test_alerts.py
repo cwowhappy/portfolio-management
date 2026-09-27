@@ -79,6 +79,34 @@ def test_alerter_from_env_configured():
     assert alerter.url == "http://hook.example/x"
 
 
+# ---------------------------------------------------------------- alerter_from_env 优先级（FR-A3）
+
+
+def test_from_env_feishu_takes_priority_over_generic():
+    alerter = alerter_from_env(
+        {"FEISHU_BOT_WEBHOOK": "http://f.example/hook", "COLLECTOR_ALERT_WEBHOOK": "http://g.example/x"}
+    )
+    assert isinstance(alerter, FeishuAlerter)
+    assert alerter.url == "http://f.example/hook"
+
+
+def test_from_env_feishu_secret_attached():
+    alerter = alerter_from_env({"FEISHU_BOT_WEBHOOK": "http://f.example/hook", "FEISHU_BOT_SECRET": "s"})
+    assert isinstance(alerter, FeishuAlerter)
+    assert alerter.secret == "s"
+
+
+def test_from_env_feishu_secret_blank_means_none():
+    alerter = alerter_from_env({"FEISHU_BOT_WEBHOOK": "http://f.example/hook", "FEISHU_BOT_SECRET": "   "})
+    assert isinstance(alerter, FeishuAlerter)
+    assert alerter.secret is None
+
+
+def test_from_env_feishu_blank_falls_back_to_generic():
+    alerter = alerter_from_env({"FEISHU_BOT_WEBHOOK": "  ", "COLLECTOR_ALERT_WEBHOOK": "http://g.example/x"})
+    assert type(alerter) is WebhookAlerter  # 精确类型：回退不能命中飞书
+
+
 # ---------------------------------------------------------------- 飞书卡片构造（FR-A1/A4）
 
 

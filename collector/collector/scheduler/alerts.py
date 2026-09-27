@@ -1,6 +1,7 @@
 """任务终态告警（P0-2）：通用 webhook，opt-in。
 
 COLLECTOR_ALERT_WEBHOOK 配置任意 JSON POST 端点（钉钉/企微/飞书网关均可适配）。
+FEISHU_BOT_WEBHOOK 优先构造 FeishuAlerter（卡片+可选签名）。
 发送尽力而为：失败仅记日志并小退避重试，绝不影响任务执行语义。
 """
 
@@ -16,6 +17,8 @@ import urllib.request
 logger = logging.getLogger(__name__)
 
 ALERT_WEBHOOK_ENV = "COLLECTOR_ALERT_WEBHOOK"
+FEISHU_WEBHOOK_ENV = "FEISHU_BOT_WEBHOOK"
+FEISHU_SECRET_ENV = "FEISHU_BOT_SECRET"
 
 _MAX_FIELD_CHARS = 800
 _MAX_STALE_ITEMS = 8
@@ -77,8 +80,15 @@ class FeishuAlerter(WebhookAlerter):
 
 
 def alerter_from_env(env=None) -> WebhookAlerter | None:
-    """从环境构造告警器；未配置返回 None（runner 拿到 None 即完全走现状路径）。"""
+    """从环境构造告警器；未配置返回 None（runner 拿到 None 即完全走现状路径）。
+
+    优先级：FEISHU_BOT_WEBHOOK（FeishuAlerter，FEISHU_BOT_SECRET 可选签名）
+    > COLLECTOR_ALERT_WEBHOOK（通用 JSON POST 逃生通道）。
+    """
     env = os.environ if env is None else env
+    feishu_url = env.get(FEISHU_WEBHOOK_ENV, "").strip()
+    if feishu_url:
+        return FeishuAlerter(feishu_url, secret=env.get(FEISHU_SECRET_ENV, "").strip() or None)
     url = env.get(ALERT_WEBHOOK_ENV, "").strip()
     return WebhookAlerter(url) if url else None
 
