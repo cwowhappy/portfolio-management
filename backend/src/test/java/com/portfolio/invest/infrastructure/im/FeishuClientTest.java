@@ -104,4 +104,38 @@ class FeishuClientTest {
         assertThat(client.sendCard("oc_x", "t", "red", List.of("a"))).isFalse();
         server.verify(); // 0 expectations → 0 requests
     }
+
+    // ---------------------------------------------------------------- sendReply（P2 对话回复）
+
+    @Test
+    @DisplayName("给定token就绪，when回复消息，thenPOST到reply端点且body为text消息")
+    void givenToken就绪_when回复消息_thenPOST到reply端点() {
+        expectToken();
+        server.expect(requestTo(org.hamcrest.Matchers.startsWith(
+                        "https://open.feishu.cn/open-apis/im/v1/messages/om_123/reply")))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(header("Authorization", "Bearer t-abc"))
+                .andExpect(jsonPath("$.msg_type").value("text"))
+                .andRespond(withSuccess("{\"code\":0}", MediaType.APPLICATION_JSON));
+        assertThat(client.sendReply("om_123", "你好，持仓没问题")).isTrue();
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("给定回复返回非零code，when回复，then返回false")
+    void given非零code_when回复_thenFalse() {
+        expectToken();
+        server.expect(requestTo(org.hamcrest.Matchers.startsWith(
+                        "https://open.feishu.cn/open-apis/im/v1/messages/om_123/reply")))
+                .andRespond(withSuccess("{\"code\":230001,\"msg\":\"no permission\"}", MediaType.APPLICATION_JSON));
+        assertThat(client.sendReply("om_123", "x")).isFalse();
+    }
+
+    @Test
+    @DisplayName("给定配置缺失，when回复，then直接false零请求")
+    void given配置缺失_when回复_thenFalse() {
+        props.getIm().setAppId("");
+        assertThat(client.sendReply("om_123", "x")).isFalse();
+        server.verify();
+    }
 }

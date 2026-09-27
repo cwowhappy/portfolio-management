@@ -73,6 +73,8 @@ invest:
     chat-id: ${FEISHU_ALERT_CHAT_ID:}
     owner-username: ${FEISHU_OWNER_USERNAME:${ADMIN_USERNAME:}}
     api-base: ${FEISHU_API_BASE:https://open.feishu.cn}
+    owner-open-id: ${FEISHU_OWNER_OPEN_ID:}
+    dialogue-enabled: ${FEISHU_DIALOGUE_ENABLED:false}
   market:
     connect-timeout: 3s
     read-timeout: 5s
