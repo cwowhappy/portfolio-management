@@ -19,6 +19,11 @@ export default function LoginPage() {
           </p>
         </div>
         <LoginForm />
+        <p className="mt-3 text-center text-[13px] text-[color:var(--color-ink-faint)]">
+          <Link href="/forgot-password" className="text-[color:var(--color-up)] hover:brightness-110">
+            忘记密码？
+          </Link>
+        </p>
         <p className="mt-6 text-center text-[13px] text-[color:var(--color-ink-faint)]">
           还没有账号？{" "}
           <Link href="/register" className="text-[color:var(--color-up)] hover:brightness-110">
