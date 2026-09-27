@@ -12,6 +12,7 @@ import com.portfolio.invest.application.im.ImMessageListener;
 import com.portfolio.invest.config.InvestProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.stereotype.Component;
 
@@ -31,7 +32,9 @@ public class FeishuWsClient implements SmartLifecycle {
     private static final Logger log = LoggerFactory.getLogger(FeishuWsClient.class);
 
     private final InvestProperties props;
-    private final ImMessageListener listener;
+    /** 测试构造器直注；生产构造器注入 provider，start() 时解析——无桥接 bean 时显式告警、不破上下文装配。 */
+    private volatile ImMessageListener listener;
+    private final ObjectProvider<ImMessageListener> listenerProvider; // 生产路径；测试构造器为 null
     private final Executor executor;
     private final Cache<String, Boolean> seenMessages =
             CacheBuilder.newBuilder().expireAfterWrite(5, TimeUnit.MINUTES).maximumSize(1000).build();
@@ -39,8 +42,8 @@ public class FeishuWsClient implements SmartLifecycle {
     private volatile boolean running;
 
     @org.springframework.beans.factory.annotation.Autowired
-    public FeishuWsClient(InvestProperties props, ImMessageListener listener) {
-        this(props, listener, Executors.newSingleThreadExecutor(r -> {
+    public FeishuWsClient(InvestProperties props, ObjectProvider<ImMessageListener> listenerProvider) {
+        this(props, null, listenerProvider, Executors.newSingleThreadExecutor(r -> {
             Thread t = new Thread(r, "feishu-dialogue");
             t.setDaemon(true);
             return t;
@@ -49,8 +52,14 @@ public class FeishuWsClient implements SmartLifecycle {
 
     /** 测试构造器：注入直执行/可控执行器。 */
     FeishuWsClient(InvestProperties props, ImMessageListener listener, Executor executor) {
+        this(props, listener, null, executor);
+    }
+
+    private FeishuWsClient(InvestProperties props, ImMessageListener listener,
+                           ObjectProvider<ImMessageListener> listenerProvider, Executor executor) {
         this.props = props;
         this.listener = listener;
+        this.listenerProvider = listenerProvider;
         this.executor = executor;
     }
 
@@ -61,6 +70,14 @@ public class FeishuWsClient implements SmartLifecycle {
                 || im.getAppSecret().isBlank() || !im.isDialogueEnabled()) {
             log.info("飞书对话未启用（invest.im.dialogue-enabled=false 或凭证缺失），跳过长连接");
             return;
+        }
+        if (listener == null) {
+            ImMessageListener resolved = listenerProvider.getIfAvailable();
+            if (resolved == null) {
+                log.warn("ImMessageListener 无实现 bean（对话桥接未装配），飞书长连接不启动");
+                return;
+            }
+            listener = resolved;
         }
         Thread starter = new Thread(() -> {
             try {
