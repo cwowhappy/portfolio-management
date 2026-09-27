@@ -102,16 +102,17 @@ elif [ -z "${MAIL_SMTP_HOST:-}" ] || [ -z "${MAIL_SMTP_USERNAME:-}" ] \
   [ -z "${MAIL_SMTP_USERNAME:-}" ] && MISSING="$MISSING MAIL_SMTP_USERNAME"
   [ -z "${MAIL_SMTP_PASSWORD:-}" ] && MISSING="$MISSING MAIL_SMTP_PASSWORD"
   [ -z "${MAIL_FROM:-}" ] && MISSING="$MISSING MAIL_FROM"
-  echo "  - SMTP 配置不完整（缺:$MISSING），跳过邮件冒烟（在 .env 补齐后重跑）"
+  echo "  - SMTP 配置不完整（缺:${MISSING}），跳过邮件冒烟（在 .env 补齐后重跑）"
 else
-  # M01-F06：向 MAIL_FROM 同域邮箱真实发一封注册验证码（SMTP 全链路；用户名/密码按次唯一）
-  SMOKE_MAILBOX="smoke-$(date +%s)@${MAIL_FROM#*@}"
+  # M01-F06：向 MAIL_FROM 本身真实发一封注册验证码（SMTP 全链路；用户名按次唯一）。
+  # 收件人必须是真实邮箱：阿里企业邮箱无 catch-all，虚构同域地址会被 RCPT TO 拒收（MAIL_SEND_FAILED）
+  SMOKE_MAILBOX="$MAIL_FROM"
   CODE_RESP=$(curl -s --max-time 15 -X POST "$BASE/api/auth/register-code" \
     -H "Content-Type: application/json" \
     -d "{\"username\":\"smoke_$(date +%s)\",\"password\":\"Smoke123x\",\"email\":\"$SMOKE_MAILBOX\"}") \
     || fail "register-code 接口不可达"
   echo "$CODE_RESP" | grep -q "验证码已发送" \
-    && pass "注册验证码已发送至 $SMOKE_MAILBOX（SMTP 全链路通）" \
+    && pass "注册验证码已发送至 ${SMOKE_MAILBOX}（SMTP 全链路通）" \
     || fail "验证码发送失败: $CODE_RESP"
 fi
 
