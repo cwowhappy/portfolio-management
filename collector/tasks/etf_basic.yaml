@@ -2,8 +2,9 @@ task_code: etf_basic
 task_name: ETF目录费率规模
 # 新浪目录枚举 + 天天基金移动端 Detail 逐只 enrich（1685 只 × 0.3s 间隔 + 网络 RTT，实测 ~16 分钟，周更）；
 # 单只 enrich 失败该行字段 null 不阻断整批，全量异常由 retry/validator 兜底。
+# timeout_seconds=2400：实测 ~16 分钟，余量到 40 分钟，覆盖默认 1800s
 source_ids:
-  - { source_id: etf_basic, type: plugin, class: etf_basic }
+  - { source_id: etf_basic, type: plugin, class: etf_basic, timeout_seconds: 2400 }
 converter: field_mapping_etf_basic
 calc: null
 validator:

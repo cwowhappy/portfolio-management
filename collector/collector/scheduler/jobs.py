@@ -114,6 +114,8 @@ def assemble_collector(row, registries):
         trading_day_gated=row["trading_day_gated"],
         retry_max=row["retry_max"],
         retry_backoff=row["retry_backoff"],
+        # P0-1：source 条目的 timeout_seconds 提取为 {source_id: 秒}，executor 按 id 查
+        source_timeouts={s["source_id"]: s["timeout_seconds"] for s in row["source_ids"] if s.get("timeout_seconds")},
     )
 
 
