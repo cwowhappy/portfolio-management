@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 from collector.executor.executor import AllSourcesFailed
 from collector.model.run import STATUS_PARTIAL, STATUS_SUCCESS, RunResult
 from collector.model.task import Collector
-from collector.scheduler.alerts import WebhookAlerter, alerter_from_env
+from collector.scheduler.alerts import WebhookAlerter, _feishu_card, alerter_from_env
 from collector.scheduler.calendar import TradingCalendar
 from collector.scheduler.runner import TaskRunner
 
@@ -77,6 +77,52 @@ def test_alerter_from_env_configured():
     alerter = alerter_from_env({"COLLECTOR_ALERT_WEBHOOK": "http://hook.example/x"})
     assert isinstance(alerter, WebhookAlerter)
     assert alerter.url == "http://hook.example/x"
+
+
+# ---------------------------------------------------------------- 飞书卡片构造（FR-A1/A4）
+
+
+def _card_of(event):
+    return _feishu_card(event)["card"]
+
+
+def test_task_run_failed_card_is_red_with_fields():
+    event = {"type": "task_run", "task": "stock_daily", "status": "failed", "mode": "incremental", "error": "全源熔断"}
+    payload = _feishu_card(event)
+    assert payload["msg_type"] == "interactive"
+    card = payload["card"]
+    assert card["header"]["template"] == "red"
+    body = card["elements"][0]["text"]["content"]
+    assert "**任务**：stock_daily" in body
+    assert "**状态**：failed" in body
+    assert "**模式**：incremental" in body
+    assert "**错误**：全源熔断" in body
+
+
+def test_task_run_partial_card_is_orange():
+    card = _card_of({"type": "task_run", "task": "t", "status": "partial", "mode": "full", "message": "剔行 3 条"})
+    assert card["header"]["template"] == "orange"
+    assert "**消息**：剔行 3 条" in card["elements"][0]["text"]["content"]
+
+
+def test_task_run_card_clips_long_error():
+    event = {"type": "task_run", "task": "t", "status": "failed", "error": "x" * 2000}
+    body = _card_of(event)["elements"][0]["text"]["content"]
+    # _clip(limit=800) 产出 799 字符 + 省略号（总长 800）
+    assert "x" * 799 in body and "x" * 800 not in body
+    assert body.endswith("…")
+
+
+def test_patrol_card_lists_findings_and_caps_at_eight():
+    stale = [
+        {"kind": "trading_day", "table": f"t{i}", "latest": "2026-09-01", "expected": "2026-09-26"}
+        for i in range(10)
+    ]
+    card = _card_of({"type": "freshness_patrol", "date": "2026-09-26", "stale": stale})
+    assert card["header"]["template"] == "orange"
+    body = card["elements"][0]["text"]["content"]
+    assert "`t0`" in body and "`t7`" in body and "`t8`" not in body
+    assert "共 10 项" in body
 
 
 # ---------------------------------------------------------------- runner 接线

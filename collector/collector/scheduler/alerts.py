@@ -14,6 +14,9 @@ logger = logging.getLogger(__name__)
 
 ALERT_WEBHOOK_ENV = "COLLECTOR_ALERT_WEBHOOK"
 
+_MAX_FIELD_CHARS = 800
+_MAX_STALE_ITEMS = 8
+
 
 class WebhookAlerter:
     """POST JSON 事件到通用 webhook。不可用/未配置时静默，任务侧零感知。"""
@@ -48,3 +51,57 @@ def alerter_from_env(env=None) -> WebhookAlerter | None:
     env = os.environ if env is None else env
     url = env.get(ALERT_WEBHOOK_ENV, "").strip()
     return WebhookAlerter(url) if url else None
+
+
+# ---------------------------------------------------------------- 飞书卡片构造（FR-A1/A4）
+# 纯函数：内部事件 dict → 飞书群自定义机器人 interactive 卡片（官方 msg_type 之一，无 markdown 类型）。
+
+
+def _clip(value, limit=_MAX_FIELD_CHARS):
+    """None 安全 + 超长截断（截断加省略号，保证消息体远低于飞书 20KB 保守线）。"""
+    text = str(value) if value is not None else ""
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def _card(title: str, template: str, body_md: str) -> dict:
+    return {
+        "msg_type": "interactive",
+        "card": {
+            "config": {"wide_screen_mode": True},
+            "header": {"title": {"tag": "plain_text", "content": title}, "template": template},
+            "elements": [{"tag": "div", "text": {"tag": "lark_md", "content": body_md}}],
+        },
+    }
+
+
+def _task_run_card(event: dict) -> dict:
+    status = event.get("status") or ""
+    lines = [
+        f"**任务**：{event.get('task', '')}",
+        f"**状态**：{status}",
+        f"**模式**：{event.get('mode', '')}",
+    ]
+    if event.get("error"):
+        lines.append(f"**错误**：{_clip(event['error'])}")
+    if event.get("message"):
+        lines.append(f"**消息**：{_clip(event['message'])}")
+    # failed 红、其余（partial）橙；卡片头模板是飞书官方字段
+    return _card("⚠️ 采集任务告警", "red" if status == "failed" else "orange", "\n".join(lines))
+
+
+def _patrol_card(event: dict) -> dict:
+    stale = event.get("stale") or []
+    lines = [f"**日期**：{event.get('date', '')}", f"**滞留项**：{len(stale)} 项", ""]
+    for item in stale[:_MAX_STALE_ITEMS]:
+        expect = f" / 期望 {item['expected']}" if item.get("expected") else ""
+        lines.append(f"- `{item.get('table')}`（{item.get('kind')}）：最新 {item.get('latest')}{expect}")
+    if len(stale) > _MAX_STALE_ITEMS:
+        lines.append(f"- ……共 {len(stale)} 项，仅列前 {_MAX_STALE_ITEMS} 项")
+    return _card("🕰 数据新鲜度巡检", "orange", "\n".join(lines))
+
+
+def _feishu_card(event: dict) -> dict:
+    """内部事件 → 飞书卡片 payload。task_run 之外的未知类型按任务卡片兜底（字段缺省为空）。"""
+    if event.get("type") == "freshness_patrol":
+        return _patrol_card(event)
+    return _task_run_card(event)
