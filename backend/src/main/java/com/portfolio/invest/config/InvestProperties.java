@@ -13,6 +13,7 @@ public class InvestProperties {
     private Security security = new Security();
     private AppCache appCache = new AppCache();
     private Mcp mcp = new Mcp();
+    private Im im = new Im();
 
     public Llm getLlm() {
         return llm;
@@ -60,6 +61,14 @@ public class InvestProperties {
 
     public void setMcp(Mcp mcp) {
         this.mcp = mcp;
+    }
+
+    public Im getIm() {
+        return im;
+    }
+
+    public void setIm(Im im) {
+        this.im = im;
     }
 
     public static class Llm {
@@ -231,6 +240,26 @@ public class InvestProperties {
         public void setUsername(String username) { this.username = username; }
         public String getPassword() { return password; }
         public void setPassword(String password) { this.password = password; }
+    }
+
+    /** 飞书自建应用（feishu-messaging 通道二）。空值 = 未启用，相关功能静默跳过。 */
+    public static class Im {
+        private String appId = "";
+        private String appSecret = "";
+        private String chatId = "";
+        private String ownerUsername = "";
+        private String apiBase = "https://open.feishu.cn";
+
+        public String getAppId() { return appId; }
+        public void setAppId(String appId) { this.appId = appId; }
+        public String getAppSecret() { return appSecret; }
+        public void setAppSecret(String appSecret) { this.appSecret = appSecret; }
+        public String getChatId() { return chatId; }
+        public void setChatId(String chatId) { this.chatId = chatId; }
+        public String getOwnerUsername() { return ownerUsername; }
+        public void setOwnerUsername(String ownerUsername) { this.ownerUsername = ownerUsername; }
+        public String getApiBase() { return apiBase; }
+        public void setApiBase(String apiBase) { this.apiBase = apiBase; }
     }
 
     public static class Security {

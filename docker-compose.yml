@@ -27,6 +27,11 @@ services:
       ADMIN_USERNAME: ${ADMIN_USERNAME:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       REMEMBER_ME_KEY: ${REMEMBER_ME_KEY:-}
+      # 飞书自建应用（P1 原则预警；未配置时巡检静默跳过）
+      FEISHU_APP_ID: ${FEISHU_APP_ID:-}
+      FEISHU_APP_SECRET: ${FEISHU_APP_SECRET:-}
+      FEISHU_ALERT_CHAT_ID: ${FEISHU_ALERT_CHAT_ID:-}
+      FEISHU_OWNER_USERNAME: ${FEISHU_OWNER_USERNAME:-}
     ports:
       - "8080:8080"
     healthcheck:
