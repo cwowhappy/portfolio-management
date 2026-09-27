@@ -2,6 +2,7 @@ package com.portfolio.invest.web;
 
 import com.portfolio.invest.application.useradmin.UserAdminApplicationService;
 import com.portfolio.invest.application.useradmin.UserAdminView;
+import com.portfolio.invest.web.dto.EmailBindRequest;
 import com.portfolio.invest.web.dto.ResetPasswordRequest;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -53,5 +54,10 @@ public class UserAdminController {
     public UserAdminView resetPassword(@PathVariable Long id,
                                        @Valid @RequestBody ResetPasswordRequest body) {
         return service.resetPassword(id, body.newPassword());
+    }
+
+    @PostMapping("/{id}/email")
+    public UserAdminView setEmail(@PathVariable Long id, @Valid @RequestBody EmailBindRequest body) {
+        return service.setEmail(id, body.email());
     }
 }

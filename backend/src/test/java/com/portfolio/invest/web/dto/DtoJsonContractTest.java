@@ -75,10 +75,10 @@ class DtoJsonContractTest {
     @Test
     void givenUserAdminView_whenSerialized_thenRoleAndStatusSerializeAsStrings() throws Exception {
         JsonNode content = objectMapper.readTree(objectMapper.writeValueAsString(
-                new UserAdminView(2L, "bob", "USER", "PENDING", true)));
+                new UserAdminView(2L, "bob", "USER", "PENDING", true, null)));
 
         assertThat(content).isEqualTo(objectMapper.readTree("""
-                {"id":2,"username":"bob","role":"USER","status":"PENDING","enabled":true}"""));
+                {"id":2,"username":"bob","role":"USER","status":"PENDING","enabled":true,"email":null}"""));
     }
 
     @DisplayName("登录请求缺省rememberMe反序列化为false")

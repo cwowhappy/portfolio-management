@@ -115,6 +115,46 @@ class UserAdminControllerIntegrationTest extends PostgresTestSupport {
                 .andExpect(jsonPath("$.message").value("新密码不能为空"));
     }
 
+    @DisplayName("管理员代填邮箱：200回显归一化邮箱且告知邮件已发")
+    @Test
+    void givenUserWithDerivedEmail_whenAdminSetsEmail_thenBoundVerifiedAndNotified() throws Exception {
+        register("adminit_mail1", "abc12345");
+        approveDirect("adminit_mail1");
+        seedAdmin("adminit_mail1_admin", "admin12345");
+        MockHttpSession adminSession = login("adminit_mail1_admin", "admin12345");
+        Long userId = userRepository.findByUsername("adminit_mail1").orElseThrow().id();
+
+        int mailsBefore = mailStub.sent.size();
+        mockMvc.perform(post("/api/admin/users/{id}/email", userId).session(adminSession)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"Adminit_Mail1@New.Local\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.email").value("adminit_mail1@new.local"));
+
+        org.assertj.core.api.Assertions.assertThat(mailStub.sent).hasSize(mailsBefore + 1);
+        var notify = mailStub.sent.get(mailsBefore);
+        org.assertj.core.api.Assertions.assertThat(notify.to()).isEqualTo("adminit_mail1@new.local");
+        org.assertj.core.api.Assertions.assertThat(notify.subject()).isEqualTo("九和投资邮箱绑定通知");
+        org.assertj.core.api.Assertions.assertThat(
+                userRepository.findByEmail("adminit_mail1@new.local").orElseThrow().emailVerified()).isTrue();
+    }
+
+    @DisplayName("代填已被绑定邮箱返回400 EMAIL_TAKEN")
+    @Test
+    void givenEmailAlreadyBound_whenAdminSetsEmail_thenEmailTaken() throws Exception {
+        register("adminit_mail2a", "abc12345");
+        register("adminit_mail2b", "abc12345");
+        seedAdmin("adminit_mail2_admin", "admin12345");
+        MockHttpSession adminSession = login("adminit_mail2_admin", "admin12345");
+        Long userId = userRepository.findByUsername("adminit_mail2b").orElseThrow().id();
+
+        mockMvc.perform(post("/api/admin/users/{id}/email", userId).session(adminSession)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"adminit_mail2a@test.local\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("EMAIL_TAKEN"));
+    }
+
     /** 三段式注册：发码（邮件桩取码）→ 携码注册；邮箱由用户名派生保证类内唯一。 */
     private void register(String username, String password) throws Exception {
         String email = username + "@test.local";
