@@ -90,4 +90,19 @@ else
   rm -f "$COOKIE_JAR"
 fi
 
+echo "== 6. 邮件服务（opt-in：MAIL_SMTP_HOST/MAIL_FROM 未配置则跳过）=="
+if [ -z "${MAIL_SMTP_HOST:-}" ] || [ -z "${MAIL_FROM:-}" ]; then
+  echo "  - 未设置 MAIL_SMTP_HOST/MAIL_FROM，跳过邮件冒烟（在 .env 配置后重跑）"
+else
+  # M01-F06：向 MAIL_FROM 同域邮箱真实发一封注册验证码（SMTP 全链路；用户名/密码按次唯一）
+  SMOKE_MAILBOX="smoke-$(date +%s)@${MAIL_FROM#*@}"
+  CODE_RESP=$(curl -s --max-time 15 -X POST "$BASE/api/auth/register-code" \
+    -H "Content-Type: application/json" \
+    -d "{\"username\":\"smoke_$(date +%s)\",\"password\":\"Smoke123x\",\"email\":\"$SMOKE_MAILBOX\"}") \
+    || fail "register-code 接口不可达"
+  echo "$CODE_RESP" | grep -q "验证码已发送" \
+    && pass "注册验证码已发送至 $SMOKE_MAILBOX（SMTP 全链路通）" \
+    || fail "验证码发送失败: $CODE_RESP"
+fi
+
 echo "全部通过"

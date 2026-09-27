@@ -3,6 +3,7 @@ package com.portfolio.invest.infrastructure.mail;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -49,5 +50,23 @@ class SmtpMailSenderTest {
         assertThat(captor.getValue().getTo()).containsExactly("to@x.com");
         assertThat(captor.getValue().getSubject()).isEqualTo("九和验证码");
         assertThat(captor.getValue().getText()).isEqualTo("您的验证码 123456");
+    }
+
+    @DisplayName("e2e 固定码模式：无 SMTP 四要素也视为已配置")
+    @Test
+    void givenFixedCodeOnly_whenEnabled_thenTrue() {
+        InvestProperties.Mail m = new InvestProperties.Mail();
+        m.setTestFixedCode("123456");
+        assertThat(new SmtpMailSender(m, mock(JavaMailSender.class)).enabled()).isTrue();
+    }
+
+    @DisplayName("e2e 固定码模式：发送短路，不触达真实 SMTP")
+    @Test
+    void givenFixedCode_whenSend_thenNoRealSend() {
+        JavaMailSender javaSender = mock(JavaMailSender.class);
+        InvestProperties.Mail m = fullMail();
+        m.setTestFixedCode("123456");
+        new SmtpMailSender(m, javaSender).send("to@x.com", "九和验证码", "您的验证码 123456");
+        verify(javaSender, never()).send(any(SimpleMailMessage.class));
     }
 }
