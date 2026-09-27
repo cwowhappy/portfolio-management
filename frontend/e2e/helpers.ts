@@ -12,12 +12,29 @@ export function uniqueUsername(prefix: string): string {
   return `e2e_${prefix}_${Date.now().toString(36)}${rand}`.toLowerCase();
 }
 
-/** 前往 /register 提交注册，并等待“注册成功”提示出现。 */
-export async function registerUser(page: Page, username: string, password: string): Promise<void> {
+/** 与 scripts/e2e-backend.sh 的 MAIL_TEST_FIXED_CODE 默认值一致。 */
+export const FIXED_EMAIL_CODE = process.env.MAIL_TEST_FIXED_CODE ?? "123456";
+
+export function uniqueEmail(username: string): string {
+  return `${username}@test.local`;
+}
+
+/** 前往 /register 提交注册（填邮箱→获取验证码→填固定码），并等待“注册成功”提示出现。 */
+export async function registerUser(
+  page: Page,
+  username: string,
+  password: string,
+  email = uniqueEmail(username),
+): Promise<void> {
   await page.goto("/register");
   await page.getByPlaceholder("用户名").fill(username);
   await page.getByPlaceholder(/至少 8 位/).fill(password);
   await page.getByPlaceholder("再次输入密码").fill(password);
+  await page.getByPlaceholder("邮箱").fill(email);
+  await page.getByRole("button", { name: "获取验证码" }).click();
+  // 等发送成功（按钮进入倒计时态）再填码提交：立即提交会先于验证码落库到达后端，验码扑空
+  await expect(page.getByRole("button", { name: /后重发/ })).toBeVisible();
+  await page.getByPlaceholder("6 位验证码").fill(FIXED_EMAIL_CODE);
   await page.getByRole("button", { name: "注 册" }).click();
   await expect(page.getByText(/注册成功/)).toBeVisible();
 }

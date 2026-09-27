@@ -1,5 +1,13 @@
 import { test, expect } from "@playwright/test";
-import { adminLogin, login, logout, registerUser, TEST_PASSWORD, uniqueUsername } from "./helpers";
+import {
+  adminLogin,
+  FIXED_EMAIL_CODE,
+  login,
+  logout,
+  registerUser,
+  TEST_PASSWORD,
+  uniqueUsername,
+} from "./helpers";
 
 // 认证流依赖启动时种子的管理员（ADMIN_USERNAME/ADMIN_PASSWORD），未配置则整体跳过。
 const hasAdminSeed = !!(process.env.ADMIN_USERNAME && process.env.ADMIN_PASSWORD);
@@ -62,5 +70,62 @@ test.describe("未登录访问", () => {
   test("5. 未登录访问首页被重定向到登录页", async ({ page }) => {
     await page.goto("/");
     await expect(page).toHaveURL(/\/login/, { timeout: 15_000 });
+  });
+});
+
+// M01-F06：邮箱验证与找回密码。依赖固定码 MAIL_TEST_FIXED_CODE（e2e-backend.sh 默认导出）
+// 与种子管理员（同上 skip 门控）；跨用例共享后端状态，串行且关闭重试。
+test.describe.serial("邮箱验证与找回密码", () => {
+  test.describe.configure({ retries: 0 });
+  test.skip(!hasAdminSeed, "未配置 ADMIN_USERNAME/ADMIN_PASSWORD（无种子管理员），跳过认证流");
+
+  test("6. 注册带邮箱验证码成功", async ({ page }) => {
+    const u = uniqueUsername("mail");
+    await registerUser(page, u, TEST_PASSWORD);
+    await expect(page.getByText(/等待管理员审核/)).toBeVisible();
+  });
+
+  test("7. 忘记密码全流程", async ({ page }) => {
+    const u = uniqueUsername("forgot");
+    await registerUser(page, u, TEST_PASSWORD);
+    await adminLogin(page);
+    await page.goto("/admin");
+    // 「通过」按钮在待审核 li（PENDING 行的操作列为占位符「—」），与既有用例 2 一致
+    const li = page.locator("li", { hasText: u });
+    await expect(li).toBeVisible({ timeout: 15_000 });
+    await li.getByRole("button", { name: "通过" }).click();
+    await expect(page.locator("li", { hasText: u })).toHaveCount(0);
+    const row = page.locator("tr", { hasText: u });
+    await expect(row.getByText("已通过")).toBeVisible();
+    await logout(page);
+
+    await page.goto("/forgot-password");
+    await page.getByPlaceholder("用户名或邮箱").fill(u);
+    await page.getByRole("button", { name: "发送验证码" }).click();
+    await page.getByPlaceholder("6 位验证码").fill(FIXED_EMAIL_CODE);
+    await page.getByPlaceholder(/新密码/).fill("NewPass99x");
+    await page.getByRole("button", { name: "重置密码" }).click();
+    await expect(page.getByText(/密码已重置/)).toBeVisible();
+
+    await login(page, u, "NewPass99x");
+    await expect(page).toHaveURL("/", { timeout: 15_000 });
+  });
+
+  test("8. 管理员代填邮箱", async ({ page }) => {
+    const u = uniqueUsername("bind");
+    await registerUser(page, u, TEST_PASSWORD);
+    await adminLogin(page);
+    await page.goto("/admin");
+    const li = page.locator("li", { hasText: u });
+    await expect(li).toBeVisible({ timeout: 15_000 });
+    await li.getByRole("button", { name: "通过" }).click();
+    await expect(page.locator("li", { hasText: u })).toHaveCount(0);
+    // 绑定邮箱按钮仅对已通过非管理员用户出现在「全部用户」行内
+    const row = page.locator("tr", { hasText: u });
+    await row.getByRole("button", { name: "绑定邮箱" }).click();
+    // 弹窗容器 aria-label「为 <用户名> 绑定邮箱」命中的是 div（不可编辑）；实际输入框 role=textbox name=邮箱
+    await page.getByRole("textbox", { name: "邮箱" }).fill("bound@example.com");
+    await page.getByRole("button", { name: "确认绑定" }).click();
+    await expect(row.getByText("bound@example.com")).toBeVisible();
   });
 });

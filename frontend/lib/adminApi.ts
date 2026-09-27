@@ -8,6 +8,7 @@ export const AdminUserViewSchema = z.object({
   role: z.enum(["ADMIN", "USER"]),
   status: z.enum(["PENDING", "APPROVED", "REJECTED"]),
   enabled: z.boolean(),
+  email: z.string().nullable(),
 });
 
 export type AdminUserView = z.infer<typeof AdminUserViewSchema>;
@@ -43,5 +44,10 @@ export const adminApi = {
     request(`/api/admin/users/${id}/reset-password`, AdminUserViewSchema, {
       method: "POST",
       body: JSON.stringify({ newPassword }),
+    }),
+  setEmail: (id: number, email: string) =>
+    request(`/api/admin/users/${id}/email`, AdminUserViewSchema, {
+      method: "POST",
+      body: JSON.stringify({ email }),
     }),
 };

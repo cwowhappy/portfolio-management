@@ -63,6 +63,8 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> user(com.portfolio.invest.domain.user.UserException e) {
         HttpStatus status = switch (e.getCode()) {
             case UserErrorCode.USERNAME_TAKEN, UserErrorCode.INVALID_USERNAME, UserErrorCode.WEAK_PASSWORD -> HttpStatus.BAD_REQUEST;
+            case UserErrorCode.CODE_SEND_TOO_FREQUENT, UserErrorCode.CODE_DAILY_LIMIT -> HttpStatus.TOO_MANY_REQUESTS;
+            case UserErrorCode.MAIL_NOT_CONFIGURED -> HttpStatus.SERVICE_UNAVAILABLE;
             case UserErrorCode.USER_NOT_FOUND -> HttpStatus.NOT_FOUND;
             case UserErrorCode.FORBIDDEN -> HttpStatus.FORBIDDEN;
             default -> HttpStatus.BAD_REQUEST;

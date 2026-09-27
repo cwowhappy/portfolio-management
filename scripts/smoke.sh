@@ -90,4 +90,30 @@ else
   rm -f "$COOKIE_JAR"
 fi
 
+echo "== 6. 邮件服务（opt-in：MAIL_SMTP_HOST/USERNAME/PASSWORD/FROM 四变量全配置才真发）=="
+# 固定码假绿守卫：MAIL_TEST_FIXED_CODE 环境下 send 短路、恒报成功，不构成任何 SMTP 证据
+if [ -n "${MAIL_TEST_FIXED_CODE:-}" ]; then
+  echo "  - 跳过（检测到 MAIL_TEST_FIXED_CODE 固定码环境——send 短路，不构成 SMTP 证据）"
+# 半配置守卫：缺任一要素时真实发信必 526/503 红色误导，跳过并指出缺哪类
+elif [ -z "${MAIL_SMTP_HOST:-}" ] || [ -z "${MAIL_SMTP_USERNAME:-}" ] \
+   || [ -z "${MAIL_SMTP_PASSWORD:-}" ] || [ -z "${MAIL_FROM:-}" ]; then
+  MISSING=""
+  [ -z "${MAIL_SMTP_HOST:-}" ] && MISSING="$MISSING MAIL_SMTP_HOST"
+  [ -z "${MAIL_SMTP_USERNAME:-}" ] && MISSING="$MISSING MAIL_SMTP_USERNAME"
+  [ -z "${MAIL_SMTP_PASSWORD:-}" ] && MISSING="$MISSING MAIL_SMTP_PASSWORD"
+  [ -z "${MAIL_FROM:-}" ] && MISSING="$MISSING MAIL_FROM"
+  echo "  - SMTP 配置不完整（缺:${MISSING}），跳过邮件冒烟（在 .env 补齐后重跑）"
+else
+  # M01-F06：向 MAIL_FROM 本身真实发一封注册验证码（SMTP 全链路；用户名按次唯一）。
+  # 收件人必须是真实邮箱：阿里企业邮箱无 catch-all，虚构同域地址会被 RCPT TO 拒收（MAIL_SEND_FAILED）
+  SMOKE_MAILBOX="$MAIL_FROM"
+  CODE_RESP=$(curl -s --max-time 15 -X POST "$BASE/api/auth/register-code" \
+    -H "Content-Type: application/json" \
+    -d "{\"username\":\"smoke_$(date +%s)\",\"password\":\"Smoke123x\",\"email\":\"$SMOKE_MAILBOX\"}") \
+    || fail "register-code 接口不可达"
+  echo "$CODE_RESP" | grep -q "验证码已发送" \
+    && pass "注册验证码已发送至 ${SMOKE_MAILBOX}（SMTP 全链路通）" \
+    || fail "验证码发送失败: $CODE_RESP"
+fi
+
 echo "全部通过"

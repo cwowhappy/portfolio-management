@@ -26,7 +26,10 @@ interface AuthContextValue {
   loading: boolean;
   login: (username: string, password: string, rememberMe: boolean) => Promise<AuthUser>;
   logout: () => Promise<void>;
-  register: (username: string, password: string) => Promise<AuthUser>;
+  register: (username: string, password: string, email: string, code: string) => Promise<AuthUser>;
+  sendRegisterCode: (username: string, password: string, email: string) => Promise<void>;
+  sendResetCode: (identifier: string) => Promise<void>;
+  resetPassword: (identifier: string, code: string, newPassword: string) => Promise<void>;
   refresh: () => Promise<void>;
 }
 
@@ -99,16 +102,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const register = useCallback(async (username: string, password: string) => {
-    return fetchUser("/api/auth/register", {
+  const register = useCallback(
+    async (username: string, password: string, email: string, code: string) => {
+      return fetchUser("/api/auth/register", {
+        method: "POST",
+        body: JSON.stringify({ username, password, email, code }),
+      });
+    },
+    [],
+  );
+
+  const sendRegisterCode = useCallback(async (username: string, password: string, email: string) => {
+    await fetchJson("/api/auth/register-code", {
       method: "POST",
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ username, password, email }),
+    });
+  }, []);
+
+  const sendResetCode = useCallback(async (identifier: string) => {
+    await fetchJson("/api/auth/reset-code", {
+      method: "POST",
+      body: JSON.stringify({ identifier }),
+    });
+  }, []);
+
+  const resetPassword = useCallback(async (identifier: string, code: string, newPassword: string) => {
+    await fetchJson("/api/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({ identifier, code, newPassword }),
     });
   }, []);
 
   const value = useMemo(
-    () => ({ user, loading, login, logout, register, refresh }),
-    [user, loading, login, logout, register, refresh],
+    () => ({ user, loading, login, logout, register, sendRegisterCode, sendResetCode, resetPassword, refresh }),
+    [user, loading, login, logout, register, sendRegisterCode, sendResetCode, resetPassword, refresh],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

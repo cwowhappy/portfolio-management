@@ -35,7 +35,8 @@ class ActiveUserFilterTest {
     @Test
     void givenPublicPath_whenShouldNotFilter_thenExemptsFromStatusCheck() {
         String[] publicPaths = {
-                "/api/auth/login", "/api/auth/register",
+                "/api/auth/login", "/api/auth/register", "/api/auth/register-code",
+                "/api/auth/reset-code", "/api/auth/reset-password",
                 "/api/market/quote", "/api/valuation/overview", "/api/agent/health",
                 "/api/agent/status", "/api/screening/stocks", "/actuator/health"
         };

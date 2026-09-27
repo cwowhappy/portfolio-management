@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.portfolio.invest.domain.user.User;
 import com.portfolio.invest.domain.user.UserRepository;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -15,6 +16,7 @@ import java.util.List;
 import java.util.UUID;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpSession;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
@@ -105,15 +107,16 @@ public final class AguiTestSupport {
                 .formatted(threadId, runId, interruptId, approved);
     }
 
+    /**
+     * 造一个已审批用户并登录返回其会话。T5 起注册端点要求邮箱验证码（三段式），AGUI 用例的
+     * 关注点在其后的 /agui/run，故改走仓库直插用户行：密码用与 SecurityConfig 同款的
+     * BCrypt 哈希，登录链路照常走 HTTP 认证。
+     */
     public static MockHttpSession registerApproveAndLogin(
             MockMvc mockMvc, UserRepository userRepository, String username) throws Exception {
         String password = "abc12345";
-        mockMvc.perform(post("/api/auth/register")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"username\":\"" + username + "\",\"password\":\"" + password + "\"}"))
-                .andExpect(status().isCreated());
-        var user = userRepository.findByUsername(username).orElseThrow();
-        userRepository.save(user.approve());
+        String hash = new BCryptPasswordEncoder().encode(password);
+        userRepository.save(User.register(username, hash).approve());
 
         var login = mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)

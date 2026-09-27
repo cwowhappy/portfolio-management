@@ -9,12 +9,17 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.portfolio.invest.domain.user.UserRepository;
 import com.portfolio.invest.support.PostgresTestSupport;
+import com.portfolio.invest.support.RecordingMailSender;
+import com.portfolio.invest.support.TestCodes;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MockMvc;
@@ -25,8 +30,19 @@ import com.portfolio.invest.domain.conversation.ConversationErrorCode;
 @AutoConfigureMockMvc
 class ConversationControllerIntegrationTest extends PostgresTestSupport {
 
+    /** 发信桩：@Primary 覆盖未配置 SMTP 的 SmtpMailSender，注册发码走桩取码。 */
+    @TestConfiguration
+    static class MailStub {
+        @Bean
+        @Primary
+        RecordingMailSender recordingMailSender() {
+            return new RecordingMailSender();
+        }
+    }
+
     @Autowired MockMvc mockMvc;
     @Autowired UserRepository userRepository;
+    @Autowired RecordingMailSender mailStub;
 
     @DisplayName("登录用户建会话写读列_非本人404_未登录401")
     @Test
@@ -196,10 +212,19 @@ class ConversationControllerIntegrationTest extends PostgresTestSupport {
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
     }
 
+    /** 三段式注册：发码（邮件桩取码）→ 携码注册；邮箱由用户名派生保证类内唯一。 */
     private void register(String username, String password) throws Exception {
+        String email = username + "@test.local";
+        mockMvc.perform(post("/api/auth/register-code")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"" + username + "\",\"password\":\"" + password
+                                + "\",\"email\":\"" + email + "\"}"))
+                .andExpect(status().isOk());
+        String code = TestCodes.extractSixDigits(mailStub.sent.get(mailStub.sent.size() - 1).text());
         mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"username\":\"" + username + "\",\"password\":\"" + password + "\"}"))
+                        .content("{\"username\":\"" + username + "\",\"password\":\"" + password
+                                + "\",\"email\":\"" + email + "\",\"code\":\"" + code + "\"}"))
                 .andExpect(status().isCreated());
     }
 

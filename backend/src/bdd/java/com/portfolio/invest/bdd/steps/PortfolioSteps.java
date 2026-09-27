@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.portfolio.invest.application.auth.AuthApplicationService;
+import com.portfolio.invest.application.auth.EmailCodeService;
 import com.portfolio.invest.application.auth.RegisterCommand;
 import com.portfolio.invest.application.portfolio.BuyCommand;
 import com.portfolio.invest.application.portfolio.CashDividendCommand;
@@ -23,6 +24,8 @@ import com.portfolio.invest.domain.portfolio.GroupType;
 import com.portfolio.invest.domain.user.UserRepository;
 import com.portfolio.invest.infrastructure.market.EastmoneyClient;
 import com.portfolio.invest.infrastructure.market.TencentClient;
+import com.portfolio.invest.support.RecordingMailSender;
+import com.portfolio.invest.support.TestCodes;
 import io.cucumber.java.zh_cn.假如;
 import io.cucumber.java.zh_cn.当;
 import io.cucumber.java.zh_cn.那么;
@@ -40,6 +43,12 @@ public class PortfolioSteps {
 
     @Autowired
     AuthApplicationService authService;
+
+    @Autowired
+    EmailCodeService emailCodeService;
+
+    @Autowired
+    RecordingMailSender mailStub;
 
     @Autowired
     UserRepository userRepository;
@@ -60,8 +69,12 @@ public class PortfolioSteps {
 
     @假如("已审核用户 {string}")
     public void 已审核用户(String username) {
-        // 业务计算类场景无需走 HTTP 链路：直调注册用例 + 仓库审核，拿到 userId
-        authService.register(new RegisterCommand(username, "abc12345"));
+        // 业务计算类场景无需走 HTTP 链路：直调注册用例 + 仓库审核，拿到 userId。
+        // T5 起注册需验证码：发码走邮件桩（CucumberSpringConfig.MailStub），从邮件正文取码
+        String email = username + "@test.local";
+        emailCodeService.issueRegisterCode(username, "abc12345", email);
+        String code = TestCodes.extractSixDigits(mailStub.sent.get(mailStub.sent.size() - 1).text());
+        authService.register(new RegisterCommand(username, "abc12345", email, code));
         var user = userRepository.findByUsername(username).orElseThrow();
         var approved = userRepository.save(user.approve());
         ctx.setUsername(username);

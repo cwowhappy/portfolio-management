@@ -4,6 +4,7 @@ import com.portfolio.invest.infrastructure.market.EastmoneyClient;
 import com.portfolio.invest.infrastructure.market.SinaClient;
 import com.portfolio.invest.infrastructure.market.TencentClient;
 import com.portfolio.invest.support.PostgresTestSupport;
+import com.portfolio.invest.support.RecordingMailSender;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
@@ -14,7 +15,10 @@ import io.agentscope.core.model.ToolSchema;
 import io.cucumber.spring.CucumberContextConfiguration;
 import java.util.List;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.test.context.bean.override.convention.TestBean;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import reactor.core.publisher.Flux;
@@ -65,6 +69,19 @@ public class CucumberSpringConfig extends PostgresTestSupport {
 
     @MockitoBean
     TencentClient tencentClient;
+
+    /**
+     * 发信桩：@Primary 覆盖未配置 SMTP 的 SmtpMailSender。T5 起注册为三段式（发码→携码注册），
+     * 旅程步骤需要从桩记录的邮件中取码。
+     */
+    @TestConfiguration
+    static class MailStub {
+        @Bean
+        @Primary
+        RecordingMailSender recordingMailSender() {
+            return new RecordingMailSender();
+        }
+    }
 
     /** 固定回复的假 Model：单条文本响应（含 usage，配合 emit-token-usage），无工具调用即结束推理循环。 */
     public static class FixedReplyModel implements Model {

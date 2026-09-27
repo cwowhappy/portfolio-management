@@ -140,7 +140,7 @@ describe("认证状态（lib/auth）", () => {
     expect(result.current.user).toBeNull();
   });
 
-  it("register 成功后返回注册用户（不自动登录）", async () => {
+  it("register 成功后返回注册用户（不自动登录），载荷带 email/code 四字段", async () => {
     const pendingUser: AuthUser = {
       id: 2,
       username: "newbie",
@@ -156,10 +156,87 @@ describe("认证状态（lib/auth）", () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
     let returned: AuthUser | null = null;
     await act(async () => {
-      returned = await result.current.register("newbie", "passw0rd");
+      returned = await result.current.register("newbie", "passw0rd", "newbie@example.com", "123456");
     });
     expect(returned).toEqual(pendingUser);
     expect(result.current.user).toBeNull();
+    const regCall = fetchMock.mock.calls.find((c) => c[0] === "/api/auth/register")!;
+    expect(regCall[1].method).toBe("POST");
+    expect(JSON.parse(regCall[1].body)).toEqual({
+      username: "newbie",
+      password: "passw0rd",
+      email: "newbie@example.com",
+      code: "123456",
+    });
+  });
+
+  it("sendRegisterCode 发送 {username,password,email} 到 /api/auth/register-code", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ code: "UNAUTHENTICATED", message: "未登录" }, 401),
+    );
+    fetchMock.mockResolvedValueOnce(jsonResponse({ message: "验证码已发送" }));
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(async () => {
+      await result.current.sendRegisterCode("newbie", "passw0rd", "newbie@example.com");
+    });
+    const call = fetchMock.mock.calls.find((c) => c[0] === "/api/auth/register-code")!;
+    expect(call[1].method).toBe("POST");
+    expect(JSON.parse(call[1].body)).toEqual({
+      username: "newbie",
+      password: "passw0rd",
+      email: "newbie@example.com",
+    });
+  });
+
+  it("sendResetCode 发送 {identifier} 到 /api/auth/reset-code", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ code: "UNAUTHENTICATED", message: "未登录" }, 401),
+    );
+    fetchMock.mockResolvedValueOnce(jsonResponse({ message: "验证码已发送" }));
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(async () => {
+      await result.current.sendResetCode("newbie@example.com");
+    });
+    const call = fetchMock.mock.calls.find((c) => c[0] === "/api/auth/reset-code")!;
+    expect(call[1].method).toBe("POST");
+    expect(JSON.parse(call[1].body)).toEqual({ identifier: "newbie@example.com" });
+  });
+
+  it("resetPassword 发送 {identifier,code,newPassword} 到 /api/auth/reset-password", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ code: "UNAUTHENTICATED", message: "未登录" }, 401),
+    );
+    fetchMock.mockResolvedValueOnce(jsonResponse({ message: "密码已重置" }));
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(async () => {
+      await result.current.resetPassword("newbie@example.com", "123456", "newpassw0rd");
+    });
+    const call = fetchMock.mock.calls.find((c) => c[0] === "/api/auth/reset-password")!;
+    expect(call[1].method).toBe("POST");
+    expect(JSON.parse(call[1].body)).toEqual({
+      identifier: "newbie@example.com",
+      code: "123456",
+      newPassword: "newpassw0rd",
+    });
+  });
+
+  it("resetPassword 失败时抛后端 message", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ code: "UNAUTHENTICATED", message: "未登录" }, 401),
+    );
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ code: "CODE_INVALID", message: "验证码错误或已过期" }, 400),
+    );
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(async () => {
+      await expect(
+        result.current.resetPassword("newbie@example.com", "000000", "newpassw0rd"),
+      ).rejects.toThrow("验证码错误或已过期");
+    });
   });
 
   it("useAuth 在 Provider 外抛错", () => {

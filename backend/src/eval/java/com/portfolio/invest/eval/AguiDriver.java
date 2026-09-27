@@ -49,14 +49,11 @@ public final class AguiDriver {
 
     /** 注册→审批→登录，返回登录会话（MockMvc 不回放 JSESSIONID，须显式传 MockHttpSession）。 */
     public MockHttpSession registerApproveAndLogin(String username) throws Exception {
+        // T5 起注册端点需邮箱验证码（评估环境无邮件配置）：直插已审批用户行，
+        // BCrypt 与 SecurityConfig 的 PasswordEncoder 同款，登录照常走 HTTP 认证
         String password = "eval-pass-123456";
-        mockMvc.perform(post("/api/auth/register")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(MAPPER.writeValueAsString(java.util.Map.of(
-                                "username", username, "password", password))))
-                .andExpect(status().isCreated());
-        var user = userRepository.findByUsername(username).orElseThrow();
-        userRepository.save(user.approve());
+        String hash = new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder().encode(password);
+        userRepository.save(com.portfolio.invest.domain.user.User.register(username, hash).approve());
         var login = mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(MAPPER.writeValueAsString(java.util.Map.of(

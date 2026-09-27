@@ -11,15 +11,16 @@ vi.mock("@/lib/adminApi", () => ({
     enable: vi.fn(),
     disable: vi.fn(),
     resetPassword: vi.fn(),
+    setEmail: vi.fn(),
   },
 }));
 
 const api = vi.mocked(adminApi);
 
-const admin: AdminUserView = { id: 1, username: "admin", role: "ADMIN", status: "APPROVED", enabled: true };
-const pendingUser: AdminUserView = { id: 2, username: "newbie", role: "USER", status: "PENDING", enabled: true };
-const approvedUser: AdminUserView = { id: 3, username: "alice", role: "USER", status: "APPROVED", enabled: true };
-const disabledUser: AdminUserView = { id: 4, username: "bob", role: "USER", status: "APPROVED", enabled: false };
+const admin: AdminUserView = { id: 1, username: "admin", role: "ADMIN", status: "APPROVED", enabled: true, email: null };
+const pendingUser: AdminUserView = { id: 2, username: "newbie", role: "USER", status: "PENDING", enabled: true, email: null };
+const approvedUser: AdminUserView = { id: 3, username: "alice", role: "USER", status: "APPROVED", enabled: true, email: "alice@example.com" };
+const disabledUser: AdminUserView = { id: 4, username: "bob", role: "USER", status: "APPROVED", enabled: false, email: null };
 
 const allUsers = [admin, pendingUser, approvedUser, disabledUser];
 
@@ -31,6 +32,7 @@ beforeEach(() => {
   api.disable.mockResolvedValue({ ...approvedUser, enabled: false });
   api.enable.mockResolvedValue({ ...disabledUser, enabled: true });
   api.resetPassword.mockResolvedValue(approvedUser);
+  api.setEmail.mockResolvedValue(approvedUser);
 });
 
 afterEach(() => {
@@ -63,10 +65,10 @@ describe("AdminBoard", () => {
     expect(within(table).getByText("管理员")).toBeTruthy();
     expect(within(table).getByText("待审核")).toBeTruthy();
     expect(within(table).getAllByText("已通过")).toHaveLength(3);
-    // ADMIN 行无操作按钮（显示 —），且不出现停用/重置密码
+    // ADMIN 行无操作按钮，邮箱列与操作列均显示 —
     const adminRow = within(table).getByText("admin").closest("tr")!;
     expect(within(adminRow).queryByRole("button")).toBeNull();
-    expect(within(adminRow).getByText("—")).toBeTruthy();
+    expect(within(adminRow).getAllByText("—")).toHaveLength(2);
   });
 
   it("无待审核用户时显示空态", async () => {
@@ -116,6 +118,23 @@ describe("AdminBoard", () => {
     const bobRow = within(table).getByText("bob").closest("tr")!;
     fireEvent.click(within(bobRow).getByRole("button", { name: "启用" }));
     await vi.waitFor(() => expect(api.enable).toHaveBeenCalledWith(4));
+  });
+
+  it("USER 行渲染「绑定邮箱」按钮与邮箱列；ADMIN 行邮箱列为 —", async () => {
+    render(<AdminBoard />);
+    const table = await screen.findByRole("table");
+    // 已通过 USER：操作组含绑定邮箱，邮箱列展示已绑定地址
+    const aliceRow = within(table).getByText("alice").closest("tr")!;
+    expect(within(aliceRow).getByRole("button", { name: "绑定邮箱" })).toBeTruthy();
+    expect(within(aliceRow).getByText("alice@example.com")).toBeTruthy();
+    // 未绑定邮箱的 USER：邮箱列显示「未绑定」
+    const bobRow = within(table).getByText("bob").closest("tr")!;
+    expect(within(bobRow).getByText("未绑定")).toBeTruthy();
+    expect(within(bobRow).getByRole("button", { name: "绑定邮箱" })).toBeTruthy();
+    // ADMIN：邮箱列 —，且无绑定邮箱按钮
+    const adminRow = within(table).getByText("admin").closest("tr")!;
+    expect(within(adminRow).getAllByText("—")).toHaveLength(2); // 邮箱列 + 操作列
+    expect(within(adminRow).queryByRole("button", { name: "绑定邮箱" })).toBeNull();
   });
 
   describe("重置密码弹窗", () => {
@@ -170,6 +189,51 @@ describe("AdminBoard", () => {
       fireEvent.click(screen.getByRole("button", { name: "确认重置" }));
       const alert = await screen.findByRole("alert");
       expect(alert.textContent).toContain("重置失败");
+      await vi.waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    });
+  });
+
+  describe("绑定邮箱弹窗", () => {
+    async function openDialog() {
+      render(<AdminBoard />);
+      const table = await screen.findByRole("table");
+      const aliceRow = within(table).getByText("alice").closest("tr")!;
+      fireEvent.click(within(aliceRow).getByRole("button", { name: "绑定邮箱" }));
+      return screen.getByRole("dialog", { name: "为 alice 绑定邮箱" });
+    }
+
+    it("点击绑定邮箱打开弹窗，取消后关闭", async () => {
+      await openDialog();
+      expect(screen.getByText("为 alice 绑定邮箱")).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "取消" }));
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(api.setEmail).not.toHaveBeenCalled();
+    });
+
+    it("非法邮箱在前端被拦截（不调用接口）", async () => {
+      await openDialog();
+      fireEvent.change(screen.getByLabelText("邮箱"), { target: { value: "not-an-email" } });
+      fireEvent.click(screen.getByRole("button", { name: "确认绑定" }));
+      expect(await screen.findByText("请输入正确的邮箱")).toBeTruthy();
+      expect(api.setEmail).not.toHaveBeenCalled();
+    });
+
+    it("提交成功：调用 setEmail 并关闭弹窗", async () => {
+      await openDialog();
+      fireEvent.change(screen.getByLabelText("邮箱"), { target: { value: "alice@example.com" } });
+      fireEvent.click(screen.getByRole("button", { name: "确认绑定" }));
+      await vi.waitFor(() => expect(api.setEmail).toHaveBeenCalledWith(3, "alice@example.com"));
+      await vi.waitFor(() => expect(api.list).toHaveBeenCalledTimes(2));
+      await vi.waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    });
+
+    it("提交失败：弹窗关闭并显示页面级错误提示", async () => {
+      api.setEmail.mockRejectedValue(new Error("邮箱已被占用"));
+      await openDialog();
+      fireEvent.change(screen.getByLabelText("邮箱"), { target: { value: "alice@example.com" } });
+      fireEvent.click(screen.getByRole("button", { name: "确认绑定" }));
+      const alert = await screen.findByRole("alert");
+      expect(alert.textContent).toContain("邮箱已被占用");
       await vi.waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     });
   });

@@ -60,4 +60,16 @@ class UserRepositoryImplTest {
         userRepository.save(User.register("dave", "h"));
         assertThat(userRepository.findAll()).isNotEmpty();
     }
+
+    @DisplayName("邮箱可落库回查且唯一索引兜底")
+    @Test
+    void whenSaveUserWithEmail_thenFindByEmailAndUniqueEnforced() {
+        userRepository.save(User.register("carol", "hash", "carol@example.com"));
+        assertThat(userRepository.findByEmail("carol@example.com")).isPresent();
+        assertThat(userRepository.findByEmail("nobody@example.com")).isEmpty();
+
+        User dup = User.register("dave", "hash", "carol@example.com");
+        assertThatThrownBy(() -> userRepository.save(dup))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
 }

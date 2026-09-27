@@ -10,12 +10,17 @@ import com.portfolio.invest.domain.user.UserRepository;
 import com.portfolio.invest.domain.user.UserRole;
 import com.portfolio.invest.domain.user.UserStatus;
 import com.portfolio.invest.support.PostgresTestSupport;
+import com.portfolio.invest.support.RecordingMailSender;
+import com.portfolio.invest.support.TestCodes;
 import java.time.Instant;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -26,9 +31,20 @@ import org.springframework.test.web.servlet.MvcResult;
 @AutoConfigureMockMvc
 class UserAdminControllerIntegrationTest extends PostgresTestSupport {
 
+    /** 发信桩：@Primary 覆盖未配置 SMTP 的 SmtpMailSender，注册发码走桩取码。 */
+    @TestConfiguration
+    static class MailStub {
+        @Bean
+        @Primary
+        RecordingMailSender recordingMailSender() {
+            return new RecordingMailSender();
+        }
+    }
+
     @Autowired MockMvc mockMvc;
     @Autowired UserRepository userRepository;
     @Autowired PasswordEncoder passwordEncoder;
+    @Autowired RecordingMailSender mailStub;
     @Autowired org.springframework.security.web.authentication.rememberme.PersistentTokenRepository tokenRepository;
 
     @DisplayName("普通用户访问admin接口返回403")
@@ -99,9 +115,57 @@ class UserAdminControllerIntegrationTest extends PostgresTestSupport {
                 .andExpect(jsonPath("$.message").value("新密码不能为空"));
     }
 
+    @DisplayName("管理员代填邮箱：200回显归一化邮箱且告知邮件已发")
+    @Test
+    void givenUserWithDerivedEmail_whenAdminSetsEmail_thenBoundVerifiedAndNotified() throws Exception {
+        register("adminit_mail1", "abc12345");
+        approveDirect("adminit_mail1");
+        seedAdmin("adminit_mail1_admin", "admin12345");
+        MockHttpSession adminSession = login("adminit_mail1_admin", "admin12345");
+        Long userId = userRepository.findByUsername("adminit_mail1").orElseThrow().id();
+
+        int mailsBefore = mailStub.sent.size();
+        mockMvc.perform(post("/api/admin/users/{id}/email", userId).session(adminSession)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"Adminit_Mail1@New.Local\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.email").value("adminit_mail1@new.local"));
+
+        org.assertj.core.api.Assertions.assertThat(mailStub.sent).hasSize(mailsBefore + 1);
+        var notify = mailStub.sent.get(mailsBefore);
+        org.assertj.core.api.Assertions.assertThat(notify.to()).isEqualTo("adminit_mail1@new.local");
+        org.assertj.core.api.Assertions.assertThat(notify.subject()).isEqualTo("九和投资邮箱绑定通知");
+        org.assertj.core.api.Assertions.assertThat(
+                userRepository.findByEmail("adminit_mail1@new.local").orElseThrow().emailVerified()).isTrue();
+    }
+
+    @DisplayName("代填已被绑定邮箱返回400 EMAIL_TAKEN")
+    @Test
+    void givenEmailAlreadyBound_whenAdminSetsEmail_thenEmailTaken() throws Exception {
+        register("adminit_mail2a", "abc12345");
+        register("adminit_mail2b", "abc12345");
+        seedAdmin("adminit_mail2_admin", "admin12345");
+        MockHttpSession adminSession = login("adminit_mail2_admin", "admin12345");
+        Long userId = userRepository.findByUsername("adminit_mail2b").orElseThrow().id();
+
+        mockMvc.perform(post("/api/admin/users/{id}/email", userId).session(adminSession)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"adminit_mail2a@test.local\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("EMAIL_TAKEN"));
+    }
+
+    /** 三段式注册：发码（邮件桩取码）→ 携码注册；邮箱由用户名派生保证类内唯一。 */
     private void register(String username, String password) throws Exception {
+        String email = username + "@test.local";
+        mockMvc.perform(post("/api/auth/register-code").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"" + username + "\",\"password\":\"" + password
+                                + "\",\"email\":\"" + email + "\"}"))
+                .andExpect(status().isOk());
+        String code = TestCodes.extractSixDigits(mailStub.sent.get(mailStub.sent.size() - 1).text());
         mockMvc.perform(post("/api/auth/register").contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"username\":\"" + username + "\",\"password\":\"" + password + "\"}"))
+                        .content("{\"username\":\"" + username + "\",\"password\":\"" + password
+                                + "\",\"email\":\"" + email + "\",\"code\":\"" + code + "\"}"))
                 .andExpect(status().isCreated());
     }
 

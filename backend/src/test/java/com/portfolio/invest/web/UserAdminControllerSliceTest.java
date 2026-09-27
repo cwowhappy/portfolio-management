@@ -49,7 +49,7 @@ class UserAdminControllerSliceTest {
     private PersistentTokenRepository persistentTokenRepository;
 
     private UserAdminView adminView() {
-        return new UserAdminView(2L, "alice", "USER", "APPROVED", true);
+        return new UserAdminView(2L, "alice", "USER", "APPROVED", true, null);
     }
 
     @DisplayName("匿名访问用户列表返回401")
@@ -87,7 +87,7 @@ class UserAdminControllerSliceTest {
     @WithMockUser(roles = "ADMIN")
     void givenAdminRole_whenRejectUser_thenReturn200() throws Exception {
         when(service.reject(2L)).thenReturn(
-                new UserAdminView(2L, "alice", "USER", "REJECTED", true));
+                new UserAdminView(2L, "alice", "USER", "REJECTED", true, null));
 
         mvc.perform(post("/api/admin/users/2/reject"))
                 .andExpect(status().isOk())
@@ -110,7 +110,7 @@ class UserAdminControllerSliceTest {
     @WithMockUser(roles = "ADMIN")
     void givenAdminRole_whenDisableUser_thenReturn200() throws Exception {
         when(service.disable(2L)).thenReturn(
-                new UserAdminView(2L, "alice", "USER", "APPROVED", false));
+                new UserAdminView(2L, "alice", "USER", "APPROVED", false, null));
 
         mvc.perform(post("/api/admin/users/2/disable"))
                 .andExpect(status().isOk())

@@ -1,12 +1,16 @@
 package com.portfolio.invest.web;
 
 import com.portfolio.invest.application.auth.AuthApplicationService;
+import com.portfolio.invest.application.auth.EmailCodeService;
 import com.portfolio.invest.application.auth.RegisterCommand;
 import com.portfolio.invest.application.auth.UserView;
 import com.portfolio.invest.domain.user.User;
 import com.portfolio.invest.domain.user.UserStatus;
 import com.portfolio.invest.infrastructure.security.AuthenticatedUser;
 import com.portfolio.invest.web.dto.LoginRequest;
+import com.portfolio.invest.web.dto.PasswordResetRequest;
+import com.portfolio.invest.web.dto.RegisterCodeRequest;
+import com.portfolio.invest.web.dto.ResetCodeRequest;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
@@ -27,18 +31,21 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 认证接入层：注册 / 登录（JSON）/ me。登出由 Security 过滤器处理。 */
+/** 认证接入层：注册 / 找回密码 / 登录（JSON）/ me。登出由 Security 过滤器处理。 */
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
 
     private final AuthApplicationService auth;
+    private final EmailCodeService emailCodeService;
     private final AuthenticationManager authenticationManager;
     private final RememberMeServices rememberMeServices;
 
-    public AuthController(AuthApplicationService auth, AuthenticationManager authenticationManager,
+    public AuthController(AuthApplicationService auth, EmailCodeService emailCodeService,
+                          AuthenticationManager authenticationManager,
                           RememberMeServices rememberMeServices) {
         this.auth = auth;
+        this.emailCodeService = emailCodeService;
         this.authenticationManager = authenticationManager;
         this.rememberMeServices = rememberMeServices;
     }
@@ -46,6 +53,24 @@ public class AuthController {
     @PostMapping("/register")
     public ResponseEntity<UserView> register(@Valid @RequestBody RegisterCommand cmd) {
         return ResponseEntity.status(HttpStatus.CREATED).body(auth.register(cmd));
+    }
+
+    @PostMapping("/register-code")
+    public ResponseEntity<Map<String, String>> registerCode(@Valid @RequestBody RegisterCodeRequest req) {
+        emailCodeService.issueRegisterCode(req.username(), req.password(), req.email());
+        return ResponseEntity.ok(Map.of("message", "验证码已发送"));
+    }
+
+    @PostMapping("/reset-code")
+    public ResponseEntity<Map<String, String>> resetCode(@Valid @RequestBody ResetCodeRequest req) {
+        emailCodeService.issueResetCode(req.identifier());
+        return ResponseEntity.ok(Map.of("message", "验证码已发送"));
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<Map<String, String>> resetPassword(@Valid @RequestBody PasswordResetRequest req) {
+        auth.resetPassword(req.identifier(), req.code(), req.newPassword());
+        return ResponseEntity.ok(Map.of("message", "密码已重置"));
     }
 
     @PostMapping("/login")
