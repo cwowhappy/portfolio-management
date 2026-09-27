@@ -23,6 +23,7 @@ from collector.executor.selector import SourceSelector
 from collector.model.task import Collector
 from collector.repositories.runs import RunRepository
 from collector.repositories.tasks import TASK_COLS, TaskRepository
+from collector.scheduler.alerts import ALERT_WEBHOOK_ENV, alerter_from_env
 from collector.scheduler.calendar import TradingCalendar
 from collector.scheduler.runner import TaskRunner
 from collector.sources.plugins import (
@@ -380,7 +381,11 @@ def main():
     selector = SourceSelector()
     store = Store()
     executor = Executor(selector, store)
-    runner = TaskRunner(config.database_url, calendar, executor)
+    # P0-2 终态告警：COLLECTOR_ALERT_WEBHOOK 未配置时为 None，runner 走现状零开销路径
+    alerter = alerter_from_env()
+    if alerter is not None:
+        logger.info("终态告警已启用：%s", ALERT_WEBHOOK_ENV)
+    runner = TaskRunner(config.database_url, calendar, executor, alerter=alerter)
     scheduler = build_scheduler(
         tasks,
         runner,
