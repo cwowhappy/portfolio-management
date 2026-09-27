@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 import akshare as ak
 import pandas as pd
 
+from collector.config import env_float
 from collector.sources.base import Source, SourceError
 from collector.sources.constants import (
     BOND_INDEX_CODE,
@@ -451,13 +452,19 @@ class EtfBasicSource(Source):
 
     supports_range = False
 
-    def __init__(self, source_id, catalog_fetch=None, detail_fetch=None, sleep_fn=time.sleep):
+    def __init__(self, source_id, catalog_fetch=None, detail_fetch=None, sleep_fn=time.sleep, interval=None):
         self.source_id = source_id
         self.catalog_fetch = catalog_fetch or _default_etf_catalog
         self.detail_fetch = detail_fetch or _default_etf_detail
         self.sleep_fn = sleep_fn
+        # P1-8：间隔默认取集中常量，env COLLECTOR_ETF_DETAIL_INTERVAL 可覆盖（如降速应对上游限流）
+        if interval is None:
+            interval = env_float("COLLECTOR_ETF_DETAIL_INTERVAL", ETF_ENRICH_INTERVAL)
+        self.interval = interval
 
     def fetch(self, params):
+        self.last_warnings = None  # 单例源：观测状态每次 fetch 重置
+        self._enrich_failures = []
         catalog = self.catalog_fetch()
         codes = catalog["代码"].astype(str).str.extract(_ETF_FUND_CODE, expand=False)
         catalog_names = catalog["名称"].astype(str)
@@ -465,8 +472,11 @@ class EtfBasicSource(Source):
         for code, fallback_name in zip(codes, catalog_names, strict=True):
             try:
                 detail = self.detail_fetch(code) or {}
+                if not detail:
+                    self._enrich_failures.append(str(code))
             except Exception:  # 单只失败/超时 → 该行 enrich 字段 null，不阻断整批
                 detail = {}
+                self._enrich_failures.append(str(code))
             fund_name = str(detail.get("SHORTNAME") or "").strip() or fallback_name
             if not fund_name:  # 目录与 enrich 均无名：无展示价值的行直接跳过
                 continue
@@ -482,7 +492,13 @@ class EtfBasicSource(Source):
                     "category": _etf_category(detail.get("FTYPE"), detail.get("INDEXNAME"), fund_name),
                 }
             )
-            self.sleep_fn(ETF_ENRICH_INTERVAL)
+            self.sleep_fn(self.interval)
+        # P1-8：失败计数上报（异常与空返回都算 enrich 失败——均导致该行字段 null），
+        # 样例码截 5 个防 1685 只全量刷屏；进 run.message 由 executor 的 last_warnings 通道承担
+        if self._enrich_failures:
+            sample = ", ".join(self._enrich_failures[:5])
+            self.last_warnings = [f"enrich 失败 {len(self._enrich_failures)}/{len(codes)}，样例：{sample}"]
+            logger.warning("%s: %s", self.source_id, self.last_warnings[0])
         return pd.DataFrame(rows, columns=ETF_BASIC_COLUMNS)
 
 
