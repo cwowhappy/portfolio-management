@@ -67,6 +67,12 @@ invest:
     password: ${ADMIN_PASSWORD:}
   security:
     remember-me-key: ${REMEMBER_ME_KEY:}
+  im:
+    app-id: ${FEISHU_APP_ID:}
+    app-secret: ${FEISHU_APP_SECRET:}
+    chat-id: ${FEISHU_ALERT_CHAT_ID:}
+    owner-username: ${FEISHU_OWNER_USERNAME:${ADMIN_USERNAME:}}
+    api-base: ${FEISHU_API_BASE:https://open.feishu.cn}
   market:
     connect-timeout: 3s
     read-timeout: 5s
