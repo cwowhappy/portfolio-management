@@ -10,14 +10,38 @@ from concurrent.futures import ThreadPoolExecutor
 import akshare as ak
 import pandas as pd
 
+from collector.config import env_float
 from collector.sources.base import Source, SourceError
+from collector.sources.constants import (
+    BOND_INDEX_CODE,
+    BOND_INDEX_NAME,
+    BOND_INDEX_TS_CODE,
+    CURVE_CHUNK_DAYS,
+    CURVE_EARLIEST,
+    ETF_DAILY_INTERVAL,
+    ETF_DETAIL_HEADERS,
+    ETF_DETAIL_TIMEOUT,
+    ETF_DETAIL_URL,
+    ETF_ENRICH_INTERVAL,
+    FINANCIAL_MIN_INTERVAL,
+    GOLD_ETF_CODE,
+    GOLD_ETF_NAME,
+    GOLD_ETF_TS_CODE,
+    INDEX_CLOSE_CODES,
+    INDEX_CLOSE_TS,
+    INDEX_CODES,
+    INDEX_DAILY_INTERVAL,
+    INDUSTRY_INDEX_CODES,
+    RECENT_OPEN_LOOKBACK_DAYS,
+    STOCK_DAILY_MIN_INTERVAL,
+    TERMS,
+)
 from collector.sources.ratelimit import RateLimiter
 
 logger = logging.getLogger(__name__)
 
 # StockFinancialSource 逐股拉取 fina_indicator 前的最小调用间隔（秒）。
 # fina_indicator 上游限 200 次/分钟，取 0.35s（≈171 次/分钟）留安全余量，避免逐股并发触发限流。
-FINANCIAL_MIN_INTERVAL = 0.35
 
 # income（利润表）并入营收的实测口径（09-调研报告/2026-09-17-income接口校准.md）：
 # 缺省查询只回 report_type='1'（合并报表），客户端仍显式过滤防上游缺省行为变化；
@@ -26,8 +50,6 @@ FINANCIAL_MIN_INTERVAL = 0.35
 INCOME_MERGED_REPORT_TYPE = "1"
 INCOME_REVENUE_SCALE = 1.0
 INCOME_FIELDS = "ts_code,end_date,report_type,revenue,ann_date,update_flag"
-
-INDEX_CODES = {"000016": "上证50", "000300": "沪深300", "000905": "中证500", "399006": "创业板指", "000688": "科创50"}
 
 _DATE_COMPACT = re.compile(r"\d{8}")
 
@@ -127,11 +149,6 @@ class IndexValuationSource(Source):
         return pd.concat(frames, ignore_index=True)
 
 
-INDEX_CLOSE_CODES = {"000300": "沪深300", "000905": "中证500", "930950": "中证偏股基金指数"}
-
-_INDEX_CLOSE_TS = {"000300": "000300.SH", "000905": "000905.SH", "930950": "930950.CSI"}
-
-
 class IndexCloseSource(Source):
     """基准指数收盘价历史：tushare index_daily 区间拉取（supports_range=True，供 backfill 复用）。"""
 
@@ -146,46 +163,11 @@ class IndexCloseSource(Source):
         start, end = _date_param(params, "start"), _date_param(params, "end")
         frames = []
         for code, name in INDEX_CLOSE_CODES.items():
-            df = pro.index_daily(ts_code=_INDEX_CLOSE_TS[code], start_date=start, end_date=end)
+            df = pro.index_daily(ts_code=INDEX_CLOSE_TS[code], start_date=start, end_date=end)
             df = df.rename(columns={"trade_date": "trading_day"})
             df["index_code"], df["index_name"] = code, name
             frames.append(df[["trading_day", "index_code", "index_name", "close"]])
         return pd.concat(frames, ignore_index=True)
-
-
-INDUSTRY_INDEX_CODES = {
-    "801010": "农林牧渔",
-    "801030": "基础化工",
-    "801040": "钢铁",
-    "801050": "有色金属",
-    "801080": "电子",
-    "801110": "家用电器",
-    "801120": "食品饮料",
-    "801130": "纺织服饰",
-    "801140": "轻工制造",
-    "801150": "医药生物",
-    "801160": "公用事业",
-    "801170": "交通运输",
-    "801180": "房地产",
-    "801200": "商贸零售",
-    "801210": "社会服务",
-    "801230": "综合",
-    "801710": "建筑材料",
-    "801720": "建筑装饰",
-    "801730": "电力设备",
-    "801740": "国防军工",
-    "801750": "计算机",
-    "801760": "传媒",
-    "801770": "通信",
-    "801780": "银行",
-    "801790": "非银金融",
-    "801880": "汽车",
-    "801890": "机械设备",
-    "801950": "煤炭",
-    "801960": "石油石化",
-    "801970": "环保",
-    "801980": "美容护理",
-}  # 申万 2021 一级 31 行业；Task 0 四方对齐核验零差异（调研报告 §四）
 
 
 def _default_sw_fetch(code):
@@ -238,9 +220,9 @@ class BondIndexCloseSource(Source):
     def fetch(self, params):
         pro = self.pro_factory()
         start, end = _date_param(params, "start"), _date_param(params, "end")
-        df = pro.index_daily(ts_code="H11001.CSI", start_date=start, end_date=end)
+        df = pro.index_daily(ts_code=BOND_INDEX_TS_CODE, start_date=start, end_date=end)
         df = df.rename(columns={"trade_date": "trading_day"})
-        df["index_code"], df["index_name"] = "H11001", "中证全债"
+        df["index_code"], df["index_name"] = BOND_INDEX_CODE, BOND_INDEX_NAME
         return df[["trading_day", "index_code", "index_name", "close"]]
 
 
@@ -256,9 +238,9 @@ class GoldEtfCloseSource(Source):
     def fetch(self, params):
         pro = self.pro_factory()
         start, end = _date_param(params, "start"), _date_param(params, "end")
-        df = pro.fund_daily(ts_code="518880.SH", start_date=start, end_date=end)
+        df = pro.fund_daily(ts_code=GOLD_ETF_TS_CODE, start_date=start, end_date=end)
         df = df.rename(columns={"trade_date": "trading_day"})
-        df["index_code"], df["index_name"] = "518880", "华安黄金ETF"
+        df["index_code"], df["index_name"] = GOLD_ETF_CODE, GOLD_ETF_NAME
         return df[["trading_day", "index_code", "index_name", "close"]]
 
 
@@ -271,16 +253,6 @@ class GoldEtfCloseSource(Source):
 #   无需 cookie）——SHORTNAME→fund_name、MGREXP+TRUSTEXP→fee_rate（合计年化%）、
 #   ENDNAV→scale（元→亿元 ÷1e8）、INDEXCODE/INDEXNAME→tracking_index_*、FTYPE→category。
 #   单只失败/超时该行字段置 null 不阻断整批（整体失败由 validator/retry 兜底）。
-ETF_DETAIL_URL = (
-    "https://fundmobapi.eastmoney.com/FundMNewApi/FundMNDetailInformation"
-    "?FCODE={code}&deviceid=Wap&plat=Wap&product=EFund&version=6.2.8"
-)
-ETF_DETAIL_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
-    "Referer": "https://fund.eastmoney.com/",
-}
-ETF_DETAIL_TIMEOUT = 15  # 单只请求超时（秒）
-ETF_ENRICH_INTERVAL = 0.3  # 逐只保守限速：~1685 只实测 ~16 分钟（含网络 RTT；周更可接受，报告 §2.2）
 
 # 非证券指数的跟踪标的码 → tracking_index_code/name 置 null（不参与 Task 15 误差计算）：
 # SGE 贵金属现货（AU9999 黄金/AG 白银）；商品期货价格指数（DCESMFI 等）按 INDEXNAME 含
@@ -480,13 +452,19 @@ class EtfBasicSource(Source):
 
     supports_range = False
 
-    def __init__(self, source_id, catalog_fetch=None, detail_fetch=None, sleep_fn=time.sleep):
+    def __init__(self, source_id, catalog_fetch=None, detail_fetch=None, sleep_fn=time.sleep, interval=None):
         self.source_id = source_id
         self.catalog_fetch = catalog_fetch or _default_etf_catalog
         self.detail_fetch = detail_fetch or _default_etf_detail
         self.sleep_fn = sleep_fn
+        # P1-8：间隔默认取集中常量，env COLLECTOR_ETF_DETAIL_INTERVAL 可覆盖（如降速应对上游限流）
+        if interval is None:
+            interval = env_float("COLLECTOR_ETF_DETAIL_INTERVAL", ETF_ENRICH_INTERVAL)
+        self.interval = interval
 
     def fetch(self, params):
+        self.last_warnings = None  # 单例源：观测状态每次 fetch 重置
+        self._enrich_failures = []
         catalog = self.catalog_fetch()
         codes = catalog["代码"].astype(str).str.extract(_ETF_FUND_CODE, expand=False)
         catalog_names = catalog["名称"].astype(str)
@@ -494,8 +472,11 @@ class EtfBasicSource(Source):
         for code, fallback_name in zip(codes, catalog_names, strict=True):
             try:
                 detail = self.detail_fetch(code) or {}
+                if not detail:
+                    self._enrich_failures.append(str(code))
             except Exception:  # 单只失败/超时 → 该行 enrich 字段 null，不阻断整批
                 detail = {}
+                self._enrich_failures.append(str(code))
             fund_name = str(detail.get("SHORTNAME") or "").strip() or fallback_name
             if not fund_name:  # 目录与 enrich 均无名：无展示价值的行直接跳过
                 continue
@@ -511,7 +492,13 @@ class EtfBasicSource(Source):
                     "category": _etf_category(detail.get("FTYPE"), detail.get("INDEXNAME"), fund_name),
                 }
             )
-            self.sleep_fn(ETF_ENRICH_INTERVAL)
+            self.sleep_fn(self.interval)
+        # P1-8：失败计数上报（异常与空返回都算 enrich 失败——均导致该行字段 null），
+        # 样例码截 5 个防 1685 只全量刷屏；进 run.message 由 executor 的 last_warnings 通道承担
+        if self._enrich_failures:
+            sample = ", ".join(self._enrich_failures[:5])
+            self.last_warnings = [f"enrich 失败 {len(self._enrich_failures)}/{len(codes)}，样例：{sample}"]
+            logger.warning("%s: %s", self.source_id, self.last_warnings[0])
         return pd.DataFrame(rows, columns=ETF_BASIC_COLUMNS)
 
 
@@ -528,9 +515,6 @@ class EtfBasicSource(Source):
 #   （000 段 .SH 拉空须回退 .CSI；INDEXTEXCH 对中证系为 '--' 不能照搬拼后缀），命中缓存
 #   实例级复用；海外/港股/极新国证码（NDX100/N225/CES100/980034…）探测不可得 → 跳过并
 #   计数（日志留痕，df 不含该码），Task 15 误差计算侧自然降级 null（报告 §六）。
-ETF_DAILY_INTERVAL = 0.3  # fund_daily 逐日回填调用间隔（探测 §三：0.35s 连发零限频，保守 0.3s）
-INDEX_DAILY_INTERVAL = 0.3  # index_daily 逐指数调用间隔（同上）
-_RECENT_OPEN_LOOKBACK_DAYS = 15  # 无参日常增量回溯最近开市日的自然日窗口（覆盖最长假期）
 
 
 def _open_days(pro, start_ymd, end_ymd):
@@ -554,7 +538,7 @@ def _target_days(pro, params):
     if params.get("date"):
         return [normalize_date(params["date"], "date")]
     today = dt.date.today().strftime("%Y%m%d")
-    lookback = (dt.date.today() - dt.timedelta(days=_RECENT_OPEN_LOOKBACK_DAYS)).strftime("%Y%m%d")
+    lookback = (dt.date.today() - dt.timedelta(days=RECENT_OPEN_LOOKBACK_DAYS)).strftime("%Y%m%d")
     return _open_days(pro, lookback, today)[-1:]
 
 
@@ -833,19 +817,7 @@ class IndustryUniverseSource(Source):
         return merged
 
 
-TERMS = [
-    ("1Y", "1年"),
-    ("3Y", "3年"),
-    ("5Y", "5年"),
-    ("10Y", "10年"),
-    ("30Y", "30年"),
-]
-
-# bond_zh_us_rate 已下架 1Y/3Y 列（2026-09 实测仅剩 2Y/5Y/10Y/30Y），改用中债信息网
-# bond_china_yield（全期限、按区间查询）。其单次区间上限约 1 年，按 180 天切块留余量。
 _CURVE_NAME = "中债国债收益率曲线"
-_CURVE_CHUNK_DAYS = 180
-_CURVE_EARLIEST = dt.date(2006, 1, 1)  # 中债国债收益率曲线自 2006-03 起，空表全量回填起点
 
 
 class TreasuryCurveSource(Source):
@@ -881,7 +853,7 @@ class TreasuryCurveSource(Source):
         frames = []
         chunk_start = start
         while chunk_start <= end:
-            chunk_end = min(chunk_start + dt.timedelta(days=_CURVE_CHUNK_DAYS - 1), end)
+            chunk_end = min(chunk_start + dt.timedelta(days=CURVE_CHUNK_DAYS - 1), end)
             df = ak.bond_china_yield(start_date=chunk_start.strftime("%Y%m%d"), end_date=chunk_end.strftime("%Y%m%d"))
             if df is not None and not df.empty:
                 frames.append(df)
@@ -900,7 +872,7 @@ class TreasuryCurveSource(Source):
         # 有显式区间时以区间为准，不再以 DB max(trading_day) 做增量下界；
         # 无区间（日常增量调度）才回退到 watermark 行为。
         since = None if start is not None or end is not None else self._max_trading_day()
-        query_start = start or (since + dt.timedelta(days=1) if since else _CURVE_EARLIEST)
+        query_start = start or (since + dt.timedelta(days=1) if since else CURVE_EARLIEST)
         query_end = end or dt.date.today()
         if query_start > query_end:
             return pd.DataFrame(columns=["trading_day", "term", "yield"])
@@ -948,14 +920,12 @@ class StockValuationDailySource(Source):
     """全 A 个股估值日快照：tushare daily_basic 按交易日批量 + stock_basic 过滤 ST/退市/北交所。
     含收盘价 close 列（MS-07）；supports_range=True 时按交易日历逐日拉取，供历史回填。"""
 
-    STOCK_DAILY_MIN_INTERVAL = 0.35  # daily_basic 客户端限速（≈171 次/分钟），对照 FINANCIAL_MIN_INTERVAL
-
     supports_range = True
 
     def __init__(self, source_id, pro_factory, limiter=None):
         self.source_id = source_id
         self.pro_factory = pro_factory
-        self.limiter = limiter if limiter is not None else RateLimiter(min_interval=self.STOCK_DAILY_MIN_INTERVAL)
+        self.limiter = limiter if limiter is not None else RateLimiter(min_interval=STOCK_DAILY_MIN_INTERVAL)
 
     def _valid_universe(self, pro):
         basic = pro.stock_basic(list_status="L", fields="ts_code,name")
@@ -1005,6 +975,72 @@ class StockValuationDailySource(Source):
                 "close",
             ]
         ]
+
+
+class StockValuationDailyBackupSource(Source):
+    """全 A 个股估值日快照的 akshare 备源（P1-9，tushare daily_basic 失败时降级）。
+
+    口径妥协（已确认接受，仅降级日生效；tushare 恢复后 upsert 覆盖回 TTM）：
+    - dividend_yield=NULL：spot_em 无 dv_ttm（筛选域股息率过滤对 NULL 天然排除）；
+    - pe_ttm 用「市盈率-动态」近似：动态口径（预测年化 EPS）非 TTM，分位消费方注意；
+    - total_mv/circ_mv 为元口径直通（tushare 万元 → 主源 ×10000，此处原生元）。
+    supports_range=False：spot 是实时快照，只救当日增量；历史 date 直接拒绝（防错日期写入）。
+    过滤与主源同构：剔 ST/退市（名称规则）/北交所（代码段规则——spot 无后缀，用前缀白名单）。
+    """
+
+    supports_range = False
+
+    _COLUMNS = [
+        "trading_day",
+        "stock_code",
+        "stock_name",
+        "pe_ttm",
+        "pb",
+        "dividend_yield",
+        "total_mv",
+        "circ_mv",
+        "turnover_rate",
+        "close",
+    ]
+
+    # 沪主板 60 / 深主板 00 / 中小板 002(00 前缀覆盖) / 创业板 30 / 科创板 68——北交所 43/83/87/920 段自然排除
+    _MAIN_BOARD_PREFIXES = ("60", "00", "30", "68")
+
+    def __init__(self, source_id, spot_fetch=None):
+        self.source_id = source_id
+        self.spot_fetch = spot_fetch or (lambda: ak.stock_zh_a_spot_em())
+
+    def fetch(self, params):
+        target_day = params.get("date")
+        if target_day and normalize_date(target_day, "date") != dt.date.today().strftime("%Y%m%d"):
+            raise SourceError(f"{self.source_id}: 备源为实时快照，仅支持当日增量（date={target_day} 不支持）")
+        day = dt.date.today().strftime("%Y%m%d")
+        df = self.spot_fetch()
+        df = df[df["代码"].astype(str).str.startswith(self._MAIN_BOARD_PREFIXES)]
+        df = df[~df["名称"].astype(str).str.contains("ST|退", na=False)]
+        out = pd.DataFrame(
+            {
+                "trading_day": day,
+                "stock_code": df["代码"].astype(str),
+                "stock_name": df["名称"].astype(str),
+                "pe_ttm": pd.to_numeric(df["市盈率-动态"], errors="coerce"),
+                "pb": pd.to_numeric(df["市净率"], errors="coerce"),
+                "dividend_yield": None,
+                "total_mv": pd.to_numeric(df["总市值"], errors="coerce"),
+                "circ_mv": pd.to_numeric(df["流通市值"], errors="coerce"),
+                "turnover_rate": pd.to_numeric(df["换手率"], errors="coerce"),
+                "close": pd.to_numeric(df["最新价"], errors="coerce"),
+            }
+        )
+        # 量级防御：A股市值消费方按「元」口径（V7 契约），个股中位数应在 1e8~1e12；
+        # 上游若改单位（如亿元）会差 1e8 倍，拒绝而非污染落库（宁可不写不可错写）
+        mv = out["total_mv"].dropna()
+        median_mv = float(mv.median()) if not mv.empty else None
+        if median_mv is not None and not 1e8 <= median_mv <= 1e12:
+            raise SourceError(
+                f"{self.source_id}: 总市值中位数 {median_mv:.3g} 超出元口径量级（1e8~1e12），疑似上游单位变更"
+            )
+        return out[self._COLUMNS]
 
 
 def _last_n_periods(n):

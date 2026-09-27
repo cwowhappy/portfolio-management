@@ -180,7 +180,9 @@ def test_backfill_dispatches_to_run_backfill(mocker):
 
     main(["backfill", "t", "--start", "2026-01-01", "--end", "2026-01-31"])
 
-    run_backfill.assert_called_once_with(runner_inst, task, "2026-01-01", "2026-01-31")
+    run_backfill.assert_called_once_with(
+        runner_inst, task, "2026-01-01", "2026-01-31", progress=mocker.ANY
+    )  # P1-7：CLI 接入分片进度仓储（断言注入存在即可，行为由 test_backfill_sharding 覆盖）
 
 
 def test_history_calls_run_repository(mocker):

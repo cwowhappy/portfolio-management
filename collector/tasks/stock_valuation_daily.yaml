@@ -3,6 +3,8 @@ task_name: 个股估值日快照
 # 备源后置：暂为单源（tushare daily_basic），后续补 akshare 备源
 source_ids:
   - { source_id: stock_valuation_daily, type: plugin, class: stock_valuation_daily }
+  # P1-9 备源：akshare spot_em 实时快照转换（仅当日增量；dividend_yield=NULL、动态 PE 近似——降级日生效，主源恢复后 upsert 覆盖）
+  - { source_id: stock_valuation_daily_backup, type: plugin, class: stock_valuation_daily_backup }
 converter: field_mapping_stock_valuation
 calc: null
 validator:
