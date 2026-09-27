@@ -3,10 +3,10 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-RUN_LIST_COLS = ["started_at", "status", "mode", "source_used", "rows_written", "message", "error"]
+RUN_LIST_COLS = ["started_at", "status", "mode", "source_used", "rows_written", "rows_affected", "message", "error"]
 
 LIST_RUNS_SQL = """
-SELECT r.started_at, r.status, r.mode, r.source_used, r.rows_written, r.message, r.error
+SELECT r.started_at, r.status, r.mode, r.source_used, r.rows_written, r.rows_affected, r.message, r.error
 FROM collector_task_run r
 JOIN collector_task t ON t.id = r.task_id
 WHERE t.task_code = %s
@@ -16,8 +16,9 @@ LIMIT %s
 
 # record 在运行结束时调用，started_at 用列默认值、finished_at 记为当前时刻。
 RECORD_SQL = """
-INSERT INTO collector_task_run (task_id, mode, status, source_used, params, rows_written, error, message, finished_at)
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, now())
+INSERT INTO collector_task_run
+    (task_id, mode, status, source_used, params, rows_written, rows_affected, error, message, finished_at)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, now())
 RETURNING id
 """
 
@@ -31,7 +32,7 @@ RETURNING id
 
 FINISH_RUN_SQL = """
 UPDATE collector_task_run
-SET status=%s, source_used=%s, rows_written=%s, error=%s, message=%s, finished_at=now()
+SET status=%s, source_used=%s, rows_written=%s, rows_affected=%s, error=%s, message=%s, finished_at=now()
 WHERE id=%s
 """
 
@@ -61,7 +62,16 @@ class RunRepository:
         return [dict(zip(RUN_LIST_COLS, row, strict=True)) for row in rows]
 
     def record(
-        self, task_code, mode, status, source_used=None, params=None, rows_written=None, error=None, message=None
+        self,
+        task_code,
+        mode,
+        status,
+        source_used=None,
+        params=None,
+        rows_written=None,
+        rows_affected=None,
+        error=None,
+        message=None,
     ):
         with self.conn.cursor() as cur:
             cur.execute("SELECT id FROM collector_task WHERE task_code=%s", (task_code,))
@@ -79,6 +89,7 @@ class RunRepository:
                     source_used,
                     json.dumps(params) if params else None,
                     rows_written,
+                    rows_affected,
                     error,
                     message,
                 ),
@@ -101,14 +112,16 @@ class RunRepository:
             return None
         return row[0]
 
-    def finish_run(self, run_id, status, source_used=None, rows_written=None, error=None, message=None) -> None:
+    def finish_run(
+        self, run_id, status, source_used=None, rows_written=None, rows_affected=None, error=None, message=None
+    ) -> None:
         """执行结束时回填 running 行：置状态并写 finished_at=now()（提供时长）。"""
         if run_id is None:
             return
         with self.conn.cursor() as cur:
             cur.execute(
                 FINISH_RUN_SQL,
-                (status, source_used, rows_written, error, message, run_id),
+                (status, source_used, rows_written, rows_affected, error, message, run_id),
             )
         self.conn.commit()
 

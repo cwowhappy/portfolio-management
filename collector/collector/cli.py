@@ -84,9 +84,10 @@ def main(argv=None):
             if not runs:
                 print(f"无运行记录: {args.task_code}")
             for r in runs:
+                affected = f"  affected={r['rows_affected']}" if r.get("rows_affected") is not None else ""
                 print(
                     f"{r['started_at']}  {r['status']}  {r['source_used'] or '-'}  "
-                    f"rows={r['rows_written']}  {r['message'] or ''}"
+                    f"rows={r['rows_written']}{affected}  {r['message'] or ''}"
                 )
             return
 

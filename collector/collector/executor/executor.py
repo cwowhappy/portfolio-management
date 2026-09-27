@@ -78,6 +78,7 @@ class Executor:
         params=None,
         source_used=None,
         rows_written=None,
+        rows_affected=None,
         error=None,
         message=None,
         record_kwargs=None,
@@ -88,13 +89,20 @@ class Executor:
         """
         if run_id is not None:
             run_repo.finish_run(
-                run_id, status, source_used=source_used, rows_written=rows_written, error=error, message=message
+                run_id,
+                status,
+                source_used=source_used,
+                rows_written=rows_written,
+                rows_affected=rows_affected,
+                error=error,
+                message=message,
             )
             return
         kwargs = {
             "params": params,
             "source_used": source_used,
             "rows_written": rows_written,
+            "rows_affected": rows_affected,
             "error": error,
             "message": message,
         }
@@ -186,8 +194,10 @@ class Executor:
                     params=params,
                     source_used=src.source_id,
                     rows_written=rows,
+                    # P0-5：DB→DB 源（fetch 内自行 UPDATE）挂 last_affected_rows 上报实际影响行数
+                    rows_affected=getattr(src, "last_affected_rows", None),
                     message=msg,
-                    record_kwargs={"params", "source_used", "rows_written", "message"},
+                    record_kwargs={"params", "source_used", "rows_written", "rows_affected", "message"},
                 )
                 return RunResult(
                     task.task_code,

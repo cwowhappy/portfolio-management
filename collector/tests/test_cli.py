@@ -73,17 +73,27 @@ def test_run_list_runs_returns_rows_desc():
     conn = MagicMock()
     cur = conn.cursor.return_value.__enter__.return_value
     cur.fetchall.return_value = [
-        (dt.datetime(2026, 8, 28, 15, 30), "success", "incremental", "a", 100, None, None),
-        (dt.datetime(2026, 8, 27, 15, 30), "failed", "incremental", None, 0, "boom", None),
+        (dt.datetime(2026, 8, 28, 15, 30), "success", "incremental", "a", 100, 456, None, None),
+        (dt.datetime(2026, 8, 27, 15, 30), "failed", "incremental", None, 0, None, "boom", None),
     ]
     runs = RunRepository(conn).list_runs("t", 2)
     assert len(runs) == 2
     assert runs[0]["status"] == "success"
     assert runs[0]["started_at"] == dt.datetime(2026, 8, 28, 15, 30)
     assert runs[0]["source_used"] == "a"
+    assert runs[0]["rows_affected"] == 456
     assert runs[1]["status"] == "failed"
     assert runs[1]["error"] is None  # list_runs 不返回 error 列
-    assert set(runs[0]) == {"started_at", "status", "mode", "source_used", "rows_written", "message", "error"}
+    assert set(runs[0]) == {
+        "started_at",
+        "status",
+        "mode",
+        "source_used",
+        "rows_written",
+        "rows_affected",
+        "message",
+        "error",
+    }
     # 排序必须是显式 started_at DESC
     sql = cur.execute.call_args.args[0]
     assert "ORDER BY" in sql.upper() and "DESC" in sql.upper()

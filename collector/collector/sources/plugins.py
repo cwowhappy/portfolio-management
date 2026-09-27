@@ -750,6 +750,7 @@ class EtfTrackingErrorSource(Source):
             cur.execute(ETF_TRACKING_PAIRS_SQL)
             pairs = cur.fetchall()
             if not pairs:
+                self.last_affected_rows = 0  # P0-5：参与集为空也如实上报 0
                 return pd.DataFrame(columns=self._EMPTY_COLUMNS)
             codes = sorted({fund for fund, _ in pairs} | {index for _, index in pairs})
             cur.execute(ETF_TRACKING_CLOSES_SQL, (codes,))
@@ -770,6 +771,8 @@ class EtfTrackingErrorSource(Source):
                 joined = etf.merge(index, on="trading_day", how="inner", suffixes=("_etf", "_idx"))
                 updates.append((self._tracking_error(joined), fund_code))
             cur.executemany(ETF_TRACKING_UPDATE_SQL, updates)
+        # P0-5：UPDATE 在 fetch 内完成、fetch 恒返空帧（writer 0 行），实际影响行数挂属性上报
+        self.last_affected_rows = len(updates)
         computed = sum(1 for value, _ in updates if value is not None)
         logger.info(
             "%s: 跟踪误差重算完成，参与 %d 只（非 null %d 只，样本<120 或指数缺行置 null %d 只）",
