@@ -105,6 +105,11 @@ class IndexValuationSource(Source):
         pro = self.pro_factory()
         start, end = _date_param(params, "start"), _date_param(params, "end")
         frames = []
+        # P0-4：源是共享单例，观测状态每次 fetch 重置，避免跨运行累积
+        self.last_warnings = None
+        fallback_attr = getattr(self.dividend_fetch, "fallbacks", None)
+        if fallback_attr is not None:
+            fallback_attr.clear()
         for code, name in self.index_codes.items():
             df = pro.index_dailybasic(ts_code=_ts_code(code), start_date=start, end_date=end)
             df = df.rename(columns={"trade_date": "trading_day"})
@@ -116,6 +121,9 @@ class IndexValuationSource(Source):
                     value = value.get(code)
                 df["dividend_yield"] = value
             frames.append(df[["trading_day", "index_code", "index_name", "pe", "pb", "dividend_yield"]])
+        if fallback_attr:
+            self.last_warnings = [f"dividend_yield 回退 NULL（估算不可得）：{', '.join(fallback_attr)}"]
+            logger.warning("%s: %s", self.source_id, self.last_warnings[0])
         return pd.concat(frames, ignore_index=True)
 
 
@@ -1219,20 +1227,27 @@ def _index_dividend_yield(pro, index_code, end_ymd):
     return None
 
 
-def make_index_dividend_fetch(pro_factory, default=0.0):
-    """构造 IndexValuationSource 的 dividend_fetch：(index_code, start, end) -> float。
+def make_index_dividend_fetch(pro_factory, default=None):
+    """构造 IndexValuationSource 的 dividend_fetch：(index_code, start, end) -> float | None。
 
     真实拉取 tushare 成分股权重×dv_ttm 估算指数股息率；积分不足/无数据时回退
-    default（默认 0.0），保证 dividend_yield 不为 None 且不崩。
+    default。P0-4 起默认 None（写 NULL，backend ERP 序列 null 过滤自动跳过该日，
+    不再以 0.0 污染）；显式传 default 仍支持。回退事件记录在 fetch.fallbacks
+    （源侧合入 last_warnings → run.message）。
     """
+    fallbacks: list[str] = []
 
     def fetch(index_code, start, end):
         try:
             value = _index_dividend_yield(pro_factory(), index_code, end or start)
         except Exception:
             value = None
-        return default if value is None else value
+        if value is None:
+            fallbacks.append(index_code)
+            return default
+        return value
 
+    fetch.fallbacks = fallbacks
     return fetch
 
 

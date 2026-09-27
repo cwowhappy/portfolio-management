@@ -184,7 +184,9 @@ class Executor:
                 latency = int((time.monotonic() - started) * 1000)
                 health_repo.save(self.selector.record_success(h, latency))
                 status = STATUS_PARTIAL if issues else STATUS_SUCCESS
-                msg = "; ".join(issues) or None
+                # P0-4：源侧观测警告（如股息率估算回退 NULL）合入 message，不改变终态
+                parts = list(issues) + list(getattr(src, "last_warnings", None) or [])
+                msg = "; ".join(parts) or None
                 self._finish_or_record(
                     run_repo,
                     task,
