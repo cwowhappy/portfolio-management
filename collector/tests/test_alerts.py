@@ -6,6 +6,7 @@
 """
 
 import json
+import logging
 from contextlib import suppress
 from unittest.mock import MagicMock, patch
 
@@ -19,9 +20,11 @@ from collector.scheduler.runner import TaskRunner
 # ---------------------------------------------------------------- WebhookAlerter 单元
 
 
-def _resp(status=200):
+def _resp(status=200, body=b'{"code":0,"msg":"success"}'):
+    """urlopen 返回的上下文管理器 mock；body 供飞书 body-code 校验钩子 read()。"""
     resp = MagicMock()
     resp.status = status
+    resp.read.return_value = body
     resp.__enter__ = MagicMock(return_value=resp)
     resp.__exit__ = MagicMock(return_value=False)
     return resp
@@ -197,6 +200,64 @@ def test_feishu_alerter_failure_swallowed_like_webhook():
         ok = FeishuAlerter("http://hook.example/f", max_attempts=3).send({"type": "task_run", "task": "t"})
     assert ok is False
     assert up.call_count == 3
+
+
+# ---------------------------------------------------------------- 飞书 HTTP 200 + body 业务错误码（终审修复 1）
+
+
+def test_feishu_http_200_nonzero_body_code_fails_after_retries(caplog):
+    """飞书永久性错误（19021 签名不匹配等）以 HTTP 200 + body code 表达——不得吞成假成功。"""
+    with (
+        patch(
+            "collector.scheduler.alerts.urllib.request.urlopen",
+            return_value=_resp(body=b'{"code":19021,"msg":"sign match fail"}'),
+        ) as up,
+        patch("collector.scheduler.alerts.time.sleep"),
+        caplog.at_level(logging.WARNING, logger="collector.scheduler.alerts"),
+    ):
+        ok = FeishuAlerter("http://hook.example/f", max_attempts=3).send({"type": "task_run", "task": "t"})
+    assert ok is False
+    assert up.call_count == 3
+    assert "code=19021" in caplog.text and "sign match fail" in caplog.text
+
+
+def test_feishu_http_200_zero_body_code_is_success():
+    """官方契约 code=0 即成功——body 校验不得误伤正常路径。"""
+    with (
+        patch(
+            "collector.scheduler.alerts.urllib.request.urlopen",
+            return_value=_resp(body=b'{"code":0,"msg":"success"}'),
+        ) as up,
+        patch("collector.scheduler.alerts.time.sleep"),
+    ):
+        ok = FeishuAlerter("http://hook.example/f", max_attempts=3).send({"type": "task_run", "task": "t"})
+    assert ok is True
+    assert up.call_count == 1
+
+
+def test_feishu_http_200_non_json_body_fails_after_retries():
+    """body 非 JSON 按未知错误处理（OSError 带原文前 200 字符）——流入重试+warning。"""
+    with (
+        patch(
+            "collector.scheduler.alerts.urllib.request.urlopen",
+            return_value=_resp(body=b"<html>gateway error</html>"),
+        ) as up,
+        patch("collector.scheduler.alerts.time.sleep"),
+    ):
+        ok = FeishuAlerter("http://hook.example/f", max_attempts=3).send({"type": "task_run", "task": "t"})
+    assert ok is False
+    assert up.call_count == 3
+
+
+def test_generic_webhook_http_200_any_body_still_success():
+    """基类钩子 no-op 回归护栏：通用 webhook 无 body 契约，200 + 任意 body（含非 JSON）即成功。"""
+    with patch(
+        "collector.scheduler.alerts.urllib.request.urlopen",
+        return_value=_resp(body=b"not-json-at-all"),
+    ) as up:
+        ok = WebhookAlerter("http://hook.example/x", max_attempts=3).send({"task": "t"})
+    assert ok is True
+    assert up.call_count == 1
 
 
 # ---------------------------------------------------------------- runner 接线

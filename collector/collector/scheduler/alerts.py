@@ -35,6 +35,13 @@ class WebhookAlerter:
     def send(self, event: dict) -> bool:
         return self._post_json(event)
 
+    def _validate_response(self, resp) -> None:
+        """2xx 后的响应体校验钩子。基类 no-op：通用 webhook 无 body 契约，2xx 即成功（NFR-1）。
+
+        子类可覆写以读 body 判定业务错误；抛出异常即流入 _post_json 的重试+warning 路径。
+        须在 urlopen 的 with 块内调用（resp.read() 一次性）。
+        """
+
     def _post_json(self, body: dict) -> bool:
         payload = json.dumps(body, ensure_ascii=False, default=str).encode()
         last_error = None
@@ -45,6 +52,7 @@ class WebhookAlerter:
                 )
                 with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                     if 200 <= resp.status < 300:
+                        self._validate_response(resp)
                         return True
                     raise OSError(f"webhook 返回非 2xx：{resp.status}")
             except Exception as e:  # noqa: BLE001 告警链路吞掉一切，任务语义优先
@@ -77,6 +85,22 @@ class FeishuAlerter(WebhookAlerter):
             payload["timestamp"] = str(int(time.time()))
             payload["sign"] = _sign(payload["timestamp"], self.secret)
         return self._post_json(payload)
+
+    def _validate_response(self, resp) -> None:
+        """飞书以 HTTP 200 + body JSON 的 code 表达业务错误（19021 签名不匹配/19022 IP 白名单/
+        19024 关键词缺失/9499 请求体非法等），2xx 不代表送达。
+
+        code 非零或 body 不可解析均抛 OSError（带原文前 200 字符），
+        自然流入 _post_json 重试+warning——避免 secret 抄错时静默假成功。
+        """
+        raw = resp.read()
+        try:
+            data = json.loads(raw)
+            code = data.get("code")
+        except (ValueError, AttributeError):  # 非 JSON / 非对象（如网关兜底页）
+            raise OSError(f"飞书响应无法解析（原文前 200 字符）：{raw[:200]!r}") from None
+        if code != 0:
+            raise OSError(f"飞书返回 code={code}：{data.get('msg', '')}")
 
 
 def alerter_from_env(env=None) -> WebhookAlerter | None:
