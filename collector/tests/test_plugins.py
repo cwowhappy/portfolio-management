@@ -303,7 +303,8 @@ def test_stock_valuation_daily_range_loops_open_days():
 
 
 def test_industry_index_close_fetches_all_industries(mocker):
-    from collector.sources.plugins import INDUSTRY_INDEX_CODES, IndustryIndexCloseSource
+    from collector.sources.constants import INDUSTRY_INDEX_CODES
+    from collector.sources.plugins import IndustryIndexCloseSource
 
     captured = []
 
