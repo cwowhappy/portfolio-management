@@ -75,6 +75,13 @@ invest:
     api-base: ${FEISHU_API_BASE:https://open.feishu.cn}
     owner-open-id: ${FEISHU_OWNER_OPEN_ID:}
     dialogue-enabled: ${FEISHU_DIALOGUE_ENABLED:false}
+  mail:
+    smtp-host: ${MAIL_SMTP_HOST:}
+    smtp-port: ${MAIL_SMTP_PORT:465}
+    smtp-username: ${MAIL_SMTP_USERNAME:}
+    smtp-password: ${MAIL_SMTP_PASSWORD:}
+    from: ${MAIL_FROM:}
+    test-fixed-code: ${MAIL_TEST_FIXED_CODE:}
   market:
     connect-timeout: 3s
     read-timeout: 5s

@@ -14,6 +14,7 @@ public class InvestProperties {
     private AppCache appCache = new AppCache();
     private Mcp mcp = new Mcp();
     private Im im = new Im();
+    private Mail mail = new Mail();
 
     public Llm getLlm() {
         return llm;
@@ -69,6 +70,14 @@ public class InvestProperties {
 
     public void setIm(Im im) {
         this.im = im;
+    }
+
+    public Mail getMail() {
+        return mail;
+    }
+
+    public void setMail(Mail mail) {
+        this.mail = mail;
     }
 
     public static class Llm {
@@ -351,5 +360,34 @@ public class InvestProperties {
                 public void setFlushMinGap(Duration flushMinGap) { this.flushMinGap = flushMinGap; }
             }
         }
+    }
+
+    /** SMTP 发信（M01-F06，阿里云企业邮箱）。空值 = 未启用，发信入口返回「系统未配置邮件服务」。 */
+    public static class Mail {
+        private String smtpHost = "";
+        private int smtpPort = 465;
+        private String smtpUsername = "";
+        private String smtpPassword = "";
+        private String from = "";
+        /** 仅 e2e/联调：非空时验证码恒为该值（生产必须留空）。 */
+        private String testFixedCode = "";
+
+        public boolean configured() {
+            return !smtpHost.isBlank() && !smtpUsername.isBlank()
+                    && !smtpPassword.isBlank() && !from.isBlank();
+        }
+
+        public String getSmtpHost() { return smtpHost; }
+        public void setSmtpHost(String smtpHost) { this.smtpHost = smtpHost; }
+        public int getSmtpPort() { return smtpPort; }
+        public void setSmtpPort(int smtpPort) { this.smtpPort = smtpPort; }
+        public String getSmtpUsername() { return smtpUsername; }
+        public void setSmtpUsername(String smtpUsername) { this.smtpUsername = smtpUsername; }
+        public String getSmtpPassword() { return smtpPassword; }
+        public void setSmtpPassword(String smtpPassword) { this.smtpPassword = smtpPassword; }
+        public String getFrom() { return from; }
+        public void setFrom(String from) { this.from = from; }
+        public String getTestFixedCode() { return testFixedCode; }
+        public void setTestFixedCode(String testFixedCode) { this.testFixedCode = testFixedCode; }
     }
 }
