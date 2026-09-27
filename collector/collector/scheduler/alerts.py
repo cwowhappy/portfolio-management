@@ -4,6 +4,9 @@ COLLECTOR_ALERT_WEBHOOK 配置任意 JSON POST 端点（钉钉/企微/飞书网�
 发送尽力而为：失败仅记日志并小退避重试，绝不影响任务执行语义。
 """
 
+import base64
+import hashlib
+import hmac
 import json
 import logging
 import os
@@ -27,7 +30,10 @@ class WebhookAlerter:
         self.max_attempts = max_attempts
 
     def send(self, event: dict) -> bool:
-        payload = json.dumps(event, ensure_ascii=False, default=str).encode()
+        return self._post_json(event)
+
+    def _post_json(self, body: dict) -> bool:
+        payload = json.dumps(body, ensure_ascii=False, default=str).encode()
         last_error = None
         for attempt in range(1, self.max_attempts + 1):
             try:
@@ -42,8 +48,32 @@ class WebhookAlerter:
                 last_error = e
                 if attempt < self.max_attempts:
                     time.sleep(0.5 * attempt)
-        logger.warning("webhook 告警发送失败（已尝试 %d 次，事件=%s）：%s", self.max_attempts, event, last_error)
+        logger.warning("webhook 告警发送失败（已尝试 %d 次，事件=%s）：%s", self.max_attempts, body, last_error)
         return False
+
+
+def _sign(timestamp: str, secret: str) -> str:
+    """飞书自定义机器人官方签名（与 WebhookAlerter 语义解耦，纯函数可直测）。"""
+    digest = hmac.new(f"{timestamp}\n{secret}".encode(), b"", hashlib.sha256).digest()
+    return base64.b64encode(digest).decode()
+
+
+class FeishuAlerter(WebhookAlerter):
+    """内部事件转飞书群自定义机器人卡片；secret 配置时带官方 timestamp/sign 签名。
+
+    重试/退避/吞错全部复用父类 _post_json——与通用 webhook 同一尽力而为语义（NFR-2）。
+    """
+
+    def __init__(self, url, secret=None, timeout=5, max_attempts=3):
+        super().__init__(url, timeout=timeout, max_attempts=max_attempts)
+        self.secret = secret
+
+    def send(self, event: dict) -> bool:
+        payload = _feishu_card(event)
+        if self.secret:
+            payload["timestamp"] = str(int(time.time()))
+            payload["sign"] = _sign(payload["timestamp"], self.secret)
+        return self._post_json(payload)
 
 
 def alerter_from_env(env=None) -> WebhookAlerter | None:

@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 from collector.executor.executor import AllSourcesFailed
 from collector.model.run import STATUS_PARTIAL, STATUS_SUCCESS, RunResult
 from collector.model.task import Collector
-from collector.scheduler.alerts import WebhookAlerter, _feishu_card, alerter_from_env
+from collector.scheduler.alerts import FeishuAlerter, WebhookAlerter, _feishu_card, _sign, alerter_from_env
 from collector.scheduler.calendar import TradingCalendar
 from collector.scheduler.runner import TaskRunner
 
@@ -123,6 +123,53 @@ def test_patrol_card_lists_findings_and_caps_at_eight():
     body = card["elements"][0]["text"]["content"]
     assert "`t0`" in body and "`t7`" in body and "`t8`" not in body
     assert "共 10 项" in body
+
+
+# ---------------------------------------------------------------- FeishuAlerter（FR-A1/A2）
+
+
+def test_sign_is_deterministic_distinct_and_sha256_sized():
+    s1 = _sign("1600000000", "secret-a")
+    assert s1 == _sign("1600000000", "secret-a")  # 确定性
+    assert s1 != _sign("1600000001", "secret-a")  # 时间戳参与
+    assert s1 != _sign("1600000000", "secret-b")  # 密钥参与
+    import base64
+
+    assert len(base64.b64decode(s1)) == 32  # HmacSHA256 摘要 32 字节
+
+
+def test_feishu_alerter_posts_card_without_sign_when_no_secret():
+    with patch("collector.scheduler.alerts.urllib.request.urlopen", return_value=_resp()) as up:
+        ok = FeishuAlerter("http://hook.example/f").send({"type": "task_run", "task": "t", "status": "failed"})
+    assert ok is True
+    (req,), _ = up.call_args
+    body = json.loads(req.data.decode())
+    assert body["msg_type"] == "interactive"
+    assert body["card"]["header"]["template"] == "red"
+    assert "sign" not in body and "timestamp" not in body
+
+
+def test_feishu_alerter_with_secret_sends_timestamp_and_sign():
+    with patch("collector.scheduler.alerts.urllib.request.urlopen", return_value=_resp()) as up:
+        ok = FeishuAlerter("http://hook.example/f", secret="s3cr3t").send(
+            {"type": "task_run", "task": "t", "status": "partial"}
+        )
+    assert ok is True
+    (req,), _ = up.call_args
+    body = json.loads(req.data.decode())
+    assert body["timestamp"].isdigit()
+    assert body["sign"] == _sign(body["timestamp"], "s3cr3t")
+
+
+def test_feishu_alerter_failure_swallowed_like_webhook():
+    """尽力而为语义（NFR-2）：全部失败仅返回 False，不抛出。"""
+    with (
+        patch("collector.scheduler.alerts.urllib.request.urlopen", side_effect=OSError("net down")) as up,
+        patch("collector.scheduler.alerts.time.sleep"),
+    ):
+        ok = FeishuAlerter("http://hook.example/f", max_attempts=3).send({"type": "task_run", "task": "t"})
+    assert ok is False
+    assert up.call_count == 3
 
 
 # ---------------------------------------------------------------- runner 接线
