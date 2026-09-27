@@ -977,6 +977,72 @@ class StockValuationDailySource(Source):
         ]
 
 
+class StockValuationDailyBackupSource(Source):
+    """全 A 个股估值日快照的 akshare 备源（P1-9，tushare daily_basic 失败时降级）。
+
+    口径妥协（已确认接受，仅降级日生效；tushare 恢复后 upsert 覆盖回 TTM）：
+    - dividend_yield=NULL：spot_em 无 dv_ttm（筛选域股息率过滤对 NULL 天然排除）；
+    - pe_ttm 用「市盈率-动态」近似：动态口径（预测年化 EPS）非 TTM，分位消费方注意；
+    - total_mv/circ_mv 为元口径直通（tushare 万元 → 主源 ×10000，此处原生元）。
+    supports_range=False：spot 是实时快照，只救当日增量；历史 date 直接拒绝（防错日期写入）。
+    过滤与主源同构：剔 ST/退市（名称规则）/北交所（代码段规则——spot 无后缀，用前缀白名单）。
+    """
+
+    supports_range = False
+
+    _COLUMNS = [
+        "trading_day",
+        "stock_code",
+        "stock_name",
+        "pe_ttm",
+        "pb",
+        "dividend_yield",
+        "total_mv",
+        "circ_mv",
+        "turnover_rate",
+        "close",
+    ]
+
+    # 沪主板 60 / 深主板 00 / 中小板 002(00 前缀覆盖) / 创业板 30 / 科创板 68——北交所 43/83/87/920 段自然排除
+    _MAIN_BOARD_PREFIXES = ("60", "00", "30", "68")
+
+    def __init__(self, source_id, spot_fetch=None):
+        self.source_id = source_id
+        self.spot_fetch = spot_fetch or (lambda: ak.stock_zh_a_spot_em())
+
+    def fetch(self, params):
+        target_day = params.get("date")
+        if target_day and normalize_date(target_day, "date") != dt.date.today().strftime("%Y%m%d"):
+            raise SourceError(f"{self.source_id}: 备源为实时快照，仅支持当日增量（date={target_day} 不支持）")
+        day = dt.date.today().strftime("%Y%m%d")
+        df = self.spot_fetch()
+        df = df[df["代码"].astype(str).str.startswith(self._MAIN_BOARD_PREFIXES)]
+        df = df[~df["名称"].astype(str).str.contains("ST|退", na=False)]
+        out = pd.DataFrame(
+            {
+                "trading_day": day,
+                "stock_code": df["代码"].astype(str),
+                "stock_name": df["名称"].astype(str),
+                "pe_ttm": pd.to_numeric(df["市盈率-动态"], errors="coerce"),
+                "pb": pd.to_numeric(df["市净率"], errors="coerce"),
+                "dividend_yield": None,
+                "total_mv": pd.to_numeric(df["总市值"], errors="coerce"),
+                "circ_mv": pd.to_numeric(df["流通市值"], errors="coerce"),
+                "turnover_rate": pd.to_numeric(df["换手率"], errors="coerce"),
+                "close": pd.to_numeric(df["最新价"], errors="coerce"),
+            }
+        )
+        # 量级防御：A股市值消费方按「元」口径（V7 契约），个股中位数应在 1e8~1e12；
+        # 上游若改单位（如亿元）会差 1e8 倍，拒绝而非污染落库（宁可不写不可错写）
+        mv = out["total_mv"].dropna()
+        median_mv = float(mv.median()) if not mv.empty else None
+        if median_mv is not None and not 1e8 <= median_mv <= 1e12:
+            raise SourceError(
+                f"{self.source_id}: 总市值中位数 {median_mv:.3g} 超出元口径量级（1e8~1e12），疑似上游单位变更"
+            )
+        return out[self._COLUMNS]
+
+
 def _last_n_periods(n):
     """最近 n 个季报期末日（YYYYMMDD 升序）：从最近已结束季度起逐季倒推。"""
     today = dt.date.today()
