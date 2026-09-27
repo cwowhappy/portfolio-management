@@ -14,8 +14,8 @@
 即时通信选型 **飞书**，采用混合双通道架构：
 
 - **collector 采集告警**：群自定义机器人 webhook——通道独立于 backend 存活（P0 已交付）；
-- **backend 原则预警**（P1 已交付）与 **飞书对话**（P2 规划中）：自建应用 + oapi 通道
-  （tenant_access_token + im/v1/messages 卡片）。
+- **backend 原则预警**（P1 已交付）与 **飞书对话**（P2 已交付，2026-09-27 PR #73）：自建应用 + oapi 通道
+  （tenant_access_token + im/v1/messages 卡片；P2 对话事件走 ws 长连接收，回复经 oapi 发送）。
 
 ## 后果
 
