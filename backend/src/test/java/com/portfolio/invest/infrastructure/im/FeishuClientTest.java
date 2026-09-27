@@ -96,4 +96,12 @@ class FeishuClientTest {
         assertThat(client.sendCard("oc_x", "t", "red", List.of("a"))).isFalse();
         server.verify(); // 0 expectations → 0 requests
     }
+
+    @Test
+    @DisplayName("给定编程式null凭证，when发送，then返回false且零网络请求")
+    void given编程式null凭证_when发送_thenFalse且零请求() {
+        props.getIm().setAppId(null);
+        assertThat(client.sendCard("oc_x", "t", "red", List.of("a"))).isFalse();
+        server.verify(); // 0 expectations → 0 requests
+    }
 }

@@ -78,7 +78,9 @@ public class PrincipleAlertService {
 
     void doPatrol() {
         InvestProperties.Im im = props.getIm();
-        if (im.getAppId().isBlank() || im.getAppSecret().isBlank() || im.getChatId().isBlank()) {
+        if (im.getAppId() == null || im.getAppId().isBlank()
+                || im.getAppSecret() == null || im.getAppSecret().isBlank()
+                || im.getChatId() == null || im.getChatId().isBlank()) {
             log.info("原则预警未启用（飞书 im 配置缺失），跳过巡检");
             return;
         }

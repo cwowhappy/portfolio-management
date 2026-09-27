@@ -1,8 +1,7 @@
-package com.portfolio.invest.persistence;
+package com.portfolio.invest.infrastructure.persistence;
 
 import com.portfolio.invest.application.alert.StockMetric;
 import com.portfolio.invest.application.alert.ValuationDailyPort;
-import com.portfolio.invest.infrastructure.persistence.ValuationDailyAdapter;
 import com.portfolio.invest.support.PostgresTestSupport;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

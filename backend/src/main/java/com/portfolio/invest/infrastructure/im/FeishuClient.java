@@ -52,7 +52,9 @@ public class FeishuClient {
 
     public boolean sendCard(String chatId, String title, String template, List<String> bodyLines) {
         InvestProperties.Im im = props.getIm();
-        if (im.getAppId().isBlank() || im.getAppSecret().isBlank() || chatId == null || chatId.isBlank()) {
+        if (im.getAppId() == null || im.getAppId().isBlank()
+                || im.getAppSecret() == null || im.getAppSecret().isBlank()
+                || chatId == null || chatId.isBlank()) {
             log.warn("飞书未配置（appId/appSecret/chatId 缺失），跳过发送：{}", title);
             return false;
         }
