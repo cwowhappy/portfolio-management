@@ -9,6 +9,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.portfolio.invest.bdd.CucumberSpringConfig;
 import com.portfolio.invest.domain.conversation.ConversationErrorCode;
 import com.portfolio.invest.domain.user.UserRepository;
+import com.portfolio.invest.support.RecordingMailSender;
+import com.portfolio.invest.support.TestCodes;
 import io.cucumber.java.zh_cn.假如;
 import io.cucumber.java.zh_cn.当;
 import io.cucumber.java.zh_cn.那么;
@@ -32,6 +34,9 @@ public class ConversationSteps {
 
     @Autowired
     UserRepository userRepository;
+
+    @Autowired
+    RecordingMailSender mailStub;
 
     @Autowired
     ScenarioContext ctx;
@@ -104,9 +109,18 @@ public class ConversationSteps {
     }
 
     private void registerAndApprove(String username) throws Exception {
+        // T5 起注册三段式：发码（邮件桩取码）→ 携码注册；邮箱由用户名派生
+        String email = username + "@test.local";
+        mockMvc.perform(post("/api/auth/register-code")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"" + username + "\",\"password\":\"" + PASSWORD
+                                + "\",\"email\":\"" + email + "\"}"))
+                .andExpect(status().isOk());
+        String code = TestCodes.extractSixDigits(mailStub.sent.get(mailStub.sent.size() - 1).text());
         mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"username\":\"" + username + "\",\"password\":\"" + PASSWORD + "\"}"))
+                        .content("{\"username\":\"" + username + "\",\"password\":\"" + PASSWORD
+                                + "\",\"email\":\"" + email + "\",\"code\":\"" + code + "\"}"))
                 .andExpect(status().isCreated());
         Long userId = userRepository.findByUsername(username).orElseThrow().id();
         mockMvc.perform(post("/api/admin/users/{id}/approve", userId).session(adminSession()))

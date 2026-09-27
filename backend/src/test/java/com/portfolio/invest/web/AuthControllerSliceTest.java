@@ -14,6 +14,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.portfolio.invest.application.auth.AuthApplicationService;
+import com.portfolio.invest.application.auth.EmailCodeService;
 import com.portfolio.invest.application.auth.RegisterCommand;
 import com.portfolio.invest.application.auth.UserView;
 import com.portfolio.invest.domain.user.User;
@@ -56,6 +57,8 @@ class AuthControllerSliceTest {
 
     @MockitoBean
     private AuthApplicationService authService;
+    @MockitoBean
+    private EmailCodeService emailCodeService;
     @MockitoBean
     private AuthenticationManager authenticationManager;
     @MockitoBean
@@ -218,7 +221,8 @@ class AuthControllerSliceTest {
 
         mvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"username\":\"alice\",\"password\":\"secret-1\"}"))
+                        .content("{\"username\":\"alice\",\"password\":\"secret-1\","
+                                + "\"email\":\"alice@test.local\",\"code\":\"123456\"}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.username").value("alice"))
                 .andExpect(jsonPath("$.status").value("PENDING"));
@@ -227,9 +231,11 @@ class AuthControllerSliceTest {
     @DisplayName("注册用户名超长校验失败返回400")
     @Test
     void givenUsernameTooLong_whenRegister_thenReturn400() throws Exception {
+        // email/code 补齐让用户名超长成为唯一违例（多违例时 message 取首个 fieldError，顺序不保证）
         mvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"username\":\"" + "a".repeat(65) + "\",\"password\":\"secret-1\"}"))
+                        .content("{\"username\":\"" + "a".repeat(65) + "\",\"password\":\"secret-1\","
+                                + "\"email\":\"alice@test.local\",\"code\":\"123456\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
                 .andExpect(jsonPath("$.message").value("用户名最长64个字符"));

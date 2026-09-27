@@ -1,12 +1,14 @@
 package com.portfolio.invest.web;
 
 import com.portfolio.invest.application.auth.AuthApplicationService;
+import com.portfolio.invest.application.auth.EmailCodeService;
 import com.portfolio.invest.application.auth.RegisterCommand;
 import com.portfolio.invest.application.auth.UserView;
 import com.portfolio.invest.domain.user.User;
 import com.portfolio.invest.domain.user.UserStatus;
 import com.portfolio.invest.infrastructure.security.AuthenticatedUser;
 import com.portfolio.invest.web.dto.LoginRequest;
+import com.portfolio.invest.web.dto.RegisterCodeRequest;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
@@ -33,12 +35,15 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
 
     private final AuthApplicationService auth;
+    private final EmailCodeService emailCodeService;
     private final AuthenticationManager authenticationManager;
     private final RememberMeServices rememberMeServices;
 
-    public AuthController(AuthApplicationService auth, AuthenticationManager authenticationManager,
+    public AuthController(AuthApplicationService auth, EmailCodeService emailCodeService,
+                          AuthenticationManager authenticationManager,
                           RememberMeServices rememberMeServices) {
         this.auth = auth;
+        this.emailCodeService = emailCodeService;
         this.authenticationManager = authenticationManager;
         this.rememberMeServices = rememberMeServices;
     }
@@ -46,6 +51,12 @@ public class AuthController {
     @PostMapping("/register")
     public ResponseEntity<UserView> register(@Valid @RequestBody RegisterCommand cmd) {
         return ResponseEntity.status(HttpStatus.CREATED).body(auth.register(cmd));
+    }
+
+    @PostMapping("/register-code")
+    public ResponseEntity<Map<String, String>> registerCode(@Valid @RequestBody RegisterCodeRequest req) {
+        emailCodeService.issueRegisterCode(req.username(), req.password(), req.email());
+        return ResponseEntity.ok(Map.of("message", "验证码已发送"));
     }
 
     @PostMapping("/login")

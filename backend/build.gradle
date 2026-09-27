@@ -128,6 +128,8 @@ dependencies {
     testFixturesImplementation 'org.springframework:spring-web'
     testFixturesImplementation 'com.fasterxml.jackson.core:jackson-databind'
     testFixturesImplementation 'org.assertj:assertj-core'
+    // AguiTestSupport.registerApproveAndLogin 直插用户行的密码哈希（与 SecurityConfig 的 BCrypt 同款）
+    testFixturesImplementation 'org.springframework.security:spring-security-crypto'
     // MockHttpServletResponse/Request 的公开签名引用 jakarta.servlet 类型，编译 testFixtures 需其在类路径
     testFixturesImplementation 'jakarta.servlet:jakarta.servlet-api'
 

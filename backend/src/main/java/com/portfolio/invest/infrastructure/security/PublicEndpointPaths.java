@@ -12,6 +12,9 @@ public final class PublicEndpointPaths {
     public static final String[] EXACT = {
             "/api/auth/login",
             "/api/auth/register",
+            "/api/auth/register-code",
+            "/api/auth/reset-code",
+            "/api/auth/reset-password",
             "/api/agent/health",
             "/api/agent/status",
     };

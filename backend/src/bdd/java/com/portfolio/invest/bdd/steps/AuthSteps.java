@@ -7,6 +7,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.portfolio.invest.bdd.CucumberSpringConfig;
 import com.portfolio.invest.domain.user.UserRepository;
+import com.portfolio.invest.support.RecordingMailSender;
+import com.portfolio.invest.support.TestCodes;
 import io.cucumber.java.zh_cn.假如;
 import io.cucumber.java.zh_cn.当;
 import io.cucumber.java.zh_cn.那么;
@@ -26,15 +28,27 @@ public class AuthSteps {
     UserRepository userRepository;
 
     @Autowired
+    RecordingMailSender mailStub;
+
+    @Autowired
     ScenarioContext ctx;
 
     @假如("用户 {string} 以密码 {string} 注册")
     public void 用户注册(String username, String password) throws Exception {
         ctx.setUsername(username);
         ctx.setPassword(password);
+        // T5 起注册三段式：先发码（邮件桩记录），从邮件正文取码携码注册；邮箱由用户名派生
+        String email = username + "@test.local";
+        mockMvc.perform(post("/api/auth/register-code")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"" + username + "\",\"password\":\"" + password
+                                + "\",\"email\":\"" + email + "\"}"))
+                .andExpect(status().isOk());
+        String code = TestCodes.extractSixDigits(mailStub.sent.get(mailStub.sent.size() - 1).text());
         mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"username\":\"" + username + "\",\"password\":\"" + password + "\"}"))
+                        .content("{\"username\":\"" + username + "\",\"password\":\"" + password
+                                + "\",\"email\":\"" + email + "\",\"code\":\"" + code + "\"}"))
                 .andExpect(status().isCreated());
     }
 
