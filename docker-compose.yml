@@ -61,6 +61,9 @@ services:
       TUSHARE_TOKEN: ${TUSHARE_TOKEN}
       # P0-2 终态告警（opt-in）：配置任意 JSON POST webhook；未配置时告警静默关闭
       COLLECTOR_ALERT_WEBHOOK: ${COLLECTOR_ALERT_WEBHOOK:-}
+      # 飞书群自定义机器人（优先于上方通用 webhook）：卡片告警；secret 为签名校验（可选）
+      FEISHU_BOT_WEBHOOK: ${FEISHU_BOT_WEBHOOK:-}
+      FEISHU_BOT_SECRET: ${FEISHU_BOT_SECRET:-}
       TZ: Asia/Shanghai
     depends_on:
       db:
