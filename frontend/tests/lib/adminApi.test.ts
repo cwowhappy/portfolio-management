@@ -15,6 +15,7 @@ const alice = {
   role: "USER",
   status: "PENDING",
   enabled: true,
+  email: null,
 };
 
 describe("管理员 REST 客户端（lib/adminApi）", () => {
@@ -69,6 +70,17 @@ describe("管理员 REST 客户端（lib/adminApi）", () => {
     );
     const init = fetchMock.mock.calls[0][1] as RequestInit;
     expect(JSON.parse(init.body as string)).toEqual({ newPassword: "NewPassw0rd" });
+  });
+
+  it("setEmail(id, email) POST 携带 {email} 请求体", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ ...alice, email: "alice@example.com" }));
+    await adminApi.setEmail(7, "alice@example.com");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/admin/users/7/email",
+      expect.objectContaining({ method: "POST" }),
+    );
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(JSON.parse(init.body as string)).toEqual({ email: "alice@example.com" });
   });
 
   it("非 2xx 且响应体带 message 时抛出该消息", async () => {

@@ -110,12 +110,86 @@ function ResetPasswordDialog({
   );
 }
 
-/** 用户管理看板：列表加载、审核/拒绝、停用/启用、重置密码弹窗状态机。 */
+/** 绑定邮箱弹窗：格式校验 + 提交 setEmail（后端绑定即验证并尽力发送告知邮件）。 */
+function BindEmailDialog({
+  user,
+  busy,
+  onCancel,
+  onSubmit,
+}: {
+  user: AdminUserView;
+  busy: boolean;
+  onCancel: () => void;
+  onSubmit: (email: string) => Promise<void>;
+}) {
+  const [email, setEmail] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit() {
+    const value = email.trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value)) {
+      setError("请输入正确的邮箱");
+      return;
+    }
+    await onSubmit(value);
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-black/40 px-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`为 ${user.username} 绑定邮箱`}
+    >
+      <div className="w-full max-w-sm rounded-xl border border-[color:var(--color-line)] bg-[color:var(--color-bg)] p-5 shadow-xl">
+        <h3 className="text-[15px] font-medium text-[color:var(--color-ink)]">
+          为 {user.username} 绑定邮箱
+        </h3>
+        <p className="mt-1 text-[12px] text-[color:var(--color-ink-faint)]">
+          绑定后即视为已验证，并向该邮箱发送告知邮件
+        </p>
+        <input
+          type="email"
+          aria-label="邮箱"
+          autoFocus
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !busy) void submit();
+          }}
+          className="mt-4 w-full rounded-md border border-[color:var(--color-line)] bg-[color:var(--color-panel)] px-3 py-2 text-[13px] text-[color:var(--color-ink)] focus:outline-none focus:border-[color:var(--color-up)]"
+          placeholder="邮箱"
+        />
+        {error && (
+          <p role="alert" className="mt-2 text-[12px] text-[color:var(--color-up)]">
+            {error}
+          </p>
+        )}
+        <div className="mt-4 flex justify-end gap-2">
+          <button type="button" onClick={onCancel} disabled={busy} className={ghostBtn}>
+            取消
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void submit()}
+            className="rounded-md bg-[color:var(--color-up)] px-3 py-1.5 text-[12px] font-medium text-white transition-all enabled:hover:brightness-110 disabled:opacity-40"
+          >
+            确认绑定
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** 用户管理看板：列表加载、审核/拒绝、停用/启用、重置密码/绑定邮箱弹窗状态机。 */
 export default function AdminBoard() {
   const [users, setUsers] = useState<AdminUserView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [resetTarget, setResetTarget] = useState<AdminUserView | null>(null);
+  const [bindTarget, setBindTarget] = useState<AdminUserView | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -149,6 +223,11 @@ export default function AdminBoard() {
   async function handleResetPassword(u: AdminUserView, newPassword: string) {
     await act(u.id, (id) => adminApi.resetPassword(id, newPassword));
     setResetTarget(null);
+  }
+
+  async function handleBindEmail(u: AdminUserView, email: string) {
+    await act(u.id, (id) => adminApi.setEmail(id, email));
+    setBindTarget(null);
   }
 
   if (!users) {
@@ -237,6 +316,7 @@ export default function AdminBoard() {
                 <th className="px-4 py-2.5 font-normal">用户名</th>
                 <th className="px-4 py-2.5 font-normal">角色</th>
                 <th className="px-4 py-2.5 font-normal">状态</th>
+                <th className="px-4 py-2.5 font-normal">邮箱</th>
                 <th className="px-4 py-2.5 font-normal">启用</th>
                 <th className="px-4 py-2.5 text-right font-normal">操作</th>
               </tr>
@@ -250,6 +330,15 @@ export default function AdminBoard() {
                   <td className="px-4 py-2.5 text-[color:var(--color-ink)]">{u.username}</td>
                   <td className="px-4 py-2.5 text-[color:var(--color-ink-dim)]">{roleLabel[u.role]}</td>
                   <td className={"px-4 py-2.5 " + statusClass[u.status]}>{statusLabel[u.status]}</td>
+                  <td className="px-4 py-2.5 text-[color:var(--color-ink-dim)]">
+                    {u.role === "ADMIN" ? (
+                      <span className="text-[12px] text-[color:var(--color-ink-faint)]">—</span>
+                    ) : u.email ? (
+                      u.email
+                    ) : (
+                      <span className="text-[12px] text-[color:var(--color-ink-faint)]">未绑定</span>
+                    )}
+                  </td>
                   <td className="px-4 py-2.5 text-[color:var(--color-ink-dim)]">
                     {u.enabled ? "是" : "否"}
                   </td>
@@ -272,6 +361,14 @@ export default function AdminBoard() {
                         >
                           重置密码
                         </button>
+                        <button
+                          type="button"
+                          disabled={busyId === u.id}
+                          onClick={() => setBindTarget(u)}
+                          className={ghostBtn}
+                        >
+                          绑定邮箱
+                        </button>
                       </div>
                     ) : (
                       <span className="text-[12px] text-[color:var(--color-ink-faint)]">—</span>
@@ -290,6 +387,15 @@ export default function AdminBoard() {
           busy={busyId === resetTarget.id}
           onCancel={() => setResetTarget(null)}
           onSubmit={(pwd) => handleResetPassword(resetTarget, pwd)}
+        />
+      )}
+
+      {bindTarget && (
+        <BindEmailDialog
+          user={bindTarget}
+          busy={busyId === bindTarget.id}
+          onCancel={() => setBindTarget(null)}
+          onSubmit={(email) => handleBindEmail(bindTarget, email)}
         />
       )}
     </div>

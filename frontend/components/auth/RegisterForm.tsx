@@ -146,12 +146,13 @@ export function RegisterForm() {
             placeholder="6 位验证码"
             inputMode="numeric"
             maxLength={6}
+            autoComplete="one-time-code"
             disabled={submitting}
           />
           <button
             type="button"
             onClick={() => void onSendCode()}
-            disabled={sending || countdown > 0}
+            disabled={sending || countdown > 0 || submitting}
             className="shrink-0 rounded-md border border-[color:var(--color-line)] px-3 text-[13px] text-[color:var(--color-ink-dim)] transition-all enabled:hover:border-[color:var(--color-up)] enabled:hover:text-[color:var(--color-up)] disabled:opacity-40"
           >
             {countdown > 0 ? `${countdown}s 后重发` : sending ? "发送中…" : "获取验证码"}
