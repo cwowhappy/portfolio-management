@@ -1,7 +1,5 @@
 package com.portfolio.invest.infrastructure.im;
 
-import com.portfolio.invest.application.im.ImInboundMessage;
-import com.portfolio.invest.application.im.ImMessageListener;
 import com.portfolio.invest.config.InvestProperties;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

@@ -82,13 +82,13 @@ public class FeishuWsClient implements SmartLifecycle {
         Thread starter = new Thread(() -> {
             try {
                 com.lark.oapi.ws.Client ws = buildClient();
+                client = ws; // 立即赋值：握手失败/超时时 SDK autoReconnect 仍持有实例，stop() 需能 close（置 userClosed 阻断重连）
                 ws.start();
                 ws.awaitReady(10_000);
-                client = ws;
                 running = true;
                 log.info("飞书长连接就绪（appId={}）", im.getAppId());
             } catch (Exception e) {
-                log.error("飞书长连接启动失败（对话不可用，不影响其他功能）：{}", e.getMessage());
+                log.error("飞书长连接启动失败（对话不可用，不影响其他功能）", e);
             }
         }, "feishu-ws-starter");
         starter.setDaemon(true);
@@ -118,7 +118,7 @@ public class FeishuWsClient implements SmartLifecycle {
             dispatch(msg.getChatId(), msg.getMessageId(), openId, msg.getChatType(),
                     msg.getMessageType(), msg.getContent());
         } catch (Exception e) {
-            log.warn("飞书事件解析失败：{}", e.getMessage());
+            log.warn("飞书事件解析失败", e);
         }
     }
 

@@ -96,7 +96,7 @@ dependencies {
     // Harness Agent：会话持久化 / 上下文压缩 / 长期记忆
     implementation 'io.agentscope:agentscope-harness:2.0.3'
 
-    // feishu-messaging P2：飞书官方 SDK（ws 长连接收事件；自带 shaded okhttp/gson/guava，与 Boot 4 零对撞）
+    // feishu-messaging P2：飞书官方 SDK（ws 长连接收事件；自带 relocated okhttp，guava/gson 为传递依赖）
     implementation 'com.larksuite.oapi:oapi-sdk:2.8.5'
 
     // 无需显式声明 spring-boot-starter-test：各测试 starter 已传递引入
