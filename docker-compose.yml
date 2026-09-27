@@ -59,6 +59,8 @@ services:
       # 数据库名与 db 服务保持一致（默认 invest，随 ${POSTGRES_DB} 统一切换）
       DATABASE_URL: postgresql://${POSTGRES_USER:-invest}:${POSTGRES_PASSWORD:-invest}@db:5432/${POSTGRES_DB:-invest}
       TUSHARE_TOKEN: ${TUSHARE_TOKEN}
+      # P0-2 终态告警（opt-in）：配置任意 JSON POST webhook；未配置时告警静默关闭
+      COLLECTOR_ALERT_WEBHOOK: ${COLLECTOR_ALERT_WEBHOOK:-}
       TZ: Asia/Shanghai
     depends_on:
       db:
