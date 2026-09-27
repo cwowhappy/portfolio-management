@@ -250,7 +250,17 @@ class AuthControllerIntegrationTest extends PostgresTestSupport {
                         .content("{\"username\":\"reset_flow\",\"password\":\"newpass99\"}"))
                 .andExpect(status().isOk());
 
-        // 4) 再发一次码（回拨旧码创建时间绕过 60s 发码冷却）后复用旧码 → 400 CODE_INVALID（用后即焚）
+        // 4) 立即重放已消费的 firstCode（仍是最新码行，无冷却/重发干扰）→ 400 CODE_INVALID：
+        //    失败唯一归因 isUsed 拦截——删掉 verify 的 isUsed 分支此断言即红（用后即焚安全回归哨兵）
+        mockMvc.perform(post("/api/auth/reset-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"identifier\":\"reset_flow\",\"code\":\"" + firstCode
+                                + "\",\"newPassword\":\"newpass99\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("CODE_INVALID"));
+
+        // 5) 再发一次码（回拨旧码创建时间绕过 60s 发码冷却）后复用旧码 → 400 CODE_INVALID
+        //    （旧码已非最新行，哈希必失配——兼证「重发顶掉旧码」语义）
         ageLatestResetCode("reset_flow@test.local");
         mockMvc.perform(post("/api/auth/reset-code")
                         .contentType(MediaType.APPLICATION_JSON)

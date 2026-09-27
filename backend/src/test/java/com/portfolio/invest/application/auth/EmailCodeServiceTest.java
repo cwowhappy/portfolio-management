@@ -212,10 +212,30 @@ class EmailCodeServiceTest {
     @DisplayName("过期、已用、耗尽的码一律无效")
     @Test
     void givenExpiredUsedExhausted_whenVerify_thenInvalid() {
+        // 三变体都按「正确码重放」stub matches=true：证明三态短路先于哈希比对拦截，
+        // 删任一分支即落入验签成功路径、断言变红（哨兵而非同义反复）
+        when(encoder.matches("123456", "h")).thenReturn(true);
+
         VerificationCode expired = VerificationCode.reconstitute(1L, EMAIL, VerificationPurpose.REGISTER,
                 "h", 0, null, NOW.minusSeconds(1), NOW.minusSeconds(400));
         when(codeRepository.findTopByEmailAndPurposeOrderByCreatedAtDesc(EMAIL, VerificationPurpose.REGISTER))
                 .thenReturn(Optional.of(expired));
+        assertThatThrownBy(() -> service.verify(EMAIL, VerificationPurpose.REGISTER, "123456"))
+                .hasMessageContaining("验证码错误");
+
+        // 已用（usedAt != null）：T4 遗留变体——有效期内重放消费过的码必须被 isUsed 拦截
+        VerificationCode used = VerificationCode.reconstitute(1L, EMAIL, VerificationPurpose.REGISTER,
+                "h", 0, NOW.minusSeconds(30), NOW.plusSeconds(300), NOW.minusSeconds(60));
+        when(codeRepository.findTopByEmailAndPurposeOrderByCreatedAtDesc(EMAIL, VerificationPurpose.REGISTER))
+                .thenReturn(Optional.of(used));
+        assertThatThrownBy(() -> service.verify(EMAIL, VerificationPurpose.REGISTER, "123456"))
+                .hasMessageContaining("验证码错误");
+
+        // 耗尽（attempts = MAX_ATTEMPTS）：未过期未使用，仅错次打满
+        VerificationCode exhausted = VerificationCode.reconstitute(1L, EMAIL, VerificationPurpose.REGISTER,
+                "h", VerificationCode.MAX_ATTEMPTS, null, NOW.plusSeconds(300), NOW.minusSeconds(60));
+        when(codeRepository.findTopByEmailAndPurposeOrderByCreatedAtDesc(EMAIL, VerificationPurpose.REGISTER))
+                .thenReturn(Optional.of(exhausted));
         assertThatThrownBy(() -> service.verify(EMAIL, VerificationPurpose.REGISTER, "123456"))
                 .hasMessageContaining("验证码错误");
     }
