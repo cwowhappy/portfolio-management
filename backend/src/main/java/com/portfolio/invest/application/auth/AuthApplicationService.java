@@ -6,6 +6,7 @@ import com.portfolio.invest.domain.user.UserErrorCode;
 import com.portfolio.invest.domain.user.UserException;
 import com.portfolio.invest.domain.user.UserRepository;
 import com.portfolio.invest.domain.user.UserStatus;
+import com.portfolio.invest.domain.user.UsernamePolicy;
 import java.util.Optional;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -25,13 +26,8 @@ public class AuthApplicationService {
     @Transactional
     public UserView register(RegisterCommand cmd) {
         PasswordPolicy.validate(cmd.password());
-        if (cmd.username() == null || cmd.username().isBlank()) {
-            throw new UserException(UserErrorCode.INVALID_USERNAME, "用户名不能为空");
-        }
+        UsernamePolicy.validate(cmd.username());
         String username = cmd.username().trim();
-        if (username.length() > 64) {
-            throw new UserException(UserErrorCode.INVALID_USERNAME, "用户名最长64个字符");
-        }
         Optional<User> existing = userRepository.findByUsername(username);
         if (existing.isPresent() && existing.get().status() != UserStatus.REJECTED) {
             throw new UserException(UserErrorCode.USERNAME_TAKEN, "用户名已存在");
