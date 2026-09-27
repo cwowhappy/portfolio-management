@@ -161,6 +161,15 @@ testing {
                 // @ServiceConnection：切片直接引用 testFixtures 的单例容器
                 implementation 'org.springframework.boot:spring-boot-testcontainers'
             }
+            targets {
+                all {
+                    testTask.configure {
+                        // 套件内多个 @SpringBootTest 类属性各异 → 各自缓存一份完整上下文，
+                        // 默认 512m 堆在上下文数量增长（P2 FeishuDialogue 起）后 OOM——提到 1536m
+                        maxHeapSize = '1536m'
+                    }
+                }
+            }
         }
         // BDD：Cucumber（src/bdd/java + src/bdd/resources，本阶段仅骨架）
         bdd(JvmTestSuite) {

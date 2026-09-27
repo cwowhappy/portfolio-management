@@ -32,6 +32,9 @@ services:
       FEISHU_APP_SECRET: ${FEISHU_APP_SECRET:-}
       FEISHU_ALERT_CHAT_ID: ${FEISHU_ALERT_CHAT_ID:-}
       FEISHU_OWNER_USERNAME: ${FEISHU_OWNER_USERNAME:-}
+      # P2 飞书对话（opt-in）；owner-open-id 见 .env.example 发现流程
+      FEISHU_DIALOGUE_ENABLED: ${FEISHU_DIALOGUE_ENABLED:-false}
+      FEISHU_OWNER_OPEN_ID: ${FEISHU_OWNER_OPEN_ID:-}
     ports:
       - "8080:8080"
     healthcheck:
