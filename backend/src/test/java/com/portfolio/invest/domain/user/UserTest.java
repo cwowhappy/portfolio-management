@@ -51,4 +51,38 @@ class UserTest {
         assertThatThrownBy(() -> newUser().approve().approve())
                 .isInstanceOf(UserException.class).hasMessageContaining("状态");
     }
+
+    @DisplayName("注册携带邮箱则邮箱已验证")
+    @Test
+    void givenEmail_whenRegister_thenEmailVerified() {
+        User u = User.register("alice", "hash", "alice@example.com");
+        assertThat(u.email()).isEqualTo("alice@example.com");
+        assertThat(u.emailVerified()).isTrue();
+        assertThat(u.status()).isEqualTo(UserStatus.PENDING);
+    }
+
+    @DisplayName("旧签名注册无邮箱未验证")
+    @Test
+    void givenNoEmail_whenRegisterTwoArg_thenEmailNullUnverified() {
+        User u = User.register("alice", "hash");
+        assertThat(u.email()).isNull();
+        assertThat(u.emailVerified()).isFalse();
+    }
+
+    @DisplayName("绑定邮箱即已验证")
+    @Test
+    void givenAnyUser_whenBindEmail_thenVerified() {
+        User u = User.register("alice", "hash").approve().bindEmail("a@x.com");
+        assertThat(u.email()).isEqualTo("a@x.com");
+        assertThat(u.emailVerified()).isTrue();
+    }
+
+    @DisplayName("被拒用户重注册可携带新邮箱")
+    @Test
+    void givenRejectedUser_whenReRegisterWithEmail_thenPendingAndVerified() {
+        User u = User.register("alice", "hash", "old@x.com").reject().reRegister("hash2", "new@x.com");
+        assertThat(u.status()).isEqualTo(UserStatus.PENDING);
+        assertThat(u.email()).isEqualTo("new@x.com");
+        assertThat(u.emailVerified()).isTrue();
+    }
 }

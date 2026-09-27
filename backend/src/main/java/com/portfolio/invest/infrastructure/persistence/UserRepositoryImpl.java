@@ -21,6 +21,11 @@ public class UserRepositoryImpl implements UserRepository {
     }
 
     @Override
+    public Optional<User> findByEmail(String email) {
+        return jpa.findByEmail(email).map(UserJpaEntity::toDomain);
+    }
+
+    @Override
     public Optional<User> findById(Long id) {
         return jpa.findById(id).map(UserJpaEntity::toDomain);
     }

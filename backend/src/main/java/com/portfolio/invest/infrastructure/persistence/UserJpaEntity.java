@@ -39,6 +39,12 @@ public class UserJpaEntity {
     @Column(nullable = false)
     private boolean enabled;
 
+    @Column(length = 254)
+    private String email;
+
+    @Column(name = "email_verified", nullable = false)
+    private boolean emailVerified;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -55,13 +61,15 @@ public class UserJpaEntity {
         e.role = u.role();
         e.status = u.status();
         e.enabled = u.enabled();
+        e.email = u.email();
+        e.emailVerified = u.emailVerified();
         e.createdAt = u.createdAt();
         e.updatedAt = u.updatedAt();
         return e;
     }
 
     User toDomain() {
-        return User.reconstitute(id, username, passwordHash, role, status, enabled, createdAt, updatedAt);
+        return User.reconstitute(id, username, passwordHash, role, status, enabled, email, emailVerified, createdAt, updatedAt);
     }
 
     // getter 供 JPA 使用（可按需提供）
