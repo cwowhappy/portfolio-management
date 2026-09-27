@@ -7,6 +7,7 @@ from collector.backfill import run_backfill
 from collector.config import load
 from collector.executor.executor import AllSourcesFailed, Executor, StoreError
 from collector.executor.selector import SourceSelector
+from collector.repositories.backfill import BackfillProgressRepository
 from collector.repositories.runs import RunRepository
 from collector.repositories.tasks import TaskRepository
 from collector.scheduler.jobs import (
@@ -98,7 +99,7 @@ def main(argv=None):
                 params = {"date": args.date} if args.date else {}
                 result = runner.run(task, params=params, force=args.force)
             else:  # backfill
-                result = run_backfill(runner, task, args.start, args.end)
+                result = run_backfill(runner, task, args.start, args.end, progress=BackfillProgressRepository(conn))
         except ValueError as e:
             print(f"参数错误: {e}")
             sys.exit(2)

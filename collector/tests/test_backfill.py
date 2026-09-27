@@ -10,13 +10,15 @@ from collector.scheduler.jobs import build_registries
 
 
 def test_backfill_calls_runner_with_range():
+    """P1-7 后契约：整区间按月分片逐片执行；跨月边界首尾为不完整月（分片细则见
+    test_backfill_sharding.py），本测试锚定 2020-01-01..2026-08-28 共 80 片且末片参数正确。"""
     runner = MagicMock()
     runner.run.return_value = RunResult("t", MODE_BACKFILL, STATUS_SUCCESS)
     task = Collector("t", "t", [], MagicMock(), None, MagicMock(), "x", {})
-    run_backfill(runner, task, "2020-01-01", "2026-08-28")
-    runner.run.assert_called_once_with(
-        task, mode="backfill", params={"start": "20200101", "end": "20260828"}, force=True
-    )
+    summary = run_backfill(runner, task, "2020-01-01", "2026-08-28")
+    assert runner.run.call_count == 80  # 2020-01..2026-08 共 80 个自然月
+    runner.run.assert_called_with(task, mode="backfill", params={"start": "20260801", "end": "20260828"}, force=True)
+    assert (summary.total, summary.executed, summary.skipped) == (80, 80, 0)
 
 
 def test_backfill_rejects_non_range_source():

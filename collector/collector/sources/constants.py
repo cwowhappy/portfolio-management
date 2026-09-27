@@ -97,3 +97,9 @@ INDEX_DAILY_INTERVAL = 0.3  # index_daily 逐指数调用间隔（同上）
 # ---------------------------------------------------------------- 回溯窗口
 
 RECENT_OPEN_LOOKBACK_DAYS = 15  # 无参日常增量回溯最近开市日的自然日窗口（覆盖最长假期）
+
+# ---------------------------------------------------------------- backfill 分片例外
+
+# 这些任务的 fetch 是「全历史拉取+客户端裁剪」语义（如 industry_index_close 经
+# akshare index_hist_sw），月片分片会导致每片重复拉全量——回补时整区间一片执行。
+BACKFILL_WHOLE_RANGE_TASKS = frozenset({"industry_index_close"})

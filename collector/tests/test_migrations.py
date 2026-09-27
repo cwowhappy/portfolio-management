@@ -17,18 +17,26 @@ from alembic.config import Config
 
 COLLECTOR_DIR = Path(__file__).resolve().parent.parent
 
-EXPECTED_TABLES = {"collector_task", "collector_task_run", "collector_source_health", "trading_calendar"}
+EXPECTED_TABLES = {
+    "collector_task",
+    "collector_task_run",
+    "collector_source_health",
+    "trading_calendar",
+    "collector_backfill_progress",  # P1-7 Alembic 0003
+}
 
 
 def test_upgrade_creates_ops_tables(pg_url):
     cfg = Config(str(COLLECTOR_DIR / "migrations" / "alembic.ini"))
     cfg.set_main_option("script_location", str(COLLECTOR_DIR / "migrations"))
     cfg.set_main_option("sqlalchemy.url", pg_url)
-    # 隔离：清掉迁移相关表与版本表，再从零跑迁移（无论 pg_schema 是否已执行过）
+    # 隔离：清掉迁移相关表与版本表，再从零跑迁移（无论 pg_schema 是否已执行过）。
+    # 清单必须覆盖全部 alembic 管的表——漏一张会让 upgrade 撞 DuplicateTable 中断，
+    # 0001 的表建不回来，殃及同 session 后续全部 PG 测试。
     with psycopg.connect(pg_url) as conn, conn.cursor() as cur:
         cur.execute(
             "DROP TABLE IF EXISTS trading_calendar, collector_source_health,"
-            " collector_task_run, collector_task, alembic_version CASCADE"
+            " collector_task_run, collector_task, collector_backfill_progress, alembic_version CASCADE"
         )
     command.upgrade(cfg, "head")
 

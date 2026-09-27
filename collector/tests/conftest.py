@@ -36,10 +36,11 @@ FLYWAY_SQL_FILES = (
     "V18__etf_screening.sql",
 )
 
-# 14 张表：4 运维（alembic）+ 10 业务目标（Flyway V3/V4/V7/V13/V18；旧 treasury_yield 已被 V4 删除）
+# 15 张表：5 运维（alembic）+ 10 业务目标（Flyway V3/V4/V7/V13/V18；旧 treasury_yield 已被 V4 删除）
 ALL_TABLES = (
     "collector_task_run",
     "collector_source_health",
+    "collector_backfill_progress",
     "collector_task",
     "trading_calendar",
     "valuation_snapshot",
