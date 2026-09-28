@@ -8,9 +8,12 @@
 // ChartSpecSchema 判别联合分发，spec.type 必与 builder 匹配，cast 安全。
 // get_financials 走 table 分支，不传 builder。
 import { useRenderTool } from "@copilotkit/react-core/v2";
+import { z } from "zod";
 import { ChartCard, type ChartCardBuilder } from "@/components/chat/charts/ChartCard";
+import DraftCard from "@/components/chat/DraftCard";
 import { buildCandlestickOption, buildLineOption, buildBarOption } from "@/components/charts/optionBuilders";
 import { KlineParamsSchema, ValuationParamsSchema, OverviewParamsSchema, FinancialsParamsSchema, ScreeningParamsSchema, FinancialsTrendParamsSchema, IndustryParamsSchema, PortfolioParamsSchema, AllocationParamsSchema } from "@/lib/tool-params";
+import { extractResearchDraftJson } from "@/lib/research-draft";
 import { buildPieOption } from "@/components/charts/optionBuilders";
 
 export function ChartToolRenderers() {
@@ -59,6 +62,28 @@ export function ChartToolRenderers() {
     name: "analyze_portfolio",
     parameters: PortfolioParamsSchema,
     render: (p) => <ChartCard status={p.status} result={p.result} name={p.name} builder={buildPieOption as ChartCardBuilder} />,
+  });
+  // ===== invest-sop P1（Ruling-1）：research_draft 草稿卡——按工具名注册（工具名在 tool call
+  // 块确定可得，不扫描助手消息），渲染器从工具结果文本提取 ```research-draft 围栏内 JSON 交
+  // DraftCard；无围栏（参数错误文本）原样透传 → DraftCard 降级卡。参数 schema 为具名重载
+  // 必填的类型载体（运行时不校验，ToolCallRenderer 直接透传 partialJSONParse 产物），渲染
+  // 不消费 parameters，就地定义而不入 tool-params.ts（本任务限定只动四文件）。 =====
+  useRenderTool({
+    name: "research_draft",
+    parameters: z.object({
+      stage: z.string(),
+      draftJson: z.string(),
+    }),
+    render: (p) => {
+      if (p.status !== "complete" || typeof p.result !== "string") {
+        return (
+          <div className="tool-card running my-2 w-full max-w-[560px] px-3 py-2 text-xs text-[color:var(--color-ink-faint)]">
+            {p.name} 执行中…
+          </div>
+        );
+      }
+      return <DraftCard raw={extractResearchDraftJson(p.result) ?? p.result} />;
+    },
   });
   return null;
 }

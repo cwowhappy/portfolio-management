@@ -38,11 +38,12 @@ const tableSpec = {
 };
 
 describe("ChartToolRenderers", () => {
-  it("注册 4 既有 + 5 MS-12 具名渲染器（无 agentId，05 §4.1）", () => {
+  it("注册 4 既有 + 5 MS-12 + research_draft 具名渲染器（无 agentId，05 §4.1）", () => {
     render(<ChartToolRenderers />);
     expect(renderToolConfigs.map((c) => c.name)).toEqual(
       ["get_kline", "get_valuation", "get_market_overview", "get_financials",
-        "screen_stocks", "analyze_financials", "analyze_industry", "suggest_allocation", "analyze_portfolio"]);
+        "screen_stocks", "analyze_financials", "analyze_industry", "suggest_allocation", "analyze_portfolio",
+        "research_draft"]);
     expect(renderToolConfigs.every((c) => "parameters" in c)).toBe(true);
   });
 
@@ -90,5 +91,32 @@ describe("ChartToolRenderers", () => {
     const kline = renderToolConfigs.find((c) => c.name === "get_kline")!;
     const { container } = render(kline.render({ status: "complete", result: '{"error":"Tool execution failed: x"}' }) as React.ReactElement);
     expect(container.querySelector("details.tool-card")).toBeTruthy();
+  });
+
+  // ===== research_draft（invest-sop P1，Ruling-1：按工具名注册，渲染器提取围栏）=====
+  it("research_draft complete + 围栏结果 → DraftCard 渲染（提取围栏内 JSON，摘要文案不进卡片）", () => {
+    render(<ChartToolRenderers />);
+    const rd = renderToolConfigs.find((c) => c.name === "research_draft")!;
+    const result =
+      "策略草稿已回显：估值区间 12.5~18.0\n```research-draft\n" +
+      JSON.stringify({ specVersion: 1, stage: "STRATEGY", thesis: "高端白酒需求刚性", valuationLow: 12.5, valuationHigh: 18 }) +
+      "\n```";
+    const { getByText, queryByText } = render(rd.render({ status: "complete", result }) as React.ReactElement);
+    expect(getByText("投研草稿 · 策略")).toBeTruthy();
+    expect(getByText("高端白酒需求刚性")).toBeTruthy();
+    expect(getByText("12.5~18")).toBeTruthy();
+    expect(queryByText(/策略草稿已回显/)).toBeNull(); // 摘要留在工具结果文本，不重复进卡
+  });
+
+  it("research_draft 无围栏（参数错误文本）→ DraftCard 降级卡；inProgress → 骨架", () => {
+    render(<ChartToolRenderers />);
+    const rd = renderToolConfigs.find((c) => c.name === "research_draft")!;
+    const { getByText } = render(
+      rd.render({ status: "complete", result: "[research_draft] 参数错误：未知 stage: STAGE_X" }) as React.ReactElement,
+    );
+    expect(getByText(/草稿格式不兼容/)).toBeTruthy();
+    cleanup();
+    const { container } = render(rd.render({ status: "inProgress", name: "research_draft" }) as React.ReactElement);
+    expect(container.querySelector(".tool-card.running")).toBeTruthy();
   });
 });
