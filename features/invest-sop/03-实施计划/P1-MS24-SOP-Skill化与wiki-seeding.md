@@ -18,7 +18,7 @@
 - **序列化**：spec 类逐字段 `@JsonInclude(NON_NULL)`（照 `ChartSpec.java` 注释：wire 契约 ALWAYS 会发 null，前端 zod `.optional()` 不接受 null）。
 - **定向测试命令**：`cd backend && ./gradlew test --tests '*ResearchDraft*' --console=plain`；前端 `cd frontend && pnpm vitest run tests/lib/research-draft.test.ts`（勿用 `pnpm test --` 过滤）。
 - **commit scope**：`feat(agent): …` / `feat(ui): …` / `docs(skills): …`，中文描述。
-- **F01 内容依赖**：SKILL.md checklist 正文与 `sop-templates.json` 内容块以 F01 定稿清单为唯一内容源；本计划测试只断言结构与键，不断言内容文本；定稿后回填不改测试。
+- **F01 内容依赖（已解锁）**：F01 已定稿（2026-09-28 用户逐条评审确认）——内容源 = [SOP v1 内容定稿](../04-研发过程/2026-09-28-SOP-v1-内容定稿.md)（61 条生效：删 1.10、3.9 转页面文案）。SKILL.md 正文与 `sop-templates.json` 内容块**直接取定稿清单对应阶段条目**；测试只断言结构与键，不断言内容文本。
 
 ## Review Focus
 
@@ -135,7 +135,7 @@ git commit -m "feat(agent): ResearchDraftSpec 草稿契约（四变体 sealed in
 
 - [ ] **Step 1: 扩展 skill 目录测试**——断言目录含 6 个 skill（2 既有 + 4 新）、四新 skill 的 `default_enabled` 均为 false、`category == "sop"`（照既有目录测试断言风格）。
 - [ ] **Step 2: 跑测试确认失败**
-- [ ] **Step 3: 写四文件**（内容块标注 `<!-- F01 定稿后回填 -->`）
+- [ ] **Step 3: 写四文件**（checklist 正文取 F01 定稿清单对应阶段条目，逐条对应不做增删）
 - [ ] **Step 4: 跑测试确认通过 + 全量 `./gradlew test --tests '*Skill*'` 无回归**
 - [ ] **Step 5: Commit** `docs(skills): 四个 SOP SKILL.md（结构先行，内容待 F01 定稿回填）`
 
@@ -154,7 +154,7 @@ git commit -m "feat(agent): ResearchDraftSpec 草稿契约（四变体 sealed in
 
 - [ ] **Step 1: 写失败切片测试**——首次调用写 N 条 + 置标记；二次调用零新增；用户删光后调用零新增（mock repository 断言 save 次数）。
 - [ ] **Step 2: 跑测试确认失败**
-- [ ] **Step 3: 实现 seeding + JSON 示例内容**
+- [ ] **Step 3: 实现 seeding + JSON 内容取 F01 定稿四阶段模板条目**
 - [ ] **Step 4: 切片测试通过 + 集成测试（真实 PG： seeding 幂等、RESEARCH_NOTE 列表含 SOP_TEMPLATE、CONCEPT seeding 不受影响）通过**
 - [ ] **Step 5: Commit** `feat(wiki): SOP 模板幂等 seeding（独立标记列，删光不复活）`
 
