@@ -26,4 +26,16 @@ public final class ResearchErrorCode {
     public static final String BATCH_INVALID = "BATCH_INVALID";
     /** 凯利手动参数越界：胜率 ∉ (0,1)、赔率 ≤ 0（D23 只做算术，参数域仍须合法）。 */
     public static final String KELLY_PARAM_INVALID = "KELLY_PARAM_INVALID";
+    /** 纪律检查上下文缺失。 */
+    public static final String CHECK_CONTEXT_REQUIRED = "CHECK_CONTEXT_REQUIRED";
+    /** 纪律规则指标缺失（RuleInput 构造，NFR-4 转换侧入参）。 */
+    public static final String METRIC_REQUIRED = "METRIC_REQUIRED";
+    /** 检查类型缺失。 */
+    public static final String CHECK_TYPE_REQUIRED = "CHECK_TYPE_REQUIRED";
+    /** 检查项快照为空（append-only 留痕至少一条）。 */
+    public static final String CHECK_ITEMS_REQUIRED = "CHECK_ITEMS_REQUIRED";
+    /** 检查结论缺失。 */
+    public static final String CHECK_RESULT_REQUIRED = "CHECK_RESULT_REQUIRED";
+    /** OVERRIDDEN 越过必填理由（空白或超 500 字，D5 留痕最低要求）。 */
+    public static final String OVERRIDE_REASON_REQUIRED = "OVERRIDE_REASON_REQUIRED";
 }
