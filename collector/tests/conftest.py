@@ -4,7 +4,7 @@
 用 testcontainers 起一次性 postgres:16 容器；docker 不可用时整组 skip。
 
 schema 与生产同源，不再维护手工 DDL（消灭测试与真实迁移的漂移）：
-- collector 自己的 alembic 迁移（migrations/）：4 张运维表，upgrade 到 head
+- collector 自己的 alembic 迁移（migrations/，单一基线 0001，squash 自原 0001~0003）：5 张运维表，upgrade 到 head
 - 后端 Flyway 迁移 SQL（backend/.../db/migration/ 的 V3/V4）：6 张业务目标表
 """
 

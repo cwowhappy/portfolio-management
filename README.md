@@ -7,19 +7,23 @@
 决策记录：[docs/technology/decisions/](docs/technology/decisions/) ·
 后端分包规范：[docs/technology/conventions/01-后端DDD分包规范.md](docs/technology/conventions/01-后端DDD分包规范.md)（ArchUnit 强制，DDD 分层）·
 产品功能：[docs/function/](docs/function/) ·
-技术文档：[docs/technology/](docs/technology/)
+技术文档：[docs/technology/](docs/technology/) ·
+发布计划与部署：[docs/deployment/v1/](docs/deployment/v1/)
 
 ## 能力一览
 
-- **对话式投研问答**：自然语言问行情、走势、财务、新闻，Agent 自动调用 7 个数据工具并流式输出分析（AG-UI 协议，思考过程/工具进度可视化）——**需登录后使用**
+- **对话式投研问答**：自然语言问行情、走势、财务、新闻，Agent 自动调用 10 个数据工具并流式输出分析（AG-UI 协议，思考过程/工具进度可视化）——**需登录后使用**
 - **行情数据台**：指数速览、股票搜索、实时报价、K线（日/周/月 + MA5/MA20）、财务指标、新闻——**公开访问**
-- **用户管理**：注册/登录（用户名 + 密码，密码 ≥8 位含字母数字）；注册需**管理员审核通过**后方可使用 AI；管理员可审核、停用/启用、重置密码；内置管理员（env 种子）
+- **用户管理**：注册/登录（用户名 + 密码，密码 ≥8 位含字母数字）；注册需**管理员审核通过**后方可使用 AI；支持**邮箱验证码**注册与忘记密码找回、管理员代填邮箱（需配 SMTP）；管理员可审核、停用/启用、重置密码；内置管理员（env 种子）
 - **会话持久化**：AI 对话历史存服务端 PostgreSQL、归属账号，换设备可见（标题取首条消息前 24 字）
 - **市场估值仪表盘**：全 A PE/PB 中位数及分位、股债利差(ERP)、主要指数估值、破净占比、市场情绪温度计、历史走势——**公开访问**（`/valuation`）
 - **持仓组合管理**：持仓/交易/分红/分组，成本与盈亏计算、组合总览与集中度分析——**需登录**（`/portfolio`）
-- **资产配置**：经典模板一键套用 + 自定义方案 + 与持仓的偏离度对比——**需登录**（`/allocation`）
+- **资产配置**：经典模板一键套用 + 自定义方案 + 与持仓的偏离度对比 + 风险测评问卷（画像→模板）+ 回测与再平衡观察——**需登录**（`/allocation`）
 - **价值筛选器**：估值/盈利/财务健康/成长/市值流动性五维 AND 组合筛选 + 结果排序——**公开访问**（`/screener`）
-- **行业估值**：申万 31 行业 PE/PB/ROE/股息率对比 + 估值热力图，点击跳转筛选器——**公开访问**（`/industry`）
+- **行业估值与研究**：申万 31 行业 PE/PB/ROE/股息率对比 + 估值热力图（点击跳转筛选器）+ 产业链图谱与未上市策展企业——**公开访问**（`/industry`）
+- **收益分析**：组合 TWR/年化收益/交易统计/风险指标（波动、回撤）/业绩归因——**需登录**（`/analytics`）
+- **投资日志**：投研日志 + 交易/分红事件时间线——**需登录**（`/journal`）
+- **飞书集成（opt-in）**：采集终态告警与日终新鲜度巡检推群卡片、原则预警推 owner、owner 单聊对话（事件长连接）——需配 `FEISHU_*`，未配置时全部静默
 - **技术栈**：Spring Boot 4 + Spring Security 7 + PostgreSQL/Flyway + AgentScope Java 2.0.3（含 harness）· Next.js 15 + React 19 + CopilotKit（AG-UI 前端）+ echarts + TanStack Table · 东方财富公开接口（新浪兜底）· Python 采集服务（akshare/tushare）
 
 ## 快速开始
@@ -27,7 +31,7 @@
 ### 方式一：Docker Compose（推荐）
 
 ```bash
-cp .env.example .env          # 填入 DEEPSEEK_API_KEY、ADMIN_USERNAME、ADMIN_PASSWORD
+cp .env.example .env          # 填入 DEEPSEEK_API_KEY、ADMIN_USERNAME/PASSWORD、REMEMBER_ME_KEY（必填，缺失后端拒绝启动）
 docker compose up -d --build
 # 打开 http://localhost:3000（首次需用内置管理员审核注册用户后方可对话）
 ```
@@ -37,7 +41,7 @@ docker compose up -d --build
 依赖：JDK 21+（可用 sdkman）、Node 20+、pnpm、Docker（集成测试用 Testcontainers 拉取 postgres:16）
 
 ```bash
-cp .env.example .env          # 填入 DEEPSEEK_API_KEY / ADMIN_USERNAME / ADMIN_PASSWORD
+cp .env.example .env          # 填入 DEEPSEEK_API_KEY / ADMIN_USERNAME / ADMIN_PASSWORD / REMEMBER_ME_KEY（必填）
 make dev                      # 后端 :8080 + 前端 :3000（.env 自动加载）
 ```
 
@@ -53,8 +57,8 @@ docker compose up -d db
 make test                     # 后端单元/架构/集成测试（含 ArchUnit 分包规范 + Testcontainers）+ 前端单元测试（vitest）+ collector 测试（pytest）
                               # 覆盖率强制门槛：后端 JaCoCo 指令/分支 ≥ 80%，前端 V8 语句/分支 ≥ 80%，collector pytest ≥ 80%
 make smoke                    # 端到端冒烟（含真实行情接口 + AI 对话）
-cd frontend && pnpm test:e2e  # 浏览器端到端（Playwright，15 份 spec）：导航 / 登录注册 / 行情台 / AI 对话（含聊天图表、HITL 审批）
-                              #   / 用户管理 / 会话持久化 / 估值 / 持仓 / 配置 / 筛选 / 行业 / 投资日志 / 错误态
+cd frontend && pnpm test:e2e  # 浏览器端到端（Playwright，19 份 spec）：导航 / 登录注册（含邮箱验证码/找回密码）/ 行情台 / AI 对话（含聊天图表、HITL 审批）
+                              #   / 用户管理 / 会话持久化 / 估值 / 持仓 / 配置 / 筛选 / 行业 / 投资日志 / 收益分析 / 错误态
                               #   自动拉起后端+前端（已运行时复用）；AI 用例需配置 DEEPSEEK_API_KEY
 ```
 
@@ -183,13 +187,13 @@ backend/    Spring Boot 4 + Spring Security 7 + Spring Data JPA（DDD 洋葱分�
                       UserToolkitFactory / McpClientPool / CurrentUserHolder / chart(图表spec) /
                       AguiEventNonNullCodec / AguiWireJsonConfig
     config/           配置属性：InvestProperties
-  src/main/resources/ application.yml / application-prod.yml / db/migration/(V1~V11) / skills/(内置skill)
+  src/main/resources/ application.yml / application-prod.yml / db/migration/(V1__baseline.sql 单一基线) / skills/(内置skill)
 
 collector/  Python 3.12 采集服务（akshare/tushare → PostgreSQL，APScheduler 调度）：市场估值快照 / 指数估值 / 国债曲线 / 申万映射 / 指数成分股 / 个股基本面
 frontend/   Next.js 15（聊天 UI / 行情台 / 估值 / 持仓 / 配置 / 筛选 / 行业 / 投资日志 / MCP与Skill设置 / 登录注册 / 管理页 / API 反代）
-docs/       function/（产品功能）· technology/（技术文档）· plans/（跨模块/版本级计划）· reviews/（代码审查报告与经验沉淀）· archive/（历史归档）
+docs/       function/（产品功能）· technology/（技术文档）· plans/（跨模块/版本级计划）· deployment/（v1 发布计划与方案）· reviews/（代码审查报告与经验沉淀）· archive/（历史归档）
 features/   <feature>/（特性需求/设计/计划，如 asset-allocation、portfolio-management）· plans/（跨特性工程计划）
-scripts/    smoke.sh 冒烟脚本
+scripts/    smoke.sh 冒烟（6 段：健康/上游漂移/行情/反代/AI 对话/邮件）· e2e-* 起停辅助
 ```
 
 ## 配置
@@ -201,6 +205,7 @@ scripts/    smoke.sh 冒烟脚本
 | DEEPSEEK_BASE_URL | https://api.deepseek.com | 兼容代理可覆盖 |
 | POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB | invest / invest / invest | 数据库连接 |
 | ADMIN_USERNAME / ADMIN_PASSWORD | - | 内置管理员（启动幂等种子，未填则不创建） |
+| REMEMBER_ME_KEY | - | **必填**（remember-me 令牌签名密钥，缺失后端拒绝启动）；生成：`openssl rand -hex 32` |
 | BACKEND_URL | http://localhost:8080 | 前端反代目标 |
 | PORT | 8080 | 后端端口 |
 | TUSHARE_TOKEN | - | 采集服务（collector）tushare 数据源 token（个股基本面 / 指数估值 / 申万映射；未填则仅 akshare 数据可用） |
@@ -211,10 +216,14 @@ scripts/    smoke.sh 冒烟脚本
 | FEISHU_OWNER_USERNAME | - | P1 巡检用户名（默认回落 ADMIN_USERNAME） |
 | FEISHU_DIALOGUE_ENABLED | false | P2 飞书单聊对话开关（需先在开放平台开通 im:message.p2p_msg 权限并配置事件长连接订阅） |
 | FEISHU_OWNER_OPEN_ID | - | P2 对话白名单（owner 的 open_id；留空时首条消息日志打印 open_id 供回填） |
+| MAIL_SMTP_HOST / MAIL_SMTP_PORT | - / 465 | 邮箱验证码/找回密码 SMTP（opt-in：HOST/USERNAME/PASSWORD/FROM 四要素配齐才启用，未配时注册/找回返回「系统未配置邮件服务」；阿里云企业邮箱 `smtp.qiye.aliyun.com:465` SSL） |
+| MAIL_SMTP_USERNAME / MAIL_SMTP_PASSWORD | - | SMTP 登录凭证 |
+| MAIL_FROM | - | 发件人地址（同时是 smoke §6 真发冒烟的收件人） |
+| MAIL_TEST_FIXED_CODE / MAIL_TEST_MODE | - / false | **e2e 固定码专用，生产严禁设置**：固定码设了而未开测试模式时后端拒绝启动；开了则发码短路、恒为约定值 |
 | COLLECTOR_ALERT_WEBHOOK | - | 采集告警通用 JSON POST webhook（opt-in 逃生通道；仅在未配置 FEISHU_BOT_WEBHOOK 时生效） |
 | MCP_SECRET_KEY | - | **规划中（二期），代码尚未实现**——当前 provider token 为 `auth_secret_enc` 明文直读；规划语义：MCP 系统 Token 的 AES-256-GCM 主密钥（base64 32 字节），缺失不阻断启动、加解密时报错 |
 
-**MCP 数据源**：内置 provider（妙想 `mx-ds` / Tushare / Wind）的 Token 不随迁移进 git——部署时由脚本对 `mcp_provider.auth_secret_enc` 执行 UPDATE 填入（妙想 `em_api_key`、Tushare token、Wind ak token），V10 迁移仅 seed `NULL` 占位。三个 MCP 端点的手动握手冒烟见 `backend/scripts/mcp-smoke.sh`（从 `MX_DS_TOKEN` / `TUSHARE_TOKEN` / `WIND_TOKEN` 读 token，无硬编码密钥）。
+**MCP 数据源**：内置 provider（妙想 `mx-ds` / Tushare / Wind）的 Token 不随迁移进 git——部署时由脚本对 `mcp_provider.auth_secret_enc` 执行 UPDATE 填入（妙想 `em_api_key`、Tushare token、Wind ak token），V1 基线（原 V10 段）仅 seed `NULL` 占位。三个 MCP 端点的手动握手冒烟见 `backend/scripts/mcp-smoke.sh`（从 `MX_DS_TOKEN` / `TUSHARE_TOKEN` / `WIND_TOKEN` 读 token，无硬编码密钥）。
 
 ## 免责声明
 
