@@ -53,7 +53,7 @@ infrastructure ──→ {domain, application, config}
 
 | 包 | 职责 |
 |---|---|
-| `web/` | HTTP 接入层：12 个 `@RestController`（Auth/UserAdmin/Conversation/Market/Valuation/Screening/Portfolio/Allocation/Journal/McpConfig/SkillConfig/Health）+ `InvestAguiRuntimeContextResolver`（AG-UI 请求上下文）+ `GlobalExceptionHandler`（`@RestControllerAdvice`，异常→HTTP 状态映射）。只做路由/参数校验/异常翻译 |
+| `web/` | HTTP 接入层：19 个 `@RestController`（Auth/UserAdmin/Conversation/Market/Health/Valuation/Portfolio/Journal/Allocation/Analytics/Screening/Watchlist/McpConfig/SkillConfig/Industry/IndustryWatch/Wiki/IndustryCuration/Research）+ `InvestAguiRuntimeContextResolver`（AG-UI 请求上下文）+ `GlobalExceptionHandler`（`@RestControllerAdvice`，异常→HTTP 状态映射）。只做路由/参数校验/异常翻译 |
 | `application/` | 用例编排与事务边界，`*ApplicationService` 结尾；持有对外 DTO |
 | `domain/` | **纯 POJO，零 Spring/JPA 注解**；实体/值对象/仓库接口（由 infrastructure 实现） |
 | `infrastructure/` | `persistence`（JPA 实体+仓库实现+Flyway）、`security`、`seed`、`market`（东方财富/新浪客户端 + 缓存/限流装饰器）、`cache`（`TtlCache` + `CacheConfig`） |
@@ -87,7 +87,7 @@ infrastructure ──→ {domain, application, config}
 
 - **覆盖门槛 ≥80%**（`make test` 失败即不过）：后端 JaCoCo 聚合 `test`/`integrationTest`/`bdd` 三层 exec 后统一卡指令/分支双门槛（挂 `check`，聚焦跑单个 suite 不触发），前端 V8 语句/分支，collector pytest `--cov-fail-under=80`。改代码需补测试。
 - **后端测试四层**：`test`（单元+切片）/ `integrationTest`（Testcontainers 真实 PG）/ `bdd`（Cucumber 中文场景）/ `testFixtures`（共享 PG 容器基座 `PostgresTestSupport`），详见 `docs/technology/architecture/03-后端测试架构.md`。
-- **schema 由 Flyway 管**（`ddl-auto: none`），迁移在 `backend/src/main/resources/db/migration/`（V1–V11；V10=MCP 三表，V11=Skill 用户启用）。
+- **schema 由 Flyway 管**（`ddl-auto: none`），迁移在 `backend/src/main/resources/db/migration/`（V1 基线 squash + V2=research 域，详见迁移目录）。
 - **Jackson 2 而非 Jackson 3**：`spring-boot-starter-webmvc` 已排除 `starter-jackson` 改引 `spring-boot-jackson2`，因为 AgentScope AG-UI 模型基于 Jackson 2 注解。
 - **Testcontainers 禁用 Ryuk**（`TESTCONTAINERS_RYUK_DISABLED=true`）：兼容 Colima 等本地 Docker socket 无法挂载的场景，由 JUnit 扩展启停容器。
 - **同源 Cookie 会话，无 CORS**：后端 `same-site: lax`，前端同源反代透传 cookie，这是关闭 CSRF 的安全前提（ADR-0007）。
