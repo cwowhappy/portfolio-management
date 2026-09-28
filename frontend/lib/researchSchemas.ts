@@ -114,6 +114,88 @@ export const CheckRecordViewSchema = z.object({
   createdAt: z.string(),
 });
 
+// —— P4 契约（与后端 research 域枚举/视图逐字一致）——
+/** 复盘档位（ReviewTier，D7 三档）：月主模板默认 + 季深度归因 + 周简版兜底。 */
+export const ReviewTierSchema = z.enum(["MONTHLY", "QUARTERLY", "WEEKLY"]);
+/** 复盘回流状态（RefluxState，F16）：PENDING 创建 / CONFIRMED 预留两步 / REFLOWN 已回流记 wiki_entry_id。 */
+export const RefluxStateSchema = z.enum(["PENDING", "CONFIRMED", "REFLOWN"]);
+/** 证伪评审结论（ReviewConclusion，F15 四值）：REVISE 仅给提示位、不自动改策略（Review Focus 3）。 */
+export const ReviewConclusionSchema = z.enum(["HOLD", "REDUCE", "EXIT", "REVISE"]);
+
+/**
+ * 复盘快照（创建时定格的 Composer JSON）：无数据字段为字符串「无数据」而非 null/0
+ * （Review Focus 1，前端原样展示不兜底）；navSeries/periodReturn/trades 均可能为「无数据」。
+ */
+export const ReviewSnapshotSchema = z
+  .object({
+    periodStart: z.string(),
+    periodEnd: z.string(),
+    asOf: z.string(),
+    priceBasis: z.string(),
+    navBasis: z.string(),
+    navSeries: z.union([z.string(), z.array(z.object({ date: z.string(), value: z.number() }))]),
+    periodReturn: z.union([z.string(), z.number()]),
+    trades: z.union([
+      z.string(),
+      z.array(
+        z.object({
+          id: z.number().nullable(),
+          date: z.string(),
+          price: z.number(),
+          side: z.string(),
+          afterMaxClose: z.union([z.string(), z.number()]),
+          afterMinClose: z.union([z.string(), z.number()]),
+        }),
+      ),
+    ]),
+    tradeIds: z.array(z.number()),
+    attributionWindow: z.array(z.object({ start: z.string(), end: z.string() })),
+  })
+  .passthrough();
+
+/**
+ * 复盘视图（F13/F14/F16）：snapshot/answers/overrides 为后端 @JsonRawValue 内联对象
+ * （不是转义字符串；jsonb 键序不保证）；answers/overrides null=未作答；
+ * tradeIds 为归因圈选软引用（自动圈选后可手动修正）。
+ */
+export const ReviewViewSchema = z.object({
+  id: z.number(),
+  projectId: z.number(),
+  tier: ReviewTierSchema,
+  periodStart: z.string(),
+  periodEnd: z.string(),
+  snapshot: ReviewSnapshotSchema,
+  answers: z.record(z.string(), z.unknown()).nullable(),
+  narrative: z.string().nullable(),
+  overrides: z.record(z.string(), z.unknown()).nullable(),
+  tradeIds: z.array(z.number()),
+  refluxState: RefluxStateSchema,
+  wikiEntryId: z.number().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+/** 证伪评审留痕视图（append-only）：suggestStrategyRevise 仅 REVISE=true（提示位，不自动改策略）。 */
+export const FalsifierReviewViewSchema = z.object({
+  id: z.number(),
+  projectId: z.number(),
+  hitId: z.number().nullable(),
+  conclusion: ReviewConclusionSchema,
+  reason: z.string(),
+  suggestStrategyRevise: z.boolean(),
+  createdAt: z.string(),
+});
+
+/** 模板改进建议视图（F16 只收集不生效；reviewId 为来源复盘可空软引用）。 */
+export const FeedbackViewSchema = z.object({
+  id: z.number(),
+  projectId: z.number(),
+  reviewId: z.number().nullable(),
+  stage: ResearchStageSchema,
+  content: z.string(),
+  createdAt: z.string(),
+});
+
 /**
  * 证伪命中合并视图行（D21）：realtime=true 实时求值（不落库，hitAt=null）；
  * realtime=false 历史 hit 留痕行（id/hitAt 为落库标识）。EVENT 条目 hit 恒 false——
@@ -158,6 +240,12 @@ export type EntryBatchView = z.infer<typeof EntryBatchViewSchema>;
 export type EntryPlanView = z.infer<typeof EntryPlanViewSchema>;
 export type CheckRecordView = z.infer<typeof CheckRecordViewSchema>;
 export type FalsifierHitView = z.infer<typeof FalsifierHitViewSchema>;
+export type ReviewTier = z.infer<typeof ReviewTierSchema>;
+export type RefluxState = z.infer<typeof RefluxStateSchema>;
+export type ReviewConclusion = z.infer<typeof ReviewConclusionSchema>;
+export type ReviewView = z.infer<typeof ReviewViewSchema>;
+export type FalsifierReviewView = z.infer<typeof FalsifierReviewViewSchema>;
+export type FeedbackView = z.infer<typeof FeedbackViewSchema>;
 
 /** 四阶段声明序（与后端 ResearchStage 枚举一致，进度条/过滤/选择器共用）。 */
 export const RESEARCH_STAGES: readonly ResearchStage[] = ["NEW_ANALYSIS", "STRATEGY", "POSITION", "REVIEW"];
@@ -229,3 +317,66 @@ export const CHECK_METRIC_LABELS: Record<string, string> = {
  * 确认卡勾选框共用——勾选=true 记 PASS，未勾选记 HIT（布尔语境，后端转换）。
  */
 export const F01_MUST_ITEMS: readonly string[] = ["能力圈", "安全边际", "估值核对", "买入条件"];
+
+// —— P4 中文标签（与后端 ReviewTier/RefluxState/ReviewConclusion label() 对齐）——
+export const REVIEW_TIER_LABELS: Record<ReviewTier, string> = {
+  MONTHLY: "月度复盘",
+  QUARTERLY: "季度复盘",
+  WEEKLY: "周度复盘",
+};
+export const REFLUX_STATE_LABELS: Record<RefluxState, string> = {
+  PENDING: "待回流",
+  CONFIRMED: "已确认",
+  REFLOWN: "已回流",
+};
+export const REVIEW_CONCLUSION_LABELS: Record<ReviewConclusion, string> = {
+  HOLD: "维持",
+  REDUCE: "减仓",
+  EXIT: "退出",
+  REVISE: "修订策略",
+};
+
+// —— P4 复盘表单字段常量表（常量表驱动：MS-24 字段集收敛后只改本表、不动组件）——
+
+/**
+ * 复盘表单字段定义：内容源自 F01 定稿复盘节（skills/review SKILL.md 清单 4.1-4.12）——
+ * 月主 4.1-4.5 / 季深追加 4.6-4.9 / 周简 4.10-4.12。id 同时是 answers/overrides JSONB 键；
+ * 带 auto 的字段双列展示（快照自动值灰显只读 + 覆盖值可编辑写 overrides，F14），
+ * 其余字段单列可编辑（写 answers）；overrideHint 的字段旁显「本期越过 N 次」（GET checks 统计）。
+ */
+export type ReviewFieldDef =
+  | { id: string; label: string; type: "text" | "textarea"; auto?: "periodReturn"; overrideHint?: true }
+  | { id: string; label: string; type: "select"; options: readonly string[]; auto?: "periodReturn"; overrideHint?: true };
+
+const MONTHLY_FIELDS: readonly ReviewFieldDef[] = [
+  { id: "4.1", label: "决策质量：检查单执行与论点新证据", type: "textarea" },
+  { id: "4.2", label: "结果质量：区间收益（自动带入）", type: "text", auto: "periodReturn" },
+  { id: "4.3", label: "纪律遵守度：越过与违例复盘", type: "textarea", overrideHint: true },
+  {
+    id: "4.4",
+    label: "归因：决策/结果四象限",
+    type: "select",
+    options: ["决策对/结果对", "决策对/结果错（运气坏）", "决策错/结果对（运气好）", "决策错/结果错"],
+  },
+  { id: "4.5", label: "经验条目（≤3 条可复用）", type: "textarea" },
+];
+
+const QUARTERLY_EXTRA_FIELDS: readonly ReviewFieldDef[] = [
+  { id: "4.6", label: "论点全量重检（论据链逐条重验）", type: "textarea" },
+  { id: "4.7", label: "估值区间重算留痕", type: "textarea" },
+  { id: "4.8", label: "知道的更多了什么（对比最初买入）", type: "textarea" },
+  { id: "4.9", label: "持有逻辑是否需要修订", type: "select", options: ["需要修订", "维持不变"] },
+];
+
+const WEEKLY_FIELDS: readonly ReviewFieldDef[] = [
+  { id: "4.10", label: "本周有无触发证伪条件", type: "select", options: ["是", "否"] },
+  { id: "4.11", label: "计划外操作（有则一句话理由）", type: "text" },
+  { id: "4.12", label: "下周关注点", type: "text" },
+];
+
+/** 三档字段清单（季档 = 月档全量 + 追加；周档独立简版）。 */
+export const REVIEW_FIELDS: Record<ReviewTier, readonly ReviewFieldDef[]> = {
+  MONTHLY: MONTHLY_FIELDS,
+  QUARTERLY: [...MONTHLY_FIELDS, ...QUARTERLY_EXTRA_FIELDS],
+  WEEKLY: WEEKLY_FIELDS,
+};

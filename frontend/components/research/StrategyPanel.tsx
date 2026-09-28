@@ -307,7 +307,14 @@ export default function StrategyPanel({ projectId, strategy, falsifiers, onChang
           {strategySave.error && (
             <div className="text-sm text-[color:var(--color-down)]">{strategySave.error}</div>
           )}
-          <button type="button" className={btnGhost} disabled={strategySave.saving} onClick={doRevise}>
+          {/* id=REVISE 评审提示链接的页内锚点（FalsifierReviewCard「去修订策略」） */}
+          <button
+            type="button"
+            id="strategy-revise"
+            className={btnGhost}
+            disabled={strategySave.saving}
+            onClick={doRevise}
+          >
             修订（回草稿）
           </button>
         </div>

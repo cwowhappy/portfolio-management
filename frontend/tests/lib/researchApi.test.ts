@@ -3,22 +3,30 @@ import type { NextRequest } from "next/server";
 import {
   archiveProject,
   createProject,
+  createReview,
   finalizeStrategy,
+  getChecks,
   getEntryPlan,
   getFalsifiers,
+  getFalsifierReviews,
   getHits,
   getLinkedNotes,
   getLinkedWiki,
   getProject,
+  getReviews,
   getStrategy,
   listProjects,
   patchProject,
+  postFalsifierReview,
+  postFeedback,
   previewCheck,
+  refluxReview,
   reviseStrategy,
   saveEntryPlan,
   saveFalsifiers,
   saveStrategyDraft,
   submitCheck,
+  updateReview,
 } from "@/lib/researchApi";
 import { GET, PATCH, POST, PUT } from "@/app/api/research/[...path]/route";
 
@@ -371,6 +379,110 @@ describe("researchApi", () => {
     expect(hits[0].realtime).toBe(true);
     expect(hits[1].hitAt).toBe("2026-09-24T10:43:00Z"); // 历史行 hit=false 仍为留痕行（Ruling-18）
     expect(fetchMockCall(0)[0]).toBe("/api/research/projects/7/falsifier/hits");
+  });
+
+  // —— P4：复盘 CRUD / 回流 / 检查留痕 / 建议 / 证伪评审 ——
+  it("复盘四端点：GET/POST/PUT/reflux 逐字对齐；snapshot 为 @JsonRawValue 内联对象（无数据原样）", async () => {
+    const reviewJson = {
+      id: 21, projectId: 7, tier: "MONTHLY", periodStart: "2026-09-01", periodEnd: "2026-09-30",
+      snapshot: {
+        periodStart: "2026-09-01", periodEnd: "2026-09-30", asOf: "2026-09-28",
+        priceBasis: "东财收盘",
+        navBasis: "组合 totalValue 日序列（analytics 重放）；periodReturn=区间末/首−1",
+        navSeries: "无数据", periodReturn: "无数据", trades: "无数据",
+        tradeIds: [], attributionWindow: [{ start: "2026-09-01", end: "2026-09-30" }],
+      },
+      answers: null, narrative: null, overrides: null,
+      tradeIds: [], refluxState: "PENDING", wikiEntryId: null,
+      createdAt: "2026-09-30T12:00:00Z", updatedAt: "2026-09-30T12:00:00Z",
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [reviewJson] })
+      .mockResolvedValueOnce({ ok: true, status: 201, json: async () => reviewJson })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => reviewJson })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => reviewJson });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const reviews = await getReviews(7);
+    expect(reviews[0].snapshot.periodReturn).toBe("无数据"); // 内联对象而非转义字符串（Review Focus 1）
+    expect(fetchMockCall(0)[0]).toBe("/api/research/projects/7/reviews");
+
+    await createReview(7, { tier: "QUARTERLY", periodStart: "2026-07-01", periodEnd: "2026-09-30" });
+    const [createUrl, createInit] = fetchMockCall(1);
+    expect(createUrl).toBe("/api/research/projects/7/reviews");
+    expect(createInit.method).toBe("POST");
+    expect(JSON.parse(createInit.body as string)).toEqual({
+      tier: "QUARTERLY", periodStart: "2026-07-01", periodEnd: "2026-09-30",
+    });
+
+    await updateReview(7, 21, {
+      answers: { "4.1": "检查单 4/4 执行" }, overrides: { "4.2": "手算 +5.1%" },
+      narrative: null, tradeIds: [103, 205],
+    });
+    const [putUrl, putInit] = fetchMockCall(2);
+    expect(putUrl).toBe("/api/research/projects/7/reviews/21");
+    expect(putInit.method).toBe("PUT");
+    expect(JSON.parse(putInit.body as string)).toEqual({
+      answers: { "4.1": "检查单 4/4 执行" }, overrides: { "4.2": "手算 +5.1%" },
+      narrative: null, tradeIds: [103, 205],
+    });
+
+    await refluxReview(7, 21);
+    expect(fetchMockCall(3)).toEqual([
+      "/api/research/projects/7/reviews/21/reflux",
+      expect.objectContaining({ method: "POST", body: undefined }),
+    ]);
+  });
+
+  it("检查留痕 / 模板建议 / 证伪评审三组端点：URL、方法与请求体逐字对齐", async () => {
+    const falsifierReviewJson = {
+      id: 31, projectId: 7, hitId: 99, conclusion: "REVISE", reason: "持有逻辑已变化",
+      suggestStrategyRevise: true, createdAt: "2026-09-28T11:00:00Z",
+    };
+    const feedbackJson = {
+      id: 41, projectId: 7, reviewId: 21, stage: "REVIEW", content: "建议增加字段",
+      createdAt: "2026-09-30T12:00:00Z",
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] })
+      .mockResolvedValueOnce({ ok: true, status: 201, json: async () => feedbackJson })
+      .mockResolvedValueOnce({ ok: true, status: 201, json: async () => falsifierReviewJson })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [falsifierReviewJson] });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getChecks(7);
+    expect(fetchMockCall(0)[0]).toBe("/api/research/projects/7/checks");
+
+    const feedback = await postFeedback(7, { stage: "REVIEW", content: "建议增加字段", reviewId: 21 });
+    expect(feedback.stage).toBe("REVIEW");
+    const [fbUrl, fbInit] = fetchMockCall(1);
+    expect(fbUrl).toBe("/api/research/projects/7/feedback");
+    expect(fbInit.method).toBe("POST");
+    expect(JSON.parse(fbInit.body as string)).toEqual({
+      stage: "REVIEW", content: "建议增加字段", reviewId: 21,
+    });
+
+    // 不关联命中行：body 不带 hitId 键；suggestStrategyRevise 派生位原样解析
+    const review = await postFalsifierReview(7, { conclusion: "REVISE", reason: "持有逻辑已变化" });
+    expect(review.suggestStrategyRevise).toBe(true);
+    const [frUrl, frInit] = fetchMockCall(2);
+    expect(frUrl).toBe("/api/research/projects/7/falsifier/reviews");
+    expect(frInit.method).toBe("POST");
+    expect(JSON.parse(frInit.body as string)).toEqual({ conclusion: "REVISE", reason: "持有逻辑已变化" });
+
+    await getFalsifierReviews(7);
+    expect(fetchMockCall(3)[0]).toBe("/api/research/projects/7/falsifier/reviews");
+  });
+
+  it("复盘 schema 拒破坏：snapshot 非对象 / tier 越界 → 抛「数据格式异常」", async () => {
+    const badJson = {
+      id: 21, projectId: 7, tier: "YEARLY", periodStart: "2026-09-01", periodEnd: "2026-09-30",
+      snapshot: "not-an-object", answers: null, narrative: null, overrides: null,
+      tradeIds: [], refluxState: "PENDING", wikiEntryId: null,
+      createdAt: "2026-09-30T12:00:00Z", updatedAt: "2026-09-30T12:00:00Z",
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => [badJson] }));
+    await expect(getReviews(7)).rejects.toThrow("数据格式异常");
   });
 });
 

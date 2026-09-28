@@ -7,9 +7,12 @@ import {
   CheckRecordViewSchema,
   EntryPlanViewSchema,
   FalsifierHitViewSchema,
+  FalsifierReviewViewSchema,
   FalsifierViewSchema,
+  FeedbackViewSchema,
   ProjectDetailViewSchema,
   ProjectViewSchema,
+  ReviewViewSchema,
   StrategyViewSchema,
 } from "./researchSchemas";
 import type {
@@ -21,12 +24,17 @@ import type {
   FalsifierHitView,
   FalsifierKind,
   FalsifierPredicate,
+  FalsifierReviewView,
   FalsifierView,
+  FeedbackView,
   ManualState,
   ProjectDetailView,
   ProjectStatus,
   ProjectView,
   ResearchStage,
+  ReviewConclusion,
+  ReviewTier,
+  ReviewView,
   StrategyView,
 } from "./researchSchemas";
 
@@ -192,4 +200,99 @@ export const getHits = (id: number) =>
     "GET",
     undefined,
     z.array(FalsifierHitViewSchema),
+  );
+
+// —— P4：复盘 CRUD / wiki 回流 / 模板建议 / 证伪评审（端点逐字对齐后端 ResearchController P4 段）——
+
+/** 复盘列表（periodStart 倒序；snapshot/answers/overrides 为后端 @JsonRawValue 内联对象）。 */
+export const getReviews = (id: number) =>
+  request<ReviewView[]>(
+    `/api/research/projects/${id}/reviews`,
+    "GET",
+    undefined,
+    z.array(ReviewViewSchema),
+  );
+
+/** 创建复盘命令：创建即服务端定格快照 + 自动圈选（不收快照/圈选入参）；区间倒置 → 422。 */
+export interface CreateReviewInput {
+  tier: ReviewTier;
+  periodStart: string;
+  periodEnd: string;
+}
+
+export const createReview = (id: number, body: CreateReviewInput) =>
+  request<ReviewView>(`/api/research/projects/${id}/reviews`, "POST", body, ReviewViewSchema);
+
+/** PUT 修正命令（整替语义，F14/D11）：answers 必填（域 422）；overrides/narrative/tradeIds null=清除。 */
+export interface UpdateReviewInput {
+  answers: Record<string, string>;
+  overrides: Record<string, string>;
+  narrative: string | null;
+  tradeIds: number[];
+}
+
+export const updateReview = (id: number, reviewId: number, body: UpdateReviewInput) =>
+  request<ReviewView>(
+    `/api/research/projects/${id}/reviews/${reviewId}`,
+    "PUT",
+    body,
+    ReviewViewSchema,
+  );
+
+/** 确认回流 wiki（REFLOWN 幂等返回既有条目；叙述空白 → 422；wiki 写异常 → 502 文案可重试）。 */
+export const refluxReview = (id: number, reviewId: number) =>
+  request<ReviewView>(
+    `/api/research/projects/${id}/reviews/${reviewId}/reflux`,
+    "POST",
+    undefined,
+    ReviewViewSchema,
+  );
+
+/** 检查留痕列表（createdAt 倒序）——复盘 4.3 纪律遵守度「本期越过 N 次」预填数据源。 */
+export const getChecks = (id: number) =>
+  request<CheckRecordView[]>(
+    `/api/research/projects/${id}/checks`,
+    "GET",
+    undefined,
+    z.array(CheckRecordViewSchema),
+  );
+
+/** 模板改进建议（F16 只收集不生效；content 缺失 → 422；reviewId 越项目 → 404）。 */
+export interface SubmitFeedbackInput {
+  stage: ResearchStage;
+  content: string;
+  reviewId?: number;
+}
+
+export const postFeedback = (id: number, body: SubmitFeedbackInput) =>
+  request<FeedbackView>(`/api/research/projects/${id}/feedback`, "POST", body, FeedbackViewSchema);
+
+/**
+ * 提交证伪评审（append-only 落库 + hit 回填 + journal 事件；reason 缺失 → 422；
+ * hitId 越项目 → 404）。不关联命中行时 body 不带 hitId 键（后端可空语义）。
+ */
+export interface SubmitFalsifierReviewInput {
+  conclusion: ReviewConclusion;
+  reason: string;
+  hitId?: number;
+}
+
+export const postFalsifierReview = (id: number, body: SubmitFalsifierReviewInput) => {
+  const payload =
+    body.hitId == null ? { conclusion: body.conclusion, reason: body.reason } : body;
+  return request<FalsifierReviewView>(
+    `/api/research/projects/${id}/falsifier/reviews`,
+    "POST",
+    payload,
+    FalsifierReviewViewSchema,
+  );
+};
+
+/** 评审留痕列表（createdAt 倒序；hit→review 单向软引用，列表行 hitId 不反连、为 null）。 */
+export const getFalsifierReviews = (id: number) =>
+  request<FalsifierReviewView[]>(
+    `/api/research/projects/${id}/falsifier/reviews`,
+    "GET",
+    undefined,
+    z.array(FalsifierReviewViewSchema),
   );

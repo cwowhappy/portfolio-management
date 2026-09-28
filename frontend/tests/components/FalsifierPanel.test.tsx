@@ -2,16 +2,17 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import FalsifierPanel from "@/components/research/FalsifierPanel";
 import * as researchApi from "@/lib/researchApi";
-import type { FalsifierHitView } from "@/lib/researchSchemas";
+import type { FalsifierHitView, FalsifierReviewView } from "@/lib/researchSchemas";
 
-// 证伪命中合并视图（D21）：真实渲染断 DOM，仅 mock getHits。
+// 证伪命中合并视图（D21）：真实渲染断 DOM，仅 mock getHits/评审两端点。
 // 两条语义裁定（T4 审查产出）在此验证：
 // 1. EVENT 条目 hit 恒 false——展示按 basis（已确认事件/待人工勾选），不读 hit（Ruling-18）；
 // 2. 历史行 hit=false 自述误导——按 realtime=false 标志给「历史命中」标签，不读 hit。
+// P4 评审入口接通：发起评审卡 + 提交后命中行结论标签（P3-T7 deferred 留痕可见）。
 
 vi.mock("@/lib/researchApi", async () => {
   const actual = await vi.importActual<typeof import("@/lib/researchApi")>("@/lib/researchApi");
-  return { ...actual, getHits: vi.fn() };
+  return { ...actual, getHits: vi.fn(), getFalsifierReviews: vi.fn(), postFalsifierReview: vi.fn() };
 });
 
 const api = vi.mocked(researchApi);
@@ -56,6 +57,11 @@ const historyDeleted: FalsifierHitView = {
 beforeEach(() => {
   vi.resetAllMocks();
   api.getHits.mockResolvedValue([]);
+  api.getFalsifierReviews.mockResolvedValue([]);
+  api.postFalsifierReview.mockResolvedValue({
+    id: 31, projectId: 7, hitId: 99, conclusion: "EXIT", reason: "逻辑破坏",
+    suggestStrategyRevise: false, createdAt: "2026-09-28T11:00:00Z",
+  } satisfies FalsifierReviewView);
 });
 
 afterEach(cleanup);
@@ -96,13 +102,49 @@ describe("FalsifierPanel 证伪命中合并视图", () => {
     expect(screen.getByText("收盘价 11.00 < 下限 12.00（东财收盘 2026-09-22）")).toBeTruthy();
   });
 
-  it("空态与「发起证伪评审」占位（P4 接）：按钮禁用", async () => {
+  it("「发起证伪评审」入口接通（P4）：点击展开评审卡（四结论单选），再点收起", async () => {
     api.getHits.mockResolvedValue([]);
     render(<FalsifierPanel projectId={7} />);
-    expect(await screen.findByText(/暂无启用中的证伪条件/)).toBeTruthy();
-    expect(screen.getByText(/暂无历史命中/)).toBeTruthy();
-    const review = screen.getByRole("button", { name: "发起证伪评审" }) as HTMLButtonElement;
-    expect(review.disabled).toBe(true);
+    const entry = await screen.findByRole("button", { name: "发起证伪评审" });
+    expect((entry as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(entry);
+    expect(screen.getByLabelText("维持")).toBeTruthy();
+    expect(screen.getByLabelText("修订策略")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "收起评审" }));
+    expect(screen.queryByLabelText("维持")).toBeNull();
+  });
+
+  it("提交评审：命中行旁显评审结论标签（P3-T7 留痕可见）+ 评审留痕列表前插", async () => {
+    api.getHits.mockResolvedValue([historyRow]);
+    render(<FalsifierPanel projectId={7} />);
+    await screen.findByText("历史命中");
+    fireEvent.click(screen.getByRole("button", { name: "发起证伪评审" }));
+    fireEvent.click(screen.getByLabelText("退出"));
+    fireEvent.change(screen.getByLabelText("评审理由"), { target: { value: "逻辑破坏" } });
+    fireEvent.change(screen.getByLabelText("关联命中行"), { target: { value: "99" } });
+    fireEvent.click(screen.getByRole("button", { name: "提交评审" }));
+    await waitFor(() =>
+      expect(api.postFalsifierReview).toHaveBeenCalledWith(7, {
+        hitId: 99, conclusion: "EXIT", reason: "逻辑破坏",
+      }),
+    );
+    // 「退出」出现于评审卡单选标签与命中行结论标签（title=证伪评审结论）
+    expect((await screen.findAllByText("退出")).length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByTitle("证伪评审结论").textContent).toBe("退出");
+    // 评审留痕列表（提交回包前插）
+    expect(screen.getByText("逻辑破坏")).toBeTruthy();
+    expect(screen.queryByText("暂无评审留痕。")).toBeNull();
+  });
+
+  it("评审留痕列表：GET 回显既有条目（createdAt 倒序由后端保证）", async () => {
+    api.getHits.mockResolvedValue([]);
+    api.getFalsifierReviews.mockResolvedValue([
+      { id: 30, projectId: 7, hitId: null, conclusion: "HOLD", reason: "逻辑未破坏",
+        suggestStrategyRevise: false, createdAt: "2026-09-27T09:00:00Z" },
+    ]);
+    render(<FalsifierPanel projectId={7} />);
+    expect(await screen.findByText("逻辑未破坏")).toBeTruthy();
+    expect(screen.getByText("维持")).toBeTruthy();
   });
 
   it("加载失败行内展示；刷新重拉", async () => {
