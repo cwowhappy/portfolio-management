@@ -1,7 +1,7 @@
 """P1-7 backfill 月片分片 + 进度表。
 
 已确认设计：默认按自然月分片、逐片执行逐片记进度（collector_backfill_progress，
-Alembic 0003 运维表）；重跑跳过已完成片、失败片重试覆盖；industry_index_close
+Alembic 基线 0001，原 0003 运维表）；重跑跳过已完成片、失败片重试覆盖；industry_index_close
 整区间一片（全历史拉取+客户端裁剪，分片会导致重复全量拉取）。
 "快照型任务按日重放"子项已删除（etf_basic/shenwan_mapping 表无时间维度、
 stock_financial 已全量重拉，核实无意义）。

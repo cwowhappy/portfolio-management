@@ -35,6 +35,15 @@ services:
       # P2 飞书对话（opt-in）；owner-open-id 见 .env.example 发现流程
       FEISHU_DIALOGUE_ENABLED: ${FEISHU_DIALOGUE_ENABLED:-false}
       FEISHU_OWNER_OPEN_ID: ${FEISHU_OWNER_OPEN_ID:-}
+      # 邮箱验证码/找回密码（opt-in：四要素 HOST/USERNAME/PASSWORD/FROM 配齐才启用；
+      # MAIL_TEST_* 为 e2e 固定码专用，生产严禁设置——固定码设置而未开测试模式会拒绝启动）
+      MAIL_SMTP_HOST: ${MAIL_SMTP_HOST:-}
+      MAIL_SMTP_PORT: ${MAIL_SMTP_PORT:-465}
+      MAIL_SMTP_USERNAME: ${MAIL_SMTP_USERNAME:-}
+      MAIL_SMTP_PASSWORD: ${MAIL_SMTP_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      MAIL_TEST_FIXED_CODE: ${MAIL_TEST_FIXED_CODE:-}
+      MAIL_TEST_MODE: ${MAIL_TEST_MODE:-false}
     ports:
       - "8080:8080"
     healthcheck:
