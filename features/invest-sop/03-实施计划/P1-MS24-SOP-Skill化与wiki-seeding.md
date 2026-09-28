@@ -54,7 +54,7 @@
 - Consumes: 无（纯 record 契约）。
 - Produces: `sealed interface ResearchDraftSpec { int specVersion(); String stage(); }`；变体 `AnalysisDraft(int specVersion, String stage, String symbol, String companyName, String industry, List<String> checklistDone, String summary)`、`StrategyDraft(int specVersion, String stage, String thesis, BigDecimal valuationLow, BigDecimal valuationHigh, String positionPlan, String buyConditions, List<FalsifierItem> riskItems)`、`EntryPlanDraft(int specVersion, String stage, List<BatchItem> batches, BigDecimal winRate, BigDecimal payoffRatio, String note)`、`ReviewDraft(int specVersion, String stage, String tier, String periodStart, String periodEnd, String narrative)`；嵌套 `FalsifierItem(String kind, String predicate, BigDecimal threshold, String note)`、`BatchItem(BigDecimal priceLow, BigDecimal priceHigh, long quantity, BigDecimal ratio)`；常量 `int CURRENT_VERSION = 1`；静态工厂 `ResearchDraftSpec.analysis(...)/strategy(...)/entryPlan(...)/review(...)`（内部盖 specVersion/stage）。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```java
 @Test
@@ -69,20 +69,20 @@ void givenStrategyDraft_whenSerialized_thenNoNullFieldsAndDiscriminatorsPresent(
 
 （`MAPPER` 为静态 `new ObjectMapper()`；另测三变体与 `CURRENT_VERSION`。）
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `cd backend && ./gradlew test --tests '*ResearchDraftSpecTest' --console=plain`
 Expected: FAIL 编译错误（类不存在）
 
-- [ ] **Step 3: 最小实现**
+- [x] **Step 3: 最小实现**
 
 按 Interfaces 块创建 sealed interface 与 record，每个 record 与嵌套 record 标 `@JsonInclude(JsonInclude.Include.NON_NULL)`，工厂方法内部填 `specVersion=CURRENT_VERSION` 与对应 `stage` 字符串（`NEW_ANALYSIS/STRATEGY/POSITION/REVIEW`）。
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: 同 Step 2。Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/src/main/java/com/portfolio/invest/agent/research/ backend/src/test/java/com/portfolio/invest/agent/research/
@@ -99,11 +99,11 @@ git commit -m "feat(agent): ResearchDraftSpec 草稿契约（四变体 sealed in
 - Consumes: Task 1 `ResearchDraftSpec` 全部工厂。
 - Produces: `@Tool` 方法 `String researchDraft(String stage, String draftJson)`——入参 stage ∈ 四值、draftJson 为草稿字段 JSON；返回文本（校验通过：回显结构化摘要；不通过：`[research_draft] 参数错误：<原因>` 文本，不抛异常）。JSON 解析用已注入 ObjectMapper（`InvestTools.java:50`）。
 
-- [ ] **Step 1: 写失败测试**（成功回显、非法 stage、非法 JSON 三例，断言返回文本含 `[research_draft]` 前缀或摘要标记）
-- [ ] **Step 2: 跑测试确认失败**（方法不存在，编译错误）
-- [ ] **Step 3: 实现**——解析 draftJson → 按 stage 构造对应变体（字段缺失容忍：null 允许，类型错报错）→ 返回 `摘要 + "\n```research-draft\n" + 序列化 + "\n```"` 围栏块（前端按围栏标记提取，不依赖 tool result 结构块——与 chart 的差异点：草稿走文本围栏通道，避免自定义 ToolResultBlock 类型）。
-- [ ] **Step 4: 跑测试确认通过**
-- [ ] **Step 5: Commit** `feat(agent): research_draft 只读工具（文本围栏双通道，readOnly 无副作用）`
+- [x] **Step 1: 写失败测试**（成功回显、非法 stage、非法 JSON 三例，断言返回文本含 `[research_draft]` 前缀或摘要标记）
+- [x] **Step 2: 跑测试确认失败**（方法不存在，编译错误）
+- [x] **Step 3: 实现**——解析 draftJson → 按 stage 构造对应变体（字段缺失容忍：null 允许，类型错报错）→ 返回 `摘要 + "\n```research-draft\n" + 序列化 + "\n```"` 围栏块（前端按围栏标记提取，不依赖 tool result 结构块——与 chart 的差异点：草稿走文本围栏通道，避免自定义 ToolResultBlock 类型）。
+- [x] **Step 4: 跑测试确认通过**
+- [x] **Step 5: Commit** `feat(agent): research_draft 只读工具（文本围栏双通道，readOnly 无副作用）`
 
 ### Task 3: zod 镜像 + DraftCard
 
@@ -117,11 +117,11 @@ git commit -m "feat(agent): ResearchDraftSpec 草稿契约（四变体 sealed in
 - Consumes: Task 2 围栏格式 ```` ```research-draft {json} ``` ````。
 - Produces: `ResearchDraftSchema = z.discriminatedUnion("stage", [AnalysisDraftSchema, StrategyDraftSchema, EntryPlanDraftSchema, ReviewDraftSchema])`（数值用 `z.number().optional()`，**不接受 null**）；`DraftCard({ raw }: { raw: string })` 组件：safeParse 成功 → 表单化只读展示 + 「保存到项目」按钮（P1 阶段 onClick 弹 toast「研究项目功能即将上线」，P2 接通 API）；失败/版本不识别 → 降级文本卡「草稿格式不兼容」。
 
-- [ ] **Step 1: 写失败测试**——合法四变体 parse 通过；含 `null` 字段拒绝；未知 `specVersion` 拒绝（schema 限定 `specVersion: z.literal(1)`）；DraftCard 降级渲染。
-- [ ] **Step 2: `pnpm vitest run tests/lib/research-draft.test.ts` 确认失败**
-- [ ] **Step 3: 实现 schema 与组件**（组件样式照 `InterruptApprovalCard.tsx` 卡片壳，标题按 stage 中文映射）
-- [ ] **Step 4: 跑两个测试文件确认通过**
-- [ ] **Step 5: Commit** `feat(ui): 草稿 zod 镜像与 DraftCard（safeParse + 降级兜底）`
+- [x] **Step 1: 写失败测试**——合法四变体 parse 通过；含 `null` 字段拒绝；未知 `specVersion` 拒绝（schema 限定 `specVersion: z.literal(1)`）；DraftCard 降级渲染。
+- [x] **Step 2: `pnpm vitest run tests/lib/research-draft.test.ts` 确认失败**
+- [x] **Step 3: 实现 schema 与组件**（组件样式照 `InterruptApprovalCard.tsx` 卡片壳，标题按 stage 中文映射）
+- [x] **Step 4: 跑两个测试文件确认通过**
+- [x] **Step 5: Commit** `feat(ui): 草稿 zod 镜像与 DraftCard（safeParse + 降级兜底）`
 
 ### Task 4: 四个 SKILL.md
 
@@ -133,11 +133,11 @@ git commit -m "feat(agent): ResearchDraftSpec 草稿契约（四变体 sealed in
 - Consumes: Task 2 `research_draft(stage, draftJson)` 用法。
 - Produces: 四文件，front-matter 依次 `name: sop-new-analysis / sop-strategy / sop-position / sop-review`、`category: sop`、`default_enabled: false`、`depends_on_provider:` 留空；正文结构固定四节：`## 目标` / `## 必须有清单`（F01 定稿内容回填位，先放评审中示例） / `## 引导流程`（逐要素收集话术 + 每完成一节调一次 `research_draft` 回显） / `## 纪律提醒`（strategy 篇含 D19 建议项话术：建议在证伪条件勾选「跌破估值区间下限」模板项）。
 
-- [ ] **Step 1: 扩展 skill 目录测试**——断言目录含 6 个 skill（2 既有 + 4 新）、四新 skill 的 `default_enabled` 均为 false、`category == "sop"`（照既有目录测试断言风格）。
-- [ ] **Step 2: 跑测试确认失败**
-- [ ] **Step 3: 写四文件**（checklist 正文取 F01 定稿清单对应阶段条目，逐条对应不做增删）
-- [ ] **Step 4: 跑测试确认通过 + 全量 `./gradlew test --tests '*Skill*'` 无回归**
-- [ ] **Step 5: Commit** `docs(skills): 四个 SOP SKILL.md（结构先行，内容待 F01 定稿回填）`
+- [x] **Step 1: 扩展 skill 目录测试**——断言目录含 6 个 skill（2 既有 + 4 新）、四新 skill 的 `default_enabled` 均为 false、`category == "sop"`（照既有目录测试断言风格）。
+- [x] **Step 2: 跑测试确认失败**
+- [x] **Step 3: 写四文件**（checklist 正文取 F01 定稿清单对应阶段条目，逐条对应不做增删）
+- [x] **Step 4: 跑测试确认通过 + 全量 `./gradlew test --tests '*Skill*'` 无回归**
+- [x] **Step 5: Commit** `docs(skills): 四个 SOP SKILL.md（结构先行，内容待 F01 定稿回填）`
 
 ### Task 5: SOP 模板 seeding（**前置：P2 Task 1 V2 迁移已合入**）
 
@@ -152,13 +152,13 @@ git commit -m "feat(agent): ResearchDraftSpec 草稿契约（四变体 sealed in
 - Consumes: `V2__research.sql` 中 `ALTER TABLE wiki_seed_state ADD COLUMN sop_seeded_at TIMESTAMPTZ`（P2 Task 1 交付）；`WikiApplicationService.entries()` 既有入口。
 - Produces: `entries()` 追加逻辑——`type == RESEARCH_NOTE` 时 `seedSopTemplates(userId)`：`sopSeededAt != null` 直接返回；否则批量写 `WikiEntry`（`RESEARCH_NOTE` + `category="SOP_TEMPLATE"`，title=「SOP·<阶段>·<模板名>」）后置 `sopSeededAt`。JSON 条目结构：`[{ "stage": "NEW_ANALYSIS", "name": "公司基本面清单", "content": "…" }]`（内容 F01 回填位）。
 
-- [ ] **Step 1: 写失败切片测试**——首次调用写 N 条 + 置标记；二次调用零新增；用户删光后调用零新增（mock repository 断言 save 次数）。
-- [ ] **Step 2: 跑测试确认失败**
-- [ ] **Step 3: 实现 seeding + JSON 内容取 F01 定稿四阶段模板条目**
-- [ ] **Step 4: 切片测试通过 + 集成测试（真实 PG： seeding 幂等、RESEARCH_NOTE 列表含 SOP_TEMPLATE、CONCEPT seeding 不受影响）通过**
-- [ ] **Step 5: Commit** `feat(wiki): SOP 模板幂等 seeding（独立标记列，删光不复活）`
+- [x] **Step 1: 写失败切片测试**——首次调用写 N 条 + 置标记；二次调用零新增；用户删光后调用零新增（mock repository 断言 save 次数）。
+- [x] **Step 2: 跑测试确认失败**
+- [x] **Step 3: 实现 seeding + JSON 内容取 F01 定稿四阶段模板条目**
+- [x] **Step 4: 切片测试通过 + 集成测试（真实 PG： seeding 幂等、RESEARCH_NOTE 列表含 SOP_TEMPLATE、CONCEPT seeding 不受影响）通过**
+- [x] **Step 5: Commit** `feat(wiki): SOP 模板幂等 seeding（独立标记列，删光不复活）`
 
 ### Task 6: P1 收口
 
-- [ ] `make test-backend-unit` + `pnpm vitest run`（前端全量）全绿；`git push` 前 `./gradlew check` 通过。
-- [ ] 更新本文件勾选状态；MS-24 代码侧完成（F01 内容评审另行跟踪）。
+- [x] `make test-backend-unit` + `pnpm vitest run`（前端全量）全绿；`git push` 前 `./gradlew check` 通过。
+- [x] 更新本文件勾选状态；MS-24 代码侧完成（F01 内容评审另行跟踪）。
