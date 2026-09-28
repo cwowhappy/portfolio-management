@@ -70,6 +70,8 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -87,6 +89,8 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class ResearchApplicationService {
+
+    private static final Logger log = LoggerFactory.getLogger(ResearchApplicationService.class);
 
     /** 回流 wiki 条目 category 标记（F16：复用 RESEARCH_NOTE 三类型不扩枚举，S2 与 SOP_TEMPLATE 同法）。 */
     static final String SOP_REVIEW_CATEGORY = "SOP_REVIEW";
@@ -482,6 +486,8 @@ public class ResearchApplicationService {
                     "复盘·" + project.title() + "·" + review.periodStart() + "~" + review.periodEnd(),
                     review.narrative(), SOP_REVIEW_CATEGORY, null, Instant.now(), projectId));
         } catch (RuntimeException e) {
+            // 降级根因留痕（ResearchException 无 cause 构造器，异常经日志链接——照 UserAdminApplicationService 先例）
+            log.warn("回流 wiki 写入失败（projectId={}，reviewId={}），降级保持 PENDING", projectId, reviewId, e);
             throw new ResearchException(ResearchErrorCode.REFLUX_WIKI_UNAVAILABLE,
                     "知识库写入失败，复盘已保留，请稍后重试回流");
         }
