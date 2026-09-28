@@ -4,16 +4,21 @@ import {
   archiveProject,
   createProject,
   finalizeStrategy,
+  getEntryPlan,
   getFalsifiers,
+  getHits,
   getLinkedNotes,
   getLinkedWiki,
   getProject,
   getStrategy,
   listProjects,
   patchProject,
+  previewCheck,
   reviseStrategy,
+  saveEntryPlan,
   saveFalsifiers,
   saveStrategyDraft,
+  submitCheck,
 } from "@/lib/researchApi";
 import { GET, PATCH, POST, PUT } from "@/app/api/research/[...path]/route";
 
@@ -250,6 +255,122 @@ describe("researchApi", () => {
     const { fetchEntries } = await import("@/lib/journalApi");
     await fetchEntries("RESEARCH_EVENT", 7);
     expect(fetchMockCall(0)[0]).toBe("/api/journal/entries?type=RESEARCH_EVENT&projectId=7");
+  });
+
+  // —— P3：建仓计划 / 纪律检查 / 证伪命中 ——
+  it("建仓计划：GET 解析 kellyRatio；PUT 整替 body 携 winRate/payoffRatio/batches", async () => {
+    const entryPlanJson = {
+      id: 5,
+      winRate: 0.6,
+      payoffRatio: 2,
+      kellyRatio: 0.4,
+      batches: [
+        { seq: 1, priceLow: 12, priceHigh: 13, quantity: 1000, amount: 12500, ratio: 0.6 },
+        { seq: 2, priceLow: 10, priceHigh: 11, quantity: 500, amount: null, ratio: 0.4 },
+      ],
+      createdAt: "2026-09-27T08:00:00Z",
+      updatedAt: "2026-09-28T08:00:00Z",
+    };
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => entryPlanJson });
+    vi.stubGlobal("fetch", fetchMock);
+    const plan = await getEntryPlan(7);
+    expect(plan.kellyRatio).toBe(0.4); // Ruling-15 锚点：0.6/2.0 → 0.4
+    expect(plan.batches[1].amount).toBeNull();
+    expect(fetchMockCall(0)).toEqual([
+      "/api/research/projects/7/entry-plan",
+      expect.objectContaining({ method: "GET" }),
+    ]);
+
+    await saveEntryPlan(7, {
+      winRate: 0.6,
+      payoffRatio: 2,
+      batches: [{ seq: 1, priceLow: 12, priceHigh: 13, quantity: 1000, amount: null, ratio: 1 }],
+    });
+    const [url, init] = fetchMockCall(1);
+    expect(url).toBe("/api/research/projects/7/entry-plan");
+    expect(init.method).toBe("PUT");
+    expect(JSON.parse(init.body as string)).toEqual({
+      winRate: 0.6,
+      payoffRatio: 2,
+      batches: [{ seq: 1, priceLow: 12, priceHigh: 13, quantity: 1000, amount: null, ratio: 1 }],
+    });
+  });
+
+  it("纪律检查：preview POST f01MustItems 勾选键；submit POST 留痕 body（OVERRIDDEN 带理由）", async () => {
+    const itemsJson = [
+      { metric: "SINGLE_POSITION_RATIO", threshold: 0.3, currentValue: 0.25, outcome: "PASS" },
+      { metric: "能力圈", threshold: null, currentValue: null, outcome: "HIT" },
+    ];
+    const recordJson = {
+      id: 9, checkType: "SELL", items: itemsJson, result: "OVERRIDDEN",
+      overrideReason: "证伪条件已人工核对", createdAt: "2026-09-28T10:00:00Z",
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => itemsJson })
+      .mockResolvedValueOnce({ ok: true, status: 201, json: async () => recordJson });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const items = await previewCheck(7, {
+      checkType: "SELL",
+      f01MustItems: { "能力圈": true, "安全边际": false, "估值核对": false, "买入条件": false },
+    });
+    expect(items[1].outcome).toBe("HIT");
+    const [previewUrl, previewInit] = fetchMockCall(0);
+    expect(previewUrl).toBe("/api/research/projects/7/checks/preview");
+    expect(previewInit.method).toBe("POST");
+    expect(JSON.parse(previewInit.body as string)).toEqual({
+      checkType: "SELL",
+      f01MustItems: { "能力圈": true, "安全边际": false, "估值核对": false, "买入条件": false },
+    });
+
+    const record = await submitCheck(7, {
+      checkType: "SELL",
+      result: "OVERRIDDEN",
+      overrideReason: "证伪条件已人工核对",
+      items,
+    });
+    expect(record.result).toBe("OVERRIDDEN");
+    const [submitUrl, submitInit] = fetchMockCall(1);
+    expect(submitUrl).toBe("/api/research/projects/7/checks");
+    expect(submitInit.method).toBe("POST");
+    expect(JSON.parse(submitInit.body as string)).toEqual({
+      checkType: "SELL",
+      result: "OVERRIDDEN",
+      overrideReason: "证伪条件已人工核对",
+      items: itemsJson,
+    });
+  });
+
+  it("submit CONFIRMED：overrideReason 省略不入 body", async () => {
+    const recordJson = {
+      id: 10, checkType: "BUY", items: [], result: "CONFIRMED",
+      overrideReason: null, createdAt: "2026-09-28T10:05:00Z",
+    };
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 201, json: async () => recordJson });
+    vi.stubGlobal("fetch", fetchMock);
+    await submitCheck(7, { checkType: "BUY", result: "CONFIRMED", items: [] });
+    expect(JSON.parse(fetchMockCall(0)[1].body as string)).toEqual({
+      checkType: "BUY",
+      result: "CONFIRMED",
+      items: [],
+    });
+  });
+
+  it("证伪命中：GET 合并视图解析 realtime/history 两类行", async () => {
+    const hitsJson = [
+      { id: null, falsifierId: 11, kind: "PREDICATE", predicate: "PRICE_BELOW", threshold: 13.5,
+        note: null, eventChecked: false, hit: true, pending: false, skipped: false,
+        basis: "收盘价 12.34 < 下限 13.50（东财收盘及估值 2026-09-26）", realtime: true, hitAt: null },
+      { id: 99, falsifierId: 11, kind: "PREDICATE", predicate: "PRICE_BELOW", threshold: 13.5,
+        note: null, eventChecked: false, hit: false, pending: false, skipped: false,
+        basis: "收盘价 12.10 < 下限 13.50（东财收盘及估值 2026-09-24）",
+        realtime: false, hitAt: "2026-09-24T10:43:00Z" },
+    ];
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => hitsJson }));
+    const hits = await getHits(7);
+    expect(hits[0].realtime).toBe(true);
+    expect(hits[1].hitAt).toBe("2026-09-24T10:43:00Z"); // 历史行 hit=false 仍为留痕行（Ruling-18）
+    expect(fetchMockCall(0)[0]).toBe("/api/research/projects/7/falsifier/hits");
   });
 });
 

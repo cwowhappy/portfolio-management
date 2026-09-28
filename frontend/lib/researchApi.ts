@@ -3,12 +3,22 @@ import { request } from "./http";
 import { fetchEntries } from "./journalApi";
 import { fetchWikiEntries } from "./wikiApi";
 import {
+  CheckItemResultSchema,
+  CheckRecordViewSchema,
+  EntryPlanViewSchema,
+  FalsifierHitViewSchema,
   FalsifierViewSchema,
   ProjectDetailViewSchema,
   ProjectViewSchema,
   StrategyViewSchema,
 } from "./researchSchemas";
 import type {
+  CheckItemResult,
+  CheckRecordView,
+  CheckResult,
+  CheckType,
+  EntryPlanView,
+  FalsifierHitView,
   FalsifierKind,
   FalsifierPredicate,
   FalsifierView,
@@ -121,3 +131,65 @@ export const saveFalsifiers = (id: number, items: SaveFalsifierItemInput[]) =>
 /** F08 反查：项目关联记录（journal RESEARCH_EVENT 等软引用条目 / wiki 研究笔记）。 */
 export const getLinkedNotes = (id: number) => fetchEntries(undefined, id);
 export const getLinkedWiki = (id: number) => fetchWikiEntries(undefined, id);
+
+// —— P3：建仓计划 / 纪律检查 / 证伪命中（端点逐字对齐后端 ResearchController P3-T4 段）——
+
+/** 建仓计划查询：未保存 → 404「建仓计划不存在」（照 strategy 先例），调用方按未保存处理。 */
+export const getEntryPlan = (id: number) =>
+  request<EntryPlanView>(`/api/research/projects/${id}/entry-plan`, "GET", undefined, EntryPlanViewSchema);
+
+/** PUT 建仓批次项（字段域校验在后端 EntryBatch：Σratio>1 → 422 RATIO_SUM_EXCEEDED 唯一硬拒绝）。 */
+export interface SaveEntryBatchItemInput {
+  seq: number;
+  priceLow: number;
+  priceHigh: number;
+  quantity: number;
+  amount: number | null;
+  ratio: number;
+}
+
+/** PUT 建仓计划命令（整替：plan+batches 同事务重建；winRate/payoffRatio 可空=不估 kelly，D23）。 */
+export interface SaveEntryPlanInput {
+  winRate: number | null;
+  payoffRatio: number | null;
+  batches: SaveEntryBatchItemInput[];
+}
+
+export const saveEntryPlan = (id: number, body: SaveEntryPlanInput) =>
+  request<EntryPlanView>(`/api/research/projects/${id}/entry-plan`, "PUT", body, EntryPlanViewSchema);
+
+/** 发起检查命令：f01MustItems 键与后端 DisciplineCheckService.F01_* 常量逐字对齐（F01_MUST_ITEMS）。 */
+export interface PreviewCheckInput {
+  checkType: CheckType;
+  f01MustItems: Record<string, boolean>;
+}
+
+/** 发起纪律检查（纯读不落库，D5 软提醒）：返回命中项列表。 */
+export const previewCheck = (id: number, body: PreviewCheckInput) =>
+  request<CheckItemResult[]>(
+    `/api/research/projects/${id}/checks/preview`,
+    "POST",
+    body,
+    z.array(CheckItemResultSchema),
+  );
+
+/** 提交检查命令：items 为 preview 快照原样回传（留痕定格）；OVERRIDDEN 必填 overrideReason。 */
+export interface SubmitCheckInput {
+  checkType: CheckType;
+  result: CheckResult;
+  overrideReason?: string;
+  items: CheckItemResult[];
+}
+
+/** 提交检查留痕（append-only + journal 事件；OVERRIDDEN 缺理由 → 422）。 */
+export const submitCheck = (id: number, body: SubmitCheckInput) =>
+  request<CheckRecordView>(`/api/research/projects/${id}/checks`, "POST", body, CheckRecordViewSchema);
+
+/** 证伪命中合并视图（D21）：实时求值 + 历史 hit 留痕同一列表（行自带 realtime 标志）。 */
+export const getHits = (id: number) =>
+  request<FalsifierHitView[]>(
+    `/api/research/projects/${id}/falsifier/hits`,
+    "GET",
+    undefined,
+    z.array(FalsifierHitViewSchema),
+  );
