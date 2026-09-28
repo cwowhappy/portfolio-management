@@ -13,8 +13,19 @@ import { ChartCard, type ChartCardBuilder } from "@/components/chat/charts/Chart
 import DraftCard from "@/components/chat/DraftCard";
 import { buildCandlestickOption, buildLineOption, buildBarOption } from "@/components/charts/optionBuilders";
 import { KlineParamsSchema, ValuationParamsSchema, OverviewParamsSchema, FinancialsParamsSchema, ScreeningParamsSchema, FinancialsTrendParamsSchema, IndustryParamsSchema, PortfolioParamsSchema, AllocationParamsSchema } from "@/lib/tool-params";
-import { extractResearchDraftJson } from "@/lib/research-draft";
+import { extractResearchDraftJson, type ResearchDraft } from "@/lib/research-draft";
 import { buildPieOption } from "@/components/charts/optionBuilders";
+
+// P2 接通（D9：落库=用户确认，D20：未保存不自动暂存）：STRATEGY 草稿「保存到项目」→
+// saveStrategyDraft。对话上下文暂无「会话↔研究项目」绑定（P3 上下文注入），无法定位目标
+// 项目 id → 引导先立项（DraftCard 行内提示 + 前往研究页链接）；其余阶段草稿的落库端点属
+// P3/P4（建仓计划/复盘），先提示到项目页记录。
+async function saveResearchDraft(draft: ResearchDraft): Promise<void> {
+  if (draft.stage !== "STRATEGY") {
+    throw new Error("当前仅支持保存「策略」草稿，其余阶段请在研究项目页对应分区记录");
+  }
+  throw new Error("请先在研究页立项");
+}
 
 export function ChartToolRenderers() {
   useRenderTool({
@@ -82,7 +93,7 @@ export function ChartToolRenderers() {
           </div>
         );
       }
-      return <DraftCard raw={extractResearchDraftJson(p.result) ?? p.result} />;
+      return <DraftCard raw={extractResearchDraftJson(p.result) ?? p.result} onSave={saveResearchDraft} />;
     },
   });
   return null;

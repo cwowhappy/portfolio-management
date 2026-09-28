@@ -362,7 +362,7 @@ export interface FundScreeningParams {
 
 // —— 投资决策记录 ——
 
-export type JournalEntryType = "BUY_MEMO" | "SELL_MEMO" | "RESEARCH_NOTE" | "REVIEW";
+export type JournalEntryType = "BUY_MEMO" | "SELL_MEMO" | "RESEARCH_NOTE" | "REVIEW" | "RESEARCH_EVENT";
 export type PeriodType = "QUARTERLY" | "ANNUAL";
 export interface JournalEntryView {
   id: number;
@@ -381,7 +381,7 @@ export interface JournalEntryView {
   createdAt: string;
   updatedAt: string;
 }
-export type TimelineEventType = "BUY" | "SELL" | "DIVIDEND" | "BUY_MEMO" | "SELL_MEMO" | "RESEARCH_NOTE" | "REVIEW";
+export type TimelineEventType = "BUY" | "SELL" | "DIVIDEND" | "BUY_MEMO" | "SELL_MEMO" | "RESEARCH_NOTE" | "REVIEW" | "RESEARCH_EVENT";
 export interface TimelineEventView {
   type: TimelineEventType;
   date: string;

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import type { IndustryStock, Prosperity } from "@/lib/types";
 
 const PROSPERITY_LABEL: Record<Prosperity, string> = { UP: "↑", FLAT: "→", DOWN: "↓" };
@@ -8,11 +9,13 @@ const PAGE_SIZE = 50;
 
 const fmtYi = (v: number | null) => (v == null ? "—" : (v / 1e8).toFixed(1));
 
-export default function IndustryStockTable({ stocks, sortBy, sortDirection, onSort }: {
+export default function IndustryStockTable({ stocks, sortBy, sortDirection, onSort, industryCode }: {
   stocks: IndustryStock[];
   sortBy: string;
   sortDirection: "ASC" | "DESC";
   onSort: (key: string) => void;
+  /** F05 入口：行业下钻页传入，供「发起研究」预填行业（缺省不渲染入口） */
+  industryCode?: string;
 }) {
   const [page, setPage] = useState(0);
   // 排序变更回第 1 页：渲染期条件性调整状态（React 官方「You Might Not Need an Effect」范式），
@@ -68,6 +71,15 @@ export default function IndustryStockTable({ stocks, sortBy, sortDirection, onSo
               <td className="text-left py-1.5">{rankOffset + i + 1}</td>
               <td className="text-left">
                 {s.stockName} <span className="text-[color:var(--color-ink-dim)]">{s.stockCode}</span>
+                {industryCode && (
+                  <Link
+                    href={`/research/new?code=${s.stockCode}&name=${encodeURIComponent(s.stockName)}&industry=${encodeURIComponent(industryCode)}`}
+                    className="ml-2 text-xs text-[color:var(--color-accent)] hover:underline"
+                    aria-label={`发起研究 ${s.stockCode}`}
+                  >
+                    研究
+                  </Link>
+                )}
               </td>
               <td className="text-right">{fmtYi(s.totalMv)}</td>
               <td className="text-right">

@@ -1,5 +1,5 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import DraftCard from "@/components/chat/DraftCard";
 
 // DraftCard 为纯展示组件（无 echarts/fetch），真实渲染断 DOM 文本——
@@ -37,6 +37,28 @@ describe("DraftCard（草稿只读卡）", () => {
     render(<DraftCard raw={strategyRaw} />);
     fireEvent.click(screen.getByRole("button", { name: "保存到项目" }));
     expect(screen.getByText("研究项目功能即将上线")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "保存到项目" })).toBeTruthy();
+  });
+
+  it("onSave 接线（P2）：点击保存回调解析后的草稿对象并出成功提示", async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(<DraftCard raw={strategyRaw} onSave={onSave} />);
+    fireEvent.click(screen.getByRole("button", { name: "保存到项目" }));
+    await waitFor(() => expect(screen.getByText("已保存到研究项目")).toBeTruthy());
+    expect(onSave).toHaveBeenCalledTimes(1);
+    const draft = onSave.mock.calls[0][0];
+    expect(draft.stage).toBe("STRATEGY");
+    expect(draft.thesis).toBe("高端白酒需求刚性");
+  });
+
+  it("onSave 抛错：行内展示错误文案 + 「前往研究页」跳转链接", async () => {
+    const onSave = vi.fn().mockRejectedValue(new Error("请先在研究页立项"));
+    render(<DraftCard raw={strategyRaw} onSave={onSave} />);
+    fireEvent.click(screen.getByRole("button", { name: "保存到项目" }));
+    await waitFor(() => expect(screen.getByText("请先在研究页立项")).toBeTruthy());
+    const link = screen.getByRole("link", { name: "前往研究页" });
+    expect(link.getAttribute("href")).toBe("/research");
+    // 失败后按钮保留，可重试
     expect(screen.getByRole("button", { name: "保存到项目" })).toBeTruthy();
   });
 
