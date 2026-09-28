@@ -4,7 +4,8 @@ public enum JournalEntryType {
     BUY_MEMO("买入备忘"),
     SELL_MEMO("卖出备忘"),
     RESEARCH_NOTE("研究笔记"),
-    REVIEW("定期复盘");
+    REVIEW("定期复盘"),
+    RESEARCH_EVENT("研究事件");
 
     private final String label;
 

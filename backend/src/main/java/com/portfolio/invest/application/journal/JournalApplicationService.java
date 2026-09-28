@@ -143,6 +143,7 @@ public class JournalApplicationService {
             case SELL_MEMO -> TimelineEventType.SELL_MEMO;
             case RESEARCH_NOTE -> TimelineEventType.RESEARCH_NOTE;
             case REVIEW -> TimelineEventType.REVIEW;
+            case RESEARCH_EVENT -> TimelineEventType.RESEARCH_EVENT;
         };
     }
 

@@ -14,6 +14,10 @@ public interface JournalEntryRepository {
     List<JournalEntry> findByUserIdInDateRange(Long userId, LocalDate from, LocalDate to);
 
     Optional<JournalEntry> findByIdAndUserId(Long id, Long userId);
+
+    /** 按研究项目反查该用户的记录（RESEARCH_EVENT 软引用，F08 项目详情时间线用）。 */
+    List<JournalEntry> findByUserIdAndProjectId(Long userId, Long projectId);
+
     JournalEntry save(JournalEntry entry);
     void deleteById(Long id);
 }

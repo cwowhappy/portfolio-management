@@ -5,13 +5,14 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class JournalEntryTypeTest {
-    @DisplayName("四种记录类型带中文标签")
+    @DisplayName("五种记录类型带中文标签")
     @Test
-    void givenJournalEntryTypeEnum_whenReadLabels_thenFourCarryChineseLabels() {
-        assertThat(JournalEntryType.values()).hasSize(4);
+    void givenJournalEntryTypeEnum_whenReadLabels_thenFiveCarryChineseLabels() {
+        assertThat(JournalEntryType.values()).hasSize(5);
         assertThat(JournalEntryType.BUY_MEMO.label()).isEqualTo("买入备忘");
         assertThat(JournalEntryType.SELL_MEMO.label()).isEqualTo("卖出备忘");
         assertThat(JournalEntryType.RESEARCH_NOTE.label()).isEqualTo("研究笔记");
         assertThat(JournalEntryType.REVIEW.label()).isEqualTo("定期复盘");
+        assertThat(JournalEntryType.RESEARCH_EVENT.label()).isEqualTo("研究事件");
     }
 }

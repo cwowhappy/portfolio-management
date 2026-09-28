@@ -113,4 +113,33 @@ class JournalEntryRepositoryImplTest extends PostgresTestSupport {
         repository.deleteById(saved.id());
         assertThat(repository.findByIdAndUserId(saved.id(), 51L)).isEmpty();
     }
+
+    @DisplayName("研究事件保存后projectId软引用完整回读")
+    @Test
+    void givenResearchEvent_whenSaveAndReadBack_thenProjectIdPreserved() {
+        JournalEntry saved = repository.save(JournalEntry.create(51L, JournalEntryType.RESEARCH_EVENT,
+                "600519", "贵州茅台", null, "立项茅台研究", "触发条件：跌破估值区间下沿",
+                null, null, null, null, null, LocalDate.of(2026, 9, 2), Instant.now(), 77L));
+
+        var found = repository.findByIdAndUserId(saved.id(), 51L).orElseThrow();
+        assertThat(found.type()).isEqualTo(JournalEntryType.RESEARCH_EVENT);
+        assertThat(found.projectId()).isEqualTo(77L);
+    }
+
+    @DisplayName("按研究项目反查该用户的研究事件")
+    @Test
+    void givenEntriesOfDifferentProjects_whenFindByUserIdAndProjectId_thenMatchingOnly() {
+        repository.save(JournalEntry.create(51L, JournalEntryType.RESEARCH_EVENT,
+                "600519", "贵州茅台", null, "立项茅台研究", "内容一",
+                null, null, null, null, null, LocalDate.of(2026, 9, 2), Instant.now(), 77L));
+        repository.save(JournalEntry.create(51L, JournalEntryType.RESEARCH_EVENT,
+                "000858", "五粮液", null, "立项五粮液研究", "内容二",
+                null, null, null, null, null, LocalDate.of(2026, 9, 3), Instant.now(), 88L));
+        repository.save(buyMemo(51L)); // projectId 为空，不应命中
+
+        assertThat(repository.findByUserIdAndProjectId(51L, 77L))
+                .hasSize(1)
+                .first().satisfies(e -> assertThat(e.title()).isEqualTo("立项茅台研究"));
+        assertThat(repository.findByUserIdAndProjectId(52L, 77L)).isEmpty(); // 用户隔离
+    }
 }

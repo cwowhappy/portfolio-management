@@ -103,6 +103,56 @@ class JournalEntryTest {
         assertThat(e.stockCode()).isNull();
     }
 
+    @DisplayName("研究事件缺研究项目抛INVALID_INPUT")
+    @Test
+    void givenResearchEventWithoutProjectId_whenCreate_thenThrowInvalidInput() {
+        assertThatThrownBy(() -> JournalEntry.create(1L, JournalEntryType.RESEARCH_EVENT, "600519", "贵州茅台",
+                null, "立项茅台研究", "触发条件：跌破估值区间下沿", null, null, null, null, null,
+                LocalDate.of(2026, 9, 2), NOW))
+                .isInstanceOfSatisfying(JournalException.class,
+                        e -> assertThat(e.code()).isEqualTo(JournalErrorCode.INVALID_INPUT));
+    }
+
+    @DisplayName("研究事件带研究项目创建成功且projectId可读")
+    @Test
+    void givenResearchEventWithProjectId_whenCreate_thenProjectIdReadable() {
+        var e = JournalEntry.create(1L, JournalEntryType.RESEARCH_EVENT, "600519", "贵州茅台",
+                null, "立项茅台研究", "触发条件：跌破估值区间下沿", null, null, null, null, null,
+                LocalDate.of(2026, 9, 2), NOW, 77L);
+        assertThat(e.type()).isEqualTo(JournalEntryType.RESEARCH_EVENT);
+        assertThat(e.projectId()).isEqualTo(77L);
+    }
+
+    @DisplayName("研究事件绑定交易抛INVALID_INPUT")
+    @Test
+    void givenResearchEventBoundToTrade_whenCreate_thenThrowInvalidInput() {
+        assertThatThrownBy(() -> JournalEntry.create(1L, JournalEntryType.RESEARCH_EVENT, "600519", "贵州茅台",
+                10L, "立项茅台研究", "触发条件：跌破估值区间下沿", null, null, null, null, null,
+                LocalDate.of(2026, 9, 2), NOW, 77L))
+                .isInstanceOfSatisfying(JournalException.class,
+                        e -> assertThat(e.code()).isEqualTo(JournalErrorCode.INVALID_INPUT));
+    }
+
+    @DisplayName("旧签名创建的记录projectId为空")
+    @Test
+    void givenLegacyCreate_whenCreateNote_thenProjectIdNull() {
+        var e = JournalEntry.create(1L, JournalEntryType.RESEARCH_NOTE, null, null, null,
+                "白酒行业研究", "Markdown 内容", null, null, null, null, null, LocalDate.now(), NOW);
+        assertThat(e.projectId()).isNull();
+    }
+
+    @DisplayName("更新保留研究项目关联")
+    @Test
+    void givenResearchEvent_whenUpdate_thenProjectIdPreserved() {
+        var e = JournalEntry.create(1L, JournalEntryType.RESEARCH_EVENT, "600519", "贵州茅台",
+                null, "立项茅台研究", "触发条件：跌破估值区间下沿", null, null, null, null, null,
+                LocalDate.of(2026, 9, 2), NOW, 77L);
+        var updated = e.update("600519", "贵州茅台", null, "新标题", "新内容",
+                null, null, null, null, null, LocalDate.of(2026, 9, 3));
+        assertThat(updated.projectId()).isEqualTo(77L);
+        assertThat(updated.title()).isEqualTo("新标题");
+    }
+
     @DisplayName("更新返回新实例且原实例不变")
     @Test
     void whenUpdate_thenReturnNewInstanceAndKeepOriginal() {
