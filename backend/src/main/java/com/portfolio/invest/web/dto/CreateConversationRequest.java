@@ -9,5 +9,5 @@ import jakarta.validation.constraints.Size;
  */
 public record CreateConversationRequest(
         @NotBlank(message = "会话 id 不能为空")
-        @Size(max = 64, message = "会话 id 最长64字符") // 与 V2 conversation.id VARCHAR(64) 对齐
+        @Size(max = 64, message = "会话 id 最长64字符") // 与 V1 基线 conversation.id VARCHAR(64) 对齐
         String id) {}

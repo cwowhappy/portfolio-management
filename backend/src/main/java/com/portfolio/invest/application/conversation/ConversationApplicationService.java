@@ -12,7 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class ConversationApplicationService {
 
-    private static final int ID_MAX_LENGTH = 64; // 与 V2 conversation.id VARCHAR(64) 对齐
+    private static final int ID_MAX_LENGTH = 64; // 与 V1 基线 conversation.id VARCHAR(64) 对齐
     private static final int MAX_MESSAGES_PER_REQUEST = 500; // 单次保存条数上限，防存储滥用
 
     private final ConversationRepository repository;

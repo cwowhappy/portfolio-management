@@ -20,23 +20,13 @@ from alembic.config import Config
 os.environ.setdefault("TESTCONTAINERS_RYUK_DISABLED", "true")
 
 COLLECTOR_DIR = Path(__file__).resolve().parent.parent
-# 业务目标表 DDL 由后端 Flyway 管理（跨服务契约），测试直接回放同一份 SQL
+# 业务目标表 DDL 由后端 Flyway 管理（跨服务契约），测试直接回放同一份 SQL。
+# 2026-09-28 squash 后回放单一基线（原 V3/V4/V7/V13/V15/V18 六文件链；基线自始未建
+# 旧 treasury_yield——原 V3 建、V4 迁移后 DROP，终态本无此表，见 v1 发布计划 A1）。
 FLYWAY_DIR = COLLECTOR_DIR.parent / "backend" / "src" / "main" / "resources" / "db" / "migration"
-# V3 建旧 treasury_yield 等表，V4 建曲线/成分股表并 DROP 旧 treasury_yield，顺序不可颠倒；
-# V7 建个股基本面两表（stock_valuation_daily / stock_financial）；
-# V13 补 stock_valuation_daily.close 列并建 index_close_history（MS-07），排在最后
-# V15 补 stock_financial.revenue 营收列（MS-09）。
-# V18 建 etf_basic（MS-14 P3 Task 13，collector etf_basic 周更任务目标表）。
-FLYWAY_SQL_FILES = (
-    "V3__valuation.sql",
-    "V4__valuation_curve.sql",
-    "V7__stock_fundamental.sql",
-    "V13__analytics_close.sql",
-    "V15__stock_financial_revenue.sql",
-    "V18__etf_screening.sql",
-)
+FLYWAY_SQL_FILES = ("V1__baseline.sql",)
 
-# 15 张表：5 运维（alembic）+ 10 业务目标（Flyway V3/V4/V7/V13/V18；旧 treasury_yield 已被 V4 删除）
+# 15 张表：5 运维（alembic）+ 10 业务目标（Flyway V1 基线）
 ALL_TABLES = (
     "collector_task_run",
     "collector_source_health",

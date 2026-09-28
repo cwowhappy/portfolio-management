@@ -20,6 +20,8 @@ import java.time.ZoneId;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.regex.Pattern;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -34,6 +36,7 @@ public class EmailCodeService {
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
     private static final Pattern EMAIL_PATTERN = Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
     private static final SecureRandom RANDOM = new SecureRandom();
+    private static final Logger log = LoggerFactory.getLogger(EmailCodeService.class);
 
     private final UserRepository userRepository;
     private final VerificationCodeRepository codeRepository;
@@ -155,6 +158,8 @@ public class EmailCodeService {
         } catch (UserException e) {
             throw e;
         } catch (Exception e) {
+            // 发信失败必须留痕：曾因无声吞异常导致 SMTP 故障无线索可查（观测盲区，v1 发布前修复）
+            log.warn("[mail] 验证码发信失败 to={} purpose={}", email, purpose, e);
             throw new UserException(UserErrorCode.MAIL_SEND_FAILED, "邮件发送失败，请稍后重试");
         }
     }
