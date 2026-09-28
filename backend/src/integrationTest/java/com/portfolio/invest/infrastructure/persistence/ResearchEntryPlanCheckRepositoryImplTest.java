@@ -234,6 +234,25 @@ class ResearchEntryPlanCheckRepositoryImplTest {
         assertThat(checkRepository.findHit(projectId, hit.id() + 1)).isEmpty(); // 不存在
     }
 
+    @DisplayName("findChecks（P4-T3 复盘预填数据源）：createdAt 倒序 + 项目隔离（append-only 表开读端口）")
+    @Test
+    @Transactional
+    void givenCheckRecords_whenFindChecks_thenOrderedDescAndScoped() {
+        Long projectId = seedProject();
+        List<CheckItemResult> items = List.of(new CheckItemResult("能力圈", null, null, CheckOutcome.PASS));
+        CheckRecord first = checkRepository.insert(CheckRecord.create(projectId, CheckType.BUY,
+                items, CheckResult.CONFIRMED, null));
+        CheckRecord second = checkRepository.insert(CheckRecord.create(projectId, CheckType.SELL,
+                items, CheckResult.OVERRIDDEN, "计划外机会"));
+
+        List<CheckRecord> checks = checkRepository.findChecks(projectId);
+        assertThat(checks).extracting(CheckRecord::id).containsExactly(second.id(), first.id()); // 倒序
+        assertThat(checks.get(0).checkType()).isEqualTo(CheckType.SELL);
+        assertThat(checks.get(0).overrideReason()).isEqualTo("计划外机会");
+        assertThat(checks.get(1).result()).isEqualTo(CheckResult.CONFIRMED);
+        assertThat(checkRepository.findChecks(projectId + 1)).isEmpty(); // 项目隔离
+    }
+
     @DisplayName("证伪评审留痕：insert + findReviews 倒序 + attachReview 回填（hit 表唯一合法更新，首评占据软引用不覆盖）")
     @Test
     @Transactional

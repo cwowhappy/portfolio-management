@@ -1,5 +1,6 @@
 package com.portfolio.invest.application.research;
 
+import com.fasterxml.jackson.annotation.JsonRawValue;
 import com.portfolio.invest.domain.research.CheckItemResult;
 import com.portfolio.invest.domain.research.CheckRecord;
 import com.portfolio.invest.domain.research.CheckResult;
@@ -11,14 +12,19 @@ import com.portfolio.invest.domain.research.FalsifierKind;
 import com.portfolio.invest.domain.research.FalsifierPredicate;
 import com.portfolio.invest.domain.research.FalsifierReview;
 import com.portfolio.invest.domain.research.ProjectStatus;
+import com.portfolio.invest.domain.research.RefluxState;
+import com.portfolio.invest.domain.research.ResearchFeedback;
 import com.portfolio.invest.domain.research.ResearchProject;
 import com.portfolio.invest.domain.research.ResearchStage;
+import com.portfolio.invest.domain.research.Review;
 import com.portfolio.invest.domain.research.ReviewConclusion;
+import com.portfolio.invest.domain.research.ReviewTier;
 import com.portfolio.invest.domain.research.StageCompletion;
 import com.portfolio.invest.domain.research.StrategyDoc;
 import com.portfolio.invest.domain.research.StrategyState;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
@@ -133,6 +139,38 @@ public final class ResearchViews {
         public static FalsifierReviewView of(FalsifierReview review, Long hitId) {
             return new FalsifierReviewView(review.id(), review.projectId(), hitId, review.conclusion(),
                     review.reason(), review.conclusion() == ReviewConclusion.REVISE, review.createdAt());
+        }
+    }
+
+    /**
+     * 复盘视图（F13/F14/F16）：snapshot/answers/overrides 为域内 JSON 字符串，经
+     * {@link JsonRawValue} 原样内联到 wire（对象而非转义字符串；DB jsonb 保证其有效性，
+     * 键序可能与创建时 Composer 输出不同——定格按语义比较）。answers/overrides 为 null
+     * 表示尚未作答；tradeIds 为归因圈选（自动圈选后可手动修正）。
+     */
+    public record ReviewView(Long id, Long projectId, ReviewTier tier,
+                             LocalDate periodStart, LocalDate periodEnd,
+                             @JsonRawValue String snapshot, @JsonRawValue String answers,
+                             String narrative, @JsonRawValue String overrides,
+                             List<Long> tradeIds, RefluxState refluxState, Long wikiEntryId,
+                             Instant createdAt, Instant updatedAt) {
+
+        public static ReviewView from(Review review) {
+            return new ReviewView(review.id(), review.projectId(), review.tier(),
+                    review.periodStart(), review.periodEnd(), review.snapshotJson(),
+                    review.answersJson(), review.narrative(), review.overridesJson(),
+                    review.tradeIds(), review.refluxState(), review.wikiEntryId(),
+                    review.createdAt(), review.updatedAt());
+        }
+    }
+
+    /** 模板改进建议视图（F16 只收集不生效；reviewId 为来源复盘可空软引用）。 */
+    public record FeedbackView(Long id, Long projectId, Long reviewId, ResearchStage stage,
+                               String content, Instant createdAt) {
+
+        public static FeedbackView from(ResearchFeedback feedback) {
+            return new FeedbackView(feedback.id(), feedback.projectId(), feedback.reviewId(),
+                    feedback.stage(), feedback.content(), feedback.createdAt());
         }
     }
 }

@@ -131,6 +131,59 @@ class ReviewTest {
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.ANSWERS_REQUIRED));
     }
 
+    // ---- correct：手动修正（P4-T3 PUT 路径，快照/回流状态不动） ----
+
+    @DisplayName("correct 变更返新：answers/overrides/narrative 整替 + trade_ids 去重排序（Focus 5 手动路径共用收敛点），快照保持定格")
+    @Test
+    void givenCorrections_whenCorrect_thenAppliedWithFrozenSnapshotAndNormalizedTradeIds() {
+        Review origin = created();
+
+        Review corrected = origin.correct("{\"q1\":\"追高\"}", "{\"periodReturn\":\"0.06\"}",
+                "事后看止损执行晚了", List.of(7L, 3L, 7L, 5L, 3L));
+
+        assertThat(corrected).isNotSameAs(origin);
+        assertThat(corrected.answersJson()).isEqualTo("{\"q1\":\"追高\"}");
+        assertThat(corrected.overridesJson()).isEqualTo("{\"periodReturn\":\"0.06\"}");
+        assertThat(corrected.narrative()).isEqualTo("事后看止损执行晚了");
+        assertThat(corrected.tradeIds()).containsExactly(3L, 5L, 7L); // 去重升序（Focus 5）
+        assertThat(corrected.snapshotJson()).isEqualTo("{\"periodReturn\":0.05}"); // 快照不可改
+        assertThat(corrected.refluxState()).isEqualTo(RefluxState.PENDING); // 回流状态不动
+        assertThat(corrected.createdAt()).isEqualTo(origin.createdAt());
+        // 不可变：原实例未被污染
+        assertThat(origin.answersJson()).isNull();
+        assertThat(origin.tradeIds()).containsExactly(3L, 5L);
+    }
+
+    @DisplayName("correct trade_ids 缺省容忍为空列表（清空圈选）")
+    @Test
+    void givenNullTradeIds_whenCorrect_thenEmptyList() {
+        Review corrected = created().correct("{\"q1\":\"追高\"}", null, null, null);
+
+        assertThat(corrected.tradeIds()).isEmpty();
+        assertThat(corrected.overridesJson()).isNull();
+        assertThat(corrected.narrative()).isNull();
+    }
+
+    @DisplayName("correct 作答空白抛 ANSWERS_REQUIRED")
+    @Test
+    void givenBlankAnswers_whenCorrect_thenThrowAnswersRequired() {
+        assertThatThrownBy(() -> created().correct("  ", null, null, List.of()))
+                .isInstanceOfSatisfying(ResearchException.class,
+                        e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.ANSWERS_REQUIRED));
+    }
+
+    @DisplayName("correct REFLOWN 态仍可修正叙述（宽容，快照/回流状态/条目不动）")
+    @Test
+    void givenRefowned_whenCorrect_thenNarrativeReplacedButRefluxUntouched() {
+        Review refowned = created().refluxConfirm(100L);
+
+        Review corrected = refowned.correct("{\"q1\":\"ok\"}", null, "补充叙述", null);
+
+        assertThat(corrected.refluxState()).isEqualTo(RefluxState.REFLOWN);
+        assertThat(corrected.wikiEntryId()).isEqualTo(100L);
+        assertThat(corrected.narrative()).isEqualTo("补充叙述");
+    }
+
     // ---- refluxConfirm：回流状态机（Focus 4 幂等） ----
 
     @DisplayName("refluxConfirm PENDING → REFLOWN 并记 wikiEntryId")

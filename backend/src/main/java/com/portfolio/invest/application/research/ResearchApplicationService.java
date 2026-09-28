@@ -1,12 +1,17 @@
 package com.portfolio.invest.application.research;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.portfolio.invest.application.research.ResearchViews.CheckRecordView;
 import com.portfolio.invest.application.research.ResearchViews.EntryPlanView;
 import com.portfolio.invest.application.research.ResearchViews.FalsifierHitView;
 import com.portfolio.invest.application.research.ResearchViews.FalsifierReviewView;
 import com.portfolio.invest.application.research.ResearchViews.FalsifierView;
+import com.portfolio.invest.application.research.ResearchViews.FeedbackView;
 import com.portfolio.invest.application.research.ResearchViews.ProjectDetailView;
 import com.portfolio.invest.application.research.ResearchViews.ProjectView;
+import com.portfolio.invest.application.research.ResearchViews.ReviewView;
 import com.portfolio.invest.application.research.ResearchViews.StrategyView;
 import com.portfolio.invest.domain.journal.JournalEntry;
 import com.portfolio.invest.domain.journal.JournalEntryRepository;
@@ -30,19 +35,28 @@ import com.portfolio.invest.domain.research.FalsifierReview;
 import com.portfolio.invest.domain.research.FalsifierReviewRepository;
 import com.portfolio.invest.domain.research.MarketSnapshot;
 import com.portfolio.invest.domain.research.ProjectStatus;
+import com.portfolio.invest.domain.research.RefluxState;
 import com.portfolio.invest.domain.research.ResearchCheckRepository;
 import com.portfolio.invest.domain.research.ResearchEntryPlanRepository;
 import com.portfolio.invest.domain.research.ResearchErrorCode;
 import com.portfolio.invest.domain.research.ResearchException;
+import com.portfolio.invest.domain.research.ResearchFeedback;
+import com.portfolio.invest.domain.research.ResearchFeedbackRepository;
 import com.portfolio.invest.domain.research.ResearchProject;
 import com.portfolio.invest.domain.research.ResearchProjectRepository;
 import com.portfolio.invest.domain.research.ResearchStage;
+import com.portfolio.invest.domain.research.Review;
 import com.portfolio.invest.domain.research.ReviewConclusion;
+import com.portfolio.invest.domain.research.ReviewRepository;
+import com.portfolio.invest.domain.research.ReviewTier;
 import com.portfolio.invest.domain.research.StageCompletion;
 import com.portfolio.invest.domain.research.StageCompletionService;
 import com.portfolio.invest.domain.research.StageCompletionService.ManualState;
 import com.portfolio.invest.domain.research.StrategyDoc;
 import com.portfolio.invest.domain.research.StrategyState;
+import com.portfolio.invest.domain.wiki.WikiEntry;
+import com.portfolio.invest.domain.wiki.WikiEntryRepository;
+import com.portfolio.invest.domain.wiki.WikiEntryType;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.math.BigDecimal;
@@ -61,7 +75,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 研究项目用例编排（F05 立项 / S1 归档 / D4 阶段流转 / D13 策略两级状态机 / D10 证伪条件集 /
- * F09 建仓计划 / F10·F12 纪律检查 / D21 证伪命中合并视图 / F15 证伪评审）。
+ * F09 建仓计划 / F10·F12 纪律检查 / D21 证伪命中合并视图 / F15 证伪评审 /
+ * F13·F14 复盘 CRUD·定格快照 / F16 wiki 回流·模板建议）。
  *
  * <p>journal 事件写入（S3 跨域编排）：type=RESEARCH_EVENT、title=事件名、projectId 必填、
  * stockCode/stockName 带项目标的；直接走 {@link JournalEntryRepository}（计划裁定：不经
@@ -72,6 +87,9 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class ResearchApplicationService {
+
+    /** 回流 wiki 条目 category 标记（F16：复用 RESEARCH_NOTE 三类型不扩枚举，S2 与 SOP_TEMPLATE 同法）。 */
+    static final String SOP_REVIEW_CATEGORY = "SOP_REVIEW";
 
     /** PATCH 手动标记项：state 取 StageCompletionService.ManualState（NULL=清除覆盖）。 */
     public record ManualMark(@NotNull ResearchStage stage, @NotNull ManualState state) {}
@@ -103,6 +121,17 @@ public class ResearchApplicationService {
     /** 提交证伪评审命令（F15）：hitId 可空（EVENT 类/综合评审可无具体命中行）；reason 由域校验必填。 */
     public record SubmitFalsifierReviewCommand(Long hitId, @NotNull ReviewConclusion conclusion, String reason) {}
 
+    /** POST 复盘命令（F13/F14）：创建即由服务端组装定格快照 + 自动圈选，不收快照/圈选入参。 */
+    public record CreateReviewCommand(@NotNull ReviewTier tier, @NotNull LocalDate periodStart,
+                                      @NotNull LocalDate periodEnd) {}
+
+    /** PUT 复盘修正命令（整替语义，F14/D11）：answers 必填（域 422）；overrides/narrative/tradeIds 可选（null=清除）。 */
+    public record UpdateReviewCommand(JsonNode answers, JsonNode overrides, String narrative,
+                                      List<Long> tradeIds) {}
+
+    /** POST 模板改进建议命令（F16 只收集）：content 必填（域 422），reviewId 为来源复盘可空。 */
+    public record SubmitFeedbackCommand(Long reviewId, @NotNull ResearchStage stage, String content) {}
+
     private final ResearchProjectRepository repository;
     private final JournalEntryRepository journalRepository;
     private final ResearchEntryPlanRepository entryPlanRepository;
@@ -110,6 +139,11 @@ public class ResearchApplicationService {
     private final FalsifierReviewRepository falsifierReviewRepository;
     private final CheckOrchestration orchestration;
     private final MarketSnapshotAssembler snapshotAssembler;
+    private final ReviewRepository reviewRepository;
+    private final ResearchFeedbackRepository feedbackRepository;
+    private final ReviewSnapshotComposer reviewComposer;
+    private final WikiEntryRepository wikiEntryRepository;
+    private final ObjectMapper mapper;
 
     public ResearchApplicationService(ResearchProjectRepository repository,
                                       JournalEntryRepository journalRepository,
@@ -117,7 +151,12 @@ public class ResearchApplicationService {
                                       ResearchCheckRepository checkRepository,
                                       FalsifierReviewRepository falsifierReviewRepository,
                                       CheckOrchestration orchestration,
-                                      MarketSnapshotAssembler snapshotAssembler) {
+                                      MarketSnapshotAssembler snapshotAssembler,
+                                      ReviewRepository reviewRepository,
+                                      ResearchFeedbackRepository feedbackRepository,
+                                      ReviewSnapshotComposer reviewComposer,
+                                      WikiEntryRepository wikiEntryRepository,
+                                      ObjectMapper mapper) {
         this.repository = repository;
         this.journalRepository = journalRepository;
         this.entryPlanRepository = entryPlanRepository;
@@ -125,6 +164,11 @@ public class ResearchApplicationService {
         this.falsifierReviewRepository = falsifierReviewRepository;
         this.orchestration = orchestration;
         this.snapshotAssembler = snapshotAssembler;
+        this.reviewRepository = reviewRepository;
+        this.feedbackRepository = feedbackRepository;
+        this.reviewComposer = reviewComposer;
+        this.wikiEntryRepository = wikiEntryRepository;
+        this.mapper = mapper;
     }
 
     /**
@@ -374,6 +418,126 @@ public class ResearchApplicationService {
         return FalsifierReviewView.of(inserted, cmd.hitId());
     }
 
+    // —— 复盘 CRUD / 回流 / 建议 / 检查留痕读取（F13/F14/F16，P4-T3）——
+
+    /** 复盘列表：仓库 periodStart 倒序透传；快照原样回显（读路径不复算，F14 定格）。 */
+    public List<ReviewView> getReviews(Long userId, Long projectId) {
+        requireProject(userId, projectId);
+        return reviewRepository.findByProjectId(projectId).stream().map(ReviewView::from).toList();
+    }
+
+    /**
+     * 创建复盘（创建即定格）：{@link ReviewSnapshotComposer} 组装带口径标注的快照 JSONB
+     * （区间收益/后续走势/归因窗口，写入后无任何重算入口）+ 从快照解析自动圈选 trade_ids
+     * （D11 时间窗口径留痕于快照，软引用列此后可经 PUT 手动修正）。
+     */
+    @Transactional
+    public ReviewView createReview(Long userId, Long projectId, CreateReviewCommand cmd) {
+        ResearchProject project = requireProject(userId, projectId);
+        List<EntryBatch> batches = entryPlanRepository.findByProjectId(projectId)
+                .map(EntryPlan::batches)
+                .orElse(List.of());
+        String snapshot = reviewComposer.compose(userId, project, cmd.periodStart(), cmd.periodEnd(), batches);
+        Review saved = reviewRepository.save(Review.create(projectId, cmd.tier(),
+                cmd.periodStart(), cmd.periodEnd(), snapshot, autoCircle(snapshot)));
+        return ReviewView.from(saved);
+    }
+
+    /**
+     * 修正复盘（PUT 整替）：answers/overrides/narrative/trade_ids 整组替换（域内去重排序收敛，
+     * Review Focus 5）；快照与回流状态无变更入口（F14「不复算历史」）。REFLOWN 后仍可修正
+     * 叙述，已建 wiki 条目不回写（宽容口径）。
+     */
+    @Transactional
+    public ReviewView updateReview(Long userId, Long projectId, Long reviewId, UpdateReviewCommand cmd) {
+        requireProject(userId, projectId);
+        Review existing = requireReview(projectId, reviewId);
+        Review saved = reviewRepository.save(existing.correct(toJson(cmd.answers()), toJson(cmd.overrides()),
+                cmd.narrative(), cmd.tradeIds()));
+        return ReviewView.from(saved);
+    }
+
+    /**
+     * 确认回流（F16 用户确认后入库，不自动）：建 wiki RESEARCH_NOTE（title=复盘·项目·期间、
+     * category=SOP_REVIEW、projectId 软引用、内容=复盘叙述——经 {@link WikiEntryRepository}
+     * 直建照 journal writeEvent 计划裁定：不经 WikiApplicationService，避免 command 面拉宽）
+     * → {@code refluxConfirm}。REFLOWN 态幂等直接返回既有条目（Review Focus 4）；
+     * wiki 写异常降级抛 {@code REFLUX_WIKI_UNAVAILABLE}（502）——本事务尚未写复盘行，
+     * 既有行保持 PENDING、不阻断复盘保存，可重试。
+     */
+    @Transactional
+    public ReviewView refluxReview(Long userId, Long projectId, Long reviewId) {
+        ResearchProject project = requireProject(userId, projectId);
+        Review review = requireReview(projectId, reviewId);
+        if (review.refluxState() == RefluxState.REFLOWN) {
+            return ReviewView.from(review);
+        }
+        if (review.narrative() == null || review.narrative().isBlank()) {
+            throw new ResearchException(ResearchErrorCode.REFLUX_NARRATIVE_REQUIRED,
+                    "回流前请先填写复盘叙述（将写入知识库条目内容）");
+        }
+        WikiEntry entry;
+        try {
+            entry = wikiEntryRepository.save(WikiEntry.create(userId, WikiEntryType.RESEARCH_NOTE,
+                    "复盘·" + project.title() + "·" + review.periodStart() + "~" + review.periodEnd(),
+                    review.narrative(), SOP_REVIEW_CATEGORY, null, Instant.now(), projectId));
+        } catch (RuntimeException e) {
+            throw new ResearchException(ResearchErrorCode.REFLUX_WIKI_UNAVAILABLE,
+                    "知识库写入失败，复盘已保留，请稍后重试回流");
+        }
+        return ReviewView.from(reviewRepository.save(review.refluxConfirm(entry.id())));
+    }
+
+    /**
+     * 模板改进建议（F16 只收集不生效，v1 不做模板自动改写）：append-only 落库，无事件无回流副作用；
+     * 域校验先于 review 资源解析（照 T2 先例：请求体非法 → 422 且零写库，reviewId 越项目 → 404）。
+     */
+    @Transactional
+    public FeedbackView submitFeedback(Long userId, Long projectId, SubmitFeedbackCommand cmd) {
+        requireProject(userId, projectId);
+        ResearchFeedback feedback = ResearchFeedback.create(projectId, cmd.reviewId(), cmd.stage(), cmd.content());
+        if (cmd.reviewId() != null) {
+            requireReview(projectId, cmd.reviewId());
+        }
+        return FeedbackView.from(feedbackRepository.insert(feedback));
+    }
+
+    /** 检查留痕列表（P3-T4 deferred 携带）：createdAt 倒序，复盘 4.3 纪律遵守度预填数据源。 */
+    public List<CheckRecordView> getChecks(Long userId, Long projectId) {
+        requireProject(userId, projectId);
+        return checkRepository.findChecks(projectId).stream().map(CheckRecordView::from).toList();
+    }
+
+    /** 自动圈选（D11）：从 Composer 定格快照解析 tradeIds（缺键/非数组容忍为空；去重排序收敛由域承担）。 */
+    private List<Long> autoCircle(String snapshotJson) {
+        JsonNode ids;
+        try {
+            ids = mapper.readTree(snapshotJson).path("tradeIds");
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("复盘快照解析失败", e); // Composer 产物为合法 JSON，防御性兜底
+        }
+        if (!ids.isArray()) {
+            return List.of();
+        }
+        List<Long> out = new ArrayList<>(ids.size());
+        for (JsonNode id : ids) {
+            out.add(id.asLong());
+        }
+        return out;
+    }
+
+    /** wire JsonNode → 域 JSON 字符串（null/JSON null 归一为 null，未作答语义）。 */
+    private String toJson(JsonNode node) {
+        if (node == null || node.isNull()) {
+            return null;
+        }
+        try {
+            return mapper.writeValueAsString(node);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("复盘 JSON 字段序列化失败", e);
+        }
+    }
+
     /** 归属双重保障（照 journal requireEntry 模式）：非本人/不存在一律 NOT_FOUND，不泄漏存在性。 */
     private ResearchProject requireProject(Long userId, Long projectId) {
         return repository.findById(projectId)
@@ -384,6 +548,12 @@ public class ResearchApplicationService {
     private StrategyDoc requireStrategy(Long projectId) {
         return repository.findStrategy(projectId)
                 .orElseThrow(() -> new ResearchException(ResearchErrorCode.NOT_FOUND, "策略文档不存在"));
+    }
+
+    /** 项目域内复盘行读取（照 findHit 口径：越项目/不存在一律 NOT_FOUND，不泄漏存在性）。 */
+    private Review requireReview(Long projectId, Long reviewId) {
+        return reviewRepository.findByIdAndProjectId(reviewId, projectId)
+                .orElseThrow(() -> new ResearchException(ResearchErrorCode.NOT_FOUND, "复盘不存在"));
     }
 
     private ProjectDetailView detailView(ResearchProject project) {

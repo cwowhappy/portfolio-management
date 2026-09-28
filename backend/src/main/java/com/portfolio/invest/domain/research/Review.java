@@ -98,6 +98,21 @@ public final class Review {
     }
 
     /**
+     * 手动修正（P4-T3 PUT 路径，F14/D11）：作答/覆盖/叙述/归因圈选整组替换（PUT 整替语义），
+     * 变更返新——快照与回流状态/条目<b>没有任何变更入口</b>（F14「不复算历史」由结构保证；
+     * REFLOWN 后修正叙述不回写已建 wiki 条目，宽容放行由调用方口径决定）；
+     * trade_ids 与 {@link #create} 共用 {@link #normalize} 收敛点（Review Focus 5）。
+     */
+    public Review correct(String answersJson, String overridesJson, String narrative, List<Long> tradeIds) {
+        if (answersJson == null || answersJson.isBlank()) {
+            throw new ResearchException(ResearchErrorCode.ANSWERS_REQUIRED, "复盘作答不能为空");
+        }
+        return new Review(id, projectId, tier, periodStart, periodEnd, snapshotJson,
+                answersJson, narrative, overridesJson, normalize(tradeIds), refluxState, wikiEntryId,
+                version, createdAt, Instant.now());
+    }
+
+    /**
      * 确认回流（F16 用户确认后入库）：置 REFLOWN 并记 wiki 条目；REFLOWN 态幂等返回
      * 原实例——既有 entryId 优先，重复确认（即使携带不同条目 id）不重复建条目（Review Focus 4）。
      */

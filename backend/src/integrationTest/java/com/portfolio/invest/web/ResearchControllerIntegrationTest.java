@@ -1,5 +1,6 @@
 package com.portfolio.invest.web;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -11,6 +12,8 @@ import com.jayway.jsonpath.JsonPath;
 import com.portfolio.invest.application.market.OrchestratingMarketDataService;
 import com.portfolio.invest.domain.market.Quote;
 import com.portfolio.invest.domain.user.UserRepository;
+import com.portfolio.invest.domain.wiki.WikiEntry;
+import com.portfolio.invest.domain.wiki.WikiEntryRepository;
 import com.portfolio.invest.support.PostgresTestSupport;
 import com.portfolio.invest.support.RecordingMailSender;
 import com.portfolio.invest.support.TestCodes;
@@ -28,6 +31,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
@@ -54,6 +58,10 @@ class ResearchControllerIntegrationTest extends PostgresTestSupport {
     /** 隔离网络（照 AguiChartIntegrationTest）：@Primary 缓存装饰器保持真实，行情编排打桩。 */
     @MockitoBean
     OrchestratingMarketDataService orchestratingMarketDataService;
+
+    /** 回流 wiki 写桩位：真实入库（标题/标记/软引用可断言），降级用例可单点打失败（P4-T3）。 */
+    @MockitoSpyBean
+    WikiEntryRepository wikiEntryRepository;
 
     @DisplayName("主链路：立项→列表过滤→PATCH 标记→策略两级状态机→证伪条件→归档默认隐藏")
     @Test
@@ -296,6 +304,25 @@ class ResearchControllerIntegrationTest extends PostgresTestSupport {
         mockMvc.perform(post("/api/research/projects/{id}/falsifier/reviews", projectId).session(intruder)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"conclusion\":\"HOLD\",\"reason\":\"越权评审\"}"))
+                .andExpect(status().isNotFound());
+        // P4 复盘/回流/建议/检查留痕端点同口径隔离
+        mockMvc.perform(get("/api/research/projects/{id}/reviews", projectId).session(intruder))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/research/projects/{id}/reviews", projectId).session(intruder)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"tier\":\"MONTHLY\",\"periodStart\":\"2026-02-01\",\"periodEnd\":\"2026-02-28\"}"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(put("/api/research/projects/{id}/reviews/{rid}", projectId, 1L).session(intruder)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"answers\":{\"q1\":\"越权\"}}"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/research/projects/{id}/reviews/{rid}/reflux", projectId, 1L).session(intruder))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/research/projects/{id}/checks", projectId).session(intruder))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/research/projects/{id}/feedback", projectId).session(intruder)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"stage\":\"REVIEW\",\"content\":\"越权建议\"}"))
                 .andExpect(status().isNotFound());
 
         // 归属者不受影响，且他人未留下任何改动
@@ -624,6 +651,214 @@ class ResearchControllerIntegrationTest extends PostgresTestSupport {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("NOT_FOUND"));
         assertThatCount("research_falsifier_review", projectId, 2);
+    }
+
+    @DisplayName("P4 复盘闭环：创建定格（PUT 后快照不变）→ 修正圈选 → 回流 wiki（幂等）→ 建议/检查留痕只收集")
+    @Test
+    void givenReviewFlow_whenCreateCorrectRefluxFeedback_thenFrozenSnapshotWikiReflowAndCollect() throws Exception {
+        register("res_t3_a", "abc12345");
+        approve("res_t3_a");
+        MockHttpSession session = login("res_t3_a", "abc12345");
+
+        MvcResult created = mockMvc.perform(post("/api/research/projects").session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"stockCode\":\"600519\",\"stockName\":\"贵州茅台\",\"title\":\"茅台复盘研究\"}"))
+                .andExpect(status().isCreated()).andReturn();
+        long projectId = ((Number) JsonPath.read(created.getResponse().getContentAsString(), "$.id")).longValue();
+
+        // 建仓计划一批（圈选窗口输入；无组合流水 → tradeIds 空 + 各数据段「无数据」，Focus 1）
+        mockMvc.perform(put("/api/research/projects/{id}/entry-plan", projectId).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"batches\":[{\"seq\":1,\"priceLow\":12,\"priceHigh\":13,\"quantity\":100,\"ratio\":1.0}]}"))
+                .andExpect(status().isOk());
+
+        // —— 创建即定格：POST 201，快照含口径标注；PENDING 态 ——
+        MvcResult reviewed = mockMvc.perform(post("/api/research/projects/{id}/reviews", projectId).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"tier\":\"MONTHLY\",\"periodStart\":\"2026-02-01\",\"periodEnd\":\"2026-02-28\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").isNumber())
+                .andExpect(jsonPath("$.projectId").value((int) projectId))
+                .andExpect(jsonPath("$.tier").value("MONTHLY"))
+                .andExpect(jsonPath("$.refluxState").value("PENDING"))
+                .andExpect(jsonPath("$.wikiEntryId").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.tradeIds.length()").value(0))
+                .andExpect(jsonPath("$.snapshot.periodStart").value("2026-02-01"))
+                .andExpect(jsonPath("$.snapshot.periodEnd").value("2026-02-28"))
+                .andExpect(jsonPath("$.snapshot.priceBasis").value("东财收盘"))
+                .andExpect(jsonPath("$.snapshot.navSeries").value("无数据"))
+                .andExpect(jsonPath("$.snapshot.periodReturn").value("无数据"))
+                .andExpect(jsonPath("$.snapshot.trades").value("无数据"))
+                .andReturn();
+        long reviewId = ((Number) JsonPath.read(reviewed.getResponse().getContentAsString(), "$.id")).longValue();
+        String frozen = jdbcTemplate.queryForObject(
+                "SELECT auto_snapshot::text FROM research_review WHERE id = ?", String.class, reviewId);
+
+        // 二次 GET：快照仍为定格值（F14 不复算历史）
+        mockMvc.perform(get("/api/research/projects/{id}/reviews", projectId).session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].id").value((int) reviewId))
+                .andExpect(jsonPath("$[0].snapshot.priceBasis").value("东财收盘"))
+                .andExpect(jsonPath("$[0].snapshot.navSeries").value("无数据"))
+                .andExpect(jsonPath("$[0].tradeIds.length()").value(0));
+
+        // —— PUT 修正：answers/overrides 对象上送、tradeIds 去重排序；快照字段不变（定格） ——
+        mockMvc.perform(put("/api/research/projects/{id}/reviews/{rid}", projectId, reviewId).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"answers\":{\"q1\":\"追高\"},\"overrides\":{\"periodReturn\":\"0.06\"},"
+                                + "\"narrative\":\"复盘叙述：追高错误\",\"tradeIds\":[7,3,7]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.answers.q1").value("追高"))
+                .andExpect(jsonPath("$.overrides.periodReturn").value("0.06"))
+                .andExpect(jsonPath("$.narrative").value("复盘叙述：追高错误"))
+                .andExpect(jsonPath("$.tradeIds.length()").value(2))
+                .andExpect(jsonPath("$.tradeIds[0]").value(3))
+                .andExpect(jsonPath("$.tradeIds[1]").value(7))
+                .andExpect(jsonPath("$.refluxState").value("PENDING"))
+                .andExpect(jsonPath("$.snapshot.priceBasis").value("东财收盘"))
+                .andExpect(jsonPath("$.snapshot.navSeries").value("无数据"));
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT auto_snapshot::text FROM research_review WHERE id = ?", String.class, reviewId))
+                .isEqualTo(frozen); // 修正不动快照列（Focus：快照不可改）
+
+        // —— 回流：wiki RESEARCH_NOTE 落库（SOP_REVIEW + projectId + narrative 内容）→ REFLOWN ——
+        MvcResult refluxed = mockMvc.perform(post("/api/research/projects/{id}/reviews/{rid}/reflux",
+                        projectId, reviewId).session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.refluxState").value("REFLOWN"))
+                .andExpect(jsonPath("$.wikiEntryId").isNumber())
+                .andReturn();
+        long wikiEntryId = ((Number) JsonPath.read(refluxed.getResponse().getContentAsString(), "$.wikiEntryId")).longValue();
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForMap(
+                "SELECT type, title, category, content, project_id FROM wiki_entry WHERE id = ?", wikiEntryId))
+                .containsEntry("type", "RESEARCH_NOTE")
+                .containsEntry("title", "复盘·茅台复盘研究·2026-02-01~2026-02-28")
+                .containsEntry("category", "SOP_REVIEW")
+                .containsEntry("content", "复盘叙述：追高错误")
+                .containsEntry("project_id", projectId);
+        mockMvc.perform(get("/api/wiki/entries").session(session).param("projectId", String.valueOf(projectId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.category == 'SOP_REVIEW')]").isNotEmpty());
+
+        // 幂等：二次回流返回既有 wiki_entry_id，不重复建条目（Focus 4）
+        mockMvc.perform(post("/api/research/projects/{id}/reviews/{rid}/reflux", projectId, reviewId).session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.refluxState").value("REFLOWN"))
+                .andExpect(jsonPath("$.wikiEntryId").value((int) wikiEntryId));
+        Integer wikiCount = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM wiki_entry WHERE project_id = ?", Integer.class, projectId);
+        org.assertj.core.api.Assertions.assertThat(wikiCount).isEqualTo(1);
+
+        // —— 检查留痕读取（P3-T4 deferred 端点）：两行 createdAt 倒序 ——
+        mockMvc.perform(post("/api/research/projects/{id}/checks", projectId).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"checkType\":\"BUY\",\"result\":\"CONFIRMED\",\"items\":"
+                                + "[{\"metric\":\"能力圈\",\"outcome\":\"PASS\"}]}"))
+                .andExpect(status().isCreated());
+        MvcResult secondCheck = mockMvc.perform(post("/api/research/projects/{id}/checks", projectId).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"checkType\":\"SELL\",\"result\":\"CONFIRMED\",\"items\":"
+                                + "[{\"metric\":\"能力圈\",\"outcome\":\"PASS\"}]}"))
+                .andExpect(status().isCreated()).andReturn();
+        long secondCheckId = ((Number) JsonPath.read(secondCheck.getResponse().getContentAsString(), "$.id")).longValue();
+        mockMvc.perform(get("/api/research/projects/{id}/checks", projectId).session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].id").value((int) secondCheckId)) // 时间倒序
+                .andExpect(jsonPath("$[0].checkType").value("SELL"))
+                .andExpect(jsonPath("$[0].items.length()").value(1))
+                .andExpect(jsonPath("$[1].checkType").value("BUY"));
+
+        // —— 模板改进建议：只收集（reviewId 关联 + 无 reviewId 两种形态均落库） ——
+        mockMvc.perform(post("/api/research/projects/{id}/feedback", projectId).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reviewId\":" + reviewId + ",\"stage\":\"REVIEW\",\"content\":\"月度模板建议增加仓位口径维度\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").isNumber())
+                .andExpect(jsonPath("$.stage").value("REVIEW"))
+                .andExpect(jsonPath("$.reviewId").value((int) reviewId));
+        mockMvc.perform(post("/api/research/projects/{id}/feedback", projectId).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"stage\":\"STRATEGY\",\"content\":\"策略模板 checklist 太长\"}"))
+                .andExpect(status().isCreated());
+        assertThatCount("research_feedback", projectId, 2);
+
+        // 边界：内容空白 → 422 FEEDBACK_CONTENT_REQUIRED 不落库；他项目 reviewId → 404
+        mockMvc.perform(post("/api/research/projects/{id}/feedback", projectId).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"stage\":\"REVIEW\",\"content\":\"  \"}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("FEEDBACK_CONTENT_REQUIRED"));
+        mockMvc.perform(post("/api/research/projects/{id}/feedback", projectId).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reviewId\":99999999,\"stage\":\"REVIEW\",\"content\":\"孤儿建议\"}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("NOT_FOUND"));
+        assertThatCount("research_feedback", projectId, 2);
+    }
+
+    @DisplayName("P4 回流降级：叙述空白 422 先拦；wiki 写异常 502 且 reflux_state 回 PENDING（不阻断、可重试恢复）")
+    @Test
+    void givenWikiWriteFailure_whenReflux_then502DegradedAndRecoverable() throws Exception {
+        register("res_t3_b", "abc12345");
+        approve("res_t3_b");
+        MockHttpSession session = login("res_t3_b", "abc12345");
+
+        MvcResult created = mockMvc.perform(post("/api/research/projects").session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"stockCode\":\"600519\",\"stockName\":\"贵州茅台\",\"title\":\"降级验证\"}"))
+                .andExpect(status().isCreated()).andReturn();
+        long projectId = ((Number) JsonPath.read(created.getResponse().getContentAsString(), "$.id")).longValue();
+        MvcResult reviewed = mockMvc.perform(post("/api/research/projects/{id}/reviews", projectId).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"tier\":\"WEEKLY\",\"periodStart\":\"2026-02-24\",\"periodEnd\":\"2026-02-28\"}"))
+                .andExpect(status().isCreated()).andReturn();
+        long reviewId = ((Number) JsonPath.read(reviewed.getResponse().getContentAsString(), "$.id")).longValue();
+
+        // 未写叙述直接回流 → 422 REFLUX_NARRATIVE_REQUIRED（wiki 层零触碰）
+        mockMvc.perform(post("/api/research/projects/{id}/reviews/{rid}/reflux", projectId, reviewId).session(session))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("REFLUX_NARRATIVE_REQUIRED"));
+        Mockito.verify(wikiEntryRepository, Mockito.never()).save(Mockito.any(WikiEntry.class));
+
+        // 补叙述 → wiki 写失败 → 502 文案；复盘行保持 PENDING、零 wiki 条目（降级不阻断）
+        mockMvc.perform(put("/api/research/projects/{id}/reviews/{rid}", projectId, reviewId).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"answers\":{\"q1\":\"ok\"},\"narrative\":\"叙述\"}"))
+                .andExpect(status().isOk());
+        Mockito.doThrow(new RuntimeException("wiki down"))
+                .when(wikiEntryRepository).save(Mockito.any(WikiEntry.class));
+        mockMvc.perform(post("/api/research/projects/{id}/reviews/{rid}/reflux", projectId, reviewId).session(session))
+                .andExpect(status().isBadGateway())
+                .andExpect(jsonPath("$.code").value("REFLUX_WIKI_UNAVAILABLE"))
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("知识库")));
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT reflux_state FROM research_review WHERE id = ?", String.class, reviewId))
+                .isEqualTo("PENDING");
+        assertThatCount("wiki_entry", projectId, 0);
+        // 复盘本体不受回流失败影响（不阻断：仍可读可改）
+        mockMvc.perform(get("/api/research/projects/{id}/reviews", projectId).session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].refluxState").value("PENDING"))
+                .andExpect(jsonPath("$[0].narrative").value("叙述"));
+
+        // 恢复：wiki 写恢复后重试回流成功（可重试语义）
+        Mockito.reset(wikiEntryRepository);
+        mockMvc.perform(post("/api/research/projects/{id}/reviews/{rid}/reflux", projectId, reviewId).session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.refluxState").value("REFLOWN"))
+                .andExpect(jsonPath("$.wikiEntryId").isNumber());
+        assertThatCount("wiki_entry", projectId, 1);
+
+        // 修正行不存在/越项目 → 404（不泄漏存在性）
+        mockMvc.perform(put("/api/research/projects/{id}/reviews/{rid}", projectId, 99999999L).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"answers\":{\"q1\":\"x\"}}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("NOT_FOUND"));
+        mockMvc.perform(post("/api/research/projects/{id}/reviews/{rid}/reflux", projectId, 99999999L).session(session))
+                .andExpect(status().isNotFound());
     }
 
     private void assertThatCount(String table, long projectId, int expected) {

@@ -56,4 +56,11 @@ public class ResearchCheckRepositoryImpl implements ResearchCheckRepository {
         return hitJpa.findByIdAndProjectId(hitId, projectId)
                 .map(ResearchFalsifierHitJpaEntity::toDomain);
     }
+
+    @Override
+    public List<CheckRecord> findChecks(Long projectId) {
+        return checkJpa.findByProjectIdOrderByCreatedAtDescIdDesc(projectId).stream()
+                .map(ResearchCheckRecordJpaEntity::toDomain)
+                .toList();
+    }
 }

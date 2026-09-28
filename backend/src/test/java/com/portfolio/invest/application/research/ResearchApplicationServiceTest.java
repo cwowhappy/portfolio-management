@@ -3,6 +3,7 @@ package com.portfolio.invest.application.research;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -10,14 +11,18 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.portfolio.invest.application.research.ResearchApplicationService.CreateReviewCommand;
 import com.portfolio.invest.application.research.ResearchApplicationService.ManualMark;
 import com.portfolio.invest.application.research.ResearchApplicationService.PreviewCheckCommand;
 import com.portfolio.invest.application.research.ResearchApplicationService.SaveEntryBatchItem;
 import com.portfolio.invest.application.research.ResearchApplicationService.SaveEntryPlanCommand;
 import com.portfolio.invest.application.research.ResearchApplicationService.SaveFalsifierItem;
 import com.portfolio.invest.application.research.ResearchApplicationService.SubmitCheckCommand;
+import com.portfolio.invest.application.research.ResearchApplicationService.SubmitFeedbackCommand;
 import com.portfolio.invest.application.research.ResearchApplicationService.SubmitFalsifierReviewCommand;
 import com.portfolio.invest.application.research.ResearchApplicationService.UpdateProjectCommand;
+import com.portfolio.invest.application.research.ResearchApplicationService.UpdateReviewCommand;
 import com.portfolio.invest.domain.journal.JournalEntry;
 import com.portfolio.invest.domain.journal.JournalEntryRepository;
 import com.portfolio.invest.domain.journal.JournalEntryType;
@@ -37,19 +42,28 @@ import com.portfolio.invest.domain.research.FalsifierReview;
 import com.portfolio.invest.domain.research.FalsifierReviewRepository;
 import com.portfolio.invest.domain.research.MarketSnapshot;
 import com.portfolio.invest.domain.research.ProjectStatus;
+import com.portfolio.invest.domain.research.RefluxState;
 import com.portfolio.invest.domain.research.ResearchCheckRepository;
 import com.portfolio.invest.domain.research.ResearchEntryPlanRepository;
 import com.portfolio.invest.domain.research.ResearchErrorCode;
 import com.portfolio.invest.domain.research.ResearchException;
+import com.portfolio.invest.domain.research.ResearchFeedback;
+import com.portfolio.invest.domain.research.ResearchFeedbackRepository;
 import com.portfolio.invest.domain.research.ResearchProject;
 import com.portfolio.invest.domain.research.ResearchProjectRepository;
 import com.portfolio.invest.domain.research.ResearchStage;
+import com.portfolio.invest.domain.research.Review;
 import com.portfolio.invest.domain.research.ReviewConclusion;
+import com.portfolio.invest.domain.research.ReviewRepository;
+import com.portfolio.invest.domain.research.ReviewTier;
 import com.portfolio.invest.domain.research.RuleInput;
 import com.portfolio.invest.domain.research.StageCompletionService.ManualState;
 import com.portfolio.invest.domain.research.StageStatus;
 import com.portfolio.invest.domain.research.StrategyDoc;
 import com.portfolio.invest.domain.research.StrategyState;
+import com.portfolio.invest.domain.wiki.WikiEntry;
+import com.portfolio.invest.domain.wiki.WikiEntryRepository;
+import com.portfolio.invest.domain.wiki.WikiEntryType;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -73,12 +87,18 @@ class ResearchApplicationServiceTest {
     private final FalsifierReviewRepository falsifierReviewRepository = mock(FalsifierReviewRepository.class);
     private final CheckOrchestration orchestration = mock(CheckOrchestration.class);
     private final MarketSnapshotAssembler snapshotAssembler = mock(MarketSnapshotAssembler.class);
+    private final ReviewRepository reviewRepository = mock(ReviewRepository.class);
+    private final ResearchFeedbackRepository feedbackRepository = mock(ResearchFeedbackRepository.class);
+    private final ReviewSnapshotComposer reviewComposer = mock(ReviewSnapshotComposer.class);
+    private final WikiEntryRepository wikiEntryRepository = mock(WikiEntryRepository.class);
+    private final ObjectMapper mapper = new ObjectMapper();
     private ResearchApplicationService service;
 
     @BeforeEach
     void setUp() {
         service = new ResearchApplicationService(repository, journalRepository, entryPlanRepository,
-                checkRepository, falsifierReviewRepository, orchestration, snapshotAssembler);
+                checkRepository, falsifierReviewRepository, orchestration, snapshotAssembler,
+                reviewRepository, feedbackRepository, reviewComposer, wikiEntryRepository, mapper);
     }
 
     private static ResearchProject project(Long id, Long userId, ResearchStage stage, ProjectStatus status) {
@@ -916,11 +936,340 @@ class ResearchApplicationServiceTest {
         verifyNoWrites();
     }
 
+    // —— 复盘 CRUD / 回流 / 建议（F13/F14/F16，P4-T3）——
+
+    /** 已落库复盘行（61L，2026-02 月度，快照定格含圈内 trade [3,5]）。 */
+    private static final String FROZEN_SNAPSHOT =
+            "{\"periodReturn\":0.05,\"priceBasis\":\"东财收盘\",\"tradeIds\":[3,5]}";
+
+    private static Review persistedReview(RefluxState state, Long wikiEntryId, String narrative) {
+        return Review.reconstitute(61L, 5L, ReviewTier.MONTHLY, LocalDate.of(2026, 2, 1),
+                LocalDate.of(2026, 2, 28), null, narrative, FROZEN_SNAPSHOT, null,
+                List.of(3L, 5L), state, wikiEntryId, 0L, NOW, NOW);
+    }
+
+    /** 仓库 save 回显：透传域字段并补齐 id/version（照既有 thenAnswer 先例）。 */
+    private static Review reidentified(Review review) {
+        return Review.reconstitute(61L, review.projectId(), review.tier(), review.periodStart(),
+                review.periodEnd(), review.answersJson(), review.narrative(), review.snapshotJson(),
+                review.overridesJson(), review.tradeIds(), review.refluxState(), review.wikiEntryId(),
+                0L, review.createdAt(), review.updatedAt());
+    }
+
+    /** wire JsonNode → 测试字面量（answers/overrides 以对象上送、字符串落域）。 */
+    private static com.fasterxml.jackson.databind.JsonNode json(String raw) {
+        try {
+            return new ObjectMapper().readTree(raw);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    @DisplayName("create 复盘：Composer 输出原样定格落库 + 自动圈选 trade_ids 解析去重排序，无 journal 事件")
+    @Test
+    void givenPeriodAndTier_whenCreateReview_thenComposerOutputFrozenWithAutoCircle() {
+        ResearchProject project = project(5L, 1L, ResearchStage.REVIEW, ProjectStatus.ACTIVE);
+        when(repository.findById(5L)).thenReturn(Optional.of(project));
+        when(entryPlanRepository.findByProjectId(5L)).thenReturn(Optional.of(EntryPlan.reconstitute(11L, 5L,
+                null, null, List.of(new EntryBatch(1, new BigDecimal("12"), new BigDecimal("13"), 100L,
+                        null, new BigDecimal("1.0"))), 0L, NOW, NOW)));
+        String snapshot = "{\"periodReturn\":0.05,\"tradeIds\":[205,103,205]}";
+        when(reviewComposer.compose(eq(1L), eq(project), eq(LocalDate.of(2026, 2, 1)),
+                eq(LocalDate.of(2026, 2, 28)), anyList())).thenReturn(snapshot);
+        when(reviewRepository.save(any(Review.class))).thenAnswer(inv -> reidentified(inv.getArgument(0)));
+
+        var view = service.createReview(1L, 5L, new CreateReviewCommand(ReviewTier.MONTHLY,
+                LocalDate.of(2026, 2, 1), LocalDate.of(2026, 2, 28)));
+
+        // 定格：Composer 产物原样入 auto_snapshot（无二次加工），圈选从快照 tradeIds 解析 + 收敛
+        ArgumentCaptor<Review> captor = ArgumentCaptor.forClass(Review.class);
+        verify(reviewRepository).save(captor.capture());
+        assertThat(captor.getValue().projectId()).isEqualTo(5L);
+        assertThat(captor.getValue().tier()).isEqualTo(ReviewTier.MONTHLY);
+        assertThat(captor.getValue().snapshotJson()).isEqualTo(snapshot);
+        assertThat(captor.getValue().tradeIds()).containsExactly(103L, 205L);
+        assertThat(captor.getValue().refluxState()).isEqualTo(RefluxState.PENDING);
+        assertThat(view.id()).isEqualTo(61L);
+        assertThat(view.snapshot()).isEqualTo(snapshot);
+        verify(journalRepository, never()).save(any(JournalEntry.class)); // 规格事件表无复盘事件
+    }
+
+    @DisplayName("create 复盘：快照缺 tradeIds 键 → 圈选为空（compose 无交易场景）")
+    @Test
+    void givenSnapshotWithoutTradeIds_whenCreateReview_thenEmptyCircle() {
+        when(repository.findById(5L)).thenReturn(Optional.of(project(5L, 1L,
+                ResearchStage.REVIEW, ProjectStatus.ACTIVE)));
+        when(entryPlanRepository.findByProjectId(5L)).thenReturn(Optional.empty());
+        when(reviewComposer.compose(any(), any(), any(), any(), any()))
+                .thenReturn("{\"navSeries\":\"无数据\"}");
+        when(reviewRepository.save(any(Review.class))).thenAnswer(inv -> reidentified(inv.getArgument(0)));
+
+        var view = service.createReview(1L, 5L, new CreateReviewCommand(ReviewTier.WEEKLY,
+                LocalDate.of(2026, 2, 24), LocalDate.of(2026, 2, 28)));
+
+        ArgumentCaptor<Review> captor = ArgumentCaptor.forClass(Review.class);
+        verify(reviewRepository).save(captor.capture());
+        assertThat(captor.getValue().tradeIds()).isEmpty();
+        assertThat(view.tradeIds()).isEmpty();
+    }
+
+    @DisplayName("getReviews：仓库倒序透传为视图，快照原样回显（定格读路径不复算）")
+    @Test
+    void givenReviews_whenListReviews_thenOrderedViewsWithFrozenSnapshot() {
+        when(repository.findById(5L)).thenReturn(Optional.of(project(5L, 1L,
+                ResearchStage.REVIEW, ProjectStatus.ACTIVE)));
+        when(reviewRepository.findByProjectId(5L)).thenReturn(List.of(
+                persistedReview(RefluxState.REFLOWN, 501L, "二月复盘"),
+                persistedReview(RefluxState.PENDING, null, null)));
+
+        var views = service.getReviews(1L, 5L);
+
+        assertThat(views).hasSize(2);
+        assertThat(views.get(0).refluxState()).isEqualTo(RefluxState.REFLOWN);
+        assertThat(views.get(0).wikiEntryId()).isEqualTo(501L);
+        assertThat(views.get(0).snapshot()).isEqualTo(FROZEN_SNAPSHOT);
+        assertThat(views.get(1).narrative()).isNull();
+        verify(reviewComposer, never()).compose(any(), any(), any(), any(), any()); // 读不复算
+        verifyNoWrites();
+    }
+
+    @DisplayName("PUT 复盘修正：answers/overrides/narrative 整替 + trade_ids 去重排序，快照与回流状态不动（不可改）")
+    @Test
+    void givenCorrections_whenUpdateReview_thenAppliedWithFrozenSnapshot() {
+        when(repository.findById(5L)).thenReturn(Optional.of(project(5L, 1L,
+                ResearchStage.REVIEW, ProjectStatus.ACTIVE)));
+        when(reviewRepository.findByIdAndProjectId(61L, 5L))
+                .thenReturn(Optional.of(persistedReview(RefluxState.PENDING, null, null)));
+        when(reviewRepository.save(any(Review.class))).thenAnswer(inv -> reidentified(inv.getArgument(0)));
+
+        var view = service.updateReview(1L, 5L, 61L, new UpdateReviewCommand(
+                json("{\"q1\":\"追高\"}"), json("{\"periodReturn\":\"0.06\"}"), "事后看止损执行晚了",
+                List.of(7L, 3L, 7L)));
+
+        ArgumentCaptor<Review> captor = ArgumentCaptor.forClass(Review.class);
+        verify(reviewRepository).save(captor.capture());
+        assertThat(captor.getValue().answersJson()).isEqualTo("{\"q1\":\"追高\"}");
+        assertThat(captor.getValue().overridesJson()).isEqualTo("{\"periodReturn\":\"0.06\"}");
+        assertThat(captor.getValue().narrative()).isEqualTo("事后看止损执行晚了");
+        assertThat(captor.getValue().tradeIds()).containsExactly(3L, 7L); // 去重升序（Focus 5 手动路径）
+        assertThat(captor.getValue().snapshotJson()).isEqualTo(FROZEN_SNAPSHOT); // 快照不可改
+        assertThat(captor.getValue().refluxState()).isEqualTo(RefluxState.PENDING);
+        assertThat(view.snapshot()).isEqualTo(FROZEN_SNAPSHOT);
+        assertThat(view.tradeIds()).containsExactly(3L, 7L);
+        verify(journalRepository, never()).save(any(JournalEntry.class));
+    }
+
+    @DisplayName("PUT 复盘缺复盘行（越项目/不存在）→ NOT_FOUND，不落库")
+    @Test
+    void givenMissingReview_whenUpdateOrReflux_thenNotFound() {
+        when(repository.findById(5L)).thenReturn(Optional.of(project(5L, 1L,
+                ResearchStage.REVIEW, ProjectStatus.ACTIVE)));
+        when(reviewRepository.findByIdAndProjectId(61L, 5L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.updateReview(1L, 5L, 61L,
+                new UpdateReviewCommand(json("{\"q1\":\"追高\"}"), null, null, null)))
+                .isInstanceOfSatisfying(ResearchException.class,
+                        e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.NOT_FOUND));
+        assertThatThrownBy(() -> service.refluxReview(1L, 5L, 61L))
+                .isInstanceOfSatisfying(ResearchException.class,
+                        e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.NOT_FOUND));
+        verifyNoWrites();
+        verify(reviewRepository, never()).save(any(Review.class));
+    }
+
+    @DisplayName("reflux：建 wiki RESEARCH_NOTE（复盘·项目·期间 + SOP_REVIEW + projectId + narrative）→ REFLOWN 记 entryId")
+    @Test
+    void givenNarrative_whenReflux_thenWikiEntryCreatedAndRefown() {
+        when(repository.findById(5L)).thenReturn(Optional.of(project(5L, 1L,
+                ResearchStage.REVIEW, ProjectStatus.ACTIVE)));
+        when(reviewRepository.findByIdAndProjectId(61L, 5L))
+                .thenReturn(Optional.of(persistedReview(RefluxState.PENDING, null, "复盘叙述：追高错误")));
+        when(wikiEntryRepository.save(any(WikiEntry.class))).thenAnswer(inv -> {
+            WikiEntry e = inv.getArgument(0);
+            return WikiEntry.reconstitute(501L, e.userId(), e.type(), e.title(), e.content(),
+                    e.category(), e.industryCode(), e.createdAt(), e.updatedAt(), 0L, e.projectId());
+        });
+        when(reviewRepository.save(any(Review.class))).thenAnswer(inv -> reidentified(inv.getArgument(0)));
+
+        var view = service.refluxReview(1L, 5L, 61L);
+
+        // wiki 条目：类型/标题/category/项目软引用/内容逐字（S2 同法 SOP_TEMPLATE，D12 软引用）
+        ArgumentCaptor<WikiEntry> wikiCaptor = ArgumentCaptor.forClass(WikiEntry.class);
+        verify(wikiEntryRepository).save(wikiCaptor.capture());
+        WikiEntry entry = wikiCaptor.getValue();
+        assertThat(entry.userId()).isEqualTo(1L);
+        assertThat(entry.type()).isEqualTo(WikiEntryType.RESEARCH_NOTE);
+        assertThat(entry.title()).isEqualTo("复盘·茅台扩产研究·2026-02-01~2026-02-28");
+        assertThat(entry.category()).isEqualTo("SOP_REVIEW");
+        assertThat(entry.projectId()).isEqualTo(5L);
+        assertThat(entry.content()).isEqualTo("复盘叙述：追高错误");
+        // 复盘行：REFLOWN + 回填条目 id（用户确认后入库，F16）
+        ArgumentCaptor<Review> reviewCaptor = ArgumentCaptor.forClass(Review.class);
+        verify(reviewRepository).save(reviewCaptor.capture());
+        assertThat(reviewCaptor.getValue().refluxState()).isEqualTo(RefluxState.REFLOWN);
+        assertThat(reviewCaptor.getValue().wikiEntryId()).isEqualTo(501L);
+        assertThat(reviewCaptor.getValue().snapshotJson()).isEqualTo(FROZEN_SNAPSHOT);
+        assertThat(view.refluxState()).isEqualTo(RefluxState.REFLOWN);
+        assertThat(view.wikiEntryId()).isEqualTo(501L);
+    }
+
+    @DisplayName("reflux 二次点击幂等：REFLOWN 直接返回既有 wiki_entry_id，不重复建条目不落库（Focus 4）")
+    @Test
+    void givenRefowned_whenRefluxAgain_thenIdempotentWithoutWikiWrite() {
+        when(repository.findById(5L)).thenReturn(Optional.of(project(5L, 1L,
+                ResearchStage.REVIEW, ProjectStatus.ACTIVE)));
+        when(reviewRepository.findByIdAndProjectId(61L, 5L))
+                .thenReturn(Optional.of(persistedReview(RefluxState.REFLOWN, 501L, "复盘叙述")));
+
+        var view = service.refluxReview(1L, 5L, 61L);
+
+        assertThat(view.refluxState()).isEqualTo(RefluxState.REFLOWN);
+        assertThat(view.wikiEntryId()).isEqualTo(501L);
+        verify(wikiEntryRepository, never()).save(any(WikiEntry.class)); // 不重复建条目
+        verify(reviewRepository, never()).save(any(Review.class)); // 不重复落库
+        verify(journalRepository, never()).save(any(JournalEntry.class));
+    }
+
+    @DisplayName("reflux wiki 写异常降级：REFLUX_WIKI_UNAVAILABLE 文案抛出，REFLOWN 不落库（行保持 PENDING，不阻断）")
+    @Test
+    void givenWikiWriteFailure_whenReflux_thenDegradedWithoutRefown() {
+        when(repository.findById(5L)).thenReturn(Optional.of(project(5L, 1L,
+                ResearchStage.REVIEW, ProjectStatus.ACTIVE)));
+        when(reviewRepository.findByIdAndProjectId(61L, 5L))
+                .thenReturn(Optional.of(persistedReview(RefluxState.PENDING, null, "复盘叙述")));
+        when(wikiEntryRepository.save(any(WikiEntry.class)))
+                .thenThrow(new RuntimeException("wiki unavailable"));
+
+        assertThatThrownBy(() -> service.refluxReview(1L, 5L, 61L))
+                .isInstanceOfSatisfying(ResearchException.class,
+                        e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.REFLUX_WIKI_UNAVAILABLE))
+                .hasMessageContaining("知识库");
+        // 降级：REFLOWN 未写入 → 既有行保持 PENDING，复盘保存不受影响（可重试）
+        verify(reviewRepository, never()).save(any(Review.class));
+    }
+
+    @DisplayName("reflux 叙述空白 → REFLUX_NARRATIVE_REQUIRED，不建 wiki 条目不落库")
+    @Test
+    void givenBlankNarrative_whenReflux_thenNarrativeRequired() {
+        when(repository.findById(5L)).thenReturn(Optional.of(project(5L, 1L,
+                ResearchStage.REVIEW, ProjectStatus.ACTIVE)));
+        when(reviewRepository.findByIdAndProjectId(61L, 5L))
+                .thenReturn(Optional.of(persistedReview(RefluxState.PENDING, null, "  ")));
+
+        assertThatThrownBy(() -> service.refluxReview(1L, 5L, 61L))
+                .isInstanceOfSatisfying(ResearchException.class,
+                        e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.REFLUX_NARRATIVE_REQUIRED));
+        verify(wikiEntryRepository, never()).save(any(WikiEntry.class));
+        verify(reviewRepository, never()).save(any(Review.class));
+    }
+
+    @DisplayName("submit 建议：stage+content+reviewId? 落库（只收集：无事件无回流副作用），reviewId 须为本项目复盘")
+    @Test
+    void givenFeedback_whenSubmit_thenInsertedOnly() {
+        when(repository.findById(5L)).thenReturn(Optional.of(project(5L, 1L,
+                ResearchStage.REVIEW, ProjectStatus.ACTIVE)));
+        when(reviewRepository.findByIdAndProjectId(61L, 5L))
+                .thenReturn(Optional.of(persistedReview(RefluxState.PENDING, null, null)));
+        when(feedbackRepository.insert(any(ResearchFeedback.class))).thenAnswer(inv -> {
+            ResearchFeedback f = inv.getArgument(0);
+            return ResearchFeedback.reconstitute(71L, f.projectId(), f.reviewId(), f.stage(),
+                    f.content(), f.createdAt());
+        });
+
+        var view = service.submitFeedback(1L, 5L,
+                new SubmitFeedbackCommand(61L, ResearchStage.REVIEW, "月度模板建议增加仓位口径维度"));
+
+        ArgumentCaptor<ResearchFeedback> captor = ArgumentCaptor.forClass(ResearchFeedback.class);
+        verify(feedbackRepository).insert(captor.capture());
+        assertThat(captor.getValue().projectId()).isEqualTo(5L);
+        assertThat(captor.getValue().reviewId()).isEqualTo(61L);
+        assertThat(captor.getValue().stage()).isEqualTo(ResearchStage.REVIEW);
+        assertThat(captor.getValue().content()).isEqualTo("月度模板建议增加仓位口径维度");
+        assertThat(view.id()).isEqualTo(71L);
+        verify(journalRepository, never()).save(any(JournalEntry.class)); // 只收集不生效（F16）
+        verify(wikiEntryRepository, never()).save(any(WikiEntry.class));
+    }
+
+    @DisplayName("submit 建议内容空白 → FEEDBACK_CONTENT_REQUIRED；reviewId 越项目 → NOT_FOUND，均不落库")
+    @Test
+    void givenBlankContentOrForeignReview_whenSubmitFeedback_thenRejectedWithoutInsert() {
+        when(repository.findById(5L)).thenReturn(Optional.of(project(5L, 1L,
+                ResearchStage.REVIEW, ProjectStatus.ACTIVE)));
+        when(reviewRepository.findByIdAndProjectId(61L, 5L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.submitFeedback(1L, 5L,
+                new SubmitFeedbackCommand(null, ResearchStage.REVIEW, "  ")))
+                .isInstanceOfSatisfying(ResearchException.class,
+                        e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.FEEDBACK_CONTENT_REQUIRED));
+        assertThatThrownBy(() -> service.submitFeedback(1L, 5L,
+                new SubmitFeedbackCommand(61L, ResearchStage.REVIEW, "合法建议")))
+                .isInstanceOfSatisfying(ResearchException.class,
+                        e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.NOT_FOUND));
+        verify(feedbackRepository, never()).insert(any(ResearchFeedback.class));
+    }
+
+    @DisplayName("getChecks：检查留痕时间倒序透传（复盘 4.3 纪律遵守度预填数据源，P3-T4 deferred）")
+    @Test
+    void givenCheckRecords_whenGetChecks_thenOrderedViews() {
+        when(repository.findById(5L)).thenReturn(Optional.of(project(5L, 1L,
+                ResearchStage.REVIEW, ProjectStatus.ACTIVE)));
+        List<CheckItemResult> items = List.of(new CheckItemResult("能力圈", null, null, CheckOutcome.PASS));
+        when(checkRepository.findChecks(5L)).thenReturn(List.of(
+                CheckRecord.reconstitute(22L, 5L, CheckType.SELL, items, CheckResult.CONFIRMED,
+                        null, NOW.plusSeconds(60)),
+                CheckRecord.reconstitute(21L, 5L, CheckType.BUY, items, CheckResult.OVERRIDDEN,
+                        "计划外机会", NOW)));
+
+        var views = service.getChecks(1L, 5L);
+
+        assertThat(views).hasSize(2);
+        assertThat(views.get(0).id()).isEqualTo(22L); // createdAt 倒序由仓库保证，切片断言透传序
+        assertThat(views.get(0).checkType()).isEqualTo(CheckType.SELL);
+        assertThat(views.get(1).id()).isEqualTo(21L);
+        assertThat(views.get(1).overrideReason()).isEqualTo("计划外机会");
+        verifyNoWrites();
+    }
+
+    @DisplayName("非本人项目 reviews/feedback/checks 全部 → NOT_FOUND（不泄漏存在性）")
+    @Test
+    void givenOthersProject_whenReviewFeedbackCheckEndpoints_thenNotFound() {
+        when(repository.findById(5L)).thenReturn(Optional.of(project(5L, 2L,
+                ResearchStage.REVIEW, ProjectStatus.ACTIVE)));
+
+        assertThatThrownBy(() -> service.getReviews(1L, 5L))
+                .isInstanceOfSatisfying(ResearchException.class,
+                        e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.NOT_FOUND));
+        assertThatThrownBy(() -> service.createReview(1L, 5L, new CreateReviewCommand(ReviewTier.MONTHLY,
+                LocalDate.of(2026, 2, 1), LocalDate.of(2026, 2, 28))))
+                .isInstanceOfSatisfying(ResearchException.class,
+                        e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.NOT_FOUND));
+        assertThatThrownBy(() -> service.updateReview(1L, 5L, 61L,
+                new UpdateReviewCommand(json("{\"q1\":\"追高\"}"), null, null, null)))
+                .isInstanceOfSatisfying(ResearchException.class,
+                        e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.NOT_FOUND));
+        assertThatThrownBy(() -> service.refluxReview(1L, 5L, 61L))
+                .isInstanceOfSatisfying(ResearchException.class,
+                        e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.NOT_FOUND));
+        assertThatThrownBy(() -> service.submitFeedback(1L, 5L,
+                new SubmitFeedbackCommand(null, ResearchStage.REVIEW, "建议")))
+                .isInstanceOfSatisfying(ResearchException.class,
+                        e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.NOT_FOUND));
+        assertThatThrownBy(() -> service.getChecks(1L, 5L))
+                .isInstanceOfSatisfying(ResearchException.class,
+                        e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.NOT_FOUND));
+        verifyNoWrites();
+        verify(reviewRepository, never()).save(any(Review.class));
+        verify(reviewComposer, never()).compose(any(), any(), any(), any(), any());
+        verify(wikiEntryRepository, never()).save(any(WikiEntry.class));
+    }
+
     private void verifyNoWrites() {
         verify(entryPlanRepository, never()).save(any(EntryPlan.class));
         verify(checkRepository, never()).insert(any(CheckRecord.class));
         verify(falsifierReviewRepository, never()).insert(any(FalsifierReview.class));
         verify(falsifierReviewRepository, never()).attachReview(any(), any());
+        verify(reviewRepository, never()).save(any(Review.class));
+        verify(feedbackRepository, never()).insert(any(ResearchFeedback.class));
         verify(journalRepository, never()).save(any(JournalEntry.class));
     }
 }

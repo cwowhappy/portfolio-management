@@ -2,19 +2,24 @@ package com.portfolio.invest.web;
 
 import com.portfolio.invest.application.research.CreateProjectCommand;
 import com.portfolio.invest.application.research.ResearchApplicationService;
+import com.portfolio.invest.application.research.ResearchApplicationService.CreateReviewCommand;
 import com.portfolio.invest.application.research.ResearchApplicationService.PreviewCheckCommand;
 import com.portfolio.invest.application.research.ResearchApplicationService.SaveEntryPlanCommand;
 import com.portfolio.invest.application.research.ResearchApplicationService.SaveFalsifierItem;
 import com.portfolio.invest.application.research.ResearchApplicationService.SubmitCheckCommand;
+import com.portfolio.invest.application.research.ResearchApplicationService.SubmitFeedbackCommand;
 import com.portfolio.invest.application.research.ResearchApplicationService.SubmitFalsifierReviewCommand;
 import com.portfolio.invest.application.research.ResearchApplicationService.UpdateProjectCommand;
+import com.portfolio.invest.application.research.ResearchApplicationService.UpdateReviewCommand;
 import com.portfolio.invest.application.research.ResearchViews.CheckRecordView;
 import com.portfolio.invest.application.research.ResearchViews.EntryPlanView;
 import com.portfolio.invest.application.research.ResearchViews.FalsifierHitView;
 import com.portfolio.invest.application.research.ResearchViews.FalsifierReviewView;
 import com.portfolio.invest.application.research.ResearchViews.FalsifierView;
+import com.portfolio.invest.application.research.ResearchViews.FeedbackView;
 import com.portfolio.invest.application.research.ResearchViews.ProjectDetailView;
 import com.portfolio.invest.application.research.ResearchViews.ProjectView;
+import com.portfolio.invest.application.research.ResearchViews.ReviewView;
 import com.portfolio.invest.application.research.ResearchViews.StrategyView;
 import com.portfolio.invest.application.research.SaveStrategyCommand;
 import com.portfolio.invest.domain.research.CheckItemResult;
@@ -161,6 +166,50 @@ public class ResearchController {
                                                                      @Valid @RequestBody SubmitFalsifierReviewCommand cmd) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(service.submitFalsifierReview(currentUserId(auth), projectId, cmd));
+    }
+
+    // —— P4-T3：复盘 CRUD / wiki 回流 / 模板建议 / 检查留痕 ——
+
+    /** 复盘列表（periodStart 倒序；快照定格回显）。 */
+    @GetMapping("/projects/{projectId}/reviews")
+    public List<ReviewView> getReviews(Authentication auth, @PathVariable Long projectId) {
+        return service.getReviews(currentUserId(auth), projectId);
+    }
+
+    /** 创建复盘（创建即定格快照 + 自动圈选；区间倒置 → 422）。 */
+    @PostMapping("/projects/{projectId}/reviews")
+    public ResponseEntity<ReviewView> createReview(Authentication auth, @PathVariable Long projectId,
+                                                   @Valid @RequestBody CreateReviewCommand cmd) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(service.createReview(currentUserId(auth), projectId, cmd));
+    }
+
+    /** 修正复盘（PUT 整替 answers/overrides/narrative/trade_ids；快照不可改；answers 缺失 → 422）。 */
+    @PutMapping("/projects/{projectId}/reviews/{reviewId}")
+    public ReviewView updateReview(Authentication auth, @PathVariable Long projectId,
+                                   @PathVariable Long reviewId, @Valid @RequestBody UpdateReviewCommand cmd) {
+        return service.updateReview(currentUserId(auth), projectId, reviewId, cmd);
+    }
+
+    /** 确认回流 wiki（REFLOWN 幂等；叙述空白 → 422；wiki 写异常 → 502 降级不阻断、可重试）。 */
+    @PostMapping("/projects/{projectId}/reviews/{reviewId}/reflux")
+    public ReviewView refluxReview(Authentication auth, @PathVariable Long projectId,
+                                   @PathVariable Long reviewId) {
+        return service.refluxReview(currentUserId(auth), projectId, reviewId);
+    }
+
+    /** 检查留痕列表（createdAt 倒序；复盘纪律遵守度预填数据源，P3-T4 deferred）。 */
+    @GetMapping("/projects/{projectId}/checks")
+    public List<CheckRecordView> getChecks(Authentication auth, @PathVariable Long projectId) {
+        return service.getChecks(currentUserId(auth), projectId);
+    }
+
+    /** 模板改进建议（只收集不生效；content 缺失 → 422；reviewId 越项目 → 404）。 */
+    @PostMapping("/projects/{projectId}/feedback")
+    public ResponseEntity<FeedbackView> submitFeedback(Authentication auth, @PathVariable Long projectId,
+                                                       @Valid @RequestBody SubmitFeedbackCommand cmd) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(service.submitFeedback(currentUserId(auth), projectId, cmd));
     }
 
     private static Long currentUserId(Authentication auth) {

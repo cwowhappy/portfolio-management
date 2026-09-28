@@ -25,4 +25,10 @@ public interface ResearchCheckRepository {
 
     /** 项目域内单行命中读取（P4 评审回填前置校验：hitId 越项目/不存在一律 empty，照 404 隔离口径）。 */
     Optional<FalsifierHit> findHit(Long projectId, Long hitId);
+
+    /**
+     * 项目检查留痕列表（createdAt 倒序 + id 倒序稳定序，P4-T3 开读端口：
+     * 复盘 4.3 纪律遵守度预填数据源——表本身 append-only 不变，仅补读取用例）。
+     */
+    List<CheckRecord> findChecks(Long projectId);
 }

@@ -52,4 +52,10 @@ public final class ResearchErrorCode {
     public static final String ANSWERS_REQUIRED = "ANSWERS_REQUIRED";
     /** 回流目标条目缺失（refluxConfirm 须携带 wiki 条目 id）。 */
     public static final String WIKI_ENTRY_REQUIRED = "WIKI_ENTRY_REQUIRED";
+    /** 回流叙述缺失（F16 wiki 条目内容 = 复盘叙述，回流前必填）。 */
+    public static final String REFLUX_NARRATIVE_REQUIRED = "REFLUX_NARRATIVE_REQUIRED";
+    /** 回流 wiki 写入异常（降级：reflux_state 回 PENDING 不阻断复盘，HTTP 映射 502 可重试）。 */
+    public static final String REFLUX_WIKI_UNAVAILABLE = "REFLUX_WIKI_UNAVAILABLE";
+    /** 模板改进建议内容必填（空白或超 1000 字，F16「只收集」留痕最低要求）。 */
+    public static final String FEEDBACK_CONTENT_REQUIRED = "FEEDBACK_CONTENT_REQUIRED";
 }
