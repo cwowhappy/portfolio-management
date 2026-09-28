@@ -1,5 +1,11 @@
 package com.portfolio.invest.application.research;
 
+import com.portfolio.invest.domain.research.CheckItemResult;
+import com.portfolio.invest.domain.research.CheckRecord;
+import com.portfolio.invest.domain.research.CheckResult;
+import com.portfolio.invest.domain.research.CheckType;
+import com.portfolio.invest.domain.research.EntryBatch;
+import com.portfolio.invest.domain.research.EntryPlan;
 import com.portfolio.invest.domain.research.Falsifier;
 import com.portfolio.invest.domain.research.FalsifierKind;
 import com.portfolio.invest.domain.research.FalsifierPredicate;
@@ -69,5 +75,48 @@ public final class ResearchViews {
             return new FalsifierView(f.id(), f.kind(), f.predicate(), f.threshold(),
                     f.eventChecked(), f.note(), f.enabled());
         }
+    }
+
+    /** 建仓批次视图（research_entry_batch 行）。 */
+    public record EntryBatchView(int seq, BigDecimal priceLow, BigDecimal priceHigh, long quantity,
+                                 BigDecimal amount, BigDecimal ratio) {
+
+        public static EntryBatchView from(EntryBatch b) {
+            return new EntryBatchView(b.seq(), b.priceLow(), b.priceHigh(), b.quantity(),
+                    b.amount(), b.ratio());
+        }
+    }
+
+    /** 建仓计划视图：kellyRatio 为系统算术结果（D23 只做算术），读时计算不落库冗余。 */
+    public record EntryPlanView(Long id, BigDecimal winRate, BigDecimal payoffRatio, BigDecimal kellyRatio,
+                                List<EntryBatchView> batches, Instant createdAt, Instant updatedAt) {
+
+        public static EntryPlanView from(EntryPlan p) {
+            return new EntryPlanView(p.id(), p.winRate(), p.payoffRatio(), p.kellyRatio(),
+                    p.batches().stream().map(EntryBatchView::from).toList(), p.createdAt(), p.updatedAt());
+        }
+    }
+
+    /** 纪律检查留痕视图（append-only，items 为提交时快照）。 */
+    public record CheckRecordView(Long id, CheckType checkType, List<CheckItemResult> items,
+                                  CheckResult result, String overrideReason, Instant createdAt) {
+
+        public static CheckRecordView from(CheckRecord r) {
+            return new CheckRecordView(r.id(), r.checkType(), r.items(), r.result(),
+                    r.overrideReason(), r.createdAt());
+        }
+    }
+
+    /**
+     * 证伪命中合并视图行（D21）：realtime=true 实时求值条目（每次求值、不落库，hitAt=null）；
+     * realtime=false 历史 hit 留痕行（id/hitAt 为落库标识）。EVENT 条目按勾选状态呈现
+     * （Ruling-18：eventChecked=true → basis「已确认事件」pending=false；false →「待人工勾选」）。
+     * 历史行的 falsifier 现态字段（kind/predicate/threshold/note/eventChecked）在条件已被
+     * 整替删除时为 null，仅保留 basis 与 falsifierId。
+     */
+    public record FalsifierHitView(Long id, Long falsifierId, FalsifierKind kind, FalsifierPredicate predicate,
+                                   BigDecimal threshold, String note, boolean eventChecked,
+                                   boolean hit, boolean pending, boolean skipped, String basis,
+                                   boolean realtime, Instant hitAt) {
     }
 }

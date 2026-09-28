@@ -8,12 +8,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
+import com.portfolio.invest.application.market.OrchestratingMarketDataService;
+import com.portfolio.invest.domain.market.Quote;
 import com.portfolio.invest.domain.user.UserRepository;
 import com.portfolio.invest.support.PostgresTestSupport;
 import com.portfolio.invest.support.RecordingMailSender;
 import com.portfolio.invest.support.TestCodes;
+import java.time.LocalDate;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -21,7 +25,9 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpSession;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
@@ -43,6 +49,11 @@ class ResearchControllerIntegrationTest extends PostgresTestSupport {
     @Autowired MockMvc mockMvc;
     @Autowired UserRepository userRepository;
     @Autowired RecordingMailSender mailStub;
+    @Autowired JdbcTemplate jdbcTemplate;
+
+    /** 隔离网络（照 AguiChartIntegrationTest）：@Primary 缓存装饰器保持真实，行情编排打桩。 */
+    @MockitoBean
+    OrchestratingMarketDataService orchestratingMarketDataService;
 
     @DisplayName("主链路：立项→列表过滤→PATCH 标记→策略两级状态机→证伪条件→归档默认隐藏")
     @Test
@@ -262,6 +273,23 @@ class ResearchControllerIntegrationTest extends PostgresTestSupport {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("[]"))
                 .andExpect(status().isNotFound());
+        // P3 新端点同口径隔离：entry-plan / checks / hits
+        mockMvc.perform(get("/api/research/projects/{id}/entry-plan", projectId).session(intruder))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(put("/api/research/projects/{id}/entry-plan", projectId).session(intruder)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"batches\":[]}"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/research/projects/{id}/checks/preview", projectId).session(intruder)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"checkType\":\"BUY\"}"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/research/projects/{id}/checks", projectId).session(intruder)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"checkType\":\"BUY\",\"result\":\"CONFIRMED\",\"items\":[{\"metric\":\"能力圈\",\"outcome\":\"PASS\"}]}"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/research/projects/{id}/falsifier/hits", projectId).session(intruder))
+                .andExpect(status().isNotFound());
 
         // 归属者不受影响，且他人未留下任何改动
         mockMvc.perform(get("/api/research/projects/{id}", projectId).session(login("res_owner", "abc12345")))
@@ -308,6 +336,203 @@ class ResearchControllerIntegrationTest extends PostgresTestSupport {
         mockMvc.perform(get("/api/wiki/entries").session(session).param("projectId", String.valueOf(projectId)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(0));
+    }
+
+    @DisplayName("P3 主链路：建仓计划（Σ=1 过/>1 拒 422/kelly）→ 检查（UNSET 中性/preview 不落库/越过留痕 422）→ 证伪命中合并")
+    @Test
+    void givenPlanAndRules_whenEntryCheckHitFlow_thenAllEndpointsBehave() throws Exception {
+        register("res_plan_a", "abc12345");
+        approve("res_plan_a");
+        MockHttpSession session = login("res_plan_a", "abc12345");
+        Long userId = userRepository.findByUsername("res_plan_a").orElseThrow().id();
+
+        MvcResult created = mockMvc.perform(post("/api/research/projects").session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"stockCode\":\"600519\",\"stockName\":\"贵州茅台\",\"title\":\"茅台建仓\"}"))
+                .andExpect(status().isCreated()).andReturn();
+        long projectId = ((Number) JsonPath.read(created.getResponse().getContentAsString(), "$.id")).longValue();
+
+        // —— 建仓计划 ——
+        // Σratio = 0.6 + 0.4 = 1.0 恰好 → 通过（Review Focus 3：> 1 才拒）；kelly 0.6/2.0 → 0.4（Ruling-15）
+        mockMvc.perform(put("/api/research/projects/{id}/entry-plan", projectId).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"winRate\":0.6,\"payoffRatio\":2.0,\"batches\":["
+                                + "{\"seq\":1,\"priceLow\":12,\"priceHigh\":13,\"quantity\":100,\"ratio\":0.6},"
+                                + "{\"seq\":2,\"priceLow\":10,\"priceHigh\":11,\"quantity\":100,\"amount\":1200,\"ratio\":0.4}]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").isNumber())
+                .andExpect(jsonPath("$.kellyRatio").value(0.4))
+                .andExpect(jsonPath("$.batches.length()").value(2));
+        mockMvc.perform(get("/api/research/projects/{id}/entry-plan", projectId).session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.kellyRatio").value(0.4))
+                .andExpect(jsonPath("$.batches[0].ratio").value(0.6))
+                .andExpect(jsonPath("$.batches[1].amount").value(1200.0));
+
+        // Σratio = 1.01 → 422 RATIO_SUM_EXCEEDED（唯一硬拒绝，D5）
+        mockMvc.perform(put("/api/research/projects/{id}/entry-plan", projectId).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"batches\":[{\"seq\":1,\"priceLow\":12,\"priceHigh\":13,\"quantity\":1,\"ratio\":0.51},"
+                                + "{\"seq\":2,\"priceLow\":10,\"priceHigh\":11,\"quantity\":1,\"ratio\":0.5}]}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("RATIO_SUM_EXCEEDED"));
+        // 整替后仍是首轮计划（拒绝不落库）
+        mockMvc.perform(get("/api/research/projects/{id}/entry-plan", projectId).session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.batches.length()").value(2));
+
+        // —— 行情/估值/规则 fixtures：quote 桩 + stock_valuation_daily 当日快照 + PrincipleRule ——
+        Mockito.when(orchestratingMarketDataService.quote("600519")).thenReturn(
+                new Quote("600519", "贵州茅台", 12.34, 0, 0, 0, 0, 0, 0, 0, 0, null, null, "2026-09-28 15:00:00"));
+        LocalDate today = LocalDate.now();
+        jdbcTemplate.update("DELETE FROM stock_valuation_daily WHERE trading_day = ? AND stock_code = '600519'", today);
+        jdbcTemplate.update("INSERT INTO stock_valuation_daily(trading_day, stock_code, stock_name, pe_ttm, pb, close) "
+                        + "VALUES (?,?,?,?,?,?)", today, "600519", "贵州茅台", 25.5, 8.2, 12.34);
+        jdbcTemplate.update("DELETE FROM principle_rule WHERE user_id = ?", userId);
+        jdbcTemplate.update("INSERT INTO principle_rule(user_id, metric, threshold, enabled, description) "
+                + "VALUES (?,?,?,?,?)", userId, "SINGLE_POSITION_RATIO", 0.5, true, "单票上限");
+
+        // —— 检查 preview（BUY）：规则项命中/未配置 UNSET + F01 四项；不落库 ——
+        mockMvc.perform(post("/api/research/projects/{id}/checks/preview", projectId).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"checkType\":\"BUY\",\"f01MustItems\":"
+                                + "{\"能力圈\":true,\"安全边际\":true,\"估值核对\":true,\"买入条件\":true}}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(8))
+                // 无持仓：计划 Σratio=1.0 > 0.5 → HIT（currentValue 回显）
+                .andExpect(jsonPath("$[0].metric").value("SINGLE_POSITION_RATIO"))
+                .andExpect(jsonPath("$[0].outcome").value("HIT"))
+                .andExpect(jsonPath("$[0].threshold").value(0.5))
+                .andExpect(jsonPath("$[0].currentValue").value(1.0))
+                // 未配置指标 → UNSET 中性（Review Focus 2：非 PASS 非 HIT）；pe 25.5 可得但无规则
+                .andExpect(jsonPath("$[1].outcome").value("UNSET"))
+                .andExpect(jsonPath("$[2].metric").value("STOCK_PE_MAX"))
+                .andExpect(jsonPath("$[2].outcome").value("UNSET"))
+                .andExpect(jsonPath("$[4].metric").value("能力圈"))
+                .andExpect(jsonPath("$[4].outcome").value("PASS"))
+                .andExpect(jsonPath("$[7].outcome").value("PASS"));
+        Integer records = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM research_check_record WHERE project_id = ?", Integer.class, projectId);
+        org.assertj.core.api.Assertions.assertThat(records).isZero(); // preview 不落库
+        Integer eventsBefore = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM journal_entry WHERE project_id = ? AND title LIKE '纪律检查%'", Integer.class, projectId);
+        org.assertj.core.api.Assertions.assertThat(eventsBefore).isZero();
+
+        // —— 检查提交 ——
+        // OVERRIDDEN 缺理由 → 422（Review Focus 1），不落库不写事件
+        mockMvc.perform(post("/api/research/projects/{id}/checks", projectId).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"checkType\":\"BUY\",\"result\":\"OVERRIDDEN\",\"overrideReason\":\"  \","
+                                + "\"items\":[{\"metric\":\"SINGLE_POSITION_RATIO\",\"threshold\":0.5,"
+                                + "\"currentValue\":1.0,\"outcome\":\"HIT\"}]}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("OVERRIDE_REASON_REQUIRED"));
+        assertThatCount("research_check_record", projectId, 0);
+        // OVERRIDDEN 携理由 → 201 + journal 事件「纪律检查：买入/越过」
+        mockMvc.perform(post("/api/research/projects/{id}/checks", projectId).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"checkType\":\"BUY\",\"result\":\"OVERRIDDEN\",\"overrideReason\":\"计划外机会，仓位已复核\","
+                                + "\"items\":[{\"metric\":\"SINGLE_POSITION_RATIO\",\"threshold\":0.5,"
+                                + "\"currentValue\":1.0,\"outcome\":\"HIT\"},"
+                                + "{\"metric\":\"能力圈\",\"outcome\":\"PASS\"}]}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").isNumber())
+                .andExpect(jsonPath("$.checkType").value("BUY"))
+                .andExpect(jsonPath("$.result").value("OVERRIDDEN"))
+                .andExpect(jsonPath("$.overrideReason").value("计划外机会，仓位已复核"))
+                .andExpect(jsonPath("$.items.length()").value(2));
+        assertThatCount("research_check_record", projectId, 1);
+        mockMvc.perform(get("/api/journal/entries").session(session).param("projectId", String.valueOf(projectId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.type == 'RESEARCH_EVENT' && @.title == '纪律检查：买入/越过')]").isArray());
+
+        // —— 证伪条件 + 命中合并视图（D21）——
+        mockMvc.perform(put("/api/research/projects/{id}/strategy", projectId).session(session)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"thesis\":\"扩产逻辑\"}"))
+                .andExpect(status().isOk());
+        MvcResult falsifiers = mockMvc.perform(put("/api/research/projects/{id}/falsifiers", projectId).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("[{\"kind\":\"PREDICATE\",\"predicate\":\"PRICE_BELOW\",\"threshold\":13.5,\"note\":\"跌破下限\"},"
+                                + "{\"kind\":\"EVENT\",\"note\":\"扩产延期超半年\"}]"))
+                .andExpect(status().isOk()).andReturn();
+        long falsifierId = ((Number) JsonPath.read(falsifiers.getResponse().getContentAsString(), "$[0].id")).longValue();
+
+        // SELL preview：额外注入证伪核对条目（F12，UNSET 待核对）
+        mockMvc.perform(post("/api/research/projects/{id}/checks/preview", projectId).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"checkType\":\"SELL\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(10)) // 4 规则 + 4 F01 + 2 证伪核对
+                .andExpect(jsonPath("$[8].metric").value("PRICE_BELOW 13.5000"))
+                .andExpect(jsonPath("$[8].outcome").value("UNSET"))
+                .andExpect(jsonPath("$[9].metric").value("扩产延期超半年"));
+
+        // 实时命中：收盘 12.34 < 13.5 → hit + 可解释 basis（含口径尾注，Ruling-17）；EVENT 待人工勾选
+        mockMvc.perform(get("/api/research/projects/{id}/falsifier/hits", projectId).session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].falsifierId").value((int) falsifierId))
+                .andExpect(jsonPath("$[0].realtime").value(true))
+                .andExpect(jsonPath("$[0].hit").value(true))
+                .andExpect(jsonPath("$[0].basis").value(org.hamcrest.Matchers.containsString("收盘价 12.34")))
+                .andExpect(jsonPath("$[0].basis").value(org.hamcrest.Matchers.containsString("东财收盘及估值")))
+                .andExpect(jsonPath("$[1].kind").value("EVENT"))
+                .andExpect(jsonPath("$[1].pending").value(true))
+                .andExpect(jsonPath("$[1].basis").value("待人工勾选"));
+
+        // 历史 hit 行合并：落一行留痕 → realtime=false 行追加（createdAt 提供命中时间）
+        jdbcTemplate.update("INSERT INTO research_falsifier_hit(project_id, falsifier_id, basis) VALUES (?,?,?)",
+                projectId, falsifierId, "收盘价 12.10 < 下限 13.5（东财收盘 2026-09-25）");
+        mockMvc.perform(get("/api/research/projects/{id}/falsifier/hits", projectId).session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(3))
+                .andExpect(jsonPath("$[2].realtime").value(false))
+                .andExpect(jsonPath("$[2].id").isNumber())
+                .andExpect(jsonPath("$[2].kind").value("PREDICATE"))
+                .andExpect(jsonPath("$[2].hitAt").isNotEmpty())
+                .andExpect(jsonPath("$[2].basis").value(org.hamcrest.Matchers.containsString("2026-09-25")));
+
+        // fixtures 清理（stock_valuation_daily/principle_rule 跨用例共享表）
+        jdbcTemplate.update("DELETE FROM stock_valuation_daily WHERE trading_day = ? AND stock_code = '600519'", today);
+        jdbcTemplate.update("DELETE FROM principle_rule WHERE user_id = ?", userId);
+    }
+
+    @DisplayName("证伪谓词缺收盘价：该条件 skipped（basis 无最近价/估值），不自动命中（Review Focus 4）")
+    @Test
+    void givenNoQuoteAndNoValuation_whenGetHits_thenPredicateSkipped() throws Exception {
+        register("res_plan_b", "abc12345");
+        approve("res_plan_b");
+        MockHttpSession session = login("res_plan_b", "abc12345");
+        MvcResult created = mockMvc.perform(post("/api/research/projects").session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"stockCode\":\"600519\",\"stockName\":\"贵州茅台\",\"title\":\"缺行情命中\"}"))
+                .andExpect(status().isCreated()).andReturn();
+        long projectId = ((Number) JsonPath.read(created.getResponse().getContentAsString(), "$.id")).longValue();
+
+        mockMvc.perform(put("/api/research/projects/{id}/strategy", projectId).session(session)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"thesis\":\"扩产逻辑\"}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(put("/api/research/projects/{id}/falsifiers", projectId).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("[{\"kind\":\"PREDICATE\",\"predicate\":\"PRICE_BELOW\",\"threshold\":13.5}]"))
+                .andExpect(status().isOk());
+
+        // 行情桩抛源异常 + 无估值快照 → close/pe/pb 全缺
+        Mockito.when(orchestratingMarketDataService.quote("600519"))
+                .thenThrow(new com.portfolio.invest.domain.market.MarketDataException("SOURCE_UNAVAILABLE", "源不可用"));
+
+        mockMvc.perform(get("/api/research/projects/{id}/falsifier/hits", projectId).session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].skipped").value(true))
+                .andExpect(jsonPath("$[0].hit").value(false))
+                .andExpect(jsonPath("$[0].basis").value("无最近价/估值"));
+    }
+
+    private void assertThatCount(String table, long projectId, int expected) {
+        Integer count = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM " + table + " WHERE project_id = ?", Integer.class, projectId);
+        org.assertj.core.api.Assertions.assertThat(count).isEqualTo(expected);
     }
 
     /** 三段式注册：发码（邮件桩取码）→ 携码注册；邮箱由用户名派生保证类内唯一。 */

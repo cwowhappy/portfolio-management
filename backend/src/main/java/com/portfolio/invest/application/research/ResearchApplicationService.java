@@ -1,5 +1,8 @@
 package com.portfolio.invest.application.research;
 
+import com.portfolio.invest.application.research.ResearchViews.CheckRecordView;
+import com.portfolio.invest.application.research.ResearchViews.EntryPlanView;
+import com.portfolio.invest.application.research.ResearchViews.FalsifierHitView;
 import com.portfolio.invest.application.research.ResearchViews.FalsifierView;
 import com.portfolio.invest.application.research.ResearchViews.ProjectDetailView;
 import com.portfolio.invest.application.research.ResearchViews.ProjectView;
@@ -7,10 +10,25 @@ import com.portfolio.invest.application.research.ResearchViews.StrategyView;
 import com.portfolio.invest.domain.journal.JournalEntry;
 import com.portfolio.invest.domain.journal.JournalEntryRepository;
 import com.portfolio.invest.domain.journal.JournalEntryType;
+import com.portfolio.invest.domain.research.CheckContext;
+import com.portfolio.invest.domain.research.CheckItemResult;
+import com.portfolio.invest.domain.research.CheckOutcome;
+import com.portfolio.invest.domain.research.CheckRecord;
+import com.portfolio.invest.domain.research.CheckResult;
+import com.portfolio.invest.domain.research.CheckType;
+import com.portfolio.invest.domain.research.DisciplineCheckService;
+import com.portfolio.invest.domain.research.EntryBatch;
+import com.portfolio.invest.domain.research.EntryPlan;
 import com.portfolio.invest.domain.research.Falsifier;
+import com.portfolio.invest.domain.research.FalsifierEvaluator;
+import com.portfolio.invest.domain.research.FalsifierHit;
+import com.portfolio.invest.domain.research.FalsifierHitResult;
 import com.portfolio.invest.domain.research.FalsifierKind;
 import com.portfolio.invest.domain.research.FalsifierPredicate;
+import com.portfolio.invest.domain.research.MarketSnapshot;
 import com.portfolio.invest.domain.research.ProjectStatus;
+import com.portfolio.invest.domain.research.ResearchCheckRepository;
+import com.portfolio.invest.domain.research.ResearchEntryPlanRepository;
 import com.portfolio.invest.domain.research.ResearchErrorCode;
 import com.portfolio.invest.domain.research.ResearchException;
 import com.portfolio.invest.domain.research.ResearchProject;
@@ -26,20 +44,27 @@ import jakarta.validation.constraints.NotNull;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 研究项目用例编排（F05 立项 / S1 归档 / D4 阶段流转 / D13 策略两级状态机 / D10 证伪条件集 / F08 反查支持）。
+ * 研究项目用例编排（F05 立项 / S1 归档 / D4 阶段流转 / D13 策略两级状态机 / D10 证伪条件集 /
+ * F09 建仓计划 / F10·F12 纪律检查 / D21 证伪命中合并视图）。
  *
  * <p>journal 事件写入（S3 跨域编排）：type=RESEARCH_EVENT、title=事件名、projectId 必填、
  * stockCode/stockName 带项目标的；直接走 {@link JournalEntryRepository}（计划裁定：不经
  * {@code JournalApplicationService}，避免 command 面拉宽）。多写操作（项目落库 + 事件）同事务。
+ *
+ * <p>P3-T4 追加：检查 preview（纯读不落库）与 submit（append-only 留痕 + 事件同事务）分离；
+ * 检查上下文/规则转换/快照组装委托 {@link CheckOrchestration} 与 {@link MarketSnapshotAssembler}。
  */
 @Service
 public class ResearchApplicationService {
@@ -55,13 +80,41 @@ public class ResearchApplicationService {
     public record SaveFalsifierItem(@NotNull FalsifierKind kind, FalsifierPredicate predicate,
                                     BigDecimal threshold, String note) {}
 
+    /** PUT 建仓批次项：字段域校验由 EntryBatch 紧凑构造器承担（400 BATCH_INVALID）。 */
+    public record SaveEntryBatchItem(@NotNull Integer seq, @NotNull BigDecimal priceLow,
+                                     @NotNull BigDecimal priceHigh, @NotNull Long quantity,
+                                     BigDecimal amount, @NotNull BigDecimal ratio) {}
+
+    /** PUT 建仓计划命令（整替：每次 of() 重建，无 wither——T1 裁定）。 */
+    public record SaveEntryPlanCommand(BigDecimal winRate, BigDecimal payoffRatio,
+                                       List<@Valid SaveEntryBatchItem> batches) {}
+
+    /** 发起检查命令：f01MustItems 为 F01 必查项勾选布尔（true=已确认，键与前端确认卡逐字对齐）。 */
+    public record PreviewCheckCommand(@NotNull CheckType checkType, Map<String, Boolean> f01MustItems) {}
+
+    /** 提交检查命令：items 为 preview 返回的检查项快照（留痕定格；空列表域拒绝 CHECK_ITEMS_REQUIRED）。 */
+    public record SubmitCheckCommand(@NotNull CheckType checkType, @NotNull CheckResult result,
+                                     String overrideReason, @NotNull List<CheckItemResult> items) {}
+
     private final ResearchProjectRepository repository;
     private final JournalEntryRepository journalRepository;
+    private final ResearchEntryPlanRepository entryPlanRepository;
+    private final ResearchCheckRepository checkRepository;
+    private final CheckOrchestration orchestration;
+    private final MarketSnapshotAssembler snapshotAssembler;
 
     public ResearchApplicationService(ResearchProjectRepository repository,
-                                      JournalEntryRepository journalRepository) {
+                                      JournalEntryRepository journalRepository,
+                                      ResearchEntryPlanRepository entryPlanRepository,
+                                      ResearchCheckRepository checkRepository,
+                                      CheckOrchestration orchestration,
+                                      MarketSnapshotAssembler snapshotAssembler) {
         this.repository = repository;
         this.journalRepository = journalRepository;
+        this.entryPlanRepository = entryPlanRepository;
+        this.checkRepository = checkRepository;
+        this.orchestration = orchestration;
+        this.snapshotAssembler = snapshotAssembler;
     }
 
     /**
@@ -201,6 +254,81 @@ public class ResearchApplicationService {
         return repository.findFalsifiers(strategy.id()).stream().map(FalsifierView::from).toList();
     }
 
+    // —— 建仓计划（F09，P3-T4）——
+
+    /** 建仓计划查询：未保存 → NOT_FOUND（照 getStrategy 先例）。 */
+    public EntryPlanView getEntryPlan(Long userId, Long projectId) {
+        requireProject(userId, projectId);
+        return EntryPlanView.from(requireEntryPlan(projectId));
+    }
+
+    /**
+     * 建仓计划整替保存：每次 {@link EntryPlan#of} 重建（T1 裁定无 wither），plan+batches 同事务整替；
+     * Σratio &gt; 1 唯一硬拒绝（RATIO_SUM_EXCEEDED→422，D5），kellyRatio 读时计算不落库。
+     */
+    @Transactional
+    public EntryPlanView saveEntryPlan(Long userId, Long projectId, SaveEntryPlanCommand cmd) {
+        requireProject(userId, projectId);
+        EntryPlan plan = EntryPlan.of(projectId, cmd.winRate(), cmd.payoffRatio(), toBatches(cmd.batches()));
+        return EntryPlanView.from(entryPlanRepository.save(plan));
+    }
+
+    // —— 纪律检查（F10/F12，P3-T4）——
+
+    /**
+     * 发起检查（preview，纯读不落库）：组装上下文（计划占比 + 持仓聚合 + 快照估值 + F01 勾选 +
+     * 证伪条件集）→ {@link DisciplineCheckService} 纯函数 → 命中项列表。软提醒不阻断（D5）。
+     */
+    public List<CheckItemResult> previewCheck(Long userId, Long projectId, PreviewCheckCommand cmd) {
+        ResearchProject project = requireProject(userId, projectId);
+        EntryPlan plan = entryPlanRepository.findByProjectId(projectId).orElse(null);
+        MarketSnapshot snapshot = snapshotAssembler.assemble(project.stockCode());
+        CheckContext ctx = orchestration.buildContext(project, CheckOrchestration.planRatio(plan),
+                checkedItems(cmd.f01MustItems()), falsifiersOf(projectId), snapshot);
+        return DisciplineCheckService.check(ctx, cmd.checkType(), orchestration.enabledRules(userId));
+    }
+
+    /**
+     * 提交检查留痕（append-only）：CheckRecord.create 域校验（OVERRIDDEN 必填理由→422），
+     * 落库 + journal 事件「纪律检查：&lt;类型&gt;/&lt;结论&gt;」同事务。
+     */
+    @Transactional
+    public CheckRecordView submitCheck(Long userId, Long projectId, SubmitCheckCommand cmd) {
+        ResearchProject project = requireProject(userId, projectId);
+        CheckRecord record = checkRepository.insert(CheckRecord.create(projectId, cmd.checkType(),
+                cmd.items(), cmd.result(), cmd.overrideReason()));
+        long hitCount = cmd.items().stream().filter(item -> item.outcome() == CheckOutcome.HIT).count();
+        writeEvent(project, "纪律检查：" + cmd.checkType().label() + "/" + cmd.result().label(),
+                "纪律检查「" + cmd.checkType().label() + "」结论「" + cmd.result().label()
+                        + "」，命中项 " + hitCount + " 个");
+        return CheckRecordView.from(record);
+    }
+
+    // —— 证伪命中合并视图（D21，P3-T4）——
+
+    /**
+     * 证伪命中合并视图：实时求值（FalsifierEvaluator 纯函数，不落库）+ 历史 hit 留痕行。
+     * EVENT 条目按勾选状态呈现（Ruling-18：已确认事件/待人工勾选）；历史行仅 PREDICATE 命中
+     * （Ruling-18 落表口径，T5 日终扫描同口径）。
+     */
+    public List<FalsifierHitView> getHits(Long userId, Long projectId) {
+        ResearchProject project = requireProject(userId, projectId);
+        List<Falsifier> falsifiers = falsifiersOf(projectId);
+        List<FalsifierHitView> views = new ArrayList<>();
+        if (!falsifiers.isEmpty()) {
+            MarketSnapshot snapshot = snapshotAssembler.assemble(project.stockCode());
+            for (FalsifierHitResult result : FalsifierEvaluator.evaluate(falsifiers, snapshot)) {
+                views.add(realtimeView(result));
+            }
+        }
+        Map<Long, Falsifier> byId = falsifiers.stream()
+                .collect(Collectors.toMap(Falsifier::id, Function.identity(), (a, b) -> a));
+        for (FalsifierHit hit : checkRepository.findHits(projectId)) {
+            views.add(historyView(hit, byId));
+        }
+        return views;
+    }
+
     /** 归属双重保障（照 journal requireEntry 模式）：非本人/不存在一律 NOT_FOUND，不泄漏存在性。 */
     private ResearchProject requireProject(Long userId, Long projectId) {
         return repository.findById(projectId)
@@ -246,6 +374,71 @@ public class ResearchApplicationService {
         journalRepository.save(JournalEntry.create(project.userId(), JournalEntryType.RESEARCH_EVENT,
                 project.stockCode(), project.stockName(), null, title, content,
                 null, null, null, null, null, LocalDate.now(), Instant.now(), project.id()));
+    }
+
+    private EntryPlan requireEntryPlan(Long projectId) {
+        return entryPlanRepository.findByProjectId(projectId)
+                .orElseThrow(() -> new ResearchException(ResearchErrorCode.NOT_FOUND, "建仓计划不存在"));
+    }
+
+    /** 项目当前证伪条件集：无策略文档 → 空列表（与详情视图口径一致）。 */
+    private List<Falsifier> falsifiersOf(Long projectId) {
+        return repository.findStrategy(projectId)
+                .map(doc -> repository.findFalsifiers(doc.id()))
+                .orElse(List.of());
+    }
+
+    /** wire 批次项 → 领域批次（T1 deferred 守卫：null 列表视同空、null 元素显式拒绝，均不落库）。 */
+    private static List<EntryBatch> toBatches(List<SaveEntryBatchItem> items) {
+        if (items == null) {
+            return List.of();
+        }
+        List<EntryBatch> batches = new ArrayList<>(items.size());
+        for (SaveEntryBatchItem item : items) {
+            if (item == null) {
+                throw new ResearchException(ResearchErrorCode.BATCH_INVALID, "批次条目不能为空");
+            }
+            batches.add(new EntryBatch(item.seq(), item.priceLow(), item.priceHigh(),
+                    item.quantity(), item.amount(), item.ratio()));
+        }
+        return batches;
+    }
+
+    /** F01 勾选布尔 → 已确认项集合（true 才进上下文；null 容错）。 */
+    private static List<String> checkedItems(Map<String, Boolean> f01MustItems) {
+        if (f01MustItems == null) {
+            return List.of();
+        }
+        return f01MustItems.entrySet().stream()
+                .filter(entry -> Boolean.TRUE.equals(entry.getValue()))
+                .map(Map.Entry::getKey)
+                .toList();
+    }
+
+    /** 实时求值行：EVENT 条目按勾选状态改写 basis/pending（Ruling-18，evaluator 不消费 eventChecked）。 */
+    private static FalsifierHitView realtimeView(FalsifierHitResult result) {
+        Falsifier falsifier = result.falsifier();
+        if (falsifier.kind() == FalsifierKind.EVENT) {
+            boolean checked = falsifier.eventChecked();
+            return new FalsifierHitView(null, falsifier.id(), falsifier.kind(), null, null,
+                    falsifier.note(), checked, false, !checked, false,
+                    checked ? "已确认事件" : "待人工勾选", true, null);
+        }
+        return new FalsifierHitView(null, falsifier.id(), falsifier.kind(), falsifier.predicate(),
+                falsifier.threshold(), falsifier.note(), falsifier.eventChecked(),
+                result.hit(), result.pending(), result.skipped(), result.basis(), true, null);
+    }
+
+    /** 历史留痕行：falsifier 现态回连（条件已删则现态字段 null，仅保 basis/时间）。 */
+    private static FalsifierHitView historyView(FalsifierHit hit, Map<Long, Falsifier> byId) {
+        Falsifier falsifier = byId.get(hit.falsifierId());
+        return new FalsifierHitView(hit.id(), hit.falsifierId(),
+                falsifier == null ? null : falsifier.kind(),
+                falsifier == null ? null : falsifier.predicate(),
+                falsifier == null ? null : falsifier.threshold(),
+                falsifier == null ? null : falsifier.note(),
+                falsifier != null && falsifier.eventChecked(),
+                false, false, false, hit.basis(), false, hit.createdAt());
     }
 
     private static boolean matches(ResearchProject p, String q) {

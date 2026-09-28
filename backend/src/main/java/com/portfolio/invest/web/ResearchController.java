@@ -2,13 +2,20 @@ package com.portfolio.invest.web;
 
 import com.portfolio.invest.application.research.CreateProjectCommand;
 import com.portfolio.invest.application.research.ResearchApplicationService;
+import com.portfolio.invest.application.research.ResearchApplicationService.PreviewCheckCommand;
+import com.portfolio.invest.application.research.ResearchApplicationService.SaveEntryPlanCommand;
 import com.portfolio.invest.application.research.ResearchApplicationService.SaveFalsifierItem;
+import com.portfolio.invest.application.research.ResearchApplicationService.SubmitCheckCommand;
 import com.portfolio.invest.application.research.ResearchApplicationService.UpdateProjectCommand;
+import com.portfolio.invest.application.research.ResearchViews.CheckRecordView;
+import com.portfolio.invest.application.research.ResearchViews.EntryPlanView;
+import com.portfolio.invest.application.research.ResearchViews.FalsifierHitView;
 import com.portfolio.invest.application.research.ResearchViews.FalsifierView;
 import com.portfolio.invest.application.research.ResearchViews.ProjectDetailView;
 import com.portfolio.invest.application.research.ResearchViews.ProjectView;
 import com.portfolio.invest.application.research.ResearchViews.StrategyView;
 import com.portfolio.invest.application.research.SaveStrategyCommand;
+import com.portfolio.invest.domain.research.CheckItemResult;
 import com.portfolio.invest.domain.research.ProjectStatus;
 import com.portfolio.invest.domain.research.ResearchStage;
 import com.portfolio.invest.infrastructure.security.AuthenticatedUser;
@@ -99,6 +106,42 @@ public class ResearchController {
     public List<FalsifierView> saveFalsifiers(Authentication auth, @PathVariable Long projectId,
                                               @RequestBody @Valid List<SaveFalsifierItem> items) {
         return service.saveFalsifiers(currentUserId(auth), projectId, items);
+    }
+
+    // —— P3-T4：建仓计划 / 纪律检查 / 证伪命中 ——
+
+    /** 建仓计划查询：未保存 → 404（照 strategy 先例）。 */
+    @GetMapping("/projects/{projectId}/entry-plan")
+    public EntryPlanView getEntryPlan(Authentication auth, @PathVariable Long projectId) {
+        return service.getEntryPlan(currentUserId(auth), projectId);
+    }
+
+    /** 建仓计划整替保存（plan+batches 同事务；Σratio>1 → 422 唯一硬拒绝）。 */
+    @PutMapping("/projects/{projectId}/entry-plan")
+    public EntryPlanView saveEntryPlan(Authentication auth, @PathVariable Long projectId,
+                                       @Valid @RequestBody SaveEntryPlanCommand cmd) {
+        return service.saveEntryPlan(currentUserId(auth), projectId, cmd);
+    }
+
+    /** 发起纪律检查（纯读不落库）：返回命中项列表（软提醒不阻断，D5）。 */
+    @PostMapping("/projects/{projectId}/checks/preview")
+    public List<CheckItemResult> previewCheck(Authentication auth, @PathVariable Long projectId,
+                                              @Valid @RequestBody PreviewCheckCommand cmd) {
+        return service.previewCheck(currentUserId(auth), projectId, cmd);
+    }
+
+    /** 提交检查留痕（append-only + journal 事件；OVERRIDDEN 缺理由 → 422）。 */
+    @PostMapping("/projects/{projectId}/checks")
+    public ResponseEntity<CheckRecordView> submitCheck(Authentication auth, @PathVariable Long projectId,
+                                                       @Valid @RequestBody SubmitCheckCommand cmd) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(service.submitCheck(currentUserId(auth), projectId, cmd));
+    }
+
+    /** 证伪命中合并视图：实时求值 + 历史 hit 留痕（D21）。 */
+    @GetMapping("/projects/{projectId}/falsifier/hits")
+    public List<FalsifierHitView> getHits(Authentication auth, @PathVariable Long projectId) {
+        return service.getHits(currentUserId(auth), projectId);
     }
 
     private static Long currentUserId(Authentication auth) {
