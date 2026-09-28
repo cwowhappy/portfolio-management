@@ -72,6 +72,16 @@ const predicateFalsifier: FalsifierView = {
   enabled: true,
 };
 
+const eventFalsifier: FalsifierView = {
+  id: 12,
+  kind: "EVENT",
+  predicate: null,
+  threshold: null,
+  eventChecked: false,
+  note: "食品安全事件",
+  enabled: true,
+};
+
 beforeEach(() => {
   vi.resetAllMocks();
   api.saveStrategyDraft.mockResolvedValue(draftStrategy);
@@ -174,13 +184,36 @@ describe("StrategyPanel", () => {
     expect(screen.getByText("事件类证伪条件必须填写说明")).toBeTruthy();
     expect(api.saveFalsifiers).not.toHaveBeenCalled();
 
-    // 补说明后整替提交：已有谓词项 + 新事件项
+    // 补说明后整替提交：已有谓词项 + 新事件项（新事件未勾选 → eventChecked: false）
     const noteInput = screen.getByLabelText("事件说明") as HTMLInputElement;
     fireEvent.change(noteInput, { target: { value: "食品安全事件" } });
     fireEvent.click(screen.getByRole("button", { name: "保存证伪条件" }));
     await waitFor(() => expect(api.saveFalsifiers).toHaveBeenCalledWith(7, [
       { kind: "PREDICATE", predicate: "PRICE_BELOW", threshold: 12.5, note: "跌破估值下限" },
-      { kind: "EVENT", note: "食品安全事件" },
+      { kind: "EVENT", note: "食品安全事件", eventChecked: false },
     ]));
+  });
+
+  it("EVENT 勾选：checkbox 随读模型种子化，勾选后 PUT 载荷携 eventChecked=true（PREDICATE 行不渲染勾选）", async () => {
+    render(
+      <StrategyPanel
+        projectId={7}
+        strategy={draftStrategy}
+        falsifiers={[predicateFalsifier, eventFalsifier]}
+        onChanged={vi.fn()}
+      />,
+    );
+    // 勾选框仅 EVENT 行渲染（1 个），随读模型 eventChecked=false 种子化
+    const checkbox = screen.getByLabelText("已确认") as HTMLInputElement;
+    expect(checkbox.checked).toBe(false);
+
+    fireEvent.click(checkbox);
+    expect(checkbox.checked).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "保存证伪条件" }));
+    await waitFor(() =>
+      expect(api.saveFalsifiers).toHaveBeenCalledWith(7, [
+        { kind: "PREDICATE", predicate: "PRICE_BELOW", threshold: 12.5, note: "跌破估值下限" },
+        { kind: "EVENT", note: "食品安全事件", eventChecked: true },
+      ]));
   });
 });

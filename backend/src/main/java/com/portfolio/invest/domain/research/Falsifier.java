@@ -55,8 +55,11 @@ public final class Falsifier {
                 false, note, true, null, now, now);
     }
 
-    /** 事件类：note 必填（事件靠文字说明，不设谓词与阈值）。 */
-    public static Falsifier ofEvent(Long strategyId, String note) {
+    /**
+     * 事件类：note 必填（事件靠文字说明，不设谓词与阈值）；eventChecked 为人工勾选置位——
+     * 唯一写路径是 PUT 整替项携带（无独立 update 用例，照 T2/回填先例整替重建传导）。
+     */
+    public static Falsifier ofEvent(Long strategyId, String note, boolean eventChecked) {
         if (strategyId == null) {
             throw new ResearchException(ResearchErrorCode.STRATEGY_REQUIRED, "归属策略文档不能为空");
         }
@@ -65,7 +68,12 @@ public final class Falsifier {
         }
         Instant now = Instant.now();
         return new Falsifier(null, strategyId, FalsifierKind.EVENT, null, null,
-                false, note, true, null, now, now);
+                eventChecked, note, true, null, now, now);
+    }
+
+    /** 事件类（勾选缺省 false）：委托三参重载，兼容扫描/种子等不携带勾选的构造方。 */
+    public static Falsifier ofEvent(Long strategyId, String note) {
+        return ofEvent(strategyId, note, false);
     }
 
     /** 持久化还原（JPA 转换器用，不做校验）。 */

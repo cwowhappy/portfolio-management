@@ -102,9 +102,12 @@ public class ResearchApplicationService {
     public record UpdateProjectCommand(String title, ResearchStage currentStage,
                                        List<@Valid ManualMark> manualMarks) {}
 
-    /** PUT 证伪条件项：kind 决定构造工厂，字段校验由 Falsifier 工厂承担。 */
+    /**
+     * PUT 证伪条件项：kind 决定构造工厂，字段校验由 Falsifier 工厂承担；
+     * eventChecked 仅 EVENT 消费（人工勾选「已确认事件」置位的唯一写路径），PREDICATE 忽略。
+     */
     public record SaveFalsifierItem(@NotNull FalsifierKind kind, FalsifierPredicate predicate,
-                                    BigDecimal threshold, String note) {}
+                                    BigDecimal threshold, Boolean eventChecked, String note) {}
 
     /** PUT 建仓批次项：字段域校验由 EntryBatch 紧凑构造器承担（400 BATCH_INVALID）。 */
     public record SaveEntryBatchItem(@NotNull Integer seq, @NotNull BigDecimal priceLow,
@@ -305,7 +308,8 @@ public class ResearchApplicationService {
                 .map(item -> switch (item.kind()) {
                     case PREDICATE -> Falsifier.ofPredicate(strategy.id(), item.predicate(),
                             item.threshold(), item.note());
-                    case EVENT -> Falsifier.ofEvent(strategy.id(), item.note());
+                    case EVENT -> Falsifier.ofEvent(strategy.id(), item.note(),
+                            Boolean.TRUE.equals(item.eventChecked()));
                 })
                 .toList();
         repository.saveFalsifiers(strategy.id(), falsifiers);
@@ -434,6 +438,7 @@ public class ResearchApplicationService {
      * 创建复盘（创建即定格）：{@link ReviewSnapshotComposer} 组装带口径标注的快照 JSONB
      * （区间收益/后续走势/归因窗口，写入后无任何重算入口）+ 从快照解析自动圈选 trade_ids
      * （D11 时间窗口径留痕于快照，软引用列此后可经 PUT 手动修正）。
+     * F08 时间线：创建即写「复盘创建：&lt;档位&gt;」事件（与回流事件同入项目时间线）。
      */
     @Transactional
     public ReviewView createReview(Long userId, Long projectId, CreateReviewCommand cmd) {
@@ -444,6 +449,8 @@ public class ResearchApplicationService {
         String snapshot = reviewComposer.compose(userId, project, cmd.periodStart(), cmd.periodEnd(), batches);
         Review saved = reviewRepository.save(Review.create(projectId, cmd.tier(),
                 cmd.periodStart(), cmd.periodEnd(), snapshot, autoCircle(snapshot)));
+        writeEvent(project, "复盘创建：" + cmd.tier().label(),
+                cmd.tier().label() + " " + cmd.periodStart() + "~" + cmd.periodEnd() + " 创建，快照已定格");
         return ReviewView.from(saved);
     }
 
@@ -491,7 +498,10 @@ public class ResearchApplicationService {
             throw new ResearchException(ResearchErrorCode.REFLUX_WIKI_UNAVAILABLE,
                     "知识库写入失败，复盘已保留，请稍后重试回流");
         }
-        return ReviewView.from(reviewRepository.save(review.refluxConfirm(entry.id())));
+        Review confirmed = reviewRepository.save(review.refluxConfirm(entry.id()));
+        // F08 时间线：回流成功才写事件（幂等早退/降级路径不写）
+        writeEvent(project, "复盘回流知识库", "复盘叙述已写入知识库条目「" + entry.title() + "」");
+        return ReviewView.from(confirmed);
     }
 
     /**
@@ -567,26 +577,30 @@ public class ResearchApplicationService {
         Optional<StrategyDoc> strategy = repository.findStrategy(project.id());
         List<Falsifier> falsifiers = strategy.map(doc -> repository.findFalsifiers(doc.id())).orElse(List.of());
         Map<ResearchStage, StageCompletion> completions =
-                StageCompletionService.compute(project, manualStates, artifactCounts(strategy));
+                StageCompletionService.compute(project, manualStates, artifactCounts(project.id(), strategy));
         return ProjectDetailView.of(project, completions, strategy.orElse(null), falsifiers);
     }
 
     /**
-     * 各阶段产物计数（AUTO 完成度输入，S6 简化裁定）：
+     * 各阶段产物计数（AUTO 完成度输入，S6；件数语义对齐 {@link StageArtifactCatalog}）：
      * <ul>
-     *   <li>NEW_ANALYSIS→1：项目存在+标题即视为 1 件分析记录（StageArtifactCatalog NEW_ANALYSIS→1
-     *       的语义 = 立项即有分析 checklist；v1 不在 research 侧复制 checklist 条目）</li>
+     *   <li>NEW_ANALYSIS→1：项目存在+标题即视为 1 件分析记录（目录 NEW_ANALYSIS→1 的语义 =
+     *       立项即有分析 checklist；v1 不在 research 侧复制 checklist 条目）</li>
      *   <li>STRATEGY→定稿即 1（DRAFT 不算产物）；</li>
-     *   <li>POSITION/REVIEW→0：建仓计划/检查留痕/复盘产物源由后续里程碑接入（P3/P4）。</li>
+     *   <li>POSITION→建仓计划存在 1 件 + 检查留痕非空 1 件（目录 2 件，P3 接入）；</li>
+     *   <li>REVIEW→复盘记录非空即 1 件（目录 1 件，P4 接入）。</li>
      * </ul>
+     * 存在性探查复用既有读端口（findByProjectId/findChecks/findByProjectId），不另开 count 查询。
      */
-    private Map<ResearchStage, Integer> artifactCounts(Optional<StrategyDoc> strategy) {
+    private Map<ResearchStage, Integer> artifactCounts(Long projectId, Optional<StrategyDoc> strategy) {
         Map<ResearchStage, Integer> counts = new EnumMap<>(ResearchStage.class);
         counts.put(ResearchStage.NEW_ANALYSIS, 1);
         counts.put(ResearchStage.STRATEGY,
                 strategy.filter(d -> d.state() == StrategyState.FINALIZED).isPresent() ? 1 : 0);
-        counts.put(ResearchStage.POSITION, 0);
-        counts.put(ResearchStage.REVIEW, 0);
+        counts.put(ResearchStage.POSITION,
+                (entryPlanRepository.findByProjectId(projectId).isPresent() ? 1 : 0)
+                        + (checkRepository.findChecks(projectId).isEmpty() ? 0 : 1));
+        counts.put(ResearchStage.REVIEW, reviewRepository.findByProjectId(projectId).isEmpty() ? 0 : 1);
         return counts;
     }
 

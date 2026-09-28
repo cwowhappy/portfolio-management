@@ -27,11 +27,12 @@ import {
 
 const PREDICATES: readonly FalsifierPredicate[] = ["PRICE_BELOW", "PRICE_ABOVE", "PE_ABOVE", "PB_ABOVE"];
 
-/** 证伪条件编辑行：从读模型种子化，保存时映射回 PUT 整替项。 */
+/** 证伪条件编辑行：从读模型种子化，保存时映射回 PUT 整替项（eventChecked 仅 EVENT 行渲染勾选）。 */
 interface FalsifierRow {
   kind: FalsifierKind;
   predicate: FalsifierPredicate;
   threshold: string;
+  eventChecked: boolean;
   note: string;
 }
 
@@ -39,6 +40,7 @@ const toRow = (f: FalsifierView): FalsifierRow => ({
   kind: f.kind,
   predicate: f.predicate ?? "PRICE_BELOW",
   threshold: f.threshold == null ? "" : String(f.threshold),
+  eventChecked: f.eventChecked,
   note: f.note ?? "",
 });
 
@@ -157,7 +159,7 @@ export default function StrategyPanel({ projectId, strategy, falsifiers, onChang
   const addRow = (kind: FalsifierKind) => {
     setRows((rs) => [
       ...rs,
-      { kind, predicate: "PRICE_BELOW", threshold: "", note: "" },
+      { kind, predicate: "PRICE_BELOW", threshold: "", eventChecked: false, note: "" },
     ]);
   };
 
@@ -175,7 +177,7 @@ export default function StrategyPanel({ projectId, strategy, falsifiers, onChang
         falsifierSave.setError("事件类证伪条件必须填写说明");
         return;
       } else {
-        items.push({ kind: "EVENT", note: r.note.trim() });
+        items.push({ kind: "EVENT", note: r.note.trim(), eventChecked: r.eventChecked });
       }
     }
     void falsifierSave.run(async () => {
@@ -361,14 +363,25 @@ export default function StrategyPanel({ projectId, strategy, falsifiers, onChang
                     </div>
                   </>
                 ) : (
-                  <div className="min-w-56 flex-1">
-                    <label className={labelCls} htmlFor={`f-event-${i}`}>事件说明</label>
-                    <input
-                      id={`f-event-${i}`} aria-label="事件说明" className={`${inputCls} w-full`}
-                      value={r.note} placeholder="事件说明（必填）"
-                      onChange={(e) => updateRow(i, { note: e.target.value })}
-                    />
-                  </div>
+                  <>
+                    <div className="min-w-56 flex-1">
+                      <label className={labelCls} htmlFor={`f-event-${i}`}>事件说明</label>
+                      <input
+                        id={`f-event-${i}`} aria-label="事件说明" className={`${inputCls} w-full`}
+                        value={r.note} placeholder="事件说明（必填）"
+                        onChange={(e) => updateRow(i, { note: e.target.value })}
+                      />
+                    </div>
+                    {/* EVENT 人工勾选（F2 写路径）：随整替项携带 eventChecked，命中视图同「已确认事件」口径 */}
+                    <label className="flex items-center gap-1.5 pb-1.5 text-xs text-[color:var(--color-ink-faint)]">
+                      <input
+                        type="checkbox"
+                        checked={r.eventChecked}
+                        onChange={(e) => updateRow(i, { eventChecked: e.target.checked })}
+                      />
+                      已确认
+                    </label>
+                  </>
                 )}
                 <button
                   type="button"

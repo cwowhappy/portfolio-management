@@ -360,7 +360,7 @@ class ResearchApplicationServiceTest {
 
         assertThatThrownBy(() -> service.saveFalsifiers(1L, 5L, List.of(
                 new SaveFalsifierItem(FalsifierKind.PREDICATE, FalsifierPredicate.PRICE_BELOW,
-                        new BigDecimal("13.5"), null))))
+                        new BigDecimal("13.5"), null, null))))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.STRATEGY_REQUIRED));
     }
@@ -379,8 +379,8 @@ class ResearchApplicationServiceTest {
 
         var views = service.saveFalsifiers(1L, 5L, List.of(
                 new SaveFalsifierItem(FalsifierKind.PREDICATE, FalsifierPredicate.PRICE_BELOW,
-                        new BigDecimal("13.5"), "跌破下限"),
-                new SaveFalsifierItem(FalsifierKind.EVENT, null, null, "扩产延期")));
+                        new BigDecimal("13.5"), null, "跌破下限"),
+                new SaveFalsifierItem(FalsifierKind.EVENT, null, null, null, "扩产延期")));
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<Falsifier>> captor = ArgumentCaptor.forClass((Class) List.class);
@@ -391,6 +391,30 @@ class ResearchApplicationServiceTest {
         assertThat(views).hasSize(2);
         assertThat(views.get(0).id()).isEqualTo(9L);
         assertThat(views.get(1).kind()).isEqualTo(FalsifierKind.EVENT);
+    }
+
+    @DisplayName("PUT EVENT 携 eventChecked=true：勾选位经整替重建携带落库（PREDICATE 忽略该字段）")
+    @Test
+    void givenEventItemWithChecked_whenSaveFalsifiers_thenFlagCarriedIntoRebuiltRows() {
+        when(repository.findById(5L)).thenReturn(Optional.of(project(5L, 1L,
+                ResearchStage.STRATEGY, ProjectStatus.ACTIVE)));
+        when(repository.findStrategy(5L)).thenReturn(Optional.of(strategy(StrategyState.DRAFT, "10", "20")));
+        when(repository.findFalsifiers(7L)).thenReturn(List.of(
+                Falsifier.reconstitute(10L, 7L, FalsifierKind.EVENT, null, null,
+                        true, "扩产延期已确认", true, 0L, NOW, NOW)));
+
+        var views = service.saveFalsifiers(1L, 5L, List.of(
+                new SaveFalsifierItem(FalsifierKind.EVENT, null, null, Boolean.TRUE, "扩产延期已确认"),
+                new SaveFalsifierItem(FalsifierKind.PREDICATE, FalsifierPredicate.PRICE_BELOW,
+                        new BigDecimal("13.5"), Boolean.TRUE, "跌破下限")));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Falsifier>> captor = ArgumentCaptor.forClass((Class) List.class);
+        verify(repository).saveFalsifiers(eq(7L), captor.capture());
+        assertThat(captor.getValue().get(0).kind()).isEqualTo(FalsifierKind.EVENT);
+        assertThat(captor.getValue().get(0).eventChecked()).isTrue();  // EVENT 勾选位随整替项落库
+        assertThat(captor.getValue().get(1).eventChecked()).isFalse(); // PREDICATE 不消费 eventChecked
+        assertThat(views.get(0).eventChecked()).isTrue(); // 回读视图同位（落库往返口径）
     }
 
     @DisplayName("GET 证伪条件：无策略文档返回空列表（与详情视图一致）")
@@ -457,6 +481,63 @@ class ResearchApplicationServiceTest {
         var detail = service.getProject(1L, 5L);
 
         assertThat(detail.completions().get(ResearchStage.NEW_ANALYSIS).status()).isEqualTo(StageStatus.IN_PROGRESS);
+    }
+
+    @DisplayName("POSITION 完成度回接真实产物：建仓计划 + 检查留痕齐 → 完成·自动（目录 2 件）")
+    @Test
+    void givenEntryPlanAndCheckRecord_whenGetDetail_thenPositionCompletedAuto() {
+        when(repository.findById(5L)).thenReturn(Optional.of(project(5L, 1L,
+                ResearchStage.POSITION, ProjectStatus.ACTIVE)));
+        when(repository.findManualStates(5L)).thenReturn(Map.of());
+        when(repository.findStrategy(5L)).thenReturn(Optional.empty());
+        when(entryPlanRepository.findByProjectId(5L)).thenReturn(Optional.of(EntryPlan.reconstitute(11L, 5L,
+                null, null, List.of(new EntryBatch(1, new BigDecimal("12"), new BigDecimal("13"), 100L, null,
+                        new BigDecimal("1.0"))), 0L, NOW, NOW)));
+        when(checkRepository.findChecks(5L)).thenReturn(List.of(CheckRecord.reconstitute(21L, 5L, CheckType.BUY,
+                List.of(new CheckItemResult("能力圈", null, null, CheckOutcome.PASS)), CheckResult.CONFIRMED,
+                null, NOW)));
+
+        var detail = service.getProject(1L, 5L);
+
+        assertThat(detail.completions().get(ResearchStage.POSITION).status()).isEqualTo(StageStatus.COMPLETED);
+        assertThat(detail.completions().get(ResearchStage.POSITION).basis())
+                .isEqualTo(com.portfolio.invest.domain.research.CompletionBasis.AUTO);
+    }
+
+    @DisplayName("POSITION 产物不齐：仅有建仓计划无检查留痕 → 进行中（1/2 件，当前阶段）")
+    @Test
+    void givenOnlyEntryPlan_whenGetDetail_thenPositionInProgress() {
+        when(repository.findById(5L)).thenReturn(Optional.of(project(5L, 1L,
+                ResearchStage.POSITION, ProjectStatus.ACTIVE)));
+        when(repository.findManualStates(5L)).thenReturn(Map.of());
+        when(repository.findStrategy(5L)).thenReturn(Optional.empty());
+        when(entryPlanRepository.findByProjectId(5L)).thenReturn(Optional.of(EntryPlan.reconstitute(11L, 5L,
+                null, null, List.of(new EntryBatch(1, new BigDecimal("12"), new BigDecimal("13"), 100L, null,
+                        new BigDecimal("1.0"))), 0L, NOW, NOW)));
+        when(checkRepository.findChecks(5L)).thenReturn(List.of());
+
+        var detail = service.getProject(1L, 5L);
+
+        assertThat(detail.completions().get(ResearchStage.POSITION).status()).isEqualTo(StageStatus.IN_PROGRESS);
+        assertThat(detail.completions().get(ResearchStage.POSITION).basis())
+                .isEqualTo(com.portfolio.invest.domain.research.CompletionBasis.PENDING);
+    }
+
+    @DisplayName("REVIEW 完成度回接真实产物：有复盘记录 → 完成·自动（目录 1 件）")
+    @Test
+    void givenReviewRecord_whenGetDetail_thenReviewCompletedAuto() {
+        when(repository.findById(5L)).thenReturn(Optional.of(project(5L, 1L,
+                ResearchStage.REVIEW, ProjectStatus.ACTIVE)));
+        when(repository.findManualStates(5L)).thenReturn(Map.of());
+        when(repository.findStrategy(5L)).thenReturn(Optional.empty());
+        when(reviewRepository.findByProjectId(5L)).thenReturn(List.of(
+                persistedReview(RefluxState.PENDING, null, null)));
+
+        var detail = service.getProject(1L, 5L);
+
+        assertThat(detail.completions().get(ResearchStage.REVIEW).status()).isEqualTo(StageStatus.COMPLETED);
+        assertThat(detail.completions().get(ResearchStage.REVIEW).basis())
+                .isEqualTo(com.portfolio.invest.domain.research.CompletionBasis.AUTO);
     }
 
     @DisplayName("保存后列表/详情走同一仓库：saveFalsifiers 后 GET 回读")
@@ -965,7 +1046,7 @@ class ResearchApplicationServiceTest {
         }
     }
 
-    @DisplayName("create 复盘：Composer 输出原样定格落库 + 自动圈选 trade_ids 解析去重排序，无 journal 事件")
+    @DisplayName("create 复盘：Composer 输出原样定格落库 + 自动圈选去重排序 + 「复盘创建」事件（F08 时间线）")
     @Test
     void givenPeriodAndTier_whenCreateReview_thenComposerOutputFrozenWithAutoCircle() {
         ResearchProject project = project(5L, 1L, ResearchStage.REVIEW, ProjectStatus.ACTIVE);
@@ -991,7 +1072,13 @@ class ResearchApplicationServiceTest {
         assertThat(captor.getValue().refluxState()).isEqualTo(RefluxState.PENDING);
         assertThat(view.id()).isEqualTo(61L);
         assertThat(view.snapshot()).isEqualTo(snapshot);
-        verify(journalRepository, never()).save(any(JournalEntry.class)); // 规格事件表无复盘事件
+        // F08 时间线：创建即写「复盘创建：<档位>」事件（含区间，与回流事件同入项目时间线）
+        ArgumentCaptor<JournalEntry> eventCaptor = ArgumentCaptor.forClass(JournalEntry.class);
+        verify(journalRepository, times(1)).save(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().type()).isEqualTo(JournalEntryType.RESEARCH_EVENT);
+        assertThat(eventCaptor.getValue().title()).isEqualTo("复盘创建：月度复盘");
+        assertThat(eventCaptor.getValue().content()).contains("2026-02-01~2026-02-28");
+        assertThat(eventCaptor.getValue().projectId()).isEqualTo(5L);
     }
 
     @DisplayName("create 复盘：快照缺 tradeIds 键 → 圈选为空（compose 无交易场景）")
@@ -1111,6 +1198,13 @@ class ResearchApplicationServiceTest {
         assertThat(reviewCaptor.getValue().snapshotJson()).isEqualTo(FROZEN_SNAPSHOT);
         assertThat(view.refluxState()).isEqualTo(RefluxState.REFLOWN);
         assertThat(view.wikiEntryId()).isEqualTo(501L);
+        // F08 时间线：回流成功路径写「复盘回流知识库」事件（幂等早退/降级路径不写）
+        ArgumentCaptor<JournalEntry> eventCaptor = ArgumentCaptor.forClass(JournalEntry.class);
+        verify(journalRepository, times(1)).save(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().type()).isEqualTo(JournalEntryType.RESEARCH_EVENT);
+        assertThat(eventCaptor.getValue().title()).isEqualTo("复盘回流知识库");
+        assertThat(eventCaptor.getValue().content()).contains("复盘·茅台扩产研究·2026-02-01~2026-02-28");
+        assertThat(eventCaptor.getValue().projectId()).isEqualTo(5L);
     }
 
     @DisplayName("reflux 二次点击幂等：REFLOWN 直接返回既有 wiki_entry_id，不重复建条目不落库（Focus 4）")

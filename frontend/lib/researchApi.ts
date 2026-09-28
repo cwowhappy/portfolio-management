@@ -125,11 +125,13 @@ export const getFalsifiers = (id: number) =>
   request<FalsifierView[]>(`/api/research/projects/${id}/falsifiers`, "GET", undefined, z.array(FalsifierViewSchema));
 
 /** PUT 证伪条件整替项（对齐后端 SaveFalsifierItem：kind 决定构造工厂，字段校验在域内——
- * PREDICATE 必填 predicate + 非负 threshold，EVENT 必填 note）。 */
+ * PREDICATE 必填 predicate + 非负 threshold，EVENT 必填 note；eventChecked 仅 EVENT 消费
+ * ——「已确认事件」人工勾选置位的唯一写路径，随整替项携带，PREDICATE 忽略）。 */
 export interface SaveFalsifierItemInput {
   kind: FalsifierKind;
   predicate?: FalsifierPredicate;
   threshold?: number;
+  eventChecked?: boolean;
   note?: string;
 }
 

@@ -186,21 +186,24 @@ class ResearchControllerIntegrationTest extends PostgresTestSupport {
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.code").value("STRATEGY_FINALIZED"));
 
-        // 证伪条件整替：PREDICATE + EVENT
+        // 证伪条件整替：PREDICATE + EVENT（EVENT 携 eventChecked=true 勾选写路径，落库往返回读）
         mockMvc.perform(put("/api/research/projects/{id}/falsifiers", projectId).session(session)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("[{\"kind\":\"PREDICATE\",\"predicate\":\"PRICE_BELOW\",\"threshold\":13.5,"
                                 + "\"note\":\"跌破估值下限\"},"
-                                + "{\"kind\":\"EVENT\",\"note\":\"扩产延期超半年\"}]"))
+                                + "{\"kind\":\"EVENT\",\"eventChecked\":true,\"note\":\"扩产延期超半年\"}]"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(2))
                 .andExpect(jsonPath("$[0].kind").value("PREDICATE"))
                 .andExpect(jsonPath("$[0].predicate").value("PRICE_BELOW"))
+                .andExpect(jsonPath("$[0].eventChecked").value(false))
                 .andExpect(jsonPath("$[0].id").isNumber())
-                .andExpect(jsonPath("$[1].kind").value("EVENT"));
+                .andExpect(jsonPath("$[1].kind").value("EVENT"))
+                .andExpect(jsonPath("$[1].eventChecked").value(true));
         mockMvc.perform(get("/api/research/projects/{id}/falsifiers", projectId).session(session))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(2));
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[1].eventChecked").value(true));
 
         // 谓词类缺 predicate → 400（Falsifier 工厂校验传导）
         mockMvc.perform(put("/api/research/projects/{id}/falsifiers", projectId).session(session)

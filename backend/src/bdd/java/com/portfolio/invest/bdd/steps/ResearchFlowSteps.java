@@ -153,7 +153,7 @@ public class ResearchFlowSteps {
     public void 配置证伪条件(String predicate, BigDecimal threshold) {
         var views = researchService.saveFalsifiers(ctx.getUserId(), ctx.getResearchProjectId(),
                 List.of(new SaveFalsifierItem(FalsifierKind.PREDICATE,
-                        FalsifierPredicate.valueOf(predicate), threshold, "收盘跌破估值区间下沿（BDD）")));
+                        FalsifierPredicate.valueOf(predicate), threshold, null, "收盘跌破估值区间下沿（BDD）")));
         ctx.setFalsifierId(views.get(0).id());
     }
 

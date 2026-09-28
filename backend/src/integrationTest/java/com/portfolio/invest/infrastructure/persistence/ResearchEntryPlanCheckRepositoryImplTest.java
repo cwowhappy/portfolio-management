@@ -73,7 +73,7 @@ class ResearchEntryPlanCheckRepositoryImplTest {
         return project.id();
     }
 
-    @DisplayName("建仓计划整替：首轮插入 plan+batches 往返保真；二轮整替旧批清空换新批")
+    @DisplayName("建仓计划整替：首轮插入 plan+batches 往返保真；二轮整替旧批清空换新批（uk_entry_plan_project 下删后插不撞约束）")
     @Test
     @Transactional
     void givenPlan_whenSaveTwice_thenReplacedWithNewBatches() {
@@ -107,7 +107,7 @@ class ResearchEntryPlanCheckRepositoryImplTest {
                 "SELECT kelly_ratio FROM research_entry_plan WHERE project_id = ?",
                 BigDecimal.class, projectId)).isEqualByComparingTo("0.4"); // 冗余算术列落档（Ruling-15）
 
-        // 整替：两批换一批，旧 plan 行删除（每项目至多一行）
+        // 整替：两批换一批，旧 plan 行删除（每项目至多一行；V2 uk_entry_plan_project 约束下同事务删后插不撞）
         entryPlanRepository.save(EntryPlan.of(projectId, null, null, List.of(
                 new EntryBatch(1, new BigDecimal("11"), new BigDecimal("12"), 200L,
                         null, new BigDecimal("1.0")))));
