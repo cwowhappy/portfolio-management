@@ -4,6 +4,7 @@ package com.portfolio.invest.domain.research;
 public final class ResearchErrorCode {
     private ResearchErrorCode() {}
 
+    public static final String NOT_FOUND = "NOT_FOUND";
     public static final String PROJECT_REQUIRED = "PROJECT_REQUIRED";
     public static final String USER_REQUIRED = "USER_REQUIRED";
     public static final String CODE_BLANK = "CODE_BLANK";
@@ -17,4 +18,6 @@ public final class ResearchErrorCode {
     public static final String PREDICATE_REQUIRED = "PREDICATE_REQUIRED";
     public static final String THRESHOLD_INVALID = "THRESHOLD_INVALID";
     public static final String NOTE_REQUIRED = "NOTE_REQUIRED";
+    /** 建仓计划批次占比 Σratio > 1（D5 唯一硬校验，P3 entry-plan 用例消费，HTTP 映射 422）。 */
+    public static final String RATIO_SUM_EXCEEDED = "RATIO_SUM_EXCEEDED";
 }

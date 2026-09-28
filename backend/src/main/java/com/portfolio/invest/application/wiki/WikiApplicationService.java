@@ -49,12 +49,24 @@ public class WikiApplicationService {
     /** 概念/研究笔记首次拉取触发对应预置 seeding（幂等：wiki_seed_state 各自标记列；删光不复活）。 */
     @Transactional
     public List<WikiEntryView> entries(Long userId, WikiEntryType type) {
+        return entries(userId, type, null);
+    }
+
+    /** F08 反查：projectId 非空时按研究项目软引用过滤（type 叠加内存过滤；seeding 与过滤正交）。 */
+    @Transactional
+    public List<WikiEntryView> entries(Long userId, WikiEntryType type, Long projectId) {
         if (type == WikiEntryType.CONCEPT) {
             seedPresetConcepts(userId);
         } else if (type == WikiEntryType.RESEARCH_NOTE) {
             seedSopTemplates(userId);
         }
-        return repository.findByUserId(userId, type).stream().map(WikiEntryView::from).toList();
+        List<WikiEntry> list = projectId == null
+                ? repository.findByUserId(userId, type)
+                : repository.findByUserIdAndProjectId(userId, projectId);
+        return list.stream()
+                .filter(e -> type == null || e.type() == type)
+                .map(WikiEntryView::from)
+                .toList();
     }
 
     private void seedPresetConcepts(Long userId) {

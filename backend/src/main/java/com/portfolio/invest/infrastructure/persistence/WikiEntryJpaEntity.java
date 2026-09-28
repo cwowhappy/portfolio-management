@@ -40,6 +40,10 @@ public class WikiEntryJpaEntity {
     @Column(name = "industry_code", length = 16)
     private String industryCode;
 
+    /** 研究项目软引用（V2 加列，无 FK；F08 项目反查）。 */
+    @Column(name = "project_id")
+    private Long projectId;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -61,6 +65,7 @@ public class WikiEntryJpaEntity {
         entity.content = e.content();
         entity.category = e.category();
         entity.industryCode = e.industryCode();
+        entity.projectId = e.projectId();
         entity.createdAt = e.createdAt();
         entity.updatedAt = e.updatedAt();
         entity.version = e.version();
@@ -69,6 +74,6 @@ public class WikiEntryJpaEntity {
 
     public WikiEntry toDomain() {
         return WikiEntry.reconstitute(id, userId, type, title, content, category, industryCode,
-                createdAt, updatedAt, version);
+                createdAt, updatedAt, version, projectId);
     }
 }

@@ -28,6 +28,7 @@ import java.util.List;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -71,13 +72,25 @@ class WikiControllerTest {
     @DisplayName("列表按类型过滤返回200")
     @Test
     void givenTypeFilter_whenListEntries_thenReturn200() throws Exception {
-        when(wikiService.entries(1L, WikiEntryType.CONCEPT)).thenReturn(List.of(
+        when(wikiService.entries(1L, WikiEntryType.CONCEPT, null)).thenReturn(List.of(
                 new WikiEntryView(5L, WikiEntryType.CONCEPT, "护城河", "解释", "质量", null,
                         Instant.now(), Instant.now())));
         mvc.perform(get("/api/wiki/entries").principal(auth()).param("type", "CONCEPT"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].type").value("CONCEPT"))
                 .andExpect(jsonPath("$[0].category").value("质量"));
+    }
+
+    @DisplayName("列表按研究项目反查（F08）：projectId 透传服务层")
+    @Test
+    void givenProjectIdFilter_whenListEntries_thenReturn200() throws Exception {
+        when(wikiService.entries(1L, null, 5L)).thenReturn(List.of(
+                new WikiEntryView(6L, WikiEntryType.RESEARCH_NOTE, "复盘回流", "结论", "SOP_REVIEW", null,
+                        Instant.now(), Instant.now())));
+        mvc.perform(get("/api/wiki/entries").principal(auth()).param("projectId", "5"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].title").value("复盘回流"));
+        verify(wikiService).entries(1L, null, 5L);
     }
 
     @DisplayName("他人条目映射404")

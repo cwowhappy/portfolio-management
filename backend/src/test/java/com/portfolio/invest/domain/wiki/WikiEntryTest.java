@@ -64,4 +64,33 @@ class WikiEntryTest {
         assertThat(updated.title()).isEqualTo("护城河（修订）");
         assertThat(original.title()).isEqualTo("护城河"); // 不可变
     }
+
+    // —— 研究项目软引用（V2 D12，照 JournalEntry.projectId 先例）——
+
+    @DisplayName("带 projectId 的 create 重载：回流条目携带软引用；旧签名 projectId=null")
+    @Test
+    void givenProjectId_whenCreateOverload_thenProjectIdKept() {
+        WikiEntry linked = WikiEntry.create(1L, WikiEntryType.RESEARCH_NOTE, "复盘回流", "结论",
+                "SOP_REVIEW", null, NOW, 5L);
+        assertThat(linked.projectId()).isEqualTo(5L);
+
+        WikiEntry plain = WikiEntry.create(1L, WikiEntryType.RESEARCH_NOTE, "复盘回流", "结论",
+                "SOP_REVIEW", null, NOW);
+        assertThat(plain.projectId()).isNull();
+    }
+
+    @DisplayName("带 projectId 的 reconstitute 重载：旧签名 projectId=null；update 保留软引用")
+    @Test
+    void givenProjectId_whenReconstituteAndUpdate_thenProjectIdPreserved() {
+        WikiEntry restored = WikiEntry.reconstitute(9L, 1L, WikiEntryType.RESEARCH_NOTE, "复盘回流", "结论",
+                "SOP_REVIEW", null, NOW, NOW, 0L, 5L);
+        assertThat(restored.projectId()).isEqualTo(5L);
+
+        WikiEntry legacy = WikiEntry.reconstitute(9L, 1L, WikiEntryType.RESEARCH_NOTE, "复盘回流", "结论",
+                "SOP_REVIEW", null, NOW, NOW, 0L);
+        assertThat(legacy.projectId()).isNull();
+
+        WikiEntry updated = restored.update("复盘回流（改）", "结论2", "SOP_REVIEW", null);
+        assertThat(updated.projectId()).isEqualTo(5L); // projectId 不可变，update 保留
+    }
 }

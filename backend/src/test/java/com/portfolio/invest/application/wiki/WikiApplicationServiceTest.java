@@ -126,4 +126,20 @@ class WikiApplicationServiceTest {
 
         verify(seedStateRepo, org.mockito.Mockito.never()).existsByUserId(1L);
     }
+
+    @DisplayName("F08 反查：projectId 非空走项目软引用查询，type 叠加内存过滤")
+    @Test
+    void givenProjectLinkedEntries_whenListWithProjectId_thenFilteredByProject() {
+        WikiEntry linked = WikiEntry.reconstitute(11L, 1L, WikiEntryType.RESEARCH_NOTE, "复盘回流A",
+                "结论", "SOP_REVIEW", null, java.time.Instant.now(), java.time.Instant.now(), 0L, 5L);
+        WikiEntry linkedOtherType = WikiEntry.reconstitute(12L, 1L, WikiEntryType.CONCEPT, "项目概念",
+                "解释", null, null, java.time.Instant.now(), java.time.Instant.now(), 0L, 5L);
+        when(repo.findByUserIdAndProjectId(1L, 5L)).thenReturn(java.util.List.of(linked, linkedOtherType));
+
+        var views = service.entries(1L, WikiEntryType.RESEARCH_NOTE, 5L);
+
+        assertThat(views).hasSize(1);
+        assertThat(views.get(0).title()).isEqualTo("复盘回流A");
+        verify(repo).findByUserIdAndProjectId(1L, 5L);
+    }
 }

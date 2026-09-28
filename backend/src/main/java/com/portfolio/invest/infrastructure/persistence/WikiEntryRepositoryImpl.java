@@ -25,6 +25,12 @@ public class WikiEntryRepositoryImpl implements WikiEntryRepository {
     }
 
     @Override
+    public List<WikiEntry> findByUserIdAndProjectId(Long userId, Long projectId) {
+        return jpa.findByUserIdAndProjectId(userId, projectId).stream()
+                .map(WikiEntryJpaEntity::toDomain).toList();
+    }
+
+    @Override
     public Optional<WikiEntry> findByIdAndUserId(Long id, Long userId) {
         return jpa.findByIdAndUserId(id, userId).map(WikiEntryJpaEntity::toDomain);
     }

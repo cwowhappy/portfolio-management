@@ -88,4 +88,27 @@ class WikiEntryRepositoryImplTest {
         assertThat(seedStateRepository.existsByUserId(user)).isTrue();
         assertThat(seedStateRepository.existsByUserId(user + 1)).isFalse();
     }
+
+    @DisplayName("按研究项目反查（F08）：projectId 软引用精确命中、用户隔离、null 不命中")
+    @Test
+    @Transactional
+    void givenLinkedEntries_whenFindByUserIdAndProjectId_thenOnlyLinkedReturned() {
+        Long user = seedUser();
+        Long other = seedUser();
+        Instant now = Instant.now();
+        repository.save(WikiEntry.create(user, WikiEntryType.RESEARCH_NOTE, "复盘回流A", "结论",
+                "SOP_REVIEW", null, now, 5L));
+        repository.save(WikiEntry.create(user, WikiEntryType.RESEARCH_NOTE, "复盘回流B", "结论",
+                "SOP_REVIEW", null, now, 6L));
+        repository.save(WikiEntry.create(user, WikiEntryType.CONCEPT, "未关联概念", "解释",
+                null, null, now)); // projectId=null 不进项目反查
+        repository.save(WikiEntry.create(other, WikiEntryType.RESEARCH_NOTE, "他人回流", "结论",
+                "SOP_REVIEW", null, now, 5L)); // 他人项目条目隔离
+
+        assertThat(repository.findByUserIdAndProjectId(user, 5L))
+                .extracting(WikiEntry::title).containsExactly("复盘回流A");
+        assertThat(repository.findByUserIdAndProjectId(user, 6L))
+                .extracting(WikiEntry::title).containsExactly("复盘回流B");
+        assertThat(repository.findByUserIdAndProjectId(user, 7L)).isEmpty(); // 无关联
+    }
 }

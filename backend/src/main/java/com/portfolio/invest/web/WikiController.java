@@ -39,8 +39,9 @@ public class WikiController {
 
     @GetMapping("/entries")
     public List<WikiEntryView> entries(Authentication auth,
-                                       @RequestParam(required = false) WikiEntryType type) {
-        return wikiService.entries(currentUserId(auth), type);
+                                       @RequestParam(required = false) WikiEntryType type,
+                                       @RequestParam(required = false) Long projectId) {
+        return wikiService.entries(currentUserId(auth), type, projectId);
     }
 
     @PostMapping("/entries")

@@ -35,8 +35,9 @@ public class JournalController {
 
     @GetMapping("/entries")
     public List<JournalEntryView> entries(Authentication auth,
-                                          @RequestParam(required = false) JournalEntryType type) {
-        return service.entries(currentUserId(auth), type);
+                                          @RequestParam(required = false) JournalEntryType type,
+                                          @RequestParam(required = false) Long projectId) {
+        return service.entries(currentUserId(auth), type, projectId);
     }
 
     @PostMapping("/entries")

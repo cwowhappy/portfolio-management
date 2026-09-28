@@ -26,6 +26,7 @@ import java.util.List;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -70,12 +71,26 @@ class JournalControllerTest {
     @DisplayName("列表按类型过滤返回200")
     @Test
     void givenTypeFilter_whenListEntries_thenReturn200() throws Exception {
-        when(service.entries(1L, JournalEntryType.REVIEW)).thenReturn(List.of(
+        when(service.entries(1L, JournalEntryType.REVIEW, null)).thenReturn(List.of(
                 new JournalEntryView(5L, JournalEntryType.REVIEW, null, null, null, "复盘", "内容",
                         null, null, null, null, null, LocalDate.now(), Instant.now(), Instant.now())));
         mvc.perform(get("/api/journal/entries").principal(auth()).param("type", "REVIEW"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].type").value("REVIEW"));
+    }
+
+    @DisplayName("列表按研究项目反查（F08）：projectId 透传服务层")
+    @Test
+    void givenProjectIdFilter_whenListEntries_thenReturn200() throws Exception {
+        when(service.entries(1L, null, 5L)).thenReturn(List.of(
+                new JournalEntryView(6L, JournalEntryType.RESEARCH_EVENT, "600519", "贵州茅台", null,
+                        "立项：贵州茅台", "内容", null, null, null, null, null,
+                        LocalDate.now(), Instant.now(), Instant.now())));
+        mvc.perform(get("/api/journal/entries").principal(auth()).param("projectId", "5"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].type").value("RESEARCH_EVENT"))
+                .andExpect(jsonPath("$[0].title").value("立项：贵州茅台"));
+        verify(service).entries(1L, null, 5L);
     }
 
     @DisplayName("时间线返回200")

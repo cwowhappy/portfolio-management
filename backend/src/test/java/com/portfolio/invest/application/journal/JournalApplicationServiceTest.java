@@ -193,4 +193,26 @@ class JournalApplicationServiceTest {
         service.deleteEntry(1L, 7L);
         verify(repo).deleteById(7L);
     }
+
+    @DisplayName("F08 反查：projectId 非空走项目软引用查询，type 叠加内存过滤；projectId 空走原路径")
+    @Test
+    void givenProjectLinkedEntries_whenEntriesWithProjectId_thenFilteredByProjectAndType() {
+        JournalEntry event = JournalEntry.reconstitute(11L, 1L, JournalEntryType.RESEARCH_EVENT,
+                "600519", "贵州茅台", null, "立项：贵州茅台", "内容", null, null,
+                null, null, null, LocalDate.now(), Instant.now(), Instant.now(), 0L, 5L);
+        JournalEntry note = JournalEntry.reconstitute(12L, 1L, JournalEntryType.RESEARCH_NOTE,
+                null, null, null, "随手记", "内容", null, null,
+                null, null, null, LocalDate.now(), Instant.now(), Instant.now(), 0L, 5L);
+        when(repo.findByUserIdAndProjectId(1L, 5L)).thenReturn(List.of(event, note));
+        when(repo.findByUserId(1L, null)).thenReturn(List.of(entry(1L)));
+
+        assertThat(service.entries(1L, null, 5L)).hasSize(2);
+        assertThat(service.entries(1L, JournalEntryType.RESEARCH_EVENT, 5L))
+                .extracting(v -> v.title()).containsExactly("立项：贵州茅台");
+        verify(repo, org.mockito.Mockito.times(2)).findByUserIdAndProjectId(1L, 5L);
+
+        // projectId 缺省：保持原查询路径
+        assertThat(service.entries(1L, null)).hasSize(1);
+        verify(repo).findByUserId(1L, null);
+    }
 }
