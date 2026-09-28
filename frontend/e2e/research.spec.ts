@@ -94,4 +94,78 @@ test.describe("/research 研究项目主链路", () => {
     await expect(timeline.getByText("立项：贵州茅台")).toBeVisible();
     await expect(timeline.getByText("策略定稿")).toBeVisible();
   });
+
+  // P3-T7 收口场景（F09/F10，D18）：立项 → 策略定稿 → 建仓计划保存 → 批次行发起 BUY 检查
+  // → 预检（F01 全不勾 → 4 条 HIT）→ 越过（理由必填：空理由禁用提交）→ 留痕可见
+  // （响应回发 overrideReason + 关联记录 journal 事件「纪律检查：买入/越过」）。
+  test("立项→策略定稿→建仓计划→买入检查越过→理由留痕", async ({ page }) => {
+    // 预检走真实行情取数（东财），叠加注册审核流转，放宽时限
+    test.setTimeout(150_000);
+    await registerAndApprove(page, uniqueUsername("rs"), TEST_PASSWORD);
+
+    // 立项（F05 预填）
+    const params = new URLSearchParams({ code: "600519", name: "贵州茅台", industry: "BK0477" });
+    await page.goto(`/research/new?${params.toString()}`);
+    await page.getByLabel("项目标题").fill("买入检查越过留痕验证");
+    await page.getByRole("button", { name: "立项" }).click();
+    await expect(page).toHaveURL(/\/research\/\d+$/, { timeout: 15_000 });
+
+    // 策略：创建草稿（服务端建 DRAFT 文档）→ 填估值区间暂存 → 定稿（定稿只卡估值下限<上限）
+    const draftCreated = page.waitForResponse(
+      (r) => r.request().method() === "PUT" && /\/api\/research\/projects\/\d+\/strategy$/.test(r.url()),
+    );
+    await page.getByRole("button", { name: "创建草稿" }).click();
+    expect((await draftCreated).ok()).toBeTruthy();
+    await page.getByLabel("估值下限").fill("1500");
+    await page.getByLabel("估值上限").fill("1800");
+    const draftSaved = page.waitForResponse(
+      (r) => r.request().method() === "PUT" && /\/api\/research\/projects\/\d+\/strategy$/.test(r.url()),
+    );
+    await page.getByRole("button", { name: "暂存草稿" }).click();
+    expect((await draftSaved).ok()).toBeTruthy();
+    await page.getByRole("button", { name: "定稿" }).click();
+    await expect(page.getByText("已定稿")).toBeVisible({ timeout: 15_000 });
+
+    // 建仓计划（F09）：单批次 Σ占比 0.4，保存后「尚未保存」提示消失
+    await page.getByLabel("批次 1 价格下限").fill("1400");
+    await page.getByLabel("批次 1 价格上限").fill("1500");
+    await page.getByLabel("批次 1 数量").fill("100");
+    await page.getByLabel("批次 1 占比").fill("0.4");
+    const planSaved = page.waitForResponse(
+      (r) => r.request().method() === "PUT" && /\/api\/research\/projects\/\d+\/entry-plan$/.test(r.url()),
+    );
+    await page.getByRole("button", { name: "保存建仓计划" }).click();
+    expect((await planSaved).ok()).toBeTruthy();
+    await expect(page.getByText("尚未保存建仓计划")).toBeHidden();
+
+    // 发起买入检查（D18 批次行入口）：F01 四项全不勾 → 预检记 4 条 HIT
+    await page.getByRole("button", { name: "批次 1 发起买入检查" }).click();
+    await expect(page.getByText("发起买入纪律检查")).toBeVisible();
+    const previewed = page.waitForResponse(
+      (r) => r.request().method() === "POST" && /\/api\/research\/projects\/\d+\/checks\/preview$/.test(r.url()),
+    );
+    await page.getByRole("button", { name: "预检" }).click();
+    expect((await previewed).ok()).toBeTruthy();
+    await expect(page.getByText("检查确认")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("命中 4 项")).toBeVisible();
+
+    // 越过（OVERRIDDEN 必填理由）：空理由提交禁用，填理由后提交留痕（append-only + journal 事件）
+    await page.getByRole("button", { name: "越过命中项继续" }).click();
+    await expect(page.getByText("越过命中项须填写理由")).toBeVisible();
+    const overrideSubmit = page.getByRole("button", { name: "提交（越过）" });
+    await expect(overrideSubmit).toBeDisabled();
+    const reason = "估值已回落至计划区间，命中项为未勾选自检项而非规则越线，按计划建仓";
+    await page.getByLabel("越过理由").fill(reason);
+    const checkSubmitted = page.waitForResponse(
+      (r) => r.request().method() === "POST" && /\/api\/research\/projects\/\d+\/checks$/.test(r.url()),
+    );
+    await overrideSubmit.click();
+    const record = (await (await checkSubmitted).json()) as { overrideReason?: string };
+    expect(record.overrideReason).toBe(reason);
+
+    // 留痕可见：确认卡随提交收起；关联记录并入 journal 事件「纪律检查：买入/越过」
+    await expect(page.getByText("检查确认")).toBeHidden({ timeout: 15_000 });
+    const notes = page.getByTestId("linked-notes");
+    await expect(notes.getByText("纪律检查：买入/越过")).toBeVisible({ timeout: 15_000 });
+  });
 });
