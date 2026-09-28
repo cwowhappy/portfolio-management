@@ -154,7 +154,8 @@ public class GlobalExceptionHandler {
         HttpStatus status = switch (e.code()) {
             case ResearchErrorCode.NOT_FOUND -> HttpStatus.NOT_FOUND;
             case ResearchErrorCode.VALUATION_RANGE_INVALID, ResearchErrorCode.STRATEGY_FINALIZED,
-                 ResearchErrorCode.RATIO_SUM_EXCEEDED, ResearchErrorCode.OVERRIDE_REASON_REQUIRED
+                 ResearchErrorCode.RATIO_SUM_EXCEEDED, ResearchErrorCode.OVERRIDE_REASON_REQUIRED,
+                 ResearchErrorCode.CONCLUSION_REQUIRED, ResearchErrorCode.REVIEW_REASON_REQUIRED
                     -> HttpStatus.UNPROCESSABLE_CONTENT;
             default -> HttpStatus.BAD_REQUEST;
         };

@@ -38,6 +38,10 @@ public final class ResearchErrorCode {
     public static final String CHECK_RESULT_REQUIRED = "CHECK_RESULT_REQUIRED";
     /** OVERRIDDEN 越过必填理由（空白或超 500 字，D5 留痕最低要求）。 */
     public static final String OVERRIDE_REASON_REQUIRED = "OVERRIDE_REASON_REQUIRED";
+    /** 证伪评审结论缺失（F15 四值必选其一）。 */
+    public static final String CONCLUSION_REQUIRED = "CONCLUSION_REQUIRED";
+    /** 证伪评审理由必填（空白或超 1000 字，F15「结论枚举 + 理由」留痕最低要求）。 */
+    public static final String REVIEW_REASON_REQUIRED = "REVIEW_REASON_REQUIRED";
     /** 复盘档位缺失（D7 三档必选其一）。 */
     public static final String TIER_REQUIRED = "TIER_REQUIRED";
     /** 复盘区间起止缺失或倒置（periodStart ≤ periodEnd）。 */

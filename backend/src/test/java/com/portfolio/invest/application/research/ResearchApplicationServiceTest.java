@@ -16,6 +16,7 @@ import com.portfolio.invest.application.research.ResearchApplicationService.Save
 import com.portfolio.invest.application.research.ResearchApplicationService.SaveEntryPlanCommand;
 import com.portfolio.invest.application.research.ResearchApplicationService.SaveFalsifierItem;
 import com.portfolio.invest.application.research.ResearchApplicationService.SubmitCheckCommand;
+import com.portfolio.invest.application.research.ResearchApplicationService.SubmitFalsifierReviewCommand;
 import com.portfolio.invest.application.research.ResearchApplicationService.UpdateProjectCommand;
 import com.portfolio.invest.domain.journal.JournalEntry;
 import com.portfolio.invest.domain.journal.JournalEntryRepository;
@@ -32,6 +33,8 @@ import com.portfolio.invest.domain.research.Falsifier;
 import com.portfolio.invest.domain.research.FalsifierHit;
 import com.portfolio.invest.domain.research.FalsifierKind;
 import com.portfolio.invest.domain.research.FalsifierPredicate;
+import com.portfolio.invest.domain.research.FalsifierReview;
+import com.portfolio.invest.domain.research.FalsifierReviewRepository;
 import com.portfolio.invest.domain.research.MarketSnapshot;
 import com.portfolio.invest.domain.research.ProjectStatus;
 import com.portfolio.invest.domain.research.ResearchCheckRepository;
@@ -41,6 +44,7 @@ import com.portfolio.invest.domain.research.ResearchException;
 import com.portfolio.invest.domain.research.ResearchProject;
 import com.portfolio.invest.domain.research.ResearchProjectRepository;
 import com.portfolio.invest.domain.research.ResearchStage;
+import com.portfolio.invest.domain.research.ReviewConclusion;
 import com.portfolio.invest.domain.research.RuleInput;
 import com.portfolio.invest.domain.research.StageCompletionService.ManualState;
 import com.portfolio.invest.domain.research.StageStatus;
@@ -66,6 +70,7 @@ class ResearchApplicationServiceTest {
     private final JournalEntryRepository journalRepository = mock(JournalEntryRepository.class);
     private final ResearchEntryPlanRepository entryPlanRepository = mock(ResearchEntryPlanRepository.class);
     private final ResearchCheckRepository checkRepository = mock(ResearchCheckRepository.class);
+    private final FalsifierReviewRepository falsifierReviewRepository = mock(FalsifierReviewRepository.class);
     private final CheckOrchestration orchestration = mock(CheckOrchestration.class);
     private final MarketSnapshotAssembler snapshotAssembler = mock(MarketSnapshotAssembler.class);
     private ResearchApplicationService service;
@@ -73,7 +78,7 @@ class ResearchApplicationServiceTest {
     @BeforeEach
     void setUp() {
         service = new ResearchApplicationService(repository, journalRepository, entryPlanRepository,
-                checkRepository, orchestration, snapshotAssembler);
+                checkRepository, falsifierReviewRepository, orchestration, snapshotAssembler);
     }
 
     private static ResearchProject project(Long id, Long userId, ResearchStage stage, ProjectStatus status) {
@@ -772,9 +777,150 @@ class ResearchApplicationServiceTest {
         verify(snapshotAssembler, never()).assemble(any());
     }
 
+    // —— 证伪评审（F15，P4-T2）——
+
+    @DisplayName("submit 证伪评审：append-only 落库 + hit 回填 + journal 事件「证伪评审：<结论>」三断言")
+    @Test
+    void givenHitIdAndConclusion_whenSubmitReview_thenInsertAttachAndEventWritten() {
+        when(repository.findById(5L)).thenReturn(Optional.of(project(5L, 1L,
+                ResearchStage.POSITION, ProjectStatus.ACTIVE)));
+        when(checkRepository.findHit(5L, 31L)).thenReturn(Optional.of(
+                new FalsifierHit(31L, 5L, 9L, "收盘价 12.10 < 下限 13.5（东财收盘 2026-09-25）", NOW)));
+        when(falsifierReviewRepository.insert(any(FalsifierReview.class))).thenAnswer(inv -> {
+            FalsifierReview r = inv.getArgument(0);
+            return FalsifierReview.reconstitute(41L, r.projectId(), r.conclusion(), r.reason(), r.createdAt());
+        });
+
+        var view = service.submitFalsifierReview(1L, 5L,
+                new SubmitFalsifierReviewCommand(31L, ReviewConclusion.EXIT, "跌破下限且基本面恶化"));
+
+        // 落库：append-only 留痕（projectId + 结论 + 理由）
+        ArgumentCaptor<FalsifierReview> reviewCaptor = ArgumentCaptor.forClass(FalsifierReview.class);
+        verify(falsifierReviewRepository).insert(reviewCaptor.capture());
+        assertThat(reviewCaptor.getValue().projectId()).isEqualTo(5L);
+        assertThat(reviewCaptor.getValue().conclusion()).isEqualTo(ReviewConclusion.EXIT);
+        assertThat(reviewCaptor.getValue().reason()).isEqualTo("跌破下限且基本面恶化");
+        // 回填：hit 行唯一合法更新（review_id ← 41）
+        verify(falsifierReviewRepository).attachReview(31L, 41L);
+        // 事件：RESEARCH_EVENT「证伪评审：退出」
+        ArgumentCaptor<JournalEntry> eventCaptor = ArgumentCaptor.forClass(JournalEntry.class);
+        verify(journalRepository, times(1)).save(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().type()).isEqualTo(JournalEntryType.RESEARCH_EVENT);
+        assertThat(eventCaptor.getValue().title()).isEqualTo("证伪评审：退出");
+        assertThat(eventCaptor.getValue().projectId()).isEqualTo(5L);
+        // 视图：hitId 回显 + 非 REVISE 无提示位
+        assertThat(view.id()).isEqualTo(41L);
+        assertThat(view.hitId()).isEqualTo(31L);
+        assertThat(view.conclusion()).isEqualTo(ReviewConclusion.EXIT);
+        assertThat(view.suggestStrategyRevise()).isFalse();
+    }
+
+    @DisplayName("submit REVISE：suggestStrategyRevise=true 提示位，策略状态零触碰（Review Focus 3：不自动改）")
+    @Test
+    void givenReviseConclusion_whenSubmitReview_thenHintOnlyWithoutStrategyTouch() {
+        when(repository.findById(5L)).thenReturn(Optional.of(project(5L, 1L,
+                ResearchStage.POSITION, ProjectStatus.ACTIVE)));
+        when(falsifierReviewRepository.insert(any(FalsifierReview.class))).thenAnswer(inv -> {
+            FalsifierReview r = inv.getArgument(0);
+            return FalsifierReview.reconstitute(42L, r.projectId(), r.conclusion(), r.reason(), r.createdAt());
+        });
+
+        var view = service.submitFalsifierReview(1L, 5L,
+                new SubmitFalsifierReviewCommand(null, ReviewConclusion.REVISE, "证伪成立，投资逻辑需修订"));
+
+        assertThat(view.suggestStrategyRevise()).isTrue(); // 提示位
+        assertThat(view.hitId()).isNull(); // 无 hitId 不回填
+        // 策略零触碰：不读不写（落库与策略修订分离，避免隐式派生）
+        verify(repository, never()).findStrategy(any());
+        verify(repository, never()).saveStrategy(any(StrategyDoc.class));
+        verify(falsifierReviewRepository, never()).attachReview(any(), any());
+        ArgumentCaptor<JournalEntry> eventCaptor = ArgumentCaptor.forClass(JournalEntry.class);
+        verify(journalRepository, times(1)).save(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().title()).isEqualTo("证伪评审：修订策略");
+        assertThat(eventCaptor.getValue().content()).contains("证伪成立，投资逻辑需修订");
+    }
+
+    @DisplayName("submit 理由空白 → REVIEW_REASON_REQUIRED，不落库不回填不写事件（reason 必填）")
+    @Test
+    void givenBlankReason_whenSubmitReview_thenRejectedWithoutSideEffects() {
+        when(repository.findById(5L)).thenReturn(Optional.of(project(5L, 1L,
+                ResearchStage.POSITION, ProjectStatus.ACTIVE)));
+
+        assertThatThrownBy(() -> service.submitFalsifierReview(1L, 5L,
+                new SubmitFalsifierReviewCommand(31L, ReviewConclusion.HOLD, "  ")))
+                .isInstanceOfSatisfying(ResearchException.class,
+                        e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.REVIEW_REASON_REQUIRED));
+        assertThatThrownBy(() -> service.submitFalsifierReview(1L, 5L,
+                new SubmitFalsifierReviewCommand(null, ReviewConclusion.HOLD, null)))
+                .isInstanceOfSatisfying(ResearchException.class,
+                        e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.REVIEW_REASON_REQUIRED));
+        assertThatThrownBy(() -> service.submitFalsifierReview(1L, 5L,
+                new SubmitFalsifierReviewCommand(null, null, "有理由无结论")))
+                .isInstanceOfSatisfying(ResearchException.class,
+                        e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.CONCLUSION_REQUIRED));
+        verify(falsifierReviewRepository, never()).insert(any(FalsifierReview.class));
+        verify(falsifierReviewRepository, never()).attachReview(any(), any());
+        verify(journalRepository, never()).save(any(JournalEntry.class));
+    }
+
+    @DisplayName("submit hitId 不存在或他项目命中 → NOT_FOUND，不落库不回填（404 隔离传导）")
+    @Test
+    void givenForeignOrMissingHit_whenSubmitReview_thenNotFound() {
+        when(repository.findById(5L)).thenReturn(Optional.of(project(5L, 1L,
+                ResearchStage.POSITION, ProjectStatus.ACTIVE)));
+        when(checkRepository.findHit(5L, 31L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.submitFalsifierReview(1L, 5L,
+                new SubmitFalsifierReviewCommand(31L, ReviewConclusion.REDUCE, "跌破下限，先减半仓")))
+                .isInstanceOfSatisfying(ResearchException.class,
+                        e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.NOT_FOUND));
+        verify(falsifierReviewRepository, never()).insert(any(FalsifierReview.class));
+        verify(falsifierReviewRepository, never()).attachReview(any(), any());
+        verify(journalRepository, never()).save(any(JournalEntry.class));
+    }
+
+    @DisplayName("非本人项目 reviews 读写 → NOT_FOUND（不泄漏存在性）")
+    @Test
+    void givenOthersProject_whenReviewEndpoints_thenNotFound() {
+        when(repository.findById(5L)).thenReturn(Optional.of(project(5L, 2L,
+                ResearchStage.POSITION, ProjectStatus.ACTIVE)));
+
+        assertThatThrownBy(() -> service.getFalsifierReviews(1L, 5L))
+                .isInstanceOfSatisfying(ResearchException.class,
+                        e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.NOT_FOUND));
+        assertThatThrownBy(() -> service.submitFalsifierReview(1L, 5L,
+                new SubmitFalsifierReviewCommand(null, ReviewConclusion.HOLD, "越权评审")))
+                .isInstanceOfSatisfying(ResearchException.class,
+                        e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.NOT_FOUND));
+        verifyNoWrites();
+    }
+
+    @DisplayName("getFalsifierReviews：评审留痕倒序列表（suggestStrategyRevise 由结论推导，列表行不带 hit 回连）")
+    @Test
+    void givenReviews_whenList_thenOrderedViewsWithDerivedHint() {
+        when(repository.findById(5L)).thenReturn(Optional.of(project(5L, 1L,
+                ResearchStage.POSITION, ProjectStatus.ACTIVE)));
+        when(falsifierReviewRepository.findReviews(5L)).thenReturn(List.of(
+                FalsifierReview.reconstitute(42L, 5L, ReviewConclusion.REVISE, "证伪成立，逻辑需修订", NOW),
+                FalsifierReview.reconstitute(41L, 5L, ReviewConclusion.HOLD, "维持观察", NOW)));
+
+        var views = service.getFalsifierReviews(1L, 5L);
+
+        assertThat(views).hasSize(2);
+        assertThat(views.get(0).id()).isEqualTo(42L);
+        assertThat(views.get(0).suggestStrategyRevise()).isTrue();
+        assertThat(views.get(1).id()).isEqualTo(41L);
+        assertThat(views.get(1).conclusion()).isEqualTo(ReviewConclusion.HOLD);
+        assertThat(views.get(1).suggestStrategyRevise()).isFalse();
+        assertThat(views.get(1).hitId()).isNull(); // hit→review 单向软引用，列表不反连
+        verifyNoWrites();
+    }
+
     private void verifyNoWrites() {
         verify(entryPlanRepository, never()).save(any(EntryPlan.class));
         verify(checkRepository, never()).insert(any(CheckRecord.class));
+        verify(falsifierReviewRepository, never()).insert(any(FalsifierReview.class));
+        verify(falsifierReviewRepository, never()).attachReview(any(), any());
         verify(journalRepository, never()).save(any(JournalEntry.class));
     }
 }

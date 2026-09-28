@@ -12,11 +12,14 @@ import com.portfolio.invest.domain.research.EntryPlan;
 import com.portfolio.invest.domain.research.Falsifier;
 import com.portfolio.invest.domain.research.FalsifierHit;
 import com.portfolio.invest.domain.research.FalsifierPredicate;
+import com.portfolio.invest.domain.research.FalsifierReview;
+import com.portfolio.invest.domain.research.FalsifierReviewRepository;
 import com.portfolio.invest.domain.research.ResearchCheckRepository;
 import com.portfolio.invest.domain.research.ResearchEntryPlanRepository;
 import com.portfolio.invest.domain.research.ResearchProject;
 import com.portfolio.invest.domain.research.ResearchProjectRepository;
 import com.portfolio.invest.domain.research.ResearchStage;
+import com.portfolio.invest.domain.research.ReviewConclusion;
 import com.portfolio.invest.domain.research.StrategyDoc;
 import com.portfolio.invest.support.PostgresTestSupport;
 import java.math.BigDecimal;
@@ -42,7 +45,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @ImportAutoConfiguration(FlywayAutoConfiguration.class)
 @Import({ResearchProjectRepositoryImpl.class, ResearchEntryPlanRepositoryImpl.class,
-        ResearchCheckRepositoryImpl.class})
+        ResearchCheckRepositoryImpl.class, FalsifierReviewRepositoryImpl.class})
 class ResearchEntryPlanCheckRepositoryImplTest {
 
     @ServiceConnection
@@ -54,6 +57,8 @@ class ResearchEntryPlanCheckRepositoryImplTest {
     private ResearchEntryPlanRepository entryPlanRepository;
     @Autowired
     private ResearchCheckRepository checkRepository;
+    @Autowired
+    private FalsifierReviewRepository falsifierReviewRepository;
     @Autowired
     private ResearchCheckRecordJpaRepository checkRecordJpa;
     @Autowired
@@ -207,5 +212,68 @@ class ResearchEntryPlanCheckRepositoryImplTest {
 
         assertThat(checkRepository.findUnreviewedHitFalsifierIds(projectId)).containsExactly(f1);
         assertThat(checkRepository.findUnreviewedHitFalsifierIds(projectId + 1)).isEmpty(); // 项目隔离
+    }
+
+    @DisplayName("findHit：项目域内单行读取（P4 回填前置校验）；跨项目/不存在 → empty")
+    @Test
+    @Transactional
+    void givenHits_whenFindHit_thenScopedByProject() {
+        Long projectId = seedProject();
+        StrategyDoc strategy = projectRepository.saveStrategy(StrategyDoc.draftOf(projectId));
+        projectRepository.saveFalsifiers(strategy.id(), List.of(
+                Falsifier.ofPredicate(strategy.id(), FalsifierPredicate.PRICE_BELOW,
+                        new BigDecimal("13.5"), "跌破下限")));
+        Long falsifierId = projectRepository.findFalsifiers(strategy.id()).get(0).id();
+        FalsifierHit hit = checkRepository.insertHit(new FalsifierHit(null, projectId, falsifierId,
+                "收盘价 12.10 < 下限 13.5", java.time.Instant.parse("2026-09-25T10:00:00Z")));
+
+        assertThat(checkRepository.findHit(projectId, hit.id())).isPresent();
+        assertThat(checkRepository.findHit(projectId, hit.id()).orElseThrow().basis())
+                .contains("收盘价 12.10");
+        assertThat(checkRepository.findHit(projectId + 1, hit.id())).isEmpty(); // 跨项目不可见
+        assertThat(checkRepository.findHit(projectId, hit.id() + 1)).isEmpty(); // 不存在
+    }
+
+    @DisplayName("证伪评审留痕：insert + findReviews 倒序 + attachReview 回填（hit 表唯一合法更新，首评占据软引用不覆盖）")
+    @Test
+    @Transactional
+    void givenReviewAndHit_whenInsertAttach_thenReviewIdBackfilledAndNeverOverwritten() {
+        Long projectId = seedProject();
+        StrategyDoc strategy = projectRepository.saveStrategy(StrategyDoc.draftOf(projectId));
+        projectRepository.saveFalsifiers(strategy.id(), List.of(
+                Falsifier.ofPredicate(strategy.id(), FalsifierPredicate.PRICE_BELOW,
+                        new BigDecimal("13.5"), "跌破下限")));
+        Long falsifierId = projectRepository.findFalsifiers(strategy.id()).get(0).id();
+        FalsifierHit hit = checkRepository.insertHit(new FalsifierHit(null, projectId, falsifierId,
+                "收盘价 12.10 < 下限 13.5（东财收盘 2026-09-25）",
+                java.time.Instant.parse("2026-09-25T10:00:00Z")));
+        assertThat(checkRepository.findUnreviewedHitFalsifierIds(projectId)).containsExactly(falsifierId);
+
+        FalsifierReview review = falsifierReviewRepository.insert(
+                FalsifierReview.create(projectId, ReviewConclusion.REDUCE, "跌破下限，先减半仓"));
+        assertThat(review.id()).isNotNull();
+        falsifierReviewRepository.attachReview(hit.id(), review.id());
+
+        // 回填落列：review_id 已指评审行；未评审集合清空（T5 去重口径传导）
+        Long backfilled = jdbcTemplate.queryForObject(
+                "SELECT review_id FROM research_falsifier_hit WHERE id = ?", Long.class, hit.id());
+        assertThat(backfilled).isEqualTo(review.id());
+        assertThat(checkRepository.findUnreviewedHitFalsifierIds(projectId)).isEmpty();
+
+        // 二次评审：留痕照常追加（append-only），但软引用不覆盖（首评占据）
+        FalsifierReview second = falsifierReviewRepository.insert(
+                FalsifierReview.create(projectId, ReviewConclusion.REVISE, "证伪成立，逻辑需修订"));
+        falsifierReviewRepository.attachReview(hit.id(), second.id());
+        Long afterReattach = jdbcTemplate.queryForObject(
+                "SELECT review_id FROM research_falsifier_hit WHERE id = ?", Long.class, hit.id());
+        assertThat(afterReattach).isEqualTo(review.id());
+
+        // findReviews：createdAt 倒序 + 字段保真；项目隔离
+        List<FalsifierReview> reviews = falsifierReviewRepository.findReviews(projectId);
+        assertThat(reviews).extracting(FalsifierReview::id)
+                .containsExactly(second.id(), review.id());
+        assertThat(reviews.get(1).conclusion()).isEqualTo(ReviewConclusion.REDUCE);
+        assertThat(reviews.get(1).reason()).isEqualTo("跌破下限，先减半仓");
+        assertThat(falsifierReviewRepository.findReviews(projectId + 1)).isEmpty();
     }
 }

@@ -3,6 +3,7 @@ package com.portfolio.invest.application.research;
 import com.portfolio.invest.application.research.ResearchViews.CheckRecordView;
 import com.portfolio.invest.application.research.ResearchViews.EntryPlanView;
 import com.portfolio.invest.application.research.ResearchViews.FalsifierHitView;
+import com.portfolio.invest.application.research.ResearchViews.FalsifierReviewView;
 import com.portfolio.invest.application.research.ResearchViews.FalsifierView;
 import com.portfolio.invest.application.research.ResearchViews.ProjectDetailView;
 import com.portfolio.invest.application.research.ResearchViews.ProjectView;
@@ -25,6 +26,8 @@ import com.portfolio.invest.domain.research.FalsifierHit;
 import com.portfolio.invest.domain.research.FalsifierHitResult;
 import com.portfolio.invest.domain.research.FalsifierKind;
 import com.portfolio.invest.domain.research.FalsifierPredicate;
+import com.portfolio.invest.domain.research.FalsifierReview;
+import com.portfolio.invest.domain.research.FalsifierReviewRepository;
 import com.portfolio.invest.domain.research.MarketSnapshot;
 import com.portfolio.invest.domain.research.ProjectStatus;
 import com.portfolio.invest.domain.research.ResearchCheckRepository;
@@ -34,6 +37,7 @@ import com.portfolio.invest.domain.research.ResearchException;
 import com.portfolio.invest.domain.research.ResearchProject;
 import com.portfolio.invest.domain.research.ResearchProjectRepository;
 import com.portfolio.invest.domain.research.ResearchStage;
+import com.portfolio.invest.domain.research.ReviewConclusion;
 import com.portfolio.invest.domain.research.StageCompletion;
 import com.portfolio.invest.domain.research.StageCompletionService;
 import com.portfolio.invest.domain.research.StageCompletionService.ManualState;
@@ -57,7 +61,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 研究项目用例编排（F05 立项 / S1 归档 / D4 阶段流转 / D13 策略两级状态机 / D10 证伪条件集 /
- * F09 建仓计划 / F10·F12 纪律检查 / D21 证伪命中合并视图）。
+ * F09 建仓计划 / F10·F12 纪律检查 / D21 证伪命中合并视图 / F15 证伪评审）。
  *
  * <p>journal 事件写入（S3 跨域编排）：type=RESEARCH_EVENT、title=事件名、projectId 必填、
  * stockCode/stockName 带项目标的；直接走 {@link JournalEntryRepository}（计划裁定：不经
@@ -96,10 +100,14 @@ public class ResearchApplicationService {
     public record SubmitCheckCommand(@NotNull CheckType checkType, @NotNull CheckResult result,
                                      String overrideReason, @NotNull List<CheckItemResult> items) {}
 
+    /** 提交证伪评审命令（F15）：hitId 可空（EVENT 类/综合评审可无具体命中行）；reason 由域校验必填。 */
+    public record SubmitFalsifierReviewCommand(Long hitId, @NotNull ReviewConclusion conclusion, String reason) {}
+
     private final ResearchProjectRepository repository;
     private final JournalEntryRepository journalRepository;
     private final ResearchEntryPlanRepository entryPlanRepository;
     private final ResearchCheckRepository checkRepository;
+    private final FalsifierReviewRepository falsifierReviewRepository;
     private final CheckOrchestration orchestration;
     private final MarketSnapshotAssembler snapshotAssembler;
 
@@ -107,12 +115,14 @@ public class ResearchApplicationService {
                                       JournalEntryRepository journalRepository,
                                       ResearchEntryPlanRepository entryPlanRepository,
                                       ResearchCheckRepository checkRepository,
+                                      FalsifierReviewRepository falsifierReviewRepository,
                                       CheckOrchestration orchestration,
                                       MarketSnapshotAssembler snapshotAssembler) {
         this.repository = repository;
         this.journalRepository = journalRepository;
         this.entryPlanRepository = entryPlanRepository;
         this.checkRepository = checkRepository;
+        this.falsifierReviewRepository = falsifierReviewRepository;
         this.orchestration = orchestration;
         this.snapshotAssembler = snapshotAssembler;
     }
@@ -327,6 +337,41 @@ public class ResearchApplicationService {
             views.add(historyView(hit, byId));
         }
         return views;
+    }
+
+    // —— 证伪评审（F15，P4-T2）——
+
+    /** 评审留痕列表（前端列表用）：createdAt 倒序；suggestStrategyRevise 由结论推导。 */
+    public List<FalsifierReviewView> getFalsifierReviews(Long userId, Long projectId) {
+        requireProject(userId, projectId);
+        return falsifierReviewRepository.findReviews(projectId).stream()
+                .map(review -> FalsifierReviewView.of(review, null))
+                .toList();
+    }
+
+    /**
+     * 提交证伪评审（F15）：append-only 落库 + hit 回填 reviewId + journal 事件
+     * 「证伪评审：&lt;结论&gt;」同事务；hitId 须为本项目命中行（否则 NOT_FOUND，不落库）。
+     * REVISE 只置 suggestStrategyRevise 提示位、<b>不自动改策略状态</b>（Review Focus 3：
+     * 落库与策略修订分离，避免隐式派生——由前端引导用户显式 revise）。
+     */
+    @Transactional
+    public FalsifierReviewView submitFalsifierReview(Long userId, Long projectId,
+                                                     SubmitFalsifierReviewCommand cmd) {
+        ResearchProject project = requireProject(userId, projectId);
+        // 域校验（结论/理由）先于 hit 资源解析：请求体非法 → 422，与 hitId 无关且零写库
+        FalsifierReview review = FalsifierReview.create(projectId, cmd.conclusion(), cmd.reason());
+        if (cmd.hitId() != null) {
+            checkRepository.findHit(projectId, cmd.hitId())
+                    .orElseThrow(() -> new ResearchException(ResearchErrorCode.NOT_FOUND, "证伪命中留痕不存在"));
+        }
+        FalsifierReview inserted = falsifierReviewRepository.insert(review);
+        if (cmd.hitId() != null) {
+            falsifierReviewRepository.attachReview(cmd.hitId(), inserted.id());
+        }
+        writeEvent(project, "证伪评审：" + cmd.conclusion().label(),
+                "证伪命中评审结论「" + cmd.conclusion().label() + "」，理由：" + cmd.reason());
+        return FalsifierReviewView.of(inserted, cmd.hitId());
     }
 
     /** 归属双重保障（照 journal requireEntry 模式）：非本人/不存在一律 NOT_FOUND，不泄漏存在性。 */

@@ -290,6 +290,13 @@ class ResearchControllerIntegrationTest extends PostgresTestSupport {
                 .andExpect(status().isNotFound());
         mockMvc.perform(get("/api/research/projects/{id}/falsifier/hits", projectId).session(intruder))
                 .andExpect(status().isNotFound());
+        // P4 证伪评审端点同口径隔离
+        mockMvc.perform(get("/api/research/projects/{id}/falsifier/reviews", projectId).session(intruder))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/research/projects/{id}/falsifier/reviews", projectId).session(intruder)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"conclusion\":\"HOLD\",\"reason\":\"越权评审\"}"))
+                .andExpect(status().isNotFound());
 
         // 归属者不受影响，且他人未留下任何改动
         mockMvc.perform(get("/api/research/projects/{id}", projectId).session(login("res_owner", "abc12345")))
@@ -527,6 +534,96 @@ class ResearchControllerIntegrationTest extends PostgresTestSupport {
                 .andExpect(jsonPath("$[0].skipped").value(true))
                 .andExpect(jsonPath("$[0].hit").value(false))
                 .andExpect(jsonPath("$[0].basis").value("无最近价/估值"));
+    }
+
+    @DisplayName("P4 证伪评审链路：提交（落库+hit 回填+journal 事件）→ REVISE 提示位不自动改策略 → 422/404 边界")
+    @Test
+    void givenFalsifierHit_whenReviewFlow_thenPersistBackfillEventAndHint() throws Exception {
+        register("res_rev_a", "abc12345");
+        approve("res_rev_a");
+        MockHttpSession session = login("res_rev_a", "abc12345");
+
+        MvcResult created = mockMvc.perform(post("/api/research/projects").session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"stockCode\":\"600519\",\"stockName\":\"贵州茅台\",\"title\":\"茅台证伪评审\"}"))
+                .andExpect(status().isCreated()).andReturn();
+        long projectId = ((Number) JsonPath.read(created.getResponse().getContentAsString(), "$.id")).longValue();
+
+        // 策略定稿 + 证伪条件（hit.falsifier_id FK 依赖）
+        mockMvc.perform(put("/api/research/projects/{id}/strategy", projectId).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"thesis\":\"扩产逻辑\",\"valuationLow\":10,\"valuationHigh\":20}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/research/projects/{id}/strategy/finalize", projectId).session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.state").value("FINALIZED"));
+        MvcResult falsifiers = mockMvc.perform(put("/api/research/projects/{id}/falsifiers", projectId).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("[{\"kind\":\"PREDICATE\",\"predicate\":\"PRICE_BELOW\",\"threshold\":13.5,\"note\":\"跌破下限\"}]"))
+                .andExpect(status().isOk()).andReturn();
+        long falsifierId = ((Number) JsonPath.read(falsifiers.getResponse().getContentAsString(), "$[0].id")).longValue();
+
+        // 落一行 hit 留痕（日终扫描/实时命中由 P3-T5 交付，此处直插模拟）
+        jdbcTemplate.update("INSERT INTO research_falsifier_hit(project_id, falsifier_id, basis) VALUES (?,?,?)",
+                projectId, falsifierId, "收盘价 12.10 < 下限 13.5（东财收盘 2026-09-25）");
+        Integer hitId = jdbcTemplate.queryForObject(
+                "SELECT id FROM research_falsifier_hit WHERE project_id = ?", Integer.class, projectId);
+
+        // 空白理由 → 422 REVIEW_REASON_REQUIRED（照 OVERRIDE_REASON_REQUIRED 先例），不落库
+        mockMvc.perform(post("/api/research/projects/{id}/falsifier/reviews", projectId).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"hitId\":" + hitId + ",\"conclusion\":\"EXIT\",\"reason\":\"  \"}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("REVIEW_REASON_REQUIRED"));
+        assertThatCount("research_falsifier_review", projectId, 0);
+
+        // EXIT 提交 → 201：落库 + hit 回填 + journal 事件；非 REVISE 无提示位
+        MvcResult reviewed = mockMvc.perform(post("/api/research/projects/{id}/falsifier/reviews", projectId).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"hitId\":" + hitId + ",\"conclusion\":\"EXIT\",\"reason\":\"跌破下限且基本面恶化\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").isNumber())
+                .andExpect(jsonPath("$.projectId").value((int) projectId))
+                .andExpect(jsonPath("$.hitId").value(hitId))
+                .andExpect(jsonPath("$.conclusion").value("EXIT"))
+                .andExpect(jsonPath("$.reason").value("跌破下限且基本面恶化"))
+                .andExpect(jsonPath("$.suggestStrategyRevise").value(false))
+                .andReturn();
+        long reviewId = ((Number) JsonPath.read(reviewed.getResponse().getContentAsString(), "$.id")).longValue();
+        assertThatCount("research_falsifier_review", projectId, 1);
+        Long backfilled = jdbcTemplate.queryForObject(
+                "SELECT review_id FROM research_falsifier_hit WHERE id = ?", Long.class, hitId);
+        org.assertj.core.api.Assertions.assertThat(backfilled).isEqualTo(reviewId); // 回填落列
+        mockMvc.perform(get("/api/journal/entries").session(session).param("projectId", String.valueOf(projectId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.type == 'RESEARCH_EVENT' && @.title == '证伪评审：退出')]").isArray());
+
+        // REVISE 提交（无 hitId）→ 201 suggestStrategyRevise=true；策略仍 FINALIZED（不自动改，Review Focus 3）
+        mockMvc.perform(post("/api/research/projects/{id}/falsifier/reviews", projectId).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"conclusion\":\"REVISE\",\"reason\":\"证伪成立，投资逻辑需修订\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.suggestStrategyRevise").value(true))
+                .andExpect(jsonPath("$.hitId").value(org.hamcrest.Matchers.nullValue()));
+        mockMvc.perform(get("/api/research/projects/{id}/strategy", projectId).session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.state").value("FINALIZED"));
+
+        // GET 列表：两条 createdAt 倒序（REVISE 在前）
+        mockMvc.perform(get("/api/research/projects/{id}/falsifier/reviews", projectId).session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].conclusion").value("REVISE"))
+                .andExpect(jsonPath("$[0].suggestStrategyRevise").value(true))
+                .andExpect(jsonPath("$[1].conclusion").value("EXIT"));
+
+        // hitId 不存在 → 404 NOT_FOUND（不落库）
+        mockMvc.perform(post("/api/research/projects/{id}/falsifier/reviews", projectId).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"hitId\":99999999,\"conclusion\":\"HOLD\",\"reason\":\"再观察一个报告期\"}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("NOT_FOUND"));
+        assertThatCount("research_falsifier_review", projectId, 2);
     }
 
     private void assertThatCount(String table, long projectId, int expected) {

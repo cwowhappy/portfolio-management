@@ -27,7 +27,7 @@ public class ResearchFalsifierHitJpaEntity {
     @Column(nullable = false, length = 200)
     private String basis;
 
-    /** 评审回填位（P4 research_falsifier_review 软引用，本任务不写）。 */
+    /** 评审回填位（P4 research_falsifier_review 软引用；由 FalsifierReviewRepositoryImpl.attachReview 唯一写入，不覆盖）。 */
     @Column(name = "review_id")
     private Long reviewId;
 

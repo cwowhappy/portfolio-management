@@ -9,9 +9,11 @@ import com.portfolio.invest.domain.research.EntryPlan;
 import com.portfolio.invest.domain.research.Falsifier;
 import com.portfolio.invest.domain.research.FalsifierKind;
 import com.portfolio.invest.domain.research.FalsifierPredicate;
+import com.portfolio.invest.domain.research.FalsifierReview;
 import com.portfolio.invest.domain.research.ProjectStatus;
 import com.portfolio.invest.domain.research.ResearchProject;
 import com.portfolio.invest.domain.research.ResearchStage;
+import com.portfolio.invest.domain.research.ReviewConclusion;
 import com.portfolio.invest.domain.research.StageCompletion;
 import com.portfolio.invest.domain.research.StrategyDoc;
 import com.portfolio.invest.domain.research.StrategyState;
@@ -118,5 +120,19 @@ public final class ResearchViews {
                                    BigDecimal threshold, String note, boolean eventChecked,
                                    boolean hit, boolean pending, boolean skipped, String basis,
                                    boolean realtime, Instant hitAt) {
+    }
+
+    /**
+     * 证伪评审留痕视图（append-only）：suggestStrategyRevise 提示位仅 REVISE=true——
+     * 提示前端引导用户显式 revise，<b>不自动改策略状态</b>（Review Focus 3：落库与策略修订分离）。
+     * hitId 为提交时回连的命中行（hit→review 单向软引用，列表行不反连、为 null）。
+     */
+    public record FalsifierReviewView(Long id, Long projectId, Long hitId, ReviewConclusion conclusion,
+                                      String reason, boolean suggestStrategyRevise, Instant createdAt) {
+
+        public static FalsifierReviewView of(FalsifierReview review, Long hitId) {
+            return new FalsifierReviewView(review.id(), review.projectId(), hitId, review.conclusion(),
+                    review.reason(), review.conclusion() == ReviewConclusion.REVISE, review.createdAt());
+        }
     }
 }

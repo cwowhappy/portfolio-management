@@ -6,10 +6,12 @@ import com.portfolio.invest.application.research.ResearchApplicationService.Prev
 import com.portfolio.invest.application.research.ResearchApplicationService.SaveEntryPlanCommand;
 import com.portfolio.invest.application.research.ResearchApplicationService.SaveFalsifierItem;
 import com.portfolio.invest.application.research.ResearchApplicationService.SubmitCheckCommand;
+import com.portfolio.invest.application.research.ResearchApplicationService.SubmitFalsifierReviewCommand;
 import com.portfolio.invest.application.research.ResearchApplicationService.UpdateProjectCommand;
 import com.portfolio.invest.application.research.ResearchViews.CheckRecordView;
 import com.portfolio.invest.application.research.ResearchViews.EntryPlanView;
 import com.portfolio.invest.application.research.ResearchViews.FalsifierHitView;
+import com.portfolio.invest.application.research.ResearchViews.FalsifierReviewView;
 import com.portfolio.invest.application.research.ResearchViews.FalsifierView;
 import com.portfolio.invest.application.research.ResearchViews.ProjectDetailView;
 import com.portfolio.invest.application.research.ResearchViews.ProjectView;
@@ -142,6 +144,23 @@ public class ResearchController {
     @GetMapping("/projects/{projectId}/falsifier/hits")
     public List<FalsifierHitView> getHits(Authentication auth, @PathVariable Long projectId) {
         return service.getHits(currentUserId(auth), projectId);
+    }
+
+    // —— P4-T2：证伪评审 ——
+
+    /** 评审留痕列表（createdAt 倒序；suggestStrategyRevise 由结论推导）。 */
+    @GetMapping("/projects/{projectId}/falsifier/reviews")
+    public List<FalsifierReviewView> getFalsifierReviews(Authentication auth, @PathVariable Long projectId) {
+        return service.getFalsifierReviews(currentUserId(auth), projectId);
+    }
+
+    /** 提交证伪评审（append-only 落库 + hit 回填 + journal 事件；reason 缺失 → 422；hitId 越项目 → 404）。 */
+    @PostMapping("/projects/{projectId}/falsifier/reviews")
+    public ResponseEntity<FalsifierReviewView> submitFalsifierReview(Authentication auth,
+                                                                     @PathVariable Long projectId,
+                                                                     @Valid @RequestBody SubmitFalsifierReviewCommand cmd) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(service.submitFalsifierReview(currentUserId(auth), projectId, cmd));
     }
 
     private static Long currentUserId(Authentication auth) {
