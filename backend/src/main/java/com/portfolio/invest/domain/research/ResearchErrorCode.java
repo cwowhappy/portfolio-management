@@ -38,4 +38,14 @@ public final class ResearchErrorCode {
     public static final String CHECK_RESULT_REQUIRED = "CHECK_RESULT_REQUIRED";
     /** OVERRIDDEN 越过必填理由（空白或超 500 字，D5 留痕最低要求）。 */
     public static final String OVERRIDE_REASON_REQUIRED = "OVERRIDE_REASON_REQUIRED";
+    /** 复盘档位缺失（D7 三档必选其一）。 */
+    public static final String TIER_REQUIRED = "TIER_REQUIRED";
+    /** 复盘区间起止缺失或倒置（periodStart ≤ periodEnd）。 */
+    public static final String REVIEW_PERIOD_INVALID = "REVIEW_PERIOD_INVALID";
+    /** 复盘快照空白（F14 创建即定格，不允许无快照复盘）。 */
+    public static final String SNAPSHOT_REQUIRED = "SNAPSHOT_REQUIRED";
+    /** 复盘作答空白（MS-24 弹性字段集，但作答主体不可为空）。 */
+    public static final String ANSWERS_REQUIRED = "ANSWERS_REQUIRED";
+    /** 回流目标条目缺失（refluxConfirm 须携带 wiki 条目 id）。 */
+    public static final String WIKI_ENTRY_REQUIRED = "WIKI_ENTRY_REQUIRED";
 }
