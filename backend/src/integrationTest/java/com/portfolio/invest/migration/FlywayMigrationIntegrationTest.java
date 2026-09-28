@@ -30,7 +30,7 @@ class FlywayMigrationIntegrationTest extends PostgresTestSupport {
         List<String> versions = jdbcTemplate.queryForList(
                 "SELECT version FROM flyway_schema_history WHERE type = 'SQL' ORDER BY installed_rank",
                 String.class);
-        assertThat(versions).containsExactly("1");
+        assertThat(versions).containsExactly("1", "2");
 
         Integer failed = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM flyway_schema_history WHERE success = false", Integer.class);
