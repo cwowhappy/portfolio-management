@@ -95,12 +95,14 @@ test.describe("/research 研究项目主链路", () => {
     await expect(timeline.getByText("策略定稿")).toBeVisible();
   });
 
-  // P3-T7 收口场景（F09/F10，D18）：立项 → 策略定稿 → 建仓计划保存 → 批次行发起 BUY 检查
-  // → 预检（F01 全不勾 → 4 条 HIT）→ 越过（理由必填：空理由禁用提交）→ 留痕可见
-  // （响应回发 overrideReason + 关联记录 journal 事件「纪律检查：买入/越过」）。
-  test("立项→策略定稿→建仓计划→买入检查越过→理由留痕", async ({ page }) => {
-    // 预检走真实行情取数（东财），叠加注册审核流转，放宽时限
-    test.setTimeout(150_000);
+  // P3-T7 收口场景（F09/F10，D18）+ P4-T5 复盘闭环追加段（F13/F14/F16）：立项 → 策略定稿
+  // → 建仓计划保存 → 批次行发起 BUY 检查 → 预检（F01 全不勾 → 4 条 HIT）→ 越过（理由必填：
+  // 空理由禁用提交）→ 留痕可见（响应回发 overrideReason + 关联记录 journal 事件「纪律检查：买入/越过」）
+  // → 创建月度复盘（创建即定格快照，auto 列「无数据」标注 + 口径徽标）→ 修正作答（4.3 预填
+  // 本期越过次数）→ 回流确认弹层 → 已回流记 wiki 条目号 → /wiki 研究笔记检索到「复盘·」条目。
+  test("立项→定稿→建仓→检查越过→复盘创建→回流知识库", async ({ page }) => {
+    // 预检走真实行情取数（东财），叠加注册审核流转与复盘回流，放宽时限
+    test.setTimeout(180_000);
     await registerAndApprove(page, uniqueUsername("rs"), TEST_PASSWORD);
 
     // 立项（F05 预填）
@@ -167,5 +169,70 @@ test.describe("/research 研究项目主链路", () => {
     await expect(page.getByText("检查确认")).toBeHidden({ timeout: 15_000 });
     const notes = page.getByTestId("linked-notes");
     await expect(notes.getByText("纪律检查：买入/越过")).toBeVisible({ timeout: 15_000 });
+
+    // —— 复盘闭环追加段（F13/F14/F16，MS-27 验收链路）——
+    // 创建月度复盘（三档选月主，D7）：区间 = 本月 1 日 ~ 今日（UTC 日期，与留痕预填同口径）
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const monthStartIso = `${todayIso.slice(0, 7)}-01`;
+    await page.getByLabel("复盘档位").selectOption("MONTHLY");
+    await page.getByLabel("复盘起始日").fill(monthStartIso);
+    await page.getByLabel("复盘截止日").fill(todayIso);
+    const reviewCreated = page.waitForResponse(
+      (r) => r.request().method() === "POST" && /\/api\/research\/projects\/\d+\/reviews$/.test(r.url()),
+    );
+    await page.getByRole("button", { name: "新建复盘" }).click();
+    const review = (await (await reviewCreated).json()) as { id: number };
+    expect(review.id).toBeGreaterThan(0);
+
+    // 修正表单展开：快照已定格说明 + auto 列「无数据」标注（无持仓，Review Focus 1）+ 口径徽标
+    await expect(page.getByText("快照已定格（创建时写入，修正不复算）")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("无数据", { exact: true }).first()).toBeVisible();
+    await expect(page.locator('span[title*="东财收盘"]').first()).toBeVisible();
+    // 列表行：月度复盘 + 待回流徽标
+    await expect(page.getByTestId("review-list").getByText("月度复盘")).toBeVisible();
+    await expect(page.getByTestId("review-list").getByText("待回流")).toBeVisible();
+
+    // 填 answers（4.1 决策质量 / 4.4 归因单选）+ 4.3 预填「本期越过 1 次」（GET checks 统计）+ 复盘叙述
+    await expect(page.getByText("本期越过 1 次")).toBeVisible({ timeout: 15_000 });
+    await page
+      .getByLabel("决策质量：检查单执行与论点新证据")
+      .fill("检查单逐项执行，越过项已留理由，决策流程符合 SOP");
+    await page.getByLabel("归因：决策/结果四象限").selectOption("决策对/结果对");
+    await page
+      .getByLabel("复盘叙述")
+      .fill("e2e 复盘回流验证：本期按计划建仓，纪律检查一次越过已留痕，结论沉淀为知识条目。");
+    const reviewSaved = page.waitForResponse(
+      (r) =>
+        r.request().method() === "PUT" &&
+        /\/api\/research\/projects\/\d+\/reviews\/\d+$/.test(r.url()),
+    );
+    await page.getByRole("button", { name: "保存修正" }).click();
+    expect((await reviewSaved).ok()).toBeTruthy();
+
+    // 回流确认弹层（F16 用户确认后入库，不自动）→ 确认 → 已回流记 wiki 条目号（幂等终态展示）
+    await page.getByRole("button", { name: "回流知识库" }).click();
+    const confirmLayer = page.getByTestId("reflux-confirm");
+    await expect(confirmLayer).toBeVisible();
+    await expect(confirmLayer.getByText("将写入知识库 RESEARCH_NOTE")).toBeVisible();
+    const refluxed = page.waitForResponse(
+      (r) =>
+        r.request().method() === "POST" &&
+        /\/api\/research\/projects\/\d+\/reviews\/\d+\/reflux$/.test(r.url()),
+    );
+    await confirmLayer.getByRole("button", { name: "确认回流" }).click();
+    const refluxBody = (await (await refluxed).json()) as { refluxState: string; wikiEntryId: number };
+    expect(refluxBody.refluxState).toBe("REFLOWN");
+    expect(refluxBody.wikiEntryId).toBeGreaterThan(0);
+    await expect(page.getByText(new RegExp(`已回流 · wiki #${refluxBody.wikiEntryId}`))).toBeVisible({
+      timeout: 15_000,
+    });
+
+    // /wiki 研究笔记检索到回流条目（复盘· 标题 + SOP_REVIEW 徽标，MS-27 验收：复盘结论可在 wiki 检索）
+    await page.goto("/wiki?tab=research");
+    const noteList = page.getByTestId("wiki-note-list");
+    await expect(noteList.getByText("复盘·买入检查越过留痕验证", { exact: false })).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(noteList.getByText("SOP_REVIEW")).toBeVisible();
   });
 });
