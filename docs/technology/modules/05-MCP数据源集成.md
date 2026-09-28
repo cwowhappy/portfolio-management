@@ -2,19 +2,19 @@
 
 > 内置金融数据源 MCP（Model Context Protocol）接入：provider 目录、用户级启用与工具开关、按请求装配 MCP 工具。
 > Agent 装配链路见 [01-Agent实现.md](01-Agent实现.md)；写工具审批见 [07-HITL人工审批.md](07-HITL人工审批.md)；数据源调研背景见 [../research/03-金融机构MCP服务参考.md](../research/03-金融机构MCP服务参考.md)。
-> 对应代码：`backend/src/main/java/com/portfolio/invest/web/McpConfigController.java`、`application/mcp/`、`domain/mcp/`、`agent/McpClientPool.java`、`agent/UserToolkitFactory.java`（装配）、`infrastructure/persistence/Mcp*`（仓库实现）、`backend/src/main/resources/db/migration/V10__mcp.sql`；前端 `frontend/app/settings/mcp/page.tsx` + `frontend/components/mcp/McpSettingsPage.tsx` + `frontend/lib/mcpApi.ts`；冒烟 `backend/scripts/mcp-smoke.sh`（`application/mcp/`、`domain/mcp/`、`infrastructure/persistence/` 均相对 `backend/src/main/java/com/portfolio/invest/`）。
+> 对应代码：`backend/src/main/java/com/portfolio/invest/web/McpConfigController.java`、`application/mcp/`、`domain/mcp/`、`agent/McpClientPool.java`、`agent/UserToolkitFactory.java`（装配）、`infrastructure/persistence/Mcp*`（仓库实现）、`backend/src/main/resources/db/migration/V1__baseline.sql`（原 V10__mcp.sql）；前端 `frontend/app/settings/mcp/page.tsx` + `frontend/components/mcp/McpSettingsPage.tsx` + `frontend/lib/mcpApi.ts`；冒烟 `backend/scripts/mcp-smoke.sh`（`application/mcp/`、`domain/mcp/`、`infrastructure/persistence/` 均相对 `backend/src/main/java/com/portfolio/invest/`）。
 
 ## 1. 概述
 
 内置工具（行情/估值等 10 个 `@Tool`，见 InvestTools）之外，Agent 需要机构级数据源（公告、研报、宏观 EDB、港美股、期货等）。本模块以 MCP 标准协议接入三家官方服务，设计要点：
 
-- **内置 provider 目录**：妙想（东方财富 mx-ds）/ Tushare / Wind 三家由 `V10__mcp.sql` seed，用户**不可自定义 server**——`McpConfigController` 只读目录（`GET /providers`）+ 维护个人配置（`PUT/DELETE /configs`），无新增 provider 端点。
+- **内置 provider 目录**：妙想（东方财富 mx-ds）/ Tushare / Wind 三家由 `V1__baseline.sql`（原 V10__mcp.sql）seed，用户**不可自定义 server**——`McpConfigController` 只读目录（`GET /providers`）+ 维护个人配置（`PUT/DELETE /configs`），无新增 provider 端点。
 - **用户级粒度**：用户按 provider 启用/停用，并可禁用 provider 内单个工具（`disabled_tools`）；Agent 每次对话按当前用户装配。
 - **Token 治理**：provider 的 `auth_secret_enc` 在迁移 seed 中一律 **NULL 占位**——真实 token 绝不随迁移进 git，部署时 `UPDATE mcp_provider` 填充。
 
 ## 2. 架构与数据流
 
-### 2.1 数据模型（V10__mcp.sql，三表）
+### 2.1 数据模型（V1__baseline.sql 原 V10 段，三表）
 
 | 表 | 粒度 | 关键列 |
 |---|---|---|

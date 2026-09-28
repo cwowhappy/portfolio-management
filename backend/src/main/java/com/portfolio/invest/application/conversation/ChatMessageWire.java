@@ -17,7 +17,7 @@ public record ChatMessageWire(
         @NotNull @Size(min = 1, max = MAX_CONTENT_CHARS) String content,
         long createdAt) {
 
-    static final int MAX_ID_LENGTH = 64;            // 与 V2 chat_message.message_id VARCHAR(64) 对齐
+    static final int MAX_ID_LENGTH = 64;            // 与 V1 基线 chat_message.message_id VARCHAR(64) 对齐
     static final int MAX_CONTENT_CHARS = 100 * 1024; // 100KB（按字符数）
     static final Set<String> ALLOWED_ROLES = Set.of("user", "assistant");
 

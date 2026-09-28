@@ -36,7 +36,7 @@ class IndustryWatchRepositoryImplTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
-    /** 造一个用户（app_user 列见 V1__init.sql），返回 id。 */
+    /** 造一个用户（app_user 列见 V1__baseline.sql），返回 id。 */
     private Long seedUser() {
         return jdbcTemplate.queryForObject(
                 "INSERT INTO app_user(username, password_hash, role, status) VALUES (?, 'x', 'USER', 'APPROVED') RETURNING id",

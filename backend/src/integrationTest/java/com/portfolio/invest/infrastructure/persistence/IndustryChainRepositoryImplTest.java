@@ -58,7 +58,7 @@ class IndustryChainRepositoryImplTest {
         return new ChainStage(null, tier, name, sortOrder, List.of(members));
     }
 
-    /** V19 种子策展企业 id（创新药链未上市成员的引用目标；子查询定位防 V19.1 改日期漂移）。 */
+    /** V1 基线种子策展企业 id（创新药链未上市成员的引用目标；子查询按名定位防日期偏移漂移）。 */
     private Long seedUnlistedId(String companyName) {
         return jdbcTemplate.queryForObject(
                 "SELECT id FROM industry_unlisted_company WHERE company_name = ?", Long.class, companyName);
