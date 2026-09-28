@@ -109,6 +109,26 @@ class ResearchProjectRepositoryImplTest {
                 .extracting(ResearchProject::title).containsExactly("五粮液（修订）");
     }
 
+    @DisplayName("全用户 ACTIVE+指定阶段取数（T5 日终扫描口）：非 ACTIVE / 非该阶段项目不进结果")
+    @Test
+    @Transactional
+    void givenMixedProjects_whenFindAllActiveByStage_thenOnlyActivePositionReturned() {
+        Long user = seedUser();
+        ResearchProject position = repository.save(ResearchProject.create(
+                user, "600519", "贵州茅台", null, "茅台持仓中", ResearchStage.POSITION));
+        repository.save(ResearchProject.create(
+                user, "000858", "五粮液", null, "五粮液策略期", ResearchStage.STRATEGY)); // 阶段不符
+        ResearchProject archived = repository.save(ResearchProject.create(
+                user, "601318", "中国平安", null, "平安已归档", ResearchStage.POSITION));
+        repository.save(archived.archive()); // 状态不符
+
+        assertThat(repository.findAllActiveByStage(ResearchStage.POSITION))
+                .extracting(ResearchProject::id)
+                .containsExactly(position.id()); // 只剩 ACTIVE+POSITION 一行
+        assertThat(repository.findAllActiveByStage(ResearchStage.STRATEGY))
+                .extracting(ResearchProject::title).containsExactly("五粮液策略期");
+    }
+
     @DisplayName("手动完成度覆盖：upsert 不撞唯一约束、覆盖生效、NULL 清除不进 Map")
     @Test
     @Transactional

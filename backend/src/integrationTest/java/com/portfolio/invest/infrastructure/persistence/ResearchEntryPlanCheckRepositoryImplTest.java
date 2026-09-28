@@ -179,4 +179,33 @@ class ResearchEntryPlanCheckRepositoryImplTest {
         assertThat(hits.get(1).falsifierId()).isEqualTo(falsifierId);
         assertThat(checkRepository.findHits(projectId + 1)).isEmpty(); // 项目隔离
     }
+
+    @DisplayName("未评审命中去重取数（T5）：仅 review_id IS NULL 行的 falsifier id 进集合")
+    @Test
+    @Transactional
+    void givenHits_whenFindUnreviewedHitFalsifierIds_thenOnlyNullReviewRows() {
+        Long projectId = seedProject();
+        StrategyDoc strategy = projectRepository.saveStrategy(StrategyDoc.draftOf(projectId));
+        projectRepository.saveFalsifiers(strategy.id(), List.of(
+                Falsifier.ofPredicate(strategy.id(), FalsifierPredicate.PRICE_BELOW,
+                        new BigDecimal("13.5"), "跌破下限"),
+                Falsifier.ofPredicate(strategy.id(), FalsifierPredicate.PE_ABOVE,
+                        new BigDecimal("30"), "PE 过热")));
+        List<Falsifier> falsifiers = projectRepository.findFalsifiers(strategy.id());
+        Long f1 = falsifiers.get(0).id();
+        Long f2 = falsifiers.get(1).id();
+
+        checkRepository.insertHit(new FalsifierHit(null, projectId, f1,
+                "收盘价 12.10 < 下限 13.5（东财收盘 2026-09-25）",
+                java.time.Instant.parse("2026-09-25T10:00:00Z")));
+        FalsifierHit reviewed = checkRepository.insertHit(new FalsifierHit(null, projectId, f2,
+                "PE 31 > 上限 30（东财收盘及估值 2026-09-25）",
+                java.time.Instant.parse("2026-09-25T10:00:00Z")));
+        // f2 已评审回填（软引用列无 FK，模拟 P4 review 模块回写）：只剩 f1 未评审
+        jdbcTemplate.update("UPDATE research_falsifier_hit SET review_id = ? WHERE id = ?",
+                reviewed.id() + 1000, reviewed.id());
+
+        assertThat(checkRepository.findUnreviewedHitFalsifierIds(projectId)).containsExactly(f1);
+        assertThat(checkRepository.findUnreviewedHitFalsifierIds(projectId + 1)).isEmpty(); // 项目隔离
+    }
 }

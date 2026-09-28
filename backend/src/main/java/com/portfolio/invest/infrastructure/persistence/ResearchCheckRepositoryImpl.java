@@ -40,4 +40,12 @@ public class ResearchCheckRepositoryImpl implements ResearchCheckRepository {
                 .map(ResearchFalsifierHitJpaEntity::toDomain)
                 .toList();
     }
+
+    @Override
+    public List<Long> findUnreviewedHitFalsifierIds(Long projectId) {
+        return hitJpa.findByProjectIdAndReviewIdIsNull(projectId).stream()
+                .map(ResearchFalsifierHitJpaEntity::toDomain)
+                .map(FalsifierHit::falsifierId)
+                .toList();
+    }
 }

@@ -17,4 +17,7 @@ public interface ResearchCheckRepository {
 
     /** 项目的证伪命中留痕（createdAt 倒序，与实时求值合并展示用，D21）。 */
     List<FalsifierHit> findHits(Long projectId);
+
+    /** 项目下未评审（review_id IS NULL）命中的 falsifier id 集（T5 去重：同条件不重复落/不重复推）。 */
+    List<Long> findUnreviewedHitFalsifierIds(Long projectId);
 }

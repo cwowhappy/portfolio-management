@@ -14,6 +14,9 @@ public interface ResearchProjectRepository {
     /** 按用户查项目；status 为 null 不过滤状态，updatedAt 倒序（走 idx_research_project_user）。 */
     List<ResearchProject> findByUserId(Long userId, ProjectStatus status);
 
+    /** 全用户 ACTIVE 且指定阶段项目（T5 日终扫描取数口：扫描口径即 ACTIVE+POSITION），updatedAt 倒序。 */
+    List<ResearchProject> findAllActiveByStage(ResearchStage stage);
+
     Optional<ResearchProject> findById(Long id);
 
     /** 新建或整实体回存；唯一约束等违例由实现保证事务内早抛。 */

@@ -43,6 +43,12 @@ public class ResearchProjectRepositoryImpl implements ResearchProjectRepository 
     }
 
     @Override
+    public List<ResearchProject> findAllActiveByStage(ResearchStage stage) {
+        return projectJpa.findByStatusAndCurrentStageOrderByUpdatedAtDesc(ProjectStatus.ACTIVE, stage)
+                .stream().map(ResearchProjectJpaEntity::toDomain).toList();
+    }
+
+    @Override
     public Optional<ResearchProject> findById(Long id) {
         return projectJpa.findById(id).map(ResearchProjectJpaEntity::toDomain);
     }
