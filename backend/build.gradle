@@ -307,28 +307,16 @@ tasks.register('pitestDescartes', info.solidsoft.gradle.pitest.PitestTask) {
     shouldRunAfter(tasks.named('test'))
 }
 
-// Agent 效果评估入口（方案 §5.4 批次 4）：真实 DeepSeek 诊断仪——不挂 check、无通过率门槛，
-// 报告恒生成、退出码恒 0（缺 DEEPSEEK_API_KEY 的指引性退出 1 除外）。入口 `make eval-agent`
-tasks.register('evalAgent', JavaExec) {
-    group = 'verification'
-    description = 'Agent 效果评估（真实 LLM 诊断，不挂门禁）'
-    classpath = sourceSets.eval.runtimeClasspath
-    mainClass = 'com.portfolio.invest.eval.EvalRunner'
-    // 可选参数透传：./gradlew evalAgent -PevalArgs="--compare=/path/to/prev.json"
-    if (project.hasProperty('evalArgs')) {
-        args(project.property('evalArgs').toString().split('\\s+') as List)
-    }
-    // 同 tasks.withType(Test) 的两处环境前提：本地 Colima 挂不进 Ryuk；remember-me key 无兜底
-    environment 'TESTCONTAINERS_RYUK_DISABLED', 'true'
-    environment 'REMEMBER_ME_KEY', 'eval-remember-me-key'
-    // agentscope 的 DeepSeekModelProvider 在 context 未显式给 key 时回退 System.getenv("DEEPSEEK_API_KEY")，
-    // 该值无法在 JVM 内注入——必须在进程启动前落到环境变量。取值优先级：
-    //   ① -PevalDeepseekModel / -PevalDeepseekBaseUrl（调用方显式指定，Makefile 已透传）
-    //   ② 构建（daemon）进程环境变量
-    //   ③ 仓库根 .env
-    // 三者解析出的最终值无条件写入子进程 env（覆盖 daemon 继承值——daemon 复用时会固化启动时的
-    // 旧环境，"VAR=x make eval-agent" 的临时覆盖若只改 daemon 外环境会被旧值压掉，故须显式盖写）
-    doFirst {
+// eval JavaExec 共用的 DEEPSEEK_* 环境注入（evalAgent / evalExtraction）：
+// agentscope 的 DeepSeekModelProvider 在 context 未显式给 key 时回退 System.getenv("DEEPSEEK_API_KEY")，
+// 该值无法在 JVM 内注入——必须在进程启动前落到环境变量。取值优先级：
+//   ① -PevalDeepseekModel / -PevalDeepseekBaseUrl（调用方显式指定，Makefile 已透传）
+//   ② 构建（daemon）进程环境变量
+//   ③ 仓库根 .env
+// 三者解析出的最终值无条件写入子进程 env（覆盖 daemon 继承值——daemon 复用时会固化启动时的
+// 旧环境，"VAR=x make eval-agent" 的临时覆盖若只改 daemon 外环境会被旧值压掉，故须显式盖写）
+void injectDeepseekEnv(JavaExec task) {
+    task.doFirst {
         def fromEnvFile = [:]
         def rootEnv = rootProject.file('.env')
         if (rootEnv.exists()) {
@@ -353,6 +341,43 @@ tasks.register('evalAgent', JavaExec) {
         def apiKey = System.getenv('DEEPSEEK_API_KEY')?.trim() ?: fromEnvFile['DEEPSEEK_API_KEY']
         if (apiKey) environment 'DEEPSEEK_API_KEY', apiKey
     }
+}
+
+// Agent 效果评估入口（方案 §5.4 批次 4）：真实 DeepSeek 诊断仪——不挂 check、无通过率门槛，
+// 报告恒生成、退出码恒 0（缺 DEEPSEEK_API_KEY 的指引性退出 1 除外）。入口 `make eval-agent`
+tasks.register('evalAgent', JavaExec) { t ->
+    group = 'verification'
+    description = 'Agent 效果评估（真实 LLM 诊断，不挂门禁）'
+    classpath = sourceSets.eval.runtimeClasspath
+    mainClass = 'com.portfolio.invest.eval.EvalRunner'
+    // 可选参数透传：./gradlew evalAgent -PevalArgs="--compare=/path/to/prev.json"
+    if (project.hasProperty('evalArgs')) {
+        args(project.property('evalArgs').toString().split('\\s+') as List)
+    }
+    // 同 tasks.withType(Test) 的两处环境前提：本地 Colima 挂不进 Ryuk；remember-me key 无兜底
+    environment 'TESTCONTAINERS_RYUK_DISABLED', 'true'
+    environment 'REMEMBER_ME_KEY', 'eval-remember-me-key'
+    injectDeepseekEnv(t)
+}
+
+// 抽取质量 eval 回归入口（D21，Task 13）：题库 src/eval/resources/extraction/*.yaml 逐题直调
+// NewsExtractor.extractOne（LLM 通道=生产同款 AgentScopeIntelligenceChatPort，Model 直构无
+// Spring 上下文）。报告恒生成 backend/build/reports/eval-extraction/eval-report.{json,md}；
+// 退出码恒 0：缺 DEEPSEEK_API_KEY 写 SKIP 报告、框架异常写 ERROR 报告均正常退出（D21「报告即产出」）。
+// 不挂 CI 门禁；提示词/模型/参数变更 PR 须附最新报告（流程约束见 src/eval/resources/rubric/extraction.md）。
+// 入口 `make eval-extraction`
+tasks.register('evalExtraction', JavaExec) { t ->
+    group = 'verification'
+    description = '新闻抽取质量 eval 回归（真实 LLM 直调 NewsExtractor，不挂门禁，退出码恒 0）'
+    classpath = sourceSets.eval.runtimeClasspath
+    mainClass = 'com.portfolio.invest.eval.ExtractionEvalRunner'
+    // 可选参数透传：./gradlew evalExtraction -PevalArgs="--list"（干跑校验题库，不起 LLM）
+    if (project.hasProperty('evalArgs')) {
+        args(project.property('evalArgs').toString().split('\\s+') as List)
+    }
+    // 纯 JVM 直调（无 Spring 上下文、无 Testcontainers）：不需要 evalAgent 的 Ryuk/remember-me 前提，
+    // 只需 DEEPSEEK_* 注入（runner 侧对 .env 亦有 EnvSupport 兜底，注入方式与 evalAgent 对齐）
+    injectDeepseekEnv(t)
 }
 
 // test 单任务报告：供聚焦测试（--tests X）快速查看，不触发其他 suite

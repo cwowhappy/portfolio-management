@@ -13,7 +13,7 @@ EVAL_DEEPSEEK_BASE_URL_FROM_SHELL := $(DEEPSEEK_BASE_URL)
 -include .env
 export
 
-.PHONY: dev dev-backend dev-frontend test test-backend test-backend-unit test-backend-integration test-backend-bdd test-backend-mutation test-backend-mutation-descartes eval-agent test-frontend test-e2e build up down smoke
+.PHONY: dev dev-backend dev-frontend test test-backend test-backend-unit test-backend-integration test-backend-bdd test-backend-mutation test-backend-mutation-descartes eval-agent eval-extraction test-frontend test-e2e build up down smoke
 
 ## 本地开发：同时启动后端(8080)与前端(3000)
 dev:
@@ -56,6 +56,13 @@ test-backend-mutation-descartes:
 #       EVAL_ARGS="--compare=<上次报告>" 透传 runner 参数
 eval-agent:
 	cd backend && ./gradlew evalAgent --console=plain$(if $(EVAL_DEEPSEEK_MODEL_FROM_SHELL), -PevalDeepseekModel=$(EVAL_DEEPSEEK_MODEL_FROM_SHELL),)$(if $(EVAL_DEEPSEEK_BASE_URL_FROM_SHELL), -PevalDeepseekBaseUrl=$(EVAL_DEEPSEEK_BASE_URL_FROM_SHELL),)$(if $(EVAL_ARGS), -PevalArgs=$(EVAL_ARGS),)
+
+# 抽取质量 eval 回归（D21）：题库 backend/src/eval/resources/extraction，直调 NewsExtractor
+# （生产同款 LLM 通道），报告 backend/build/reports/eval-extraction。不挂 CI 门禁、退出码恒 0
+# （缺 DEEPSEEK_API_KEY 写 SKIP 报告后正常退出）；提示词/模型变更 PR 须附最新报告。
+# 可选：DEEPSEEK_MODEL=deepseek-v4-pro 临时换被评模型；EVAL_ARGS="--list" 干跑校验题库
+eval-extraction:
+	cd backend && ./gradlew evalExtraction --console=plain$(if $(EVAL_DEEPSEEK_MODEL_FROM_SHELL), -PevalDeepseekModel=$(EVAL_DEEPSEEK_MODEL_FROM_SHELL),)$(if $(EVAL_DEEPSEEK_BASE_URL_FROM_SHELL), -PevalDeepseekBaseUrl=$(EVAL_DEEPSEEK_BASE_URL_FROM_SHELL),)$(if $(EVAL_ARGS), -PevalArgs=$(EVAL_ARGS),)
 
 test-frontend:
 	cd frontend && pnpm lint && pnpm test
