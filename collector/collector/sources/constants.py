@@ -86,6 +86,25 @@ ETF_DETAIL_HEADERS = {
 }
 ETF_DETAIL_TIMEOUT = 15  # 单只请求超时（秒）
 
+# 新闻源（MS-20 P1 Task 6）：URL/参数/游标语义由探测报告实测钉住
+# （09-调研报告/2026-09-29-MS20-数据源探测报告.md §1 东财 / §2 新浪），漂移时以报告复核。
+NEWS_HTTP_TIMEOUT = 10  # 单页请求超时（秒）
+NEWS_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"  # 东财无 UA 要求；新浪带浏览器 UA 更稳
+# 东财 7×24 快讯主源：sortEnd 游标首页传空、其后传上页 data.sortEnd（恒等于末条 realSort，向更旧翻）
+NEWS_EASTMONEY_URL = "https://np-listapi.eastmoney.com/comm/web/getFastNewsList"
+NEWS_EASTMONEY_QUERY = "client=web&biz=web_724&fastColumn=102&sortEnd={cursor}&pageSize={page_size}&req_trace=1"
+# 接口无 URL 字段，详情页按此模板拼接（实测 200；仅回溯元数据，失败不阻塞——§1.3/§1.5）
+NEWS_EASTMONEY_DETAIL_URL = "https://finance.eastmoney.com/a/{code}.html"
+# 新浪 zhibo 财经直播降级源：page 页码从 1 递增翻更旧（实测边界衔接零重叠——§2.4）
+NEWS_SINA_URL = "https://zhibo.sina.com.cn/api/zhibo/feed"
+NEWS_SINA_QUERY = "callback=&page={page}&page_size={page_size}&zhibo_id=152&tag_id=0&dire=f&dpc=1"
+NEWS_SINA_REFERER = "https://finance.sina.com.cn/7x24/"  # 带 Referer 更稳（§2.1，未验证强制项）
+NEWS_PAGE_SIZE = 20
+# 单轮翻页上限：*/10 增量通常首页即命中已存 id 截断；上限兜底夜间 2 小时档与断档补拉（§1.4）
+NEWS_MAX_PAGES = 5
+NEWS_PAGE_INTERVAL = 0.3  # 翻页/重试的礼貌间隔（秒）
+NEWS_RETRY_ATTEMPTS = 3  # 请求级失败（网络/非 200/JSON 解析）重试次数，连续失败即 SourceError 走降级
+
 # ---------------------------------------------------------------- 限速（对上游的礼貌间隔，秒）
 
 FINANCIAL_MIN_INTERVAL = 0.35  # fina_indicator/income（tushare 200 次/分 → 0.35s，18-19 实测钉死）
