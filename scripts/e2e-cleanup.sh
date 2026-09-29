@@ -35,6 +35,11 @@ DELETE FROM research_entry_plan       WHERE project_id IN (SELECT id FROM resear
 DELETE FROM research_strategy_doc     WHERE project_id IN (SELECT id FROM research_project WHERE user_id IN (SELECT id FROM app_user WHERE username LIKE 'e2e\_%'));
 DELETE FROM research_stage_record     WHERE project_id IN (SELECT id FROM research_project WHERE user_id IN (SELECT id FROM app_user WHERE username LIKE 'e2e\_%'));
 DELETE FROM research_project          WHERE user_id IN (SELECT id FROM app_user WHERE username LIKE 'e2e\_%');
+-- intelligence 域（V3）顶层 user_id 外键表；subscription_stock 随 subscription ON DELETE CASCADE
+DELETE FROM intelligence_push_log      WHERE user_id IN (SELECT id FROM app_user WHERE username LIKE 'e2e\_%');
+DELETE FROM intelligence_subscription  WHERE user_id IN (SELECT id FROM app_user WHERE username LIKE 'e2e\_%');
+DELETE FROM intelligence_feishu_binding WHERE user_id IN (SELECT id FROM app_user WHERE username LIKE 'e2e\_%');
+DELETE FROM intelligence_binding_code WHERE user_id IN (SELECT id FROM app_user WHERE username LIKE 'e2e\_%');
 -- 全局策展数据无 user 归属（MS-10 §九#1）：按 e2e 命名前缀清残留（industry_chain_member
 -- 对其引用为 ON DELETE SET NULL，先行删除安全；V19 迁移种子「示例%」不在此列）；
 -- 链同理——保存成功但删除步失败的运行残留（级联清 stages/members），V20 种子链不在前缀列

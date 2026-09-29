@@ -5,7 +5,9 @@
 
 schema 与生产同源，不再维护手工 DDL（消灭测试与真实迁移的漂移）：
 - collector 自己的 alembic 迁移（migrations/，单一基线 0001，squash 自原 0001~0003）：5 张运维表，upgrade 到 head
-- 后端 Flyway 迁移 SQL（backend/.../db/migration/ 的 V3/V4）：6 张业务目标表
+- 后端 Flyway 迁移 SQL（backend/.../db/migration/ 的 V1/V2/V3）：V1 基线业务目标表 +
+  V2 research 域（collector 不消费，仅因 V3 ALTER research_project 需前置重放）+
+  V3 intelligence 域（collector 写入 intelligence_news_raw 等 4 张跨服务契约表）
 """
 
 import os
@@ -24,9 +26,10 @@ COLLECTOR_DIR = Path(__file__).resolve().parent.parent
 # 2026-09-28 squash 后回放单一基线（原 V3/V4/V7/V13/V15/V18 六文件链；基线自始未建
 # 旧 treasury_yield——原 V3 建、V4 迁移后 DROP，终态本无此表，见 v1 发布计划 A1）。
 FLYWAY_DIR = COLLECTOR_DIR.parent / "backend" / "src" / "main" / "resources" / "db" / "migration"
-FLYWAY_SQL_FILES = ("V1__baseline.sql",)
+FLYWAY_SQL_FILES = ("V1__baseline.sql", "V2__research.sql", "V3__intelligence.sql")
 
-# 15 张表：5 运维（alembic）+ 10 业务目标（Flyway V1 基线）
+# 30 张表：5 运维（alembic）+ 10 业务目标（Flyway V1 基线）+ 15 情报表（V3，M15）。
+# V2 research 表同样被重放建出但 collector 不消费，不进 TRUNCATE 清单。
 ALL_TABLES = (
     "collector_task_run",
     "collector_source_health",
@@ -43,6 +46,21 @@ ALL_TABLES = (
     "stock_financial",
     "index_close_history",
     "etf_basic",
+    "intelligence_news_raw",
+    "intelligence_news_extract",
+    "intelligence_announcement",
+    "intelligence_announcement_extract",
+    "intelligence_policy_raw",
+    "intelligence_policy_event",
+    "intelligence_macro_series",
+    "intelligence_macro_calendar",
+    "intelligence_source_switch",
+    "intelligence_daily_brief",
+    "intelligence_subscription",
+    "intelligence_subscription_stock",
+    "intelligence_feishu_binding",
+    "intelligence_binding_code",
+    "intelligence_push_log",
 )
 
 
