@@ -27,6 +27,21 @@ class IntelligenceMigrationTest extends PostgresTestSupport {
     @Autowired
     JdbcTemplate jdbc;
 
+    /**
+     * 本类为非 @Transactional 直插（autocommit）且共享 PG 容器跨类可见：清掉自建行，
+     * 保持与其余测试类（如 ResearchProjectRepositoryImplTest 对 research_project 的
+     * containsExactly 精确断言、push_log 精确计数）顺序无关——新增 intelligence 推送
+     * 集成测试（BriefPushIntegrationTest）后类执行顺序翻转暴露了本缺陷。
+     */
+    @org.junit.jupiter.api.AfterEach
+    void cleanUpCommittedFixtures() {
+        jdbc.update("DELETE FROM research_project WHERE title = '迁移验证项目'");
+        jdbc.update("DELETE FROM intelligence_feishu_binding WHERE open_id = 'ou_same'");
+        jdbc.update("DELETE FROM intelligence_push_log WHERE target = 'oc_group_chat'");
+        jdbc.update("DELETE FROM app_user WHERE username IN"
+                + " ('intelligence_mig_u1', 'intelligence_mig_u2', 'intelligence_mig_u3')");
+    }
+
     @Test
     @DisplayName("V3 建 15 张 intelligence 表且业务键唯一约束生效")
     void whenV3Applied_thenCreatesFifteenIntelligenceTables() {
