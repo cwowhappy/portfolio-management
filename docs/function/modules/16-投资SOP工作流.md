@@ -49,7 +49,7 @@
 
 - **F09 建仓计划**：分批方案整替保存；凯利 f\*=p−(1−p)/b 手动参数（D23，计划示例 0.2 系笔误勘误为 0.4）；Σ占比 >1 唯一硬拒（D5 例外，=1 恰过）。
 - **F10/F12 检查单**：`DisciplineCheckService` 纯函数（PASS/HIT/UNSET 三态，规则未配置=「未设定」中性）；消费 M13 PrincipleRule（application 层 RuleInput 转换，domain 零横依赖）；页面级确认卡（D18 仿审批卡 UI 不经 useInterrupt，与 portfolio 交易录入解耦）；`research_check_record` append-only（OVERRIDDEN 必填理由）；卖出检查注入证伪核对条目。
-- **F11 情报监控**：**顺延 M15**（D14 验收拆分不阻塞）——`IntelSubscriptionHook` 接口位已留。
+- **F11 情报监控**：**顺延 M15**（D14 验收拆分不阻塞）——`IntelligenceSubscriptionHook` 接口位已留（2026-09-29 随 M15 命名原则由 `IntelSubscriptionHook` 改名）。
 - **证伪求值**：`FalsifierEvaluator` 四谓词纯函数（缺数据 skipped 不冒充、EVENT 恒 pending 人工勾选、basis 可解释含口径）；日终扫描 18:43 错峰（ACTIVE+POSITION、未评审去重、Ruling-19 条件编辑后重新提醒）；飞书文案仅项目名+条件名零数字（D15）。
 
 ### MS-27 · 复盘闭环（F13~F16）
