@@ -18,7 +18,7 @@ import java.util.List;
  * @param publishedAt    发布时间
  * @param url            原文链接
  * @param stockTags      源站标的标签原样 JSON 文本（对象数组，如 [{"code":"600519"}]——域不解释）
- * @param fetchedAt      入库时间（findPendingForExtraction 的当日判定列）
+ * @param fetchedAt      入库时间（findPendingForExtraction 的游标窗口判定列）
  * @param eventType      抽取事件类型
  * @param stockCodes     抽取关联标的码（JSONB）
  * @param industryCodes  抽取关联行业码（JSONB）

@@ -131,7 +131,7 @@ class NewsExtractionIntegrationTest extends PostgresTestSupport {
         // 首条即跳批：无 extract 行（或保持原状）、无 LLM 之外的任何写入
         assertThat(extractRowCount()).isZero();
         verify(chatPort, times(1)).complete(any(), any());
-        assertThat(repository.findPendingForExtraction(LocalDate.now(CST), 10))
+        assertThat(repository.findPendingForExtraction(LocalDate.now(CST), 3, 10))
                 .extracting(r -> r.id()).containsExactlyInAnyOrder(a, b); // 全部仍待抽取
     }
 

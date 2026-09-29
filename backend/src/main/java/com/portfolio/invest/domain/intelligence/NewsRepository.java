@@ -20,11 +20,13 @@ public interface NewsRepository {
     PageResult<NewsRecord> search(PageQuery q);
 
     /**
-     * 当日（Asia/Shanghai 的 fetched_at 自然日）入库、且尚无 SUCCESS/FAILED 终态抽取的
-     * raw：无抽取行或抽取行为 PENDING（LEFT JOIN 反连接）。id 升序稳定取前 limit 条，
-     * 供抽取批（Task 8）消费——FAILED 为终态不重试。
+     * 游标窗口内（Asia/Shanghai 自然日 {@code day.minusDays(lookbackDays-1)} 起至 day 含当日，
+     * lookbackDays ≥ 1）入库、且尚无 SUCCESS/FAILED 终态抽取的 raw：无抽取行或抽取行为
+     * PENDING（LEFT JOIN 反连接）。id 升序稳定取前 limit 条，供抽取批（Task 8）消费——
+     * FAILED 为终态不重试；窗口有界（调用方传 3）保证 LLM 失效/护栏停批后的积压可跨日
+     * 续抽，又不无限重试陈年条目。
      */
-    List<NewsRecord> findPendingForExtraction(LocalDate day, int limit);
+    List<NewsRecord> findPendingForExtraction(LocalDate day, int lookbackDays, int limit);
 
     /**
      * 写入/覆盖抽取结果（INSERT … ON CONFLICT (news_raw_id) DO UPDATE）：无论旧状态

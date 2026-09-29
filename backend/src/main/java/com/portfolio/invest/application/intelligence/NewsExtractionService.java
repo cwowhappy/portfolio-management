@@ -20,8 +20,9 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 /**
- * 新闻 LLM 结构化抽取批（D4/D6/D16）：每日 07:40/16:40 两批（含周末——空批快退），当日
- * PENDING 新闻按 {@code extract-batch-size} 循环取批逐条抽取，「批量→逐条→失败隔离」骨架
+ * 新闻 LLM 结构化抽取批（D4/D6/D16）：每日 07:40/16:40 两批（含周末——空批快退），游标窗口
+ * 内（{@link #EXTRACTION_LOOKBACK_DAYS} 个自然日含当日）的 PENDING 新闻按
+ * {@code extract-batch-size} 循环取批逐条抽取，「批量→逐条→失败隔离」骨架
  * （Task 13 eval 与 P2 公告/P3 政策抽取复用）。
  *
  * <p>失败语义：单条解析失败（含重试 1 次）标 FAILED 终态；LLM 通道不可用（未配置/调用失败）
@@ -29,13 +30,18 @@ import org.springframework.stereotype.Service;
  * try/catch 吞异常护调度线程（照 PrincipleAlertService/ResearchFalsifierScanService 双层模式）。
  *
  * <p>成本护栏（D16）：每条抽取后向共享 {@link IntelligenceTokenBudget} 计入 inputTokens，
- * 超限当日停批（已完成条目照常落库、剩余留 PENDING 次日幂等续抽）+ AlertNotifier 每日告警一次。
- * 幂等可重入：PENDING→SUCCESS/FAILED 置换，同轮已处理条目（含异常跳过者）不重复抽取。
+ * 超限当日停批（已完成条目照常落库、剩余留 PENDING 待后续批次续抽）+ AlertNotifier 每日告警一次。
+ * 幂等可重入：PENDING→SUCCESS/FAILED 置换，同轮已处理条目（含异常跳过者）不重复抽取；
+ * LLM 失效/护栏停批的积压条目在 {@link #EXTRACTION_LOOKBACK_DAYS} 个自然日（含当日）的
+ * 游标窗口内由后续批次续抽——窗口有界，陈年条目不无限重试。
  */
 @Service
 public class NewsExtractionService {
 
     private static final Logger log = LoggerFactory.getLogger(NewsExtractionService.class);
+
+    /** 抽取游标窗口（自然日含当日）：LLM 失效/护栏停批后的积压跨日续抽上界。 */
+    static final int EXTRACTION_LOOKBACK_DAYS = 3;
 
     private final NewsRepository newsRepository;
     private final IntelligenceChatPort chatPort;
@@ -79,9 +85,9 @@ public class NewsExtractionService {
     }
 
     /**
-     * 幂等可重入抽取入口（集成测试/运维也可直调）：循环取批直至无 PENDING、LLM 失效、
-     * 或护栏停批。同轮已处理条目记录在 {@code handled}——意外异常条目保持 PENDING 但
-     * 本轮不重选（防同一轮内死循环），下批/次日再试。
+     * 幂等可重入抽取入口（集成测试/运维也可直调）：循环取批直至窗口内无 PENDING、
+     * LLM 失效、或护栏停批。同轮已处理条目记录在 {@code handled}——意外异常条目保持
+     * PENDING 但本轮不重选（防同一轮内死循环），由后续批次在游标窗口内再试。
      */
     public void extractPending() {
         LocalDate today = LocalDate.now(clock);
@@ -92,9 +98,10 @@ public class NewsExtractionService {
                 return;
             }
             List<NewsRecord> batch = newsRepository
-                    .findPendingForExtraction(today, props.getIntelligence().getExtractBatchSize())
+                    .findPendingForExtraction(today, EXTRACTION_LOOKBACK_DAYS,
+                            props.getIntelligence().getExtractBatchSize())
                     .stream().filter(news -> !handled.contains(news.id())).toList();
-            if (batch.isEmpty()) { // 空批快退（周末/节假日/当日已清空）
+            if (batch.isEmpty()) { // 空批快退（周末/节假日/窗口内已清空）
                 return;
             }
             for (NewsRecord news : batch) {
@@ -103,8 +110,8 @@ public class NewsExtractionService {
                     NewsExtractor.ExtractionOutcome outcome =
                             extractor.extractOne(chatPort, news.title(), news.rawSummary());
                     if (outcome.status() == NewsExtractor.OutcomeStatus.LLM_UNAVAILABLE) {
-                        log.warn("情报 LLM 通道不可用，本批跳过（剩余 {} 条留 PENDING 下批再试）",
-                                batch.size() - batch.indexOf(news));
+                        log.warn("情报 LLM 通道不可用，本批跳过（剩余 {} 条留 PENDING 待后续批次续抽，{} 日游标窗口）",
+                                batch.size() - batch.indexOf(news), EXTRACTION_LOOKBACK_DAYS);
                         return;
                     }
                     newsRepository.upsertExtract(news.id(), toResult(outcome));
@@ -113,7 +120,7 @@ public class NewsExtractionService {
                         return;
                     }
                 } catch (Exception e) { // 单条隔离：一条失败不拖垮其余
-                    log.error("单条新闻抽取异常（newsId={}），本条跳过待下批", news.id(), e);
+                    log.error("单条新闻抽取异常（newsId={}），本条跳过待后续批次续抽", news.id(), e);
                 }
             }
         }
@@ -122,16 +129,17 @@ public class NewsExtractionService {
     /** 护栏超限停批：当日告警恰一次（AlertNotifier 尽力而为，失败不重试）。 */
     private void stopForGuardrail(LocalDate today) {
         long guardrail = props.getIntelligence().getDailyTokenGuardrail();
-        log.warn("情报抽取当日 input token 超护栏（{}），当日停批，剩余条目留 PENDING 次日续抽", guardrail);
+        log.warn("情报抽取当日 input token 超护栏（{}），当日停批，剩余条目留 PENDING 待后续批次续抽（{} 日游标窗口）",
+                guardrail, EXTRACTION_LOOKBACK_DAYS);
         if (today.equals(alertedDay)) {
             return;
         }
         alertedDay = today;
         boolean ok = alertNotifier.send("⚠️ 情报抽取 token 护栏超限", "red", List.of(
                 "当日累计 input tokens 已超过护栏 " + guardrail,
-                "当日剩余批已停止，未抽取条目留 PENDING 次日续抽"));
+                "当日剩余批已停止，未抽取条目留 PENDING，" + EXTRACTION_LOOKBACK_DAYS + " 日游标窗口内后续批次续抽"));
         if (!ok) {
-            log.warn("护栏超限告警推送失败（不重试，次日如再超限按日去重不再重复告警）");
+            log.warn("护栏超限告警推送失败（不重试，同日如再触发按日去重不再重复告警）");
         }
     }
 

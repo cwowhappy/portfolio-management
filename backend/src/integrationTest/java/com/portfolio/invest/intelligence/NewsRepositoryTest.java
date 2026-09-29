@@ -25,9 +25,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 /**
  * NewsRepository 六方法真库契约（Testcontainers PG16 + V3 迁移）：trgm 中文关键词检索、
  * stock/industry JSONB 包含与 minImportance 过滤、分页 total/夹紧回显、PENDING 待抽取
- * 语义（当日 fetched_at + 无行或 PENDING）、upsertExtract 首插/整体置换、
- * deleteRawBefore 的 published_at 口径与 extract 级联、findMajorSince 阈值/状态/时间窗、
- * countExtractedByDate 的 Asia/Shanghai 自然日口径。
+ * 语义（lookbackDays 自然日游标窗口的 fetched_at + 无行或 PENDING）、upsertExtract
+ * 首插/整体置换、deleteRawBefore 的 published_at 口径与 extract 级联、findMajorSince
+ * 阈值/状态/时间窗、countExtractedByDate 的 Asia/Shanghai 自然日口径。
  */
 @SpringBootTest
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -120,8 +120,8 @@ class NewsRepositoryTest extends PostgresTestSupport {
     }
 
     @Test
-    @DisplayName("findPendingForExtraction：当日 fetched_at 且无抽取行或 PENDING，SUCCESS/FAILED/隔日不取，limit 截断")
-    void givenMixedExtractStatusAndDays_whenFindPendingForExtraction_thenOnlySameDayPendingCappedByLimit() {
+    @DisplayName("findPendingForExtraction：3 日游标窗口内无抽取行或 PENDING 可选中（含前日），SUCCESS/FAILED 终态与 4 日前陈年条目不取，limit 截断")
+    void givenMixedExtractStatusAndDays_whenFindPendingForExtraction_thenWindowPendingCappedByLimit() {
         LocalDate day = LocalDate.of(2026, 9, 28);
         Long none = insertRaw("e-none", "无抽取行", at("2026-09-28T08:00:00"));
         setFetchedAt(none, "2026-09-28T09:00:00");
@@ -131,16 +131,24 @@ class NewsRepositoryTest extends PostgresTestSupport {
         setFetchedAt(success, "2026-09-28T11:00:00");
         Long failed = insertRawWithStatus("e-failed", "已失败", "2026-09-28T08:00:00", "FAILED");
         setFetchedAt(failed, "2026-09-28T12:00:00");
-        Long otherDay = insertRaw("e-other-day", "隔日入库", at("2026-09-28T08:00:00"));
-        setFetchedAt(otherDay, "2026-09-27T09:00:00");
+        // 前日（27 日）PENDING：3 日窗口（26~28）内，续抽可选中
+        Long prevDay = insertRawWithStatus("e-prev-day", "前日积压待抽取", "2026-09-28T08:00:00", "PENDING");
+        setFetchedAt(prevDay, "2026-09-27T09:00:00");
+        // 4 天前（25 日）PENDING：窗口外陈年条目，不再重试
+        Long tooOld = insertRawWithStatus("e-too-old", "四天前陈年待抽取", "2026-09-28T08:00:00", "PENDING");
+        setFetchedAt(tooOld, "2026-09-25T09:00:00");
 
-        List<NewsRecord> pendingList = repository.findPendingForExtraction(day, 10);
+        List<NewsRecord> pendingList = repository.findPendingForExtraction(day, 3, 10);
 
-        assertThat(pendingList).extracting(NewsRecord::id).containsExactly(none, pending);
+        assertThat(pendingList).extracting(NewsRecord::id).containsExactly(none, pending, prevDay);
         assertThat(pendingList.getFirst().status()).isNull(); // 无抽取行
         assertThat(pendingList.get(1).status()).isEqualTo(ExtractStatus.PENDING);
-        // FAILED 为终态不重试、SUCCESS 不重复抽取、隔日不取
-        assertThat(repository.findPendingForExtraction(day, 1)).hasSize(1);
+        assertThat(pendingList.get(2).status()).isEqualTo(ExtractStatus.PENDING);
+        // FAILED 为终态不重试、SUCCESS 不重复抽取、窗口外陈年条目不取
+        assertThat(repository.findPendingForExtraction(day, 3, 1)).hasSize(1);
+        // lookback=1 收窄回仅当日（窗口下界算术：day-（lookback-1））
+        assertThat(repository.findPendingForExtraction(day, 1, 10))
+                .extracting(NewsRecord::id).containsExactly(none, pending);
     }
 
     @Test

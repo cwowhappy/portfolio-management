@@ -167,7 +167,7 @@ class NewsExtractionServiceTest {
         service.extractPending();
         service.extractPending();
 
-        verify(newsRepository, never()).findPendingForExtraction(any(), anyInt());
+        verify(newsRepository, never()).findPendingForExtraction(any(), anyInt(), anyInt());
         verify(chatPort, never()).complete(any(), any());
         verify(alertNotifier, times(1)).send(any(), any(), anyList()); // 当日告警恰 1 次
     }
@@ -175,11 +175,12 @@ class NewsExtractionServiceTest {
     @Test
     @DisplayName("给定当日无待抽取新闻，when抽取批，then空批快退零LLM调用")
     void givenNoPendingNews_whenExtractPending_thenFastReturn() {
-        when(newsRepository.findPendingForExtraction(any(), anyInt())).thenReturn(List.of());
+        when(newsRepository.findPendingForExtraction(any(), anyInt(), anyInt())).thenReturn(List.of());
 
         service.extractPending();
 
-        verify(newsRepository, times(1)).findPendingForExtraction(eq(TODAY), anyInt());
+        // 游标窗口经服务常量传导：3 个自然日含当日（积压跨日续抽）
+        verify(newsRepository, times(1)).findPendingForExtraction(eq(TODAY), eq(3), anyInt());
         verify(chatPort, never()).complete(any(), any());
         verify(newsRepository, never()).upsertExtract(anyLong(), any());
     }
@@ -188,7 +189,7 @@ class NewsExtractionServiceTest {
     @DisplayName("给定待抽取超过单批容量，when抽取批，then按配置批大小循环取批直至清空")
     void givenMorePendingThanBatchSize_whenExtractPending_thenLoopUntilDrained() {
         props.getIntelligence().setExtractBatchSize(2);
-        when(newsRepository.findPendingForExtraction(any(), anyInt())).thenReturn(
+        when(newsRepository.findPendingForExtraction(any(), anyInt(), anyInt())).thenReturn(
                 List.of(news(1L, "甲"), news(2L, "乙")),
                 List.of(news(1L, "甲"), news(2L, "乙"), news(3L, "丙")), // 仓库侧仍返回全量
                 List.of());
@@ -197,7 +198,7 @@ class NewsExtractionServiceTest {
         service.extractPending();
 
         // 批大小经配置传导（D6：15 条/批默认，此处 2）；已处理条目同轮不重复抽取
-        verify(newsRepository, times(3)).findPendingForExtraction(any(), eq(2));
+        verify(newsRepository, times(3)).findPendingForExtraction(any(), eq(3), eq(2));
         verify(newsRepository, times(3)).upsertExtract(anyLong(), any());
         verify(chatPort, times(3)).complete(any(), any());
     }
@@ -233,7 +234,7 @@ class NewsExtractionServiceTest {
     @Test
     @DisplayName("给定取数抛异常，when调度入口，then顶层吞异常不炸调度线程")
     void givenRepositoryBlowsUp_whenScheduled_thenSwallowed() {
-        when(newsRepository.findPendingForExtraction(any(), anyInt()))
+        when(newsRepository.findPendingForExtraction(any(), anyInt(), anyInt()))
                 .thenThrow(new IllegalStateException("db down"));
 
         assertThatCode(() -> service.extractPendingScheduled()).doesNotThrowAnyException();
@@ -243,7 +244,7 @@ class NewsExtractionServiceTest {
     // ── fixture 助手 ───────────────────────────────────────────────
 
     private void givenPending(NewsRecord... news) {
-        when(newsRepository.findPendingForExtraction(any(), anyInt()))
+        when(newsRepository.findPendingForExtraction(any(), anyInt(), anyInt()))
                 .thenReturn(List.of(news)).thenReturn(List.of());
     }
 

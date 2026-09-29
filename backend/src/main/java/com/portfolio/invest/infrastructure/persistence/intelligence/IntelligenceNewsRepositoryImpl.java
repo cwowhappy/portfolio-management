@@ -115,7 +115,9 @@ public class IntelligenceNewsRepositoryImpl implements NewsRepository {
     }
 
     @Override
-    public List<NewsRecord> findPendingForExtraction(LocalDate day, int limit) {
+    public List<NewsRecord> findPendingForExtraction(LocalDate day, int lookbackDays, int limit) {
+        // 游标窗口：lookbackDays 个自然日含当日（day-（lookbackDays-1）起至 day 止），下界兜底 1（仅当日）
+        LocalDate windowStart = day.minusDays(Math.max(1, lookbackDays) - 1L);
         return jdbc.query(
                 SELECT_COLS + RAW_LEFT_JOIN_EXTRACT + """
                           WHERE r.fetched_at >= ? AND r.fetched_at < ?
@@ -123,7 +125,7 @@ public class IntelligenceNewsRepositoryImpl implements NewsRepository {
                           ORDER BY r.id
                           LIMIT ?
                         """,
-                NEWS_ROW_MAPPER, dayStart(day), dayStart(day.plusDays(1)), limit);
+                NEWS_ROW_MAPPER, dayStart(windowStart), dayStart(day.plusDays(1)), limit);
     }
 
     @Override
