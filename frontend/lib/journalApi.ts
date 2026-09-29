@@ -20,15 +20,27 @@ export interface EntryInput {
 
 export const JOURNAL_ENTRY_TYPE_LABELS: Record<JournalEntryType, string> = {
   BUY_MEMO: "买入备忘", SELL_MEMO: "卖出备忘", RESEARCH_NOTE: "研究笔记", REVIEW: "定期复盘",
+  RESEARCH_EVENT: "研究事件",
 };
 export const PERIOD_TYPE_LABELS: Record<PeriodType, string> = { QUARTERLY: "季度", ANNUAL: "年度" };
 export const TIMELINE_EVENT_TYPE_LABELS: Record<string, string> = {
   BUY: "买入", SELL: "卖出", DIVIDEND: "分红",
   BUY_MEMO: "买入备忘", SELL_MEMO: "卖出备忘", RESEARCH_NOTE: "研究笔记", REVIEW: "复盘",
+  RESEARCH_EVENT: "研究事件",
 };
 
-export const fetchEntries = (type?: JournalEntryType) =>
-  request<JournalEntryView[]>(`/api/journal/entries${type ? `?type=${type}` : ""}`, "GET", undefined, z.array(JournalEntryViewSchema));
+/** 列表查询（F08 反查）：type/projectId 均可选叠加。 */
+export const fetchEntries = (type?: JournalEntryType, projectId?: number) => {
+  const qs = [type && `type=${type}`, projectId != null && `projectId=${projectId}`]
+    .filter(Boolean)
+    .join("&");
+  return request<JournalEntryView[]>(
+    `/api/journal/entries${qs ? `?${qs}` : ""}`,
+    "GET",
+    undefined,
+    z.array(JournalEntryViewSchema),
+  );
+};
 export const fetchTimeline = (from?: string, to?: string) => {
   const qs = [from && `from=${from}`, to && `to=${to}`].filter(Boolean).join("&");
   return request<TimelineEventView[]>(`/api/journal/timeline${qs ? `?${qs}` : ""}`, "GET", undefined, z.array(TimelineEventViewSchema));

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import type { ScreeningStock } from "@/lib/types";
 
 const COLUMNS: { key: keyof ScreeningStock; label: string; sortKey: string }[] = [
@@ -57,7 +58,17 @@ export default function ScreeningResultsTable({ results, sortBy, sortDirection, 
                   </button>
                 )}
               </td>
-              <td className="text-left py-2">{r.stockName}<span className="ml-1 text-[color:var(--color-ink-faint)]">{r.stockCode}</span></td>
+              <td className="text-left py-2">
+                {r.stockName}<span className="ml-1 text-[color:var(--color-ink-faint)]">{r.stockCode}</span>
+                {/* F05 入口：预填 code/name/industry 跳立项表单页 */}
+                <Link
+                  href={`/research/new?code=${r.stockCode}&name=${encodeURIComponent(r.stockName)}${r.industryCode ? `&industry=${encodeURIComponent(r.industryCode)}` : ""}`}
+                  className="ml-2 text-xs text-[color:var(--color-accent)] hover:underline"
+                  aria-label={`发起研究 ${r.stockCode}`}
+                >
+                  研究
+                </Link>
+              </td>
               <td className="text-right">{r.peTtm ?? "—"}</td>
               <td className="text-right">{r.pb ?? "—"}</td>
               <td className="text-right">{r.dividendYield ?? "—"}</td>

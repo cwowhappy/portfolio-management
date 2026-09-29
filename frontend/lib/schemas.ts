@@ -307,7 +307,7 @@ export const StockSearchHitSchema = z.object({
 
 // —— 投资决策记录（/api/journal/**，与后端 JournalController 的 DTO 对齐）——
 
-export const JournalEntryTypeSchema = z.enum(["BUY_MEMO", "SELL_MEMO", "RESEARCH_NOTE", "REVIEW"]);
+export const JournalEntryTypeSchema = z.enum(["BUY_MEMO", "SELL_MEMO", "RESEARCH_NOTE", "REVIEW", "RESEARCH_EVENT"]);
 export const PeriodTypeSchema = z.enum(["QUARTERLY", "ANNUAL"]);
 export const JournalEntryViewSchema = z.object({
   id: z.number(),
@@ -327,7 +327,7 @@ export const JournalEntryViewSchema = z.object({
   updatedAt: z.string(),
 });
 export const TimelineEventTypeSchema = z.enum([
-  "BUY", "SELL", "DIVIDEND", "BUY_MEMO", "SELL_MEMO", "RESEARCH_NOTE", "REVIEW",
+  "BUY", "SELL", "DIVIDEND", "BUY_MEMO", "SELL_MEMO", "RESEARCH_NOTE", "REVIEW", "RESEARCH_EVENT",
 ]);
 export const TimelineEventViewSchema = z.object({
   type: TimelineEventTypeSchema,

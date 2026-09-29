@@ -42,6 +42,14 @@ public class ScenarioContext {
     private String conversationId;
     private MockHttpSession otherUserSession;
     private Cookie rememberMeCookie;
+    private Long researchProjectId;
+    private Long researchReviewId;
+    private String researchSnapshotJson;
+    private Long researchWikiEntryId;
+    private Long falsifierId;
+    private Long falsifierHitId;
+    private Long firstFalsifierReviewId;
+    private Long lastFalsifierReviewId;
     private final List<PortfolioOverviewView> overviews = new ArrayList<>();
     private List<StockScreeningResult> screeningResults;
     private ScreeningException screeningError;
@@ -183,6 +191,70 @@ public class ScenarioContext {
 
     public void setRememberMeCookie(Cookie rememberMeCookie) {
         this.rememberMeCookie = rememberMeCookie;
+    }
+
+    public Long getResearchProjectId() {
+        return researchProjectId;
+    }
+
+    public void setResearchProjectId(Long researchProjectId) {
+        this.researchProjectId = researchProjectId;
+    }
+
+    public Long getResearchReviewId() {
+        return researchReviewId;
+    }
+
+    public void setResearchReviewId(Long researchReviewId) {
+        this.researchReviewId = researchReviewId;
+    }
+
+    public String getResearchSnapshotJson() {
+        return researchSnapshotJson;
+    }
+
+    public void setResearchSnapshotJson(String researchSnapshotJson) {
+        this.researchSnapshotJson = researchSnapshotJson;
+    }
+
+    public Long getResearchWikiEntryId() {
+        return researchWikiEntryId;
+    }
+
+    public void setResearchWikiEntryId(Long researchWikiEntryId) {
+        this.researchWikiEntryId = researchWikiEntryId;
+    }
+
+    public Long getFalsifierId() {
+        return falsifierId;
+    }
+
+    public void setFalsifierId(Long falsifierId) {
+        this.falsifierId = falsifierId;
+    }
+
+    public Long getFalsifierHitId() {
+        return falsifierHitId;
+    }
+
+    public void setFalsifierHitId(Long falsifierHitId) {
+        this.falsifierHitId = falsifierHitId;
+    }
+
+    public Long getFirstFalsifierReviewId() {
+        return firstFalsifierReviewId;
+    }
+
+    public void setFirstFalsifierReviewId(Long firstFalsifierReviewId) {
+        this.firstFalsifierReviewId = firstFalsifierReviewId;
+    }
+
+    public Long getLastFalsifierReviewId() {
+        return lastFalsifierReviewId;
+    }
+
+    public void setLastFalsifierReviewId(Long lastFalsifierReviewId) {
+        this.lastFalsifierReviewId = lastFalsifierReviewId;
     }
 
     public List<PortfolioOverviewView> getOverviews() {

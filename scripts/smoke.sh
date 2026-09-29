@@ -116,4 +116,58 @@ else
     || fail "验证码发送失败: $CODE_RESP"
 fi
 
+echo "== 7. research 复盘闭环 =="
+# 纯 CRUD 链路（无 LLM 依赖）：立项 → 策略定稿 → 创建复盘（快照定格含口径标注）→
+# 修正作答 → 回流 wiki → 知识库检索到 SOP_REVIEW 条目（MS-27 验收：复盘结论可在 wiki 检索）。
+# 「无数据」标注依赖账号当月无交易，环境相关断言留在 BDD（research-flow.feature）做确定性验证。
+if [ -z "${ADMIN_USERNAME:-}" ] || [ -z "${ADMIN_PASSWORD:-}" ]; then
+  echo "  - 未设置 ADMIN_USERNAME/ADMIN_PASSWORD，跳过复盘闭环冒烟（在 .env 配置后重跑）"
+else
+  COOKIE_JAR=$(mktemp)
+  trap 'rm -f "$COOKIE_JAR"' EXIT
+  curl -s --max-time 15 -c "$COOKIE_JAR" -X POST "$BASE/api/auth/login" \
+    -H "Content-Type: application/json" \
+    -d "{\"username\":\"$ADMIN_USERNAME\",\"password\":\"$ADMIN_PASSWORD\"}" \
+    | grep -q '"username"' || { rm -f "$COOKIE_JAR"; fail "管理员登录失败"; }
+  RUN_TAG=$(date +%s)
+  # 立项
+  PROJ=$(curl -s --max-time 15 -b "$COOKIE_JAR" -X POST "$BASE/api/research/projects" \
+    -H "Content-Type: application/json" \
+    -d "{\"stockCode\":\"600519\",\"stockName\":\"贵州茅台\",\"title\":\"冒烟复盘 $RUN_TAG\"}")
+  PROJ_ID=$(echo "$PROJ" | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
+  [ -n "$PROJ_ID" ] || { rm -f "$COOKIE_JAR"; fail "研究项目立项失败: $(echo "$PROJ" | head -c 200)"; }
+  # 策略暂存 → 定稿
+  curl -s --max-time 15 -b "$COOKIE_JAR" -X PUT "$BASE/api/research/projects/$PROJ_ID/strategy" \
+    -H "Content-Type: application/json" \
+    -d '{"thesis":"冒烟","valuationLow":1500,"valuationHigh":1800}' \
+    | grep -q '"DRAFT"' || { rm -f "$COOKIE_JAR"; fail "策略草稿暂存失败"; }
+  curl -s --max-time 15 -b "$COOKIE_JAR" -X POST "$BASE/api/research/projects/$PROJ_ID/strategy/finalize" \
+    | grep -q '"FINALIZED"' || { rm -f "$COOKIE_JAR"; fail "策略定稿失败"; }
+  # 创建复盘（创建即定格快照：口径标注写入快照字段）
+  REVIEW=$(curl -s --max-time 15 -b "$COOKIE_JAR" -X POST "$BASE/api/research/projects/$PROJ_ID/reviews" \
+    -H "Content-Type: application/json" \
+    -d "{\"tier\":\"MONTHLY\",\"periodStart\":\"$(date +%Y-%m-01)\",\"periodEnd\":\"$(date +%F)\"}")
+  echo "$REVIEW" | grep -q '"priceBasis":"东财收盘"' \
+    || { rm -f "$COOKIE_JAR"; fail "复盘快照缺价格口径标注: $(echo "$REVIEW" | head -c 200)"; }
+  echo "$REVIEW" | grep -q '"navBasis"' \
+    || { rm -f "$COOKIE_JAR"; fail "复盘快照缺净值口径标注"; }
+  REVIEW_ID=$(echo "$REVIEW" | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
+  # 修正作答（叙述必填，回流 wiki 正文源）
+  curl -s --max-time 15 -b "$COOKIE_JAR" -X PUT "$BASE/api/research/projects/$PROJ_ID/reviews/$REVIEW_ID" \
+    -H "Content-Type: application/json" \
+    -d '{"answers":{"4.1":"冒烟复盘作答"},"narrative":"冒烟复盘叙述：回流知识库验证"}' \
+    | grep -q '"narrative":"冒烟复盘叙述：回流知识库验证"' \
+    || { rm -f "$COOKIE_JAR"; fail "复盘修正失败"; }
+  # 确认回流 → REFLOWN
+  curl -s --max-time 15 -b "$COOKIE_JAR" -X POST \
+    "$BASE/api/research/projects/$PROJ_ID/reviews/$REVIEW_ID/reflux" \
+    | grep -q '"REFLOWN"' || { rm -f "$COOKIE_JAR"; fail "复盘回流失败"; }
+  # 知识库检索：RESEARCH_NOTE 列表含 SOP_REVIEW 条目（标题「复盘·…」）
+  WIKI=$(curl -s --max-time 15 -b "$COOKIE_JAR" "$BASE/api/wiki/entries?type=RESEARCH_NOTE")
+  echo "$WIKI" | grep -q '"SOP_REVIEW"' && echo "$WIKI" | grep -q "复盘·冒烟复盘 $RUN_TAG" \
+    && pass "复盘回流知识库（SOP_REVIEW 条目可检索）" \
+    || { rm -f "$COOKIE_JAR"; fail "知识库未检索到复盘条目: $(echo "$WIKI" | head -c 200)"; }
+  rm -f "$COOKIE_JAR"
+fi
+
 echo "全部通过"

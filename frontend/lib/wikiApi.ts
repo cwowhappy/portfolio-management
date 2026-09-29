@@ -34,8 +34,18 @@ export const RATIO_METRICS: ReadonlySet<PrincipleMetric> = new Set([
   "SINGLE_POSITION_RATIO", "INDUSTRY_POSITION_RATIO",
 ]);
 
-export const fetchWikiEntries = (type?: WikiEntryType) =>
-  request<WikiEntryView[]>(`/api/wiki/entries${type ? `?type=${type}` : ""}`, "GET", undefined, z.array(WikiEntryViewSchema));
+/** 列表查询（F08 反查）：type/projectId 均可选叠加。 */
+export const fetchWikiEntries = (type?: WikiEntryType, projectId?: number) => {
+  const qs = [type && `type=${type}`, projectId != null && `projectId=${projectId}`]
+    .filter(Boolean)
+    .join("&");
+  return request<WikiEntryView[]>(
+    `/api/wiki/entries${qs ? `?${qs}` : ""}`,
+    "GET",
+    undefined,
+    z.array(WikiEntryViewSchema),
+  );
+};
 export const createWikiEntry = (cmd: WikiEntryInput) =>
   request<WikiEntryView>("/api/wiki/entries", "POST", cmd, WikiEntryViewSchema);
 export const updateWikiEntry = (id: number, cmd: WikiEntryInput) =>

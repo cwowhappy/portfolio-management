@@ -5,6 +5,7 @@ import com.portfolio.invest.domain.market.MarketDataErrorCode;
 import com.portfolio.invest.domain.market.MarketDataException;
 import com.portfolio.invest.domain.mcp.McpErrorCode;
 import com.portfolio.invest.domain.mcp.McpException;
+import com.portfolio.invest.domain.research.ResearchErrorCode;
 import com.portfolio.invest.domain.skill.SkillErrorCode;
 import com.portfolio.invest.domain.skill.SkillException;
 import com.portfolio.invest.domain.user.UserErrorCode;
@@ -143,6 +144,22 @@ public class GlobalExceptionHandler {
         HttpStatus status = switch (e.code()) {
             case com.portfolio.invest.domain.wiki.WikiErrorCode.NOT_FOUND -> HttpStatus.NOT_FOUND;
             case com.portfolio.invest.domain.wiki.WikiErrorCode.DUPLICATE_METRIC -> HttpStatus.CONFLICT;
+            default -> HttpStatus.BAD_REQUEST;
+        };
+        return ResponseEntity.status(status).body(new ApiError(e.code(), e.getMessage()));
+    }
+
+    @ExceptionHandler(com.portfolio.invest.domain.research.ResearchException.class)
+    public ResponseEntity<ApiError> research(com.portfolio.invest.domain.research.ResearchException e) {
+        HttpStatus status = switch (e.code()) {
+            case ResearchErrorCode.NOT_FOUND -> HttpStatus.NOT_FOUND;
+            case ResearchErrorCode.VALUATION_RANGE_INVALID, ResearchErrorCode.STRATEGY_FINALIZED,
+                 ResearchErrorCode.RATIO_SUM_EXCEEDED, ResearchErrorCode.OVERRIDE_REASON_REQUIRED,
+                 ResearchErrorCode.CONCLUSION_REQUIRED, ResearchErrorCode.REVIEW_REASON_REQUIRED,
+                 ResearchErrorCode.REFLUX_NARRATIVE_REQUIRED, ResearchErrorCode.FEEDBACK_CONTENT_REQUIRED
+                    -> HttpStatus.UNPROCESSABLE_CONTENT;
+            // F16 回流降级：wiki 写异常不阻断复盘（reflux_state 回 PENDING），502 提示可重试
+            case ResearchErrorCode.REFLUX_WIKI_UNAVAILABLE -> HttpStatus.BAD_GATEWAY;
             default -> HttpStatus.BAD_REQUEST;
         };
         return ResponseEntity.status(status).body(new ApiError(e.code(), e.getMessage()));

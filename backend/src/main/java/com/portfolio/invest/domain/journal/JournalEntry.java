@@ -13,6 +13,7 @@ public final class JournalEntry {
     private final String stockCode;
     private final String stockName;
     private final Long tradeId;
+    private final Long projectId;
     private final String title;
     private final String content;
     private final BigDecimal targetPrice;
@@ -28,13 +29,14 @@ public final class JournalEntry {
     private JournalEntry(Long id, Long userId, JournalEntryType type, String stockCode, String stockName,
                          Long tradeId, String title, String content, BigDecimal targetPrice, BigDecimal stopLoss,
                          PeriodType periodType, LocalDate periodStart, LocalDate periodEnd,
-                         LocalDate eventDate, Instant createdAt, Instant updatedAt, Long version) {
+                         LocalDate eventDate, Instant createdAt, Instant updatedAt, Long version, Long projectId) {
         this.id = id;
         this.userId = userId;
         this.type = type;
         this.stockCode = stockCode;
         this.stockName = stockName;
         this.tradeId = tradeId;
+        this.projectId = projectId;
         this.title = title;
         this.content = content;
         this.targetPrice = targetPrice;
@@ -53,10 +55,20 @@ public final class JournalEntry {
                                       BigDecimal targetPrice, BigDecimal stopLoss,
                                       PeriodType periodType, LocalDate periodStart, LocalDate periodEnd,
                                       LocalDate eventDate, Instant now) {
-        validate(type, stockCode, tradeId, title, content, targetPrice, stopLoss,
+        return create(userId, type, stockCode, stockName, tradeId, title, content,
+                targetPrice, stopLoss, periodType, periodStart, periodEnd, eventDate, now, null);
+    }
+
+    /** 研究事件创建入口：RESEARCH_EVENT 必填 projectId，其余类型传 null（照 User 域增量重载先例）。 */
+    public static JournalEntry create(Long userId, JournalEntryType type, String stockCode, String stockName,
+                                      Long tradeId, String title, String content,
+                                      BigDecimal targetPrice, BigDecimal stopLoss,
+                                      PeriodType periodType, LocalDate periodStart, LocalDate periodEnd,
+                                      LocalDate eventDate, Instant now, Long projectId) {
+        validate(type, stockCode, tradeId, projectId, title, content, targetPrice, stopLoss,
                 periodType, periodStart, periodEnd, eventDate);
         return new JournalEntry(null, userId, type, stockCode, stockName, tradeId, title, content,
-                targetPrice, stopLoss, periodType, periodStart, periodEnd, eventDate, now, now, null);
+                targetPrice, stopLoss, periodType, periodStart, periodEnd, eventDate, now, now, null, projectId);
     }
 
     public static JournalEntry reconstitute(Long id, Long userId, JournalEntryType type,
@@ -73,22 +85,35 @@ public final class JournalEntry {
                                             String title, String content, BigDecimal targetPrice, BigDecimal stopLoss,
                                             PeriodType periodType, LocalDate periodStart, LocalDate periodEnd,
                                             LocalDate eventDate, Instant createdAt, Instant updatedAt, Long version) {
-        return new JournalEntry(id, userId, type, stockCode, stockName, tradeId, title, content,
-                targetPrice, stopLoss, periodType, periodStart, periodEnd, eventDate, createdAt, updatedAt, version);
+        return reconstitute(id, userId, type, stockCode, stockName, tradeId, title, content,
+                targetPrice, stopLoss, periodType, periodStart, periodEnd, eventDate, createdAt, updatedAt, version, null);
     }
 
-    /** 更新可变字段（type 不可变），返回新实例。 */
+    public static JournalEntry reconstitute(Long id, Long userId, JournalEntryType type,
+                                            String stockCode, String stockName, Long tradeId,
+                                            String title, String content, BigDecimal targetPrice, BigDecimal stopLoss,
+                                            PeriodType periodType, LocalDate periodStart, LocalDate periodEnd,
+                                            LocalDate eventDate, Instant createdAt, Instant updatedAt, Long version,
+                                            Long projectId) {
+        return new JournalEntry(id, userId, type, stockCode, stockName, tradeId, title, content,
+                targetPrice, stopLoss, periodType, periodStart, periodEnd, eventDate, createdAt, updatedAt, version,
+                projectId);
+    }
+
+    /** 更新可变字段（type/projectId 不可变），返回新实例。 */
     public JournalEntry update(String stockCode, String stockName, Long tradeId, String title, String content,
                                BigDecimal targetPrice, BigDecimal stopLoss,
                                PeriodType periodType, LocalDate periodStart, LocalDate periodEnd,
                                LocalDate eventDate) {
-        validate(type, stockCode, tradeId, title, content, targetPrice, stopLoss,
+        validate(type, stockCode, tradeId, projectId, title, content, targetPrice, stopLoss,
                 periodType, periodStart, periodEnd, eventDate);
         return new JournalEntry(id, userId, type, stockCode, stockName, tradeId, title, content,
-                targetPrice, stopLoss, periodType, periodStart, periodEnd, eventDate, createdAt, Instant.now(), version);
+                targetPrice, stopLoss, periodType, periodStart, periodEnd, eventDate, createdAt, Instant.now(), version,
+                projectId);
     }
 
-    private static void validate(JournalEntryType type, String stockCode, Long tradeId, String title, String content,
+    private static void validate(JournalEntryType type, String stockCode, Long tradeId, Long projectId,
+                                 String title, String content,
                                  BigDecimal targetPrice, BigDecimal stopLoss,
                                  PeriodType periodType, LocalDate periodStart, LocalDate periodEnd,
                                  LocalDate eventDate) {
@@ -129,6 +154,15 @@ public final class JournalEntry {
                 }
             }
             case RESEARCH_NOTE -> { /* stockCode 可选 */ }
+            case RESEARCH_EVENT -> {
+                // 软引用 research_project(id)，无 FK；研究事件由研究域写入（P2 Task 6），不绑定交易
+                if (projectId == null) {
+                    throw new JournalException(JournalErrorCode.INVALID_INPUT, "研究事件必须关联研究项目");
+                }
+                if (tradeId != null) {
+                    throw new JournalException(JournalErrorCode.INVALID_INPUT, "研究事件不绑定交易");
+                }
+            }
         }
     }
 
@@ -138,6 +172,7 @@ public final class JournalEntry {
     public String stockCode() { return stockCode; }
     public String stockName() { return stockName; }
     public Long tradeId() { return tradeId; }
+    public Long projectId() { return projectId; }
     public String title() { return title; }
     public String content() { return content; }
     public BigDecimal targetPrice() { return targetPrice; }

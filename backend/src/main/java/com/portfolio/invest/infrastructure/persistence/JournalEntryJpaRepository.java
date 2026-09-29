@@ -13,4 +13,5 @@ public interface JournalEntryJpaRepository extends JpaRepository<JournalEntryJpa
     List<JournalEntryJpaEntity> findByUserIdAndEventDateBetweenOrderByEventDateDesc(Long userId, LocalDate from, LocalDate to);
     List<JournalEntryJpaEntity> findByUserIdAndEventDateGreaterThanEqualOrderByEventDateDesc(Long userId, LocalDate from);
     List<JournalEntryJpaEntity> findByUserIdAndEventDateLessThanEqualOrderByEventDateDesc(Long userId, LocalDate to);
+    List<JournalEntryJpaEntity> findByUserIdAndProjectId(Long userId, Long projectId);
 }

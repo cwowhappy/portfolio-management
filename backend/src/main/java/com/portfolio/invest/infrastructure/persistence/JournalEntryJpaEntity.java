@@ -40,6 +40,10 @@ public class JournalEntryJpaEntity {
     @Column(name = "trade_id")
     private Long tradeId;
 
+    /** 软引用 research_project(id)，无 FK、不级联（V2，照 trade_id 先例）。 */
+    @Column(name = "project_id")
+    private Long projectId;
+
     @Column(nullable = false, length = 128)
     private String title;
 
@@ -85,6 +89,7 @@ public class JournalEntryJpaEntity {
         entity.stockCode = e.stockCode();
         entity.stockName = e.stockName();
         entity.tradeId = e.tradeId();
+        entity.projectId = e.projectId();
         entity.title = e.title();
         entity.content = e.content();
         entity.targetPrice = e.targetPrice();
@@ -101,6 +106,7 @@ public class JournalEntryJpaEntity {
 
     public JournalEntry toDomain() {
         return JournalEntry.reconstitute(id, userId, type, stockCode, stockName, tradeId, title, content,
-                targetPrice, stopLoss, periodType, periodStart, periodEnd, eventDate, createdAt, updatedAt, version);
+                targetPrice, stopLoss, periodType, periodStart, periodEnd, eventDate, createdAt, updatedAt, version,
+                projectId);
     }
 }

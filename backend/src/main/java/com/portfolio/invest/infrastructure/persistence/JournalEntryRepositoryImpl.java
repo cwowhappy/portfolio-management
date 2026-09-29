@@ -47,6 +47,12 @@ public class JournalEntryRepositoryImpl implements JournalEntryRepository {
     }
 
     @Override
+    public List<JournalEntry> findByUserIdAndProjectId(Long userId, Long projectId) {
+        return jpa.findByUserIdAndProjectId(userId, projectId).stream()
+                .map(JournalEntryJpaEntity::toDomain).toList();
+    }
+
+    @Override
     public JournalEntry save(JournalEntry entry) {
         return jpa.save(JournalEntryJpaEntity.fromDomain(entry)).toDomain();
     }

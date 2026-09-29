@@ -114,7 +114,7 @@ export default function IndustryDrilldown({ industryCode }: { industryCode: stri
 
       {tab === "listed" && (
         loading ? <div className="h-40 rounded-2xl skeleton" aria-label="加载中" /> : (
-          <IndustryStockTable stocks={stocks} sortBy={sortBy} sortDirection={dir} onSort={onSort} />
+          <IndustryStockTable stocks={stocks} sortBy={sortBy} sortDirection={dir} onSort={onSort} industryCode={industryCode} />
         )
       )}
       {tab === "unlisted" && <UnlistedPanel industryCode={industryCode} industryName={industryName} />}

@@ -34,7 +34,18 @@ public class JournalApplicationService {
     }
 
     public List<JournalEntryView> entries(Long userId, JournalEntryType type) {
-        return repository.findByUserId(userId, type).stream().map(JournalEntryView::from).toList();
+        return entries(userId, type, null);
+    }
+
+    /** F08 反查：projectId 非空时按研究项目软引用过滤（type 叠加内存过滤）。 */
+    public List<JournalEntryView> entries(Long userId, JournalEntryType type, Long projectId) {
+        List<JournalEntry> list = projectId == null
+                ? repository.findByUserId(userId, type)
+                : repository.findByUserIdAndProjectId(userId, projectId);
+        return list.stream()
+                .filter(e -> type == null || e.type() == type)
+                .map(JournalEntryView::from)
+                .toList();
     }
 
     @Transactional
@@ -143,6 +154,7 @@ public class JournalApplicationService {
             case SELL_MEMO -> TimelineEventType.SELL_MEMO;
             case RESEARCH_NOTE -> TimelineEventType.RESEARCH_NOTE;
             case REVIEW -> TimelineEventType.REVIEW;
+            case RESEARCH_EVENT -> TimelineEventType.RESEARCH_EVENT;
         };
     }
 

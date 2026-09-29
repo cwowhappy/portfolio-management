@@ -30,7 +30,7 @@ class FlywayMigrationIntegrationTest extends PostgresTestSupport {
         List<String> versions = jdbcTemplate.queryForList(
                 "SELECT version FROM flyway_schema_history WHERE type = 'SQL' ORDER BY installed_rank",
                 String.class);
-        assertThat(versions).containsExactly("1");
+        assertThat(versions).containsExactly("1", "2");
 
         Integer failed = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM flyway_schema_history WHERE success = false", Integer.class);
@@ -194,6 +194,14 @@ class FlywayMigrationIntegrationTest extends PostgresTestSupport {
         assertColumn("industry_chain_member", "stock_code", "character varying", true);
         assertColumn("industry_chain_member", "unlisted_company_id", "bigint", true);
         assertColumn("industry_chain_member", "display_name", "character varying", false);
+    }
+
+    @DisplayName("研究域表契约（V2）")
+    @Test
+    void whenSchemaMigrated_thenResearchTablesMatchContract() {
+        // F5：建仓计划每项目至多一行（T1 整替 = 同事务删后插，UNIQUE 兜底防并发双写）；策略文档同口径单行
+        assertUniqueColumns("research_entry_plan", "project_id");
+        assertUniqueColumns("research_strategy_doc", "project_id");
     }
 
     private void assertColumn(String table, String column, String dataType, boolean nullable) {
