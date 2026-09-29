@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # 端到端冒烟：健康检查 → fixture 新鲜度（腾讯上游字段漂移探测）→ 行情接口 → （有 key 时）真实对话
+#            → 邮件 → research 复盘闭环 → 情报数据源网络探测（MS-20）
 set -u
 BASE=${BACKEND_URL:-http://localhost:8080}
 FE=${FRONTEND_URL:-http://localhost:3000}
@@ -169,5 +170,22 @@ else
     || { rm -f "$COOKIE_JAR"; fail "知识库未检索到复盘条目: $(echo "$WIKI" | head -c 200)"; }
   rm -f "$COOKIE_JAR"
 fi
+
+echo "== 8. 情报数据源网络探测（MS-20，决策 #17）=="
+# 出站可达性探测：新闻双源（东财 7×24 主源 / 新浪 zhibo 降级源）+ 公告主源（巨潮，P2 消费）。
+# 2xx/3xx/4xx 皆算可达——4xx 也证明网络出口与 DNS 正常（鉴权/参数错误属上游语义非网络问题）；
+# 仅 000/超时（网络不通、DNS 解析失败）判 FAIL——部署机采集任务静默失败的先兆排查入口。
+probe_intel_source() {
+  local name="$1" url="$2" code
+  code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' "$url") || code="000"
+  if [ "$code" = "000" ]; then
+    fail "$name 不可达（HTTP $code / 超时）——检查部署机出站网络与 DNS"
+  else
+    pass "$name 可达（HTTP ${code}）"
+  fi
+}
+probe_intel_source "东财 7×24 快讯（新闻主源）" "https://np-listapi.eastmoney.com/comm/web/getFastNewsList?client=web&biz=web_724&fastColumn=102&pageSize=1&req_trace=1"
+probe_intel_source "新浪 zhibo 快讯（新闻降级源）" "https://zhibo.sina.com.cn/api/zhibo/feed?page=1&page_size=1"
+probe_intel_source "巨潮公告（公告主源，P2 消费）" "https://www.cninfo.com.cn/new/hisAnnouncement/query"
 
 echo "全部通过"
