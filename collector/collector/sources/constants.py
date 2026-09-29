@@ -105,6 +105,45 @@ NEWS_MAX_PAGES = 5
 NEWS_PAGE_INTERVAL = 0.3  # 翻页/重试的礼貌间隔（秒）
 NEWS_RETRY_ATTEMPTS = 3  # 请求级失败（网络/非 200/JSON 解析）重试次数，连续失败即 SourceError 走降级
 
+# 公告源（MS-21 P2 Task 1）：巨潮 hisAnnouncement 主源 + 东财公告流降级源。
+# URL/参数/栏目映射由探测报告实测钉住（§3 巨潮 + §4 东财公告流——响应样本与字段映射为
+# 2026-09-29 P2 补测成节），漂移时以报告复核。
+ANN_HTTP_TIMEOUT = 10  # 单页请求超时（秒）
+ANN_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"
+ANN_PAGE_INTERVAL = 0.3  # 相邻请求（跨栏目流/翻页/重试）礼貌间隔：主源每轮 30+ 请求
+ANN_RETRY_ATTEMPTS = 3  # 请求级失败重试次数，连续失败即 SourceError 走 selector 降级
+# 巨潮 hisAnnouncement：POST form-encoded；pageSize 服务端封顶 30（传 100 实测静默回落 30，P2 补测）
+CNINFO_URL = "https://www.cninfo.com.cn/new/hisAnnouncement/query"
+# orgId 权威查询口（§3.1：orgId 不可推导，错/缺静默 0 条）；keyBoardList[].plate = sse/szse/bj（P2 补测）
+CNINFO_TOPSEARCH_URL = "https://www.cninfo.com.cn/new/information/topSearch/detailOfQuery"
+CNINFO_STATIC_URL = "https://static.cninfo.com.cn/"  # PDF 拼接前缀（§3.3 实测：+ adjunctUrl）
+CNINFO_PAGE_SIZE = 30
+ANN_CNINFO_MAX_PAGES = 30  # 单流分页上限：须覆盖 3 日窗口最热栏目（年报季 ndbg 深市 ~900 条/3 日）
+# topSearch.plate → (column, plate) 请求参数（§3.1：column/plate 必须与市场一致，配错静默 0 条）
+CNINFO_MARKETS = {"szse": ("szse", "sz"), "sse": ("sse", "sh"), "bj": ("bj", "bj")}
+# 东财公告流：GET；page_size 上限 100（P2 补测）；ann_type=A 覆盖沪深北三市（920982 实测 1280 条）
+EASTMONEY_ANN_URL = "https://np-anotice-stock.eastmoney.com/api/security/ann"
+# 首附件 PDF 直链模板（P2 补测：HEAD 200 + application/pdf，免 content API 二次请求；仅取 _1 首附件）
+EASTMONEY_ANN_PDF_URL = "https://pdf.dfcfw.com/pdf/H2_{art_code}_1.pdf"
+ANN_EASTMONEY_PAGE_SIZE = 100
+ANN_EASTMONEY_MAX_PAGES = 50  # 全市场流无日期参数，3 日窗口 ≈ 4500 条 ≈ 45 页（截断后常态 1~2 页）
+ANN_LOOKBACK_DAYS = 3  # 默认窗口回看天数：覆盖周五晚→周一早的周末缺口（任务 MON-FRI 双跑）
+ANN_EXISTING_IDS_LIMIT = 2000  # 增量截断的已存集合行数上限（覆盖不足只多翻页不丢数据，UPSERT 兜底）
+ANN_STOCKS_ENV = "INTELLIGENCE_ANN_STOCKS"  # 关注集兜底 env 变量名（逗号分隔代码串）
+
+# 「巨潮栏目 → AnnouncementType 十类」直判映射（探测报告 §3.4 矩阵 + 决策 #24）：
+# key=AnnouncementType，value=巨潮 category 参数值集合（_szsh 后缀族三市场通用，sse/bj 实测生效）。
+# 仅 6 类有专属栏目可直判；增持/减持/回购/关联交易 4 类无专属栏目（宽栏目 gqbd/rcjy 混含且量大），
+# 控制器裁定不做全市场扫描——仅在关注集标的全量采集后由 LLM 标签判定（P2 Task 5）。
+ANNOUNCEMENT_MAJOR_COLUMNS: dict[str, set[str]] = {
+    "PERIODIC_REPORT": {"category_ndbg_szsh", "category_bndbg_szsh", "category_yjdbg_szsh", "category_sjdbg_szsh"},
+    "EARNINGS_FORECAST": {"category_yjygjxz_szsh"},  # 栏目混含业绩快报（§3.4），标题细分留给抽取侧
+    "EARNINGS_FLASH": {"category_yjygjxz_szsh"},
+    "PLACEMENT": {"category_zf_szsh", "category_pg_szsh"},
+    "EQUITY_INCENTIVE": {"category_gqjl_szsh"},
+    "DELISTING_RISK": {"category_tbclts_szsh", "category_tszlq_szsh"},
+}
+
 # ---------------------------------------------------------------- 限速（对上游的礼貌间隔，秒）
 
 FINANCIAL_MIN_INTERVAL = 0.35  # fina_indicator/income（tushare 200 次/分 → 0.35s，18-19 实测钉死）
