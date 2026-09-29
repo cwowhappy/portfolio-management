@@ -377,6 +377,8 @@ public class InvestProperties {
         private int watchThreshold = 50;
         private int extractBatchSize = 15;
         private long dailyTokenGuardrail = 2_000_000L;
+        private int briefMaxItems = 25;
+        private int briefMinItems = 15;
 
         public int getMajorThreshold() { return majorThreshold; }
         public void setMajorThreshold(int majorThreshold) { this.majorThreshold = majorThreshold; }
@@ -386,6 +388,10 @@ public class InvestProperties {
         public void setExtractBatchSize(int extractBatchSize) { this.extractBatchSize = extractBatchSize; }
         public long getDailyTokenGuardrail() { return dailyTokenGuardrail; }
         public void setDailyTokenGuardrail(long dailyTokenGuardrail) { this.dailyTokenGuardrail = dailyTokenGuardrail; }
+        public int getBriefMaxItems() { return briefMaxItems; }
+        public void setBriefMaxItems(int briefMaxItems) { this.briefMaxItems = briefMaxItems; }
+        public int getBriefMinItems() { return briefMinItems; }
+        public void setBriefMinItems(int briefMinItems) { this.briefMinItems = briefMinItems; }
     }
 
     /** SMTP 发信（M01-F06，阿里云企业邮箱）。空值 = 未启用，发信入口返回「系统未配置邮件服务」。 */
