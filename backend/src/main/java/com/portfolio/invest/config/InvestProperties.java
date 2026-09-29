@@ -15,6 +15,7 @@ public class InvestProperties {
     private Mcp mcp = new Mcp();
     private Im im = new Im();
     private Mail mail = new Mail();
+    private Intelligence intelligence = new Intelligence();
 
     public Llm getLlm() {
         return llm;
@@ -78,6 +79,14 @@ public class InvestProperties {
 
     public void setMail(Mail mail) {
         this.mail = mail;
+    }
+
+    public Intelligence getIntelligence() {
+        return intelligence;
+    }
+
+    public void setIntelligence(Intelligence intelligence) {
+        this.intelligence = intelligence;
     }
 
     public static class Llm {
@@ -360,6 +369,23 @@ public class InvestProperties {
                 public void setFlushMinGap(Duration flushMinGap) { this.flushMinGap = flushMinGap; }
             }
         }
+    }
+
+    /** 情报域（M15）：新闻/公告/政策 LLM 抽取批与重要度分档（详见设计规格 D6/D16 与 §4.5）。 */
+    public static class Intelligence {
+        private int majorThreshold = 80;
+        private int watchThreshold = 50;
+        private int extractBatchSize = 15;
+        private long dailyTokenGuardrail = 2_000_000L;
+
+        public int getMajorThreshold() { return majorThreshold; }
+        public void setMajorThreshold(int majorThreshold) { this.majorThreshold = majorThreshold; }
+        public int getWatchThreshold() { return watchThreshold; }
+        public void setWatchThreshold(int watchThreshold) { this.watchThreshold = watchThreshold; }
+        public int getExtractBatchSize() { return extractBatchSize; }
+        public void setExtractBatchSize(int extractBatchSize) { this.extractBatchSize = extractBatchSize; }
+        public long getDailyTokenGuardrail() { return dailyTokenGuardrail; }
+        public void setDailyTokenGuardrail(long dailyTokenGuardrail) { this.dailyTokenGuardrail = dailyTokenGuardrail; }
     }
 
     /** SMTP 发信（M01-F06，阿里云企业邮箱）。空值 = 未启用，发信入口返回「系统未配置邮件服务」。 */
