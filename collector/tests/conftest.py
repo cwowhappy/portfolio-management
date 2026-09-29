@@ -98,7 +98,7 @@ def pg_schema(pg_url):
     cfg.set_main_option("script_location", str(COLLECTOR_DIR / "migrations"))
     cfg.set_main_option("sqlalchemy.url", pg_url)
     command.upgrade(cfg, "head")
-    # (b) 业务目标表：按 Flyway 版本顺序回放后端 SQL 文本。两份文件均无 Flyway 占位符，
+    # (b) 业务目标表：按 Flyway 版本顺序回放后端 SQL 文本。三份文件均无 Flyway 占位符，
     # psycopg3 的 execute 支持单次调用内多语句，整段执行即可。
     with psycopg.connect(pg_url) as conn:
         for name in FLYWAY_SQL_FILES:

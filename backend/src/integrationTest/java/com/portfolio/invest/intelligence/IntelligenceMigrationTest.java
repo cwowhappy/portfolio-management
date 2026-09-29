@@ -74,6 +74,21 @@ class IntelligenceMigrationTest extends PostgresTestSupport {
     }
 
     @Test
+    @DisplayName("push_log.user_id 可空外键：群推 NULL 放行、悬空 user_id 被拒")
+    void whenPushLogUserIdDangling_thenRejectedButNullAllowed() {
+        // 群推：user_id 为 NULL（可空 FK）正常留痕
+        jdbc.update("INSERT INTO intelligence_push_log(push_type, target, status)"
+            + " VALUES('BRIEF', 'oc_group_chat', 'OK')");
+        assertThat(jdbc.queryForObject(
+            "SELECT count(*) FROM intelligence_push_log WHERE user_id IS NULL", Integer.class)).isEqualTo(1);
+        // 定向推送：user_id 悬空（无对应用户）被 FK 拒绝——与 subscription/feishu_binding/binding_code 同族
+        assertThatThrownBy(() -> jdbc.update(
+            "INSERT INTO intelligence_push_log(user_id, push_type, target, status)"
+                + " VALUES(999999999, 'ANNOUNCEMENT', 'ou_x', 'OK')"))
+            .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
     @DisplayName("pg_trgm 扩展与 trgm 索引可用，§2.2 索引齐全")
     void whenTrgmQueryExecuted_thenExtensionAndIndexesReady() {
         Integer hit = jdbc.queryForObject(

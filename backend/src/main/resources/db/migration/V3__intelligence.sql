@@ -193,7 +193,9 @@ CREATE TABLE intelligence_binding_code (
 
 CREATE TABLE intelligence_push_log (
     id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    user_id    BIGINT,                          -- 群推为 NULL
+    -- 可空 FK：群推 user_id 为 NULL 不受约束；定向推送归属校验与 subscription/
+    -- feishu_binding/binding_code 三张同族表一致（e2e-cleanup.sh 已登记本表 DELETE）
+    user_id    BIGINT REFERENCES app_user(id),
     push_type  VARCHAR(16) NOT NULL CONSTRAINT ck_push_type CHECK (push_type IN ('BRIEF','ANNOUNCEMENT')),
     target     VARCHAR(128) NOT NULL,           -- open_id 或 chatId
     ref_table  VARCHAR(32),                     -- 幂等查重键（intelligence_announcement / intelligence_daily_brief）
