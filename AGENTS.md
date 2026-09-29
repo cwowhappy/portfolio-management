@@ -87,7 +87,7 @@ infrastructure ──→ {domain, application, config}
 
 - **覆盖门槛 ≥80%**（`make test` 失败即不过）：后端 JaCoCo 聚合 `test`/`integrationTest`/`bdd` 三层 exec 后统一卡指令/分支双门槛（挂 `check`，聚焦跑单个 suite 不触发），前端 V8 语句/分支，collector pytest `--cov-fail-under=80`。改代码需补测试。
 - **后端测试四层**：`test`（单元+切片）/ `integrationTest`（Testcontainers 真实 PG）/ `bdd`（Cucumber 中文场景）/ `testFixtures`（共享 PG 容器基座 `PostgresTestSupport`），详见 `docs/technology/architecture/03-后端测试架构.md`。
-- **schema 由 Flyway 管**（`ddl-auto: none`），迁移在 `backend/src/main/resources/db/migration/`（V1 基线 squash + V2=research 域，详见迁移目录）。
+- **schema 由 Flyway 管**（`ddl-auto: none`），迁移在 `backend/src/main/resources/db/migration/`（V1 基线 squash + V2=research 域 + V3=intelligence 域，详见迁移目录）。
 - **Jackson 2 而非 Jackson 3**：`spring-boot-starter-webmvc` 已排除 `starter-jackson` 改引 `spring-boot-jackson2`，因为 AgentScope AG-UI 模型基于 Jackson 2 注解。
 - **Testcontainers 禁用 Ryuk**（`TESTCONTAINERS_RYUK_DISABLED=true`）：兼容 Colima 等本地 Docker socket 无法挂载的场景，由 JUnit 扩展启停容器。
 - **同源 Cookie 会话，无 CORS**：后端 `same-site: lax`，前端同源反代透传 cookie，这是关闭 CSRF 的安全前提（ADR-0007）。

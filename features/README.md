@@ -54,7 +54,7 @@
 | [agent-testing](agent-testing/) | 跨 MS-16~19（测试加固，进行中） | M03 对话式投研问答（被测域）、M14 系统与工程 | —（纯测试/评估，无新页面） |
 | [feishu-messaging](feishu-messaging/) | 跨 MS-15/M14/M03（已交付 2026-09-27，PR #71/#72/#73） | M14 系统与工程（采集告警）、M03 对话式投研问答（飞书入口）、M13 投资知识库（PrincipleRule 消费） | —（飞书客户端内） |
 | [account-email](account-email/) | MS-15（已交付 2026-09-27，PR #76） | M01 用户与认证（F06 邮箱验证/找回密码） | `/register`（改造）`/forgot-password`（新增）`/admin`（扩展） |
-| [research-intelligence](research-intelligence/) | MS-20~23（进行中·需求规格 v1.0 定稿，设计规格进行中） | M15 智能情报中心 | `/intelligence`（新增） |
+| [research-intelligence](research-intelligence/) | MS-20~23（MS-20 已交付 2026-09-29，feature/research-intelligence 分支待合并；P2~P4 进行中） | M15 智能情报中心 | `/intelligence`（新增） |
 | [invest-sop](invest-sop/) | MS-24~27（已交付 2026-09-29，PR #81） | M16 投资 SOP 工作流 | `/research`（新增） |
 
 > 里程碑（MS）定义与进度见 [产品落地计划](../docs/plans/2026-08-27-产品落地计划.md)；模块（M）定义与进度看板见 [功能模块概览](../docs/function/00-功能模块概览.md)。
