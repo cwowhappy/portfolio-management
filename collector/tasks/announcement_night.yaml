@@ -1,0 +1,29 @@
+task_code: announcement_night
+task_name: 公告采集-晚间披露高峰
+# MS-21 设计 §6：巨潮 hisAnnouncement 主源 → 东财公告流降级源（selector 顺序即降级
+# 顺序），DB source 列值（cninfo/eastmoney_ann）≠ registry key。22:20 采 A 股晚间
+# 披露高峰（backend 抽取批 22:40 消费）；双任务同表，冲突键 (source, external_id)
+# UPSERT 幂等，重拉重叠由整页无新增截断 + 幂等写入兜住。
+# 关注集（全量采集标的）走源内 env 兜底 INTELLIGENCE_ANN_STOCKS（逗号分隔代码串）：
+# 任务 YAML 键集是封闭契约（TASK_COLS，无 task 级 params 通道），env 是唯一注入
+# 口；env 未配置时仅全市场 6 类直判栏目（major=true）条目照常入库，属正常降级口径。
+# 注：显式区间重拉（backfill 语义）时巨潮 seDate 真实生效，东财流式无 end 上界
+# （仅 start 作翻页下界），显式窗口跳过增量截断——见 sources/announcements.py。
+source_ids:
+  - { source_id: cninfo_ann, type: plugin, class: cninfo_ann }
+  - { source_id: eastmoney_ann, type: plugin, class: eastmoney_ann }
+converter: field_mapping_announcement
+calc: null
+# stock_code 刻意不限 A 股码格式：东财流混可转债代码条目（codes[0] 契约），原样落库
+validator:
+  - { field: external_id, check: required, level: hard }
+  - { field: stock_code, check: required, level: hard }
+  - { field: title, check: required, level: hard }
+  - { field: published_at, check: not_null, level: hard }
+target_table: intelligence_announcement
+schedule: { type: cron, cron: "20 22 * * MON-FRI" }
+enabled: true
+# 公告披露跨非交易日（周末披露由回看窗口周一早回补，设计 §6：全部情报任务不门控）
+trading_day_gated: false
+retry_max: 2
+retry_backoff: fixed

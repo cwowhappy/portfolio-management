@@ -1,0 +1,26 @@
+task_code: announcement_morning
+task_name: 公告采集-早间补采
+# 与 announcement_night 同源同表（设计 §6 双任务变频）：06:20 补采凌晨/早间披露
+# （backend 抽取批 06:40 消费）；缺省回看 3 天窗口顺带覆盖周末披露缺口（周一晨
+# 回补）。关注集注入口与夜间批一致：源内 env INTELLIGENCE_ANN_STOCKS（任务 YAML
+# 键集封闭无 params 通道），env 未配置时仅全市场 6 类直判栏目条目照常入库。
+# 注：显式区间重拉（backfill 语义）时巨潮 seDate 真实生效，东财流式无 end 上界
+# （仅 start 作翻页下界），显式窗口跳过增量截断——见 sources/announcements.py。
+source_ids:
+  - { source_id: cninfo_ann, type: plugin, class: cninfo_ann }
+  - { source_id: eastmoney_ann, type: plugin, class: eastmoney_ann }
+converter: field_mapping_announcement
+calc: null
+# stock_code 刻意不限 A 股码格式：东财流混可转债代码条目（codes[0] 契约），原样落库
+validator:
+  - { field: external_id, check: required, level: hard }
+  - { field: stock_code, check: required, level: hard }
+  - { field: title, check: required, level: hard }
+  - { field: published_at, check: not_null, level: hard }
+target_table: intelligence_announcement
+schedule: { type: cron, cron: "20 6 * * MON-FRI" }
+enabled: true
+# 公告披露跨非交易日（本批专职回补周末披露，设计 §6：全部情报任务不门控）
+trading_day_gated: false
+retry_max: 2
+retry_backoff: fixed

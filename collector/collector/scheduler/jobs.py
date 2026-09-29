@@ -27,6 +27,7 @@ from collector.scheduler.alerts import alerter_from_env
 from collector.scheduler.calendar import TradingCalendar
 from collector.scheduler.patrol import run_freshness_patrol
 from collector.scheduler.runner import TaskRunner
+from collector.sources.announcements import CninfoAnnouncementSource, EastmoneyAnnouncementSource
 from collector.sources.news import EastmoneyFastNewsSource, SinaZhiboNewsSource
 from collector.sources.plugins import (
     AllASpotBackupSource,
@@ -322,6 +323,22 @@ def _field_columns():
                 "stock_tags": {"from": "stock_tags", "type": "str"},
             }
         ),
+        # MS-21 公告：源输出已是 9 列终形，同名映射直通。published_at 为 aware datetime
+        # 对象、major 为 bool，type: None 跳过 _coerce 强转（str() 化会分别丢精度/把
+        # True 变 "True" 字符串）；stock_name/ann_type_source/pdf_url 可空列原样透传。
+        "field_mapping_announcement": FieldMappingConverter(
+            {
+                "source": {"from": "source", "type": "str"},
+                "external_id": {"from": "external_id", "type": "str"},
+                "stock_code": {"from": "stock_code", "type": "str"},
+                "stock_name": {"from": "stock_name", "type": "str"},
+                "title": {"from": "title", "type": "str"},
+                "ann_type_source": {"from": "ann_type_source", "type": "str"},
+                "major": {"from": "major", "type": None},
+                "published_at": {"from": "published_at", "type": None},
+                "pdf_url": {"from": "pdf_url", "type": "str"},
+            }
+        ),
     }
 
 
@@ -367,6 +384,10 @@ def build_registries(config):
             # conn_factory 供源内增量截断（查已存 external_id 集合）
             "eastmoney_fast_news": EastmoneyFastNewsSource("eastmoney_fast_news", conn_factory=conn_factory),
             "sina_zhibo_news": SinaZhiboNewsSource("sina_zhibo_news", conn_factory=conn_factory),
+            # MS-21 公告双源：registry key ≠ DB source 列值（cninfo/eastmoney_ann），
+            # conn_factory 供源内增量截断（按本源 source 查已存 external_id 集合）
+            "cninfo_ann": CninfoAnnouncementSource("cninfo_ann", conn_factory=conn_factory),
+            "eastmoney_ann": EastmoneyAnnouncementSource("eastmoney_ann", conn_factory=conn_factory),
         },
     )
     converter_reg = ConverterRegistry(plugins=_field_columns())

@@ -1,4 +1,4 @@
-"""T3 落库铁律：八张业务目标表的真实 PG 幂等 upsert（valuation_snapshot 见 test_writer.py）。
+"""T3 落库铁律：九张业务目标表的真实 PG 幂等 upsert（valuation_snapshot 见 test_writer.py）。
 
 每张表：同主键重复 upsert → 不产生重复行、行数仍为 1、非键字段被更新为新值。
 upsert 键与各表 DDL（后端 Flyway V3/V4/V7/V13/V18、intelligence V3）对齐，见 collector/store/writer.py。
@@ -185,6 +185,70 @@ def test_intelligence_news_raw_upsert_idempotent(pg_conn):
     )
     count = pg_conn.execute(
         "SELECT count(*) FROM intelligence_news_raw WHERE external_id=%s", ("202609291029161",)
+    ).fetchone()[0]
+    assert count == 2
+
+
+def test_intelligence_announcement_upsert_idempotent(pg_conn):
+    """冲突键 (source, external_id)（MS-21 P2，Flyway V3）：双任务重跑幂等——
+    title/stock_name/ann_type_source/major/pdf_url 刷新、fetched_at=now()，
+    published_at 保首见不更新（披露时刻是源站事实，非采集观测）；业务键含 source，
+    巨潮/东财同 external_id 互不覆盖。"""
+    store = Store()
+    utc8 = dt.timezone(dt.timedelta(hours=8))
+    rec = {
+        "source": "cninfo",
+        "external_id": "122236472",
+        "stock_code": "600519",
+        "stock_name": "贵州茅台",
+        "title": "贵州茅台2025年半年度报告",
+        "ann_type_source": "category_bndbg_szsh",
+        "major": True,
+        "published_at": dt.datetime(2026, 9, 28, 0, 0, 0, tzinfo=utc8),
+        "pdf_url": "https://static.cninfo.com.cn/finalpage/2026-09-28/122236472.PDF",
+    }
+    store.upsert(pg_conn, "intelligence_announcement", [rec])
+    # 首见后手动回拨 fetched_at，验证第二次 upsert 确实刷新观测时刻
+    pg_conn.execute("UPDATE intelligence_announcement SET fetched_at = now() - interval '1 hour'")
+    store.upsert(
+        pg_conn,
+        "intelligence_announcement",
+        [
+            {
+                **rec,
+                "stock_name": "贵州茅台股份有限公司",
+                "title": "（更新）贵州茅台2025年半年度报告（全文）",
+                "ann_type_source": None,
+                "major": False,  # 栏目预判翻转（备源口径）也应刷新
+                "published_at": dt.datetime(2026, 9, 28, 21, 0, 11, tzinfo=utc8),  # 更晚，不应覆盖
+                "pdf_url": None,
+            }
+        ],
+    )
+    rows = pg_conn.execute(
+        "SELECT stock_name, title, ann_type_source, major, published_at, pdf_url,"
+        " fetched_at >= now() - interval '1 minute'"
+        " FROM intelligence_announcement WHERE source=%s AND external_id=%s",
+        ("cninfo", "122236472"),
+    ).fetchall()
+    assert len(rows) == 1
+    stock_name, title, ann_type_source, major, published_at, pdf_url, fetched_recent = rows[0]
+    assert stock_name == "贵州茅台股份有限公司"  # 非键列刷新
+    assert title == "（更新）贵州茅台2025年半年度报告（全文）"
+    assert ann_type_source is None
+    assert major is False
+    assert pdf_url is None
+    assert published_at == dt.datetime(2026, 9, 28, 0, 0, 0, tzinfo=utc8)  # 保首见
+    assert fetched_recent is True  # fetched_at=now() 已刷新
+
+    # 业务键含 source：东财同 external_id 是另一条记录，不互相覆盖
+    store.upsert(
+        pg_conn,
+        "intelligence_announcement",
+        [{**rec, "source": "eastmoney_ann", "title": "东财侧同号公告"}],
+    )
+    count = pg_conn.execute(
+        "SELECT count(*) FROM intelligence_announcement WHERE external_id=%s", ("122236472",)
     ).fetchone()[0]
     assert count == 2
 

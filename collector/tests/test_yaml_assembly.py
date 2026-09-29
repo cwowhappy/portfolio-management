@@ -15,6 +15,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from collector.config import Config
 from collector.scheduler.jobs import assemble_collector, build_registries, load_task_defs, make_trigger
+from collector.sources.announcements import ANN_COLUMNS
 from collector.sources.base import SourceError
 from collector.sources.news import NEWS_COLUMNS
 
@@ -22,6 +23,8 @@ TASKS_DIR = Path(__file__).resolve().parent.parent / "tasks"
 
 EXPECTED_TASKS = {
     "all_a_valuation",
+    "announcement_morning",
+    "announcement_night",
     "bond_index_close",
     "etf_basic",
     "etf_close",
@@ -96,6 +99,84 @@ def test_news_tasks_yaml(code, cron):
         {"field": "title", "check": "required", "level": "hard"},
         {"field": "published_at", "check": "not_null", "level": "hard"},
     ]
+
+
+@pytest.mark.parametrize(
+    ("code", "cron"),
+    [("announcement_night", "20 22 * * MON-FRI"), ("announcement_morning", "20 6 * * MON-FRI")],
+)
+def test_announcement_tasks_yaml(code, cron):
+    """MS-21 设计 §6：公告双任务同表（intelligence_announcement）、同源序（巨潮主→东财
+    降级），双档变频只差 task_code/cron；晚间 22:20 采披露高峰、早间 06:20 补采（回看
+    窗口覆盖周末缺口）。公告披露跨非交易日，trading_day_gated 必须 false。validator 四
+    必填 hard——stock_code 刻意不限 A 股码格式（东财流混可转债代码，按 codes[0] 契约
+    原样落库，限格式会剔行）。"""
+    defs = {d["task_code"]: d for d in load_task_defs(str(TASKS_DIR))}
+    d = defs[code]
+    assert d["target_table"] == "intelligence_announcement"
+    assert [s["source_id"] for s in d["source_ids"]] == ["cninfo_ann", "eastmoney_ann"]
+    assert all(s["type"] == "plugin" for s in d["source_ids"])
+    assert d["converter"] == "field_mapping_announcement"
+    assert d["schedule"] == {"type": "cron", "cron": cron}
+    assert d["trading_day_gated"] is False
+    assert d["retry_max"] == 2
+    assert d["retry_backoff"] == "fixed"
+    assert d["calc"] is None
+    # 9 列输出契约的业务键与 NOT NULL 列 hard 校验（brief Step 1）
+    assert d["validator"] == [
+        {"field": "external_id", "check": "required", "level": "hard"},
+        {"field": "stock_code", "check": "required", "level": "hard"},
+        {"field": "title", "check": "required", "level": "hard"},
+        {"field": "published_at", "check": "not_null", "level": "hard"},
+    ]
+
+
+def test_field_mapping_announcement_converter_passthrough():
+    """field_mapping_announcement 9 列同名映射：published_at 保持 datetime 对象
+    （psycopg 原生适配 TIMESTAMPTZ，勿 str 强转）、major 保持 bool（type:None 跳过
+    _coerce 强转——str() 化会把 True 变 "True" 字符串）、可空列 None 透传不炸。"""
+    regs = _registries()
+    converter = regs["converter"].get("field_mapping_announcement")
+    published = dt.datetime(2026, 9, 28, 0, 0, 0, tzinfo=dt.timezone(dt.timedelta(hours=8)))
+    raw = pd.DataFrame(
+        [
+            {
+                "source": "cninfo",
+                "external_id": "122236472",
+                "stock_code": "600519",
+                "stock_name": "贵州茅台",
+                "title": "贵州茅台2025年半年度报告",
+                "ann_type_source": "category_bndbg_szsh",
+                "major": True,
+                "published_at": published,
+                "pdf_url": "https://static.cninfo.com.cn/finalpage/2026-09-28/122236472.PDF",
+            },
+            {
+                # 东财流混可转债代码条目（探测报告 §4）：codes[0] 契约原样透传，不限格式
+                "source": "eastmoney_ann",
+                "external_id": "AP202609281234567890",
+                "stock_code": "113583",
+                "stock_name": None,
+                "title": "某某转债2026年跟踪评级报告",
+                "ann_type_source": None,
+                "major": False,
+                "published_at": dt.datetime(2026, 9, 29, 20, 41, 29, tzinfo=dt.timezone(dt.timedelta(hours=8))),
+                "pdf_url": None,
+            },
+        ],
+        columns=ANN_COLUMNS,
+    )
+    records = converter.convert(raw)
+    assert len(records) == 2
+    assert records[0]["source"] == "cninfo"
+    assert records[0]["published_at"] == published  # datetime 对象未被 str() 化
+    assert records[0]["major"] is True  # bool 未被 str() 化
+    assert records[1]["stock_name"] is None  # 可空列 None 透传
+    assert records[1]["ann_type_source"] is None
+    assert records[1]["pdf_url"] is None
+    assert records[1]["stock_code"] == "113583"  # 可转债代码原样
+    # 空帧（增量窗口无新披露）→ 空记录，不抛错
+    assert converter.convert(pd.DataFrame(columns=ANN_COLUMNS)) == []
 
 
 def test_field_mapping_news_converter_passthrough():

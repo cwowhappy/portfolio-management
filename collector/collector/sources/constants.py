@@ -118,7 +118,9 @@ CNINFO_URL = "https://www.cninfo.com.cn/new/hisAnnouncement/query"
 CNINFO_TOPSEARCH_URL = "https://www.cninfo.com.cn/new/information/topSearch/detailOfQuery"
 CNINFO_STATIC_URL = "https://static.cninfo.com.cn/"  # PDF 拼接前缀（§3.3 实测：+ adjunctUrl）
 CNINFO_PAGE_SIZE = 30
-ANN_CNINFO_MAX_PAGES = 30  # 单流分页上限：须覆盖 3 日窗口最热栏目（年报季 ndbg 深市 ~900 条/3 日）
+# 单流分页上限：须覆盖 3 日窗口最热栏目（年报季 ndbg 深市 ~900 条/3 日 ≈ 30 页）；
+# 40 页 = 1200 条留冷启动余量——增量截断依赖已存集合，冷启动空库时 30 页会触顶静默丢尾（T1 审查 minor③）
+ANN_CNINFO_MAX_PAGES = 40
 # topSearch.plate → (column, plate) 请求参数（§3.1：column/plate 必须与市场一致，配错静默 0 条）
 CNINFO_MARKETS = {"szse": ("szse", "sz"), "sse": ("sse", "sh"), "bj": ("bj", "bj")}
 # 东财公告流：GET；page_size 上限 100（P2 补测）；ann_type=A 覆盖沪深北三市（920982 实测 1280 条）

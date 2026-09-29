@@ -86,6 +86,19 @@ UPSERT_SQL = {
           title=EXCLUDED.title, summary=EXCLUDED.summary,
           url=EXCLUDED.url, stock_tags=EXCLUDED.stock_tags, fetched_at=now()
     """,
+    # MS-21 公告双任务（announcement_night/announcement_morning）同表：冲突键
+    # (source, external_id)。published_at 保首见不更新（披露时刻是源站事实）；
+    # fetched_at 是采集观测时刻，刷新 now()；major 是栏目映射预判，主备源口径差异
+    # （码链 vs 中文栏目关键词）导致的翻转随重跑刷新。
+    "intelligence_announcement": """
+        INSERT INTO intelligence_announcement
+          (source, external_id, stock_code, stock_name, title, ann_type_source, major, published_at, pdf_url)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (source, external_id) DO UPDATE SET
+          stock_name=EXCLUDED.stock_name, title=EXCLUDED.title,
+          ann_type_source=EXCLUDED.ann_type_source, major=EXCLUDED.major,
+          pdf_url=EXCLUDED.pdf_url, fetched_at=now()
+    """,
 }
 
 TABLE_COLUMNS = {
@@ -137,6 +150,17 @@ TABLE_COLUMNS = {
         "published_at",
         "url",
         "stock_tags",
+    ],
+    "intelligence_announcement": [
+        "source",
+        "external_id",
+        "stock_code",
+        "stock_name",
+        "title",
+        "ann_type_source",
+        "major",
+        "published_at",
+        "pdf_url",
     ],
 }
 
