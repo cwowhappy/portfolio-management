@@ -40,9 +40,10 @@ import org.springframework.scheduling.annotation.Scheduled;
 /**
  * 公告抽取批单元切片（mock 仓库/LLM 端口/PDF 端口/下载器/护栏/告警/触发器；Extractor 用
  * 真实纯组件）：「批量→逐条→失败隔离」骨架（照 NewsExtractionService）+ 公告域差异——
- * 业绩类预筛（标题/栏目直判）才送 LLM、非业绩类 SUCCESS 空抽取落库、PDF 下载/无文本层
- * FAILED、无 pdf_url 凭标题降级、批末 AnnouncementPushTrigger.pushExtracted(批起点)、
- * token 护栏共享停批（D16）、双 cron 调度入口（22:40/06:40 MON-FRI）。
+ * 送审预筛（标题/栏目直判两臂，含宽栏目 4 类 fix round 1 扩词）才送 LLM、杂项公告 SUCCESS
+ * 空抽取落库、PDF 下载/无文本层 FAILED、无 pdf_url 凭标题降级、批末
+ * AnnouncementPushTrigger.pushExtracted(批起点)、token 护栏共享停批（D16）、
+ * 双 cron 调度入口（22:40/06:40 MON-FRI）。
  */
 class AnnouncementExtractionServiceTest {
 
@@ -123,8 +124,58 @@ class AnnouncementExtractionServiceTest {
     }
 
     @Test
-    @DisplayName("给定非业绩类公告，when抽取批，thenSUCCESS空抽取落库不下载不调LLM")
-    void givenNonPerformance_whenExtractPending_thenSuccessEmptyWithoutLlmOrDownload() throws Exception {
+    @DisplayName("给定宽栏目4类标题（无栏目直判），when抽取批，then全部送LLM且metrics全null+undisclosed全六项+标签落库")
+    void givenWideColumnTitles_whenExtractPending_thenAllSentToLlmWithTags() throws Exception {
+        givenPending(
+                announcement(1L, "关于回购公司股份的实施公告", "其他公告", "https://x/1.pdf", false),
+                announcement(2L, "关于控股股东增持公司股份计划的公告", null, "https://x/2.pdf", false),
+                announcement(3L, "关于持股5%以上股东减持股份的预披露公告", null, "https://x/3.pdf", false),
+                announcement(4L, "关于2026年度日常关联交易预计的公告", null, "https://x/4.pdf", false));
+        when(pdfFetcher.download(any())).thenReturn("pdf".getBytes(StandardCharsets.UTF_8));
+        when(pdfTextPort.extract(any(byte[].class))).thenReturn("回购资金来源与实施安排的正文内容。");
+        // 宽栏目类预期形态（提示词指引）：metrics 全 null + undisclosed 全六项 + 类型标签
+        String buybackJson = """
+                {"metrics":{"revenueYi":null,"netProfitYi":null,"netProfitYoyPct":null,
+                "deductedProfitYi":null,"grossMarginPct":null,"dividendDesc":null,
+                "undisclosed":["营业收入","归母净利润","归母净利润同比","扣非净利润","毛利率","分红"]},
+                "annTypes":["BUYBACK"]}""";
+        when(chatPort.complete(any(), any())).thenReturn(Optional.of(outcome(buybackJson)));
+
+        service.extractPending();
+
+        // fix round 1：4 类标题全送 LLM（此前结构性走杂项空抽取，T8 type 检索恒空）
+        verify(chatPort, times(4)).complete(any(), any());
+        ArgumentCaptor<AnnouncementExtractResult> captor = ArgumentCaptor.forClass(AnnouncementExtractResult.class);
+        verify(announcementRepository, times(4)).upsertExtract(anyLong(), captor.capture());
+        assertThat(captor.getAllValues()).extracting(AnnouncementExtractResult::status)
+                .containsOnly(ExtractStatus.SUCCESS);
+        AnnouncementExtractResult first = captor.getAllValues().getFirst();
+        assertThat(first.metrics().revenueYi()).isNull();
+        assertThat(first.metrics().dividendDesc()).isNull();
+        assertThat(first.metrics().undisclosed()).hasSize(6);
+        assertThat(first.annTypes()).containsExactly(AnnouncementType.BUYBACK);
+    }
+
+    @Test
+    @DisplayName("给定标题无关键词但栏目命中宽栏目类（关联交易），when抽取批，then送LLM且直判类型进并集")
+    void givenWideColumnSourceColumn_whenExtractPending_thenExtractedWithDirectType() throws Exception {
+        givenPending(announcement(1L, "第一届董事会第二十次会议决议", "关联交易", "https://x/1.pdf", false));
+        when(pdfFetcher.download(any())).thenReturn("pdf".getBytes(StandardCharsets.UTF_8));
+        when(pdfTextPort.extract(any(byte[].class))).thenReturn("关联交易议案的正文内容足够长。");
+        when(chatPort.complete(any(), any())).thenReturn(Optional.of(outcome("{\"metrics\":{},\"annTypes\":[]}")));
+
+        service.extractPending();
+
+        ArgumentCaptor<AnnouncementExtractResult> captor = ArgumentCaptor.forClass(AnnouncementExtractResult.class);
+        verify(announcementRepository).upsertExtract(anyLong(), captor.capture());
+        assertThat(captor.getValue().status()).isEqualTo(ExtractStatus.SUCCESS);
+        // 栏目「关联交易」直判 RELATED_TRANSACTION（LLM 未输出类型）→ 并集仅含直判
+        assertThat(captor.getValue().annTypes()).containsExactly(AnnouncementType.RELATED_TRANSACTION);
+    }
+
+    @Test
+    @DisplayName("给定无类型语义的杂项公告，when抽取批，thenSUCCESS空抽取落库不下载不调LLM")
+    void givenMiscAnnouncement_whenExtractPending_thenSuccessEmptyWithoutLlmOrDownload() throws Exception {
         givenPending(announcement(1L, "关于召开2026年第三次临时股东会的通知", "召开股东大会通知", "https://static.cninfo.com.cn/finalpage/b.pdf", false));
 
         service.extractPending();

@@ -32,9 +32,10 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 /**
  * 公告抽取批真库集成（Testcontainers PG16 + @MockitoBean 桩 LLM/PDF/下载器，绝不真调外网）：
- * 业绩类公告 PENDING→SUCCESS 置换（metrics/ann_types 并集/pdf_text 落库）、非业绩类 SUCCESS
- * 空抽取（NULL metrics + '[]' 标签，不下载不调 LLM）、PDF 解析异常 FAILED 终态——
- * findExtractedMajorSince（extracted_at 轴，Task 7 推送消费口径）按 SUCCESS ∧ major 命中。
+ * 业绩类/宽栏目类公告 PENDING→SUCCESS 置换（metrics/ann_types 并集/pdf_text 落库）、
+ * 杂项公告 SUCCESS 空抽取（NULL metrics + '[]' 标签，不下载不调 LLM）、PDF 解析异常
+ * FAILED 终态——findExtractedMajorSince（extracted_at 轴，Task 7 推送消费口径）按
+ * SUCCESS ∧ major 命中。
  */
 @SpringBootTest
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -45,6 +46,12 @@ class AnnouncementExtractionIntegrationTest extends PostgresTestSupport {
             "deductedProfitYi":30.05,"grossMarginPct":null,"dividendDesc":"每10股派2元",
             "undisclosed":["毛利率"]},"annTypes":["PERIODIC_REPORT","EQUITY_INCENTIVE"]}""";
     private static final String PDF_TEXT = "贵州茅台2026年半年度报告：营业收入128.56亿元，归母净利润31.2亿元，同比增加25.3%。";
+    /** 宽栏目类（回购）预期形态：metrics 全 null + undisclosed 全六项 + 类型标签（fix round 1 扩词路径）。 */
+    private static final String BUYBACK_JSON = """
+            {"metrics":{"revenueYi":null,"netProfitYi":null,"netProfitYoyPct":null,
+            "deductedProfitYi":null,"grossMarginPct":null,"dividendDesc":null,
+            "undisclosed":["营业收入","归母净利润","归母净利润同比","扣非净利润","毛利率","分红"]},
+            "annTypes":["BUYBACK"]}""";
 
     @Autowired
     AnnouncementExtractionService service;
@@ -99,7 +106,7 @@ class AnnouncementExtractionIntegrationTest extends PostgresTestSupport {
     }
 
     @Test
-    @DisplayName("给定非业绩类公告，when抽取批，thenSUCCESS空抽取不下载不调LLM")
+    @DisplayName("给定无类型语义的杂项公告，when抽取批，thenSUCCESS空抽取不下载不调LLM")
     void givenNonPerformanceAnnouncement_whenExtractPending_thenSuccessEmptyWithoutLlm() throws Exception {
         Long id = insertAnnouncement("i-misc", "关于召开2026年第三次临时股东会的通知",
                 "召开股东大会通知", false, "https://static.cninfo.com.cn/finalpage/b.pdf");
@@ -161,6 +168,32 @@ class AnnouncementExtractionIntegrationTest extends PostgresTestSupport {
         // 无 pdf_url：不发起下载，LLM 用户提示词标注仅凭标题
         verify(pdfFetcher, never()).download(any());
         verify(chatPort, times(1)).complete(any(), contains("无PDF正文"));
+    }
+
+    @Test
+    @DisplayName("给定宽栏目标题公告（回购），when抽取批，thenSUCCESS且BUYBACK标签落库metrics全未披露")
+    void givenWideColumnTitleAnnouncement_whenExtractPending_thenSuccessWithBuybackTag() throws Exception {
+        Long id = insertAnnouncement("i-buyback", "关于回购公司股份的实施公告", "其他公告",
+                true, "https://pdf.dfcfw.com/pdf/H2_b_1.pdf");
+        when(pdfFetcher.download(any())).thenReturn("pdf".getBytes(StandardCharsets.UTF_8));
+        when(pdfTextPort.extract(any(byte[].class))).thenReturn("回购资金来源与实施安排的正文内容。");
+        when(chatPort.complete(any(), any())).thenReturn(
+                Optional.of(new IntelligenceChatPort.ChatOutcome(BUYBACK_JSON, 100)));
+
+        service.extractPending();
+
+        // fix round 1：宽栏目 4 类走正常 LLM 路径——标签落库可检索（T8 type 过滤不再恒空）
+        Map<String, Object> row = jdbc.queryForMap(
+                "SELECT metrics::text AS metrics, ann_types::text AS ann_types, status, pdf_text"
+                        + " FROM intelligence_announcement_extract WHERE announcement_id=?", id);
+        assertThat(row.get("status")).isEqualTo("SUCCESS");
+        assertThat((String) row.get("ann_types")).contains("BUYBACK");
+        assertThat((String) row.get("metrics")).contains("undisclosed").contains("毛利率").contains("分红");
+        assertThat((String) row.get("metrics")).doesNotContain("128.56"); // 无编造数值
+        assertThat(row.get("pdf_text")).isEqualTo("回购资金来源与实施安排的正文内容。");
+        // major=true ∧ SUCCESS：推送窗口命中
+        assertThat(repository.findExtractedMajorSince(Instant.now().minusSeconds(60)))
+                .extracting(r -> r.id()).contains(id);
     }
 
     // ── fixture 助手 ───────────────────────────────────────────────

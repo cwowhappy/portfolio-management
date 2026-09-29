@@ -28,12 +28,14 @@ import org.springframework.stereotype.Service;
  * 游标窗口内（{@link #EXTRACTION_LOOKBACK_DAYS} 个自然日含当日）的 PENDING 公告按
  * {@code extract-batch-size} 循环取批逐条抽取。
  *
- * <p><b>业绩类预筛（本层裁定）</b>：仅业绩类公告值得送 LLM——标题命中
- * {@link #TITLE_PERFORMANCE_KEYWORDS} 任一关键词，或 ann_type_source 命中
- * {@link #COLUMN_TYPE_KEYWORDS} 直判栏目（探测报告 §4.3 备源映射；东财中文栏目可判，
- * 巨潮 ann_type_source 为通用分类码链不可判，靠标题臂兜底）。非业绩类公告（股东大会通知
- * 等常规条目）不下载不调 LLM，直接 SUCCESS 空抽取落库（metrics/annTypes/pdfText/model 全空）
- * 标记已处理——避免永远 PENDING，又不浪费护栏 token。
+ * <p><b>送审预筛（fix round 1 裁定）</b>：标题命中 {@link #TITLE_REVIEW_KEYWORDS} 任一
+ * 关键词（业绩类 + 增持/减持/回购/关联交易宽栏目 4 类），或 ann_type_source 命中
+ * {@link #COLUMN_TYPE_KEYWORDS} 十类直判栏目（探测报告 §4.3 备源映射全量；东财中文栏目
+ * 可判，巨潮 ann_type_source 为通用分类码链不可判，靠标题臂兜底）——其一即送 LLM。
+ * 宽栏目 4 类走正常 LLM 路径（PDF 照常下载、无 pdf_url 凭标题；metrics 预期全 null +
+ * undisclosed 全六项，annTypes 获得标签）。未命中的杂项公告（股东大会通知/会议决议/
+ * 其他公告等无类型语义条目）不下载不调 LLM，直接 SUCCESS 空抽取落库
+ * （metrics/annTypes/pdfText/model 全空）标记已处理——避免永远 PENDING，又不浪费护栏 token。
  *
  * <p>单条链路：PdfFetcher 下载 → {@link AnnouncementPdfTextPort} 内存文本 →
  * {@link AnnouncementExtractor} LLM 抽取 → upsertExtract。失败语义：PDF 下载/解析异常/
@@ -67,21 +69,27 @@ public class AnnouncementExtractionService {
     static final int MIN_TITLE_LENGTH = 8;
 
     /**
-     * 业绩类标题预筛关键词表（常量化）：标题命中任一即送 LLM。含任务裁定六词
-     * （业绩预告/业绩快报/定期报告/年报/季报/半年报）及其在真实公告标题中的完整形态
-     * （「年度报告」「半年度报告」等——「年报」等缩写作子串匹配不到「年度报告」标题，
-     * 召回优先补全）与业绩预增/预减/预亏/扭亏变体。
+     * 送审标题关键词表（常量化；fix round 1 裁定扩词）：标题命中任一即送 LLM。业绩类
+     * （任务原六词 + 真实标题完整形态召回补全——「年报」等缩写作子串匹配不到「年度报告」
+     * 标题，召回优先；业绩预增/预减/预亏/扭亏变体）+ 宽栏目 4 类（增持/减持/回购/关联交易
+     * ——控制器裁定并入，否则 T8 type 检索 4/11 枚举值结构性恒空；「回购」子串已覆盖
+     * 「股份回购」）。
      */
-    static final List<String> TITLE_PERFORMANCE_KEYWORDS = List.of(
+    static final List<String> TITLE_REVIEW_KEYWORDS = List.of(
             "业绩预告", "业绩快报", "业绩预增", "业绩预减", "业绩预亏", "业绩扭亏",
             "定期报告", "年度报告", "半年度报告", "季度报告", "中期报告",
-            "年报", "半年报", "季报", "一季报", "三季报", "中报");
+            "年报", "半年报", "季报", "一季报", "三季报", "中报",
+            "增持", "减持", "回购", "关联交易");
 
-    /** 源站栏目关键词 → 直判类型对（探测报告 §4.3 备源映射，与 collector 栏目判据同款）：命中即送 LLM 且并入 annTypes 并集。 */
+    /** 源站栏目关键词 → 直判类型对（探测报告 §4.3 备源映射全量，与 collector 栏目判据同款）：命中即送 LLM 且并入 annTypes 并集。 */
     private record ColumnTypeKeyword(String keyword, AnnouncementType type) {
     }
 
-    /** 栏目关键词表（List 保序，直判类型去重稳定）：巨潮 ann_type_source 为通用码链不在此列（标题臂兜底）。 */
+    /**
+     * 栏目关键词表（List 保序，直判类型去重稳定），十类全覆盖：业绩 6 类专属栏目 +
+     * 宽栏目 4 类（增持/减持/回购/关联交易——fix round 1 裁定并入：关注集标的的宽栏目
+     * 公告经 LLM 获得标签）。巨潮 ann_type_source 为通用码链不在此列（标题臂兜底）。
+     */
     private static final List<ColumnTypeKeyword> COLUMN_TYPE_KEYWORDS = List.of(
             new ColumnTypeKeyword("报告全文", AnnouncementType.PERIODIC_REPORT),
             new ColumnTypeKeyword("报告摘要", AnnouncementType.PERIODIC_REPORT),
@@ -91,7 +99,11 @@ public class AnnouncementExtractionService {
             new ColumnTypeKeyword("配股", AnnouncementType.PLACEMENT),
             new ColumnTypeKeyword("股权激励", AnnouncementType.EQUITY_INCENTIVE),
             new ColumnTypeKeyword("退市", AnnouncementType.DELISTING_RISK),
-            new ColumnTypeKeyword("风险警示", AnnouncementType.DELISTING_RISK));
+            new ColumnTypeKeyword("风险警示", AnnouncementType.DELISTING_RISK),
+            new ColumnTypeKeyword("增持", AnnouncementType.INCREASE_HOLD),
+            new ColumnTypeKeyword("减持", AnnouncementType.DECREASE_HOLD),
+            new ColumnTypeKeyword("回购", AnnouncementType.BUYBACK),
+            new ColumnTypeKeyword("关联交易", AnnouncementType.RELATED_TRANSACTION));
 
     private final AnnouncementRepository announcementRepository;
     private final IntelligenceChatPort chatPort;
@@ -169,7 +181,7 @@ public class AnnouncementExtractionService {
      * 幂等可重入抽取入口（集成测试/运维也可直调）：批起点记 Instant → 循环取批直至窗口内
      * 无 PENDING、LLM 失效或护栏停批 → 批末先触发定向推送（批起点，本批置换行 extracted_at
      * ≥ 该值全命中）再按本轮 FAILED 置换数告警（NFR-5）。同轮已处理条目记 {@code handled}
-     * （含非业绩类空抽取与异常跳过者，同轮不重选）；短文本条目记 {@code lengthSkipped} 同样
+     * （含杂项空抽取与异常跳过者，同轮不重选）；短文本条目记 {@code lengthSkipped} 同样
      * 同轮不重选，但不送 LLM、不落库、留 PENDING 由窗口自然过期。
      */
     public void extractPending() {
@@ -200,10 +212,10 @@ public class AnnouncementExtractionService {
             }
             for (AnnouncementRecord announcement : batch) {
                 try {
-                    if (!isExtractable(announcement)) { // 非业绩类：SUCCESS 空抽取标记已处理
-                        announcementRepository.upsertExtract(announcement.id(), nonPerformanceResult());
+                    if (!isExtractable(announcement)) { // 未命中送审预筛（杂项）：SUCCESS 空抽取标记已处理
+                        announcementRepository.upsertExtract(announcement.id(), unreviewedResult());
                         handled.add(announcement.id());
-                        log.debug("非业绩类公告跳过 LLM 抽取（announcementId={}，title={}）：SUCCESS 空抽取落库",
+                        log.debug("杂项公告跳过 LLM 抽取（announcementId={}，title={}）：SUCCESS 空抽取落库",
                                 announcement.id(), announcement.title());
                         continue;
                     }
@@ -254,17 +266,17 @@ public class AnnouncementExtractionService {
         }
     }
 
-    /** 业绩类预筛：栏目直判命中或标题含业绩关键词（二者其一即送 LLM）。 */
+    /** 送审判定：栏目直判命中或标题含送审关键词（二者其一即送 LLM）。 */
     private static boolean isExtractable(AnnouncementRecord announcement) {
         return !directTypesFromColumn(announcement.annTypeSource()).isEmpty()
-                || containsPerformanceKeyword(announcement.title());
+                || containsReviewKeyword(announcement.title());
     }
 
-    private static boolean containsPerformanceKeyword(String title) {
+    private static boolean containsReviewKeyword(String title) {
         if (title == null || title.isBlank()) {
             return false;
         }
-        return TITLE_PERFORMANCE_KEYWORDS.stream().anyMatch(title::contains);
+        return TITLE_REVIEW_KEYWORDS.stream().anyMatch(title::contains);
     }
 
     /** ann_type_source 栏目关键词 → 直判类型（保序去重；null/空栏目归空列表）。 */
@@ -310,8 +322,8 @@ public class AnnouncementExtractionService {
         return pdfLength < MIN_PDF_TEXT_LENGTH && titleLength < MIN_TITLE_LENGTH;
     }
 
-    /** 非业绩类公告空抽取结果：SUCCESS + metrics/annTypes/pdfText/model 全空（「未经模型抽取」标识）。 */
-    private AnnouncementExtractResult nonPerformanceResult() {
+    /** 未送审（杂项）公告空抽取结果：SUCCESS + metrics/annTypes/pdfText/model 全空（「未经模型抽取」标识）。 */
+    private AnnouncementExtractResult unreviewedResult() {
         return new AnnouncementExtractResult(null, List.of(), null, ExtractStatus.SUCCESS,
                 null, Instant.now(clock));
     }
