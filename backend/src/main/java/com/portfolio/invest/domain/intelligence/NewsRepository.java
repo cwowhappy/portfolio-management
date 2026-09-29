@@ -29,6 +29,12 @@ public interface NewsRepository {
     List<NewsRecord> findPendingForExtraction(LocalDate day, int lookbackDays, int limit);
 
     /**
+     * 同 {@link #findPendingForExtraction} 窗口与 PENDING 口径的**条数**（无 limit 截断）：
+     * 盘前简报归档日志消费（抽取积压可观测——limit 截断的取数查不出真实剩余量）。
+     */
+    long countPendingInWindow(LocalDate day, int lookbackDays);
+
+    /**
      * 写入/覆盖抽取结果（INSERT … ON CONFLICT (news_raw_id) DO UPDATE）：无论旧状态
      * 一律以最新结果整体置换（分析字段 + status + model + extracted_at）；
      * raw 无既有抽取行时即插入（首次 upsert 建行）。

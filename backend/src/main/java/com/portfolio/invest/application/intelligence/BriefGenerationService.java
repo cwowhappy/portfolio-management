@@ -131,6 +131,7 @@ public class BriefGenerationService {
             BriefComposer.Composed empty =
                     BriefComposer.empty(today, windowStart, now);
             briefRepository.save(DailyBrief.emptySimple(today, empty.contentMd(), model(), now));
+            logPendingBacklog(today);
             return;
         }
         BriefComposer.Composed composed =
@@ -138,6 +139,21 @@ public class BriefGenerationService {
         briefRepository.save(DailyBrief.generated(today, composed.contentMd(),
                 composed.topStocks(), model(), now));
         log.info("盘前简报已归档（tradeDate={}，入选 {} 条）", today, selection.selected().size());
+        logPendingBacklog(today);
+    }
+
+    /**
+     * 归档后抽取积压可观测：游标窗口内仍 PENDING 的条数（无 limit 截断的真实剩余量）。
+     * 08:00 生成时点在 07:40 抽取批之后——非零即 LLM 失效/护栏停批/D7 跳过留下的积压，
+     * 待 16:40 批或后续批次在窗口内续抽；0 为常态不打日志。
+     */
+    private void logPendingBacklog(LocalDate today) {
+        long pending = newsRepository.countPendingInWindow(today,
+                NewsExtractionService.EXTRACTION_LOOKBACK_DAYS);
+        if (pending > 0) {
+            log.info("窗口内仍有 {} 条待抽取（{} 日游标窗口内 PENDING，待后续抽取批续抽）",
+                    pending, NewsExtractionService.EXTRACTION_LOOKBACK_DAYS);
+        }
     }
 
     /**

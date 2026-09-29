@@ -102,6 +102,8 @@ class BriefGenerationServiceTest {
                 news(6, 30, "EARNINGS")));
         when(chatPort.complete(any(), any()))
                 .thenReturn(Optional.of(new IntelligenceChatPort.ChatOutcome(LEAD, 100)));
+        // 归档后积压日志：窗口内仍有 2 条待抽取（true 分支）
+        when(newsRepository.countPendingInWindow(any(), anyInt())).thenReturn(2L);
 
         service.generateBrief();
 
@@ -129,6 +131,8 @@ class BriefGenerationServiceTest {
 
         // top_stocks = 选中条目 stock_codes 频次 top（600519×3 > 300750×2），IGNORE 条不入
         assertThat(brief.topStocks()).containsExactly("600519", "300750");
+        // 归档后积压可观测：count 查询无 limit 截断，窗口口径与抽取批游标窗口一致（3 日）
+        verify(newsRepository).countPendingInWindow(TODAY, 3);
     }
 
     @Test
@@ -169,6 +173,7 @@ class BriefGenerationServiceTest {
     void givenNoCandidates_whenGenerate_thenEmptySimpleArchived() {
         when(newsRepository.findMajorSince(any(), anyInt())).thenReturn(List.of());
         when(newsRepository.countExtractedByDate(any())).thenReturn(0L);
+        when(newsRepository.countPendingInWindow(any(), anyInt())).thenReturn(0L); // 无积压：不打日志
 
         service.generateBrief();
 

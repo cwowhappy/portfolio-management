@@ -90,12 +90,15 @@ class IntelligenceQueryServiceTest {
         assertThat(extracted.summary()).isEqualTo("AI 摘要");
         assertThat(extracted.direction()).isEqualTo(Direction.BULLISH);
         assertThat(extracted.importance()).isEqualTo(72);
+        assertThat(extracted.keyNumbers()).as("关键数字直传（key_numbers JSONB 已有列，全链补消费方）")
+                .containsExactly("净利润 +25%");
         assertThat(extracted.stockCodes()).containsExactly("600519");
         assertThat(extracted.url()).isEqualTo("https://x/1");
         assertThat(extracted.publishedAt()).isEqualTo(Instant.parse("2026-09-28T13:00:00Z"));
         var rawOnly = result.items().get(1);
         assertThat(rawOnly.summary()).as("无抽取行时退化源站摘要").isEqualTo("源站原始摘要");
         assertThat(rawOnly.direction()).isNull();
+        assertThat(rawOnly.keyNumbers()).as("未抽取条目关键数字归一空数组（null 安全）").isEmpty();
     }
 
     /** 断言仓库收到 page/pageSize 恰为期望值的 PageQuery（其余字段不限）。 */

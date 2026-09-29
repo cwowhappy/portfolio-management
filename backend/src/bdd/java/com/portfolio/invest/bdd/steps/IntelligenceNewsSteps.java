@@ -53,16 +53,17 @@ public class IntelligenceNewsSteps {
     @假如("已入库含抽取结果的茅台重大新闻、普通新闻与一条未抽取新闻")
     @Transactional
     public void 已入库新闻情报() {
-        // 重大条目：MAJOR（importance 85、利好、AI 摘要 + 标的/行业标签齐全）
+        // 重大条目：MAJOR（importance 85、利好、AI 摘要 + 关键数字 + 标的/行业标签齐全）
         Long majorId = insertRaw("bdd-intel-major", MAJOR_TITLE,
                 "源站摘要：公司拟以自有资金回购股份", "2026-09-28");
         insertExtract(majorId, "回购", "[\"600519\"]", "[\"801140\"]",
-                "AI 摘要：茅台公告最高百亿回购，彰显管理层信心", "BULLISH", 85);
-        // 普通条目：WATCH（importance 40、中性）——重要度下限过滤的被排除样本
+                "AI 摘要：茅台公告最高百亿回购，彰显管理层信心", "BULLISH",
+                "[\"回购金额最高百亿元\"]", 85);
+        // 普通条目：WATCH（importance 40、中性、无关键数字）——重要度下限过滤的被排除样本
         Long watchId = insertRaw("bdd-intel-watch", WATCH_TITLE,
                 "源站摘要：板块午间震荡", "2026-09-28");
         insertExtract(watchId, null, "[\"600519\"]", null,
-                "AI 摘要：板块日内波动，无重大增量信息", "NEUTRAL", 40);
+                "AI 摘要：板块日内波动，无重大增量信息", "NEUTRAL", null, 40);
         // 未抽取条目：无 extract 行——左连视图 direction/importance 为 null、摘要退化源站摘要
         insertRaw("bdd-intel-pending", PENDING_TITLE,
                 "源站摘要：使用闲置自有资金购买理财产品", "2026-09-27");
@@ -87,7 +88,7 @@ public class IntelligenceNewsSteps {
                 null, null, null, null));
     }
 
-    @那么("返回的结构化条目含 AI 摘要、方向为 {string} 且重要度为 {int}")
+    @那么("返回的结构化条目含 AI 摘要、关键数字、方向为 {string} 且重要度为 {int}")
     public void 断言结构化条目(String directionLabel, Integer importance) throws Exception {
         JsonNode body = mapper.readTree(ctx.getIntelligenceNewsJson());
         assertThat(body.path("items").isArray()).isTrue();
@@ -98,6 +99,7 @@ public class IntelligenceNewsSteps {
         assertThat(item.path("summary").asText()).isEqualTo("AI 摘要：茅台公告最高百亿回购，彰显管理层信心");
         assertThat(item.path("direction").asText()).isEqualTo(directionOf(directionLabel));
         assertThat(item.path("importance").asInt()).isEqualTo(importance);
+        assertThat(item.path("keyNumbers").toString()).contains("回购金额最高百亿元");
         assertThat(item.path("stockCodes").toString()).contains("600519");
     }
 
@@ -179,15 +181,16 @@ public class IntelligenceNewsSteps {
                 "SELECT id FROM intelligence_news_raw WHERE external_id = ?", Long.class, externalId);
     }
 
-    /** 直插抽取结果行（status=SUCCESS，新闻检索消费口径）。 */
+    /** 直插抽取结果行（status=SUCCESS，新闻检索消费口径；keyNumbers 为 JSONB 字符串，可空）。 */
     private void insertExtract(Long newsRawId, String eventType, String stockCodes,
-            String industryCodes, String summary, String direction, int importance) {
+            String industryCodes, String summary, String direction, String keyNumbers, int importance) {
         jdbcTemplate.update("""
                         INSERT INTO intelligence_news_extract
                             (news_raw_id, event_type, stock_codes, industry_codes, summary,
-                             direction, importance, status, model, extracted_at)
-                        VALUES (?, ?, ?::jsonb, ?::jsonb, ?, ?, ?, 'SUCCESS', 'bdd-fixture', now())
+                             direction, key_numbers, importance, status, model, extracted_at)
+                        VALUES (?, ?, ?::jsonb, ?::jsonb, ?, ?, ?::jsonb, ?, 'SUCCESS', 'bdd-fixture', now())
                         """,
-                newsRawId, eventType, stockCodes, industryCodes, summary, direction, importance);
+                newsRawId, eventType, stockCodes, industryCodes, summary, direction, keyNumbers,
+                importance);
     }
 }

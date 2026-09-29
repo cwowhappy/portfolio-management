@@ -129,6 +129,19 @@ public class IntelligenceNewsRepositoryImpl implements NewsRepository {
     }
 
     @Override
+    public long countPendingInWindow(LocalDate day, int lookbackDays) {
+        // 与 findPendingForExtraction 同窗口同 PENDING 口径，仅去 LIMIT 换 COUNT（真实剩余量不受批大小截断）
+        LocalDate windowStart = day.minusDays(Math.max(1, lookbackDays) - 1L);
+        Long count = jdbc.queryForObject(
+                "SELECT count(*)" + RAW_LEFT_JOIN_EXTRACT + """
+                          WHERE r.fetched_at >= ? AND r.fetched_at < ?
+                            AND (e.id IS NULL OR e.status = 'PENDING')
+                        """,
+                Long.class, dayStart(windowStart), dayStart(day.plusDays(1)));
+        return count == null ? 0 : count;
+    }
+
+    @Override
     public void upsertExtract(Long newsRawId, NewsExtractResult result) {
         // 无论旧状态一律整体置换；无既有行即插入（首次 upsert 建行，UNIQUE(news_raw_id) 兜底并发）
         jdbc.update("""

@@ -29,7 +29,7 @@ async function saveResearchDraft(draft: ResearchDraft): Promise<void> {
 }
 
 // ===== MS-20（Task 12）：search_news 新闻检索列表卡 =====
-// 后端契约：{"items":[{title,summary,direction,importance,stockCodes,url,publishedAt}],"total":n}，
+// 后端契约：{"items":[{title,summary,direction,importance,keyNumbers,stockCodes,url,publishedAt}],"total":n}，
 // 空结果 {"items":[],"message":"该条件下暂无情报（新闻仅保留 90 天内）"}，错误 {"error","hint"}。
 // 方向徽标取情报语义配色（BULLISH=利好→绿 / BEARISH=利空→红 / NEUTRAL=中性→灰），与 A股
 // 红涨绿跌的行情色相反：绿/红仅复用 --color-down / --color-up 的色值以随深浅主题联动。
@@ -49,6 +49,7 @@ interface NewsItem {
   summary?: string | null;
   direction?: string | null;
   importance?: number | null;
+  keyNumbers?: string[] | null;
   stockCodes?: string[] | null;
   url?: string | null;
   publishedAt?: string | null;
@@ -160,10 +161,11 @@ function NewsListCard({ status, result }: {
                     {it.summary}
                   </p>
                 )}
-                {(time || (it.stockCodes?.length ?? 0) > 0) && (
-                  <div className="mt-1 flex items-center gap-2 text-[11px] text-[color:var(--color-ink-faint)]">
+                {(time || (it.stockCodes?.length ?? 0) > 0 || (it.keyNumbers?.length ?? 0) > 0) && (
+                  <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-[color:var(--color-ink-faint)]">
                     {time && <span className="tabular">{time}</span>}
                     {(it.stockCodes?.length ?? 0) > 0 && <span>{it.stockCodes!.join(" / ")}</span>}
+                    {(it.keyNumbers?.length ?? 0) > 0 && <span>{it.keyNumbers!.join(" / ")}</span>}
                   </div>
                 )}
               </li>

@@ -242,6 +242,28 @@ class NewsRepositoryTest extends PostgresTestSupport {
         assertThat(repository.countExtractedByDate(LocalDate.of(2026, 9, 30))).isEqualTo(1);
     }
 
+    @Test
+    @DisplayName("countPendingInWindow：同 findPendingForExtraction 口径计 PENDING 数（无行/PENDING 计入，终态与窗口外不计）")
+    void givenMixedStatusAndDays_whenCountPendingInWindow_thenCountsWindowPendingOnly() {
+        LocalDate day = LocalDate.of(2026, 9, 28);
+        Long none = insertRaw("cp-none", "窗口内无抽取行的新闻", at("2026-09-28T08:00:00"));
+        setFetchedAt(none, "2026-09-28T09:00:00");
+        Long pending = insertRawWithStatus("cp-pending", "窗口内占位待抽取新闻", "2026-09-28T08:00:00", "PENDING");
+        setFetchedAt(pending, "2026-09-28T10:00:00");
+        Long success = insertRawWithStatus("cp-success", "窗口内已抽取成功新闻", "2026-09-28T08:00:00", "SUCCESS");
+        setFetchedAt(success, "2026-09-28T11:00:00");
+        Long failed = insertRawWithStatus("cp-failed", "窗口内已失败终态新闻", "2026-09-28T08:00:00", "FAILED");
+        setFetchedAt(failed, "2026-09-28T12:00:00");
+        // 前日（27 日）PENDING：3 日窗口（26~28）内计入
+        Long prevDay = insertRawWithStatus("cp-prev-day", "前日积压待抽取新闻", "2026-09-28T08:00:00", "PENDING");
+        setFetchedAt(prevDay, "2026-09-27T09:00:00");
+
+        // 无抽取行 + PENDING + 前日积压 = 3（SUCCESS/FAILED 终态不计）
+        assertThat(repository.countPendingInWindow(day, 3)).isEqualTo(3);
+        // lookback=1 收窄回仅当日（窗口下界算术与 findPendingForExtraction 一致）
+        assertThat(repository.countPendingInWindow(day, 1)).isEqualTo(2);
+    }
+
     // ── fixture 助手 ───────────────────────────────────────────────
 
     /** published_at/fetched_at 均为上海时区（CST+8）字符串。 */

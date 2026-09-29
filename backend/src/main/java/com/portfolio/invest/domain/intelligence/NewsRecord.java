@@ -17,7 +17,10 @@ import java.util.List;
  * @param rawSummary     源站摘要（intelligence_news_raw.summary）
  * @param publishedAt    发布时间
  * @param url            原文链接
- * @param stockTags      源站标的标签原样 JSON 文本（对象数组，如 [{"code":"600519"}]——域不解释）
+ * @param stockTags      源站标的标签原样 JSON 文本——域不解释；形状随源站而异：
+ *                      eastmoney_724=带市场前缀的字符串数组（如 ["1.600519"]）、
+ *                      sina_zhibo=code/name 对象数组（如 [{"code":"600519","name":"贵州茅台"}]），
+ *                      消费方（P4 F17 聚合）须按 source 分派
  * @param fetchedAt      入库时间（findPendingForExtraction 的游标窗口判定列）
  * @param eventType      抽取事件类型
  * @param stockCodes     抽取关联标的码（JSONB）

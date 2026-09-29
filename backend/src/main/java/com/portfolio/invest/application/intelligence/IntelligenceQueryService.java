@@ -66,6 +66,7 @@ public class IntelligenceQueryService {
      * @param summary     摘要（AI 抽取摘要优先，无抽取行时退化源站摘要）
      * @param direction   方向（BULLISH 利好 / BEARISH 利空 / NEUTRAL 中性；未抽取为 null）
      * @param importance  重要度 0..100（未抽取为 null）
+     * @param keyNumbers  关键数字（自描述字符串数组，如「Q3 净利润同比 +25.3%」；未抽取为空数组）
      * @param stockCodes  关联标的码
      * @param url         原文链接
      * @param publishedAt 发布时间
@@ -75,20 +76,22 @@ public class IntelligenceQueryService {
             String summary,
             Direction direction,
             Integer importance,
+            List<String> keyNumbers,
             List<String> stockCodes,
             String url,
             Instant publishedAt) {
 
         public NewsItemView {
+            keyNumbers = keyNumbers == null ? List.of() : List.copyOf(keyNumbers);
             stockCodes = stockCodes == null ? List.of() : List.copyOf(stockCodes);
         }
 
-        /** 合并视图 → 条目视图：summary 取 AI 摘要、缺席退化源站摘要。 */
+        /** 合并视图 → 条目视图：summary 取 AI 摘要、缺席退化源站摘要；keyNumbers 直传（null 归一空数组）。 */
         static NewsItemView of(NewsRecord r) {
             return new NewsItemView(
                     r.title(),
                     r.extractSummary() != null ? r.extractSummary() : r.rawSummary(),
-                    r.direction(), r.importance(), r.stockCodes(), r.url(), r.publishedAt());
+                    r.direction(), r.importance(), r.keyNumbers(), r.stockCodes(), r.url(), r.publishedAt());
         }
     }
 }

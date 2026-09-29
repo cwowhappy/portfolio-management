@@ -120,7 +120,7 @@ describe("ChartToolRenderers", () => {
     expect(container.querySelector(".tool-card.running")).toBeTruthy();
   });
 
-  // ===== search_news（MS-20 Task 12）：列表卡——标题链接/方向徽标/重要度/摘要/时间 =====
+  // ===== search_news（MS-20 Task 12）：列表卡——标题链接/方向徽标/重要度/摘要/关键数字/时间 =====
   const newsResult = JSON.stringify({
     items: [
       {
@@ -128,6 +128,7 @@ describe("ChartToolRenderers", () => {
         summary: "AI 摘要：净利润同比 +25%",
         direction: "BULLISH",
         importance: 72,
+        keyNumbers: ["Q3 净利润同比 +25.3%"],
         stockCodes: ["600519"],
         url: "https://x/1",
         publishedAt: "2026-09-28T13:00:00Z",
@@ -137,6 +138,7 @@ describe("ChartToolRenderers", () => {
         summary: "AI 摘要：需求走弱",
         direction: "BEARISH",
         importance: 40,
+        keyNumbers: [],
         stockCodes: [],
         url: null,
         publishedAt: "2026-09-27T13:00:00Z",
@@ -145,7 +147,7 @@ describe("ChartToolRenderers", () => {
     total: 27,
   });
 
-  it("search_news complete → 列表卡：标题链接/无 url 退化纯文本/方向中文徽标/重要度/total", () => {
+  it("search_news complete → 列表卡：标题链接/无 url 退化纯文本/方向中文徽标/重要度/关键数字/total", () => {
     render(<ChartToolRenderers />);
     const sn = renderToolConfigs.find((c) => c.name === "search_news")!;
     const { getByText, getByRole } = render(sn.render({ status: "complete", result: newsResult }) as React.ReactElement);
@@ -160,6 +162,8 @@ describe("ChartToolRenderers", () => {
     expect(getByText("共 27 条")).toBeTruthy();
     expect(getByText("AI 摘要：净利润同比 +25%")).toBeTruthy();
     expect(getByText("600519")).toBeTruthy();
+    // 关键数字行（时间/标的码同区渲染；空数组条目 null 安全不渲染）
+    expect(getByText("Q3 净利润同比 +25.3%")).toBeTruthy();
   });
 
   it("search_news 空结果 → message 行（90 天话术），无条目列表", () => {

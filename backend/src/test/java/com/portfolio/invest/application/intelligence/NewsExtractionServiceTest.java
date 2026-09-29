@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -241,6 +242,49 @@ class NewsExtractionServiceTest {
         verify(chatPort, never()).complete(any(), any());
     }
 
+    @Test
+    @DisplayName("给定3条中1条解析失败，when抽取批，then批末告警恰一次且文案含条数")
+    void givenOneParseFailedAmongThree_whenExtractPending_thenAlertOnceWithCount() {
+        givenPending(news(1L, "坏消息"), news(2L, "好消息甲"), news(3L, "好消息乙"));
+        when(chatPort.complete(any(), any())).thenReturn(
+                Optional.of(outcome(INVALID_JSON)), Optional.of(outcome(INVALID_JSON)),
+                Optional.of(outcome(OK_JSON)), Optional.of(outcome(OK_JSON)));
+
+        service.extractPending();
+
+        // NFR-5：批末统计本轮 PARSE_FAILED 置换数——1 条 FAILED 告警恰一次，文案含条数
+        verify(alertNotifier, times(1)).send(any(), eq("red"), argThat(lines ->
+                lines != null && lines.stream().anyMatch(line -> line.contains("1 条"))));
+    }
+
+    @Test
+    @DisplayName("给定全部抽取成功，when抽取批，then不发送解析失败告警")
+    void givenAllParseSuccess_whenExtractPending_thenNoFailureAlert() {
+        givenPending(news(1L, "消息甲"), news(2L, "消息乙"));
+        when(chatPort.complete(any(), any())).thenReturn(Optional.of(outcome(OK_JSON)));
+
+        service.extractPending();
+
+        verify(newsRepository, times(2)).upsertExtract(anyLong(), any());
+        verify(alertNotifier, never()).send(any(), any(), anyList());
+    }
+
+    @Test
+    @DisplayName("给定合计7字符的超短条目与正常条目，when抽取批，then短条目不送LLM不置换状态留PENDING")
+    void givenShortTextNews_whenExtractPending_thenSkippedWithoutLlmOrUpsert() {
+        NewsRecord shortNews = newsWithText(1L, "超短快讯标题", "短"); // 6+1=7 字符 < 8（D7）
+        givenPending(shortNews, news(2L, "正常新闻"));
+        when(chatPort.complete(any(), any())).thenReturn(Optional.of(outcome(OK_JSON)));
+
+        service.extractPending();
+
+        // D7：短条目不送 LLM（仅正常条目 1 次调用）、不置换状态（仅正常条目 1 次落库）
+        verify(chatPort, times(1)).complete(any(), any());
+        ArgumentCaptor<Long> ids = ArgumentCaptor.forClass(Long.class);
+        verify(newsRepository, times(1)).upsertExtract(ids.capture(), any());
+        assertThat(ids.getValue()).isEqualTo(2L);
+    }
+
     // ── fixture 助手 ───────────────────────────────────────────────
 
     private void givenPending(NewsRecord... news) {
@@ -252,9 +296,17 @@ class NewsExtractionServiceTest {
         return new IntelligenceChatPort.ChatOutcome(text, 100);
     }
 
-    /** 无抽取行的当日 PENDING raw（raw 侧字段齐备、抽取侧全 null）。 */
+    /**
+     * 无抽取行的当日 PENDING raw（raw 侧字段齐备、抽取侧全 null）。摘要为固定长文本——
+     * 单字标题（如「甲」）拼缀式摘要会撞 D7 的 8 字符阈值被误跳过。
+     */
     private static NewsRecord news(long id, String title) {
-        return new NewsRecord(id, "eastmoney_724", "ext-" + id, title, title + "的摘要内容",
+        return newsWithText(id, title, "这条新闻的摘要内容足够长");
+    }
+
+    /** 自定 title/summary 的无抽取行 PENDING raw（D7 长度过滤测试用）。 */
+    private static NewsRecord newsWithText(long id, String title, String summary) {
+        return new NewsRecord(id, "eastmoney_724", "ext-" + id, title, summary,
                 Instant.parse("2026-09-29T00:30:00Z"), null, "[]",
                 Instant.parse("2026-09-29T00:40:00Z"),
                 null, null, null, null, null, null, null, null, null, null);

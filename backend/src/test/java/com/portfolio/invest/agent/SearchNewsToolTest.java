@@ -53,18 +53,19 @@ class SearchNewsToolTest {
                 mapper);
     }
 
-    private static IntelligenceQueryService.NewsItemView item(String title, Direction direction) {
+    private static IntelligenceQueryService.NewsItemView item(String title, Direction direction,
+            List<String> keyNumbers) {
         return new IntelligenceQueryService.NewsItemView(
-                title, "AI 摘要", direction, 72, List.of("600519"),
+                title, "AI 摘要", direction, 72, keyNumbers, List.of("600519"),
                 "https://x/1", Instant.parse("2026-09-28T13:00:00Z"));
     }
 
-    @DisplayName("正常结果：items 数组 + total，条目七字段齐备")
+    @DisplayName("正常结果：items 数组 + total，条目八字段齐备（含关键数字）")
     @Test
     void givenItems_whenSearchNews_thenJsonHasItemsAndTotal() {
         when(intelligenceQuery.searchNews(any())).thenReturn(new IntelligenceQueryService.NewsSearchResult(
-                List.of(item("茅台三季报预增", Direction.BULLISH),
-                        item("白酒板块承压", Direction.BEARISH)), 17));
+                List.of(item("茅台三季报预增", Direction.BULLISH, List.of("Q3 净利润同比 +25.3%")),
+                        item("白酒板块承压", Direction.BEARISH, List.of())), 17));
 
         String json = tools.searchNews("茅台", "600519", null, "2026-09-01", null, 60, null);
 
@@ -75,6 +76,7 @@ class SearchNewsToolTest {
                 .contains("AI 摘要")
                 .contains("\"direction\":\"BULLISH\"").contains("\"direction\":\"BEARISH\"")
                 .contains("\"importance\":72")
+                .contains("\"keyNumbers\":[\"Q3 净利润同比 +25.3%\"]")
                 .contains("\"stockCodes\":[\"600519\"]")
                 .contains("https://x/1")
                 .contains("2026-09-28T13:00:00Z")
