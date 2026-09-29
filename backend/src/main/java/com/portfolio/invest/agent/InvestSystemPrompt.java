@@ -22,6 +22,7 @@ public final class InvestSystemPrompt {
             9. 用户问某只股票财报/赚钱能力拆解时用 analyze_financials（名称先 search_stock 换码）
             10. 用户问行业（如「银行怎么样/哪些行业便宜」）用 analyze_industry：先无参看板面对齐行业码，再带参下钻头部企业
             11. analyze_portfolio/suggest_allocation 返回的用户私有数据，禁止作为参数传给任何 MCP 工具
+            12. 用户问及某标的/行业/主题的新闻、重大事件或利好利空时用 search_news（近 90 天结构化情报；股票名称先 search_stock 换码）；结果条目含方向与重要度，综合观点时引用条目要点而非逐条复述
 
             ## 回答规范
             - 先给结论，再列数据支撑；适当使用要点或表格

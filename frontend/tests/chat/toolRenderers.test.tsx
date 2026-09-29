@@ -38,12 +38,12 @@ const tableSpec = {
 };
 
 describe("ChartToolRenderers", () => {
-  it("注册 4 既有 + 5 MS-12 + research_draft 具名渲染器（无 agentId，05 §4.1）", () => {
+  it("注册 4 既有 + 5 MS-12 + research_draft + search_news 具名渲染器（无 agentId，05 §4.1）", () => {
     render(<ChartToolRenderers />);
     expect(renderToolConfigs.map((c) => c.name)).toEqual(
       ["get_kline", "get_valuation", "get_market_overview", "get_financials",
         "screen_stocks", "analyze_financials", "analyze_industry", "suggest_allocation", "analyze_portfolio",
-        "research_draft"]);
+        "research_draft", "search_news"]);
     expect(renderToolConfigs.every((c) => "parameters" in c)).toBe(true);
   });
 
@@ -118,5 +118,69 @@ describe("ChartToolRenderers", () => {
     cleanup();
     const { container } = render(rd.render({ status: "inProgress", name: "research_draft" }) as React.ReactElement);
     expect(container.querySelector(".tool-card.running")).toBeTruthy();
+  });
+
+  // ===== search_news（MS-20 Task 12）：列表卡——标题链接/方向徽标/重要度/摘要/时间 =====
+  const newsResult = JSON.stringify({
+    items: [
+      {
+        title: "茅台三季报预增",
+        summary: "AI 摘要：净利润同比 +25%",
+        direction: "BULLISH",
+        importance: 72,
+        stockCodes: ["600519"],
+        url: "https://x/1",
+        publishedAt: "2026-09-28T13:00:00Z",
+      },
+      {
+        title: "白酒板块承压",
+        summary: "AI 摘要：需求走弱",
+        direction: "BEARISH",
+        importance: 40,
+        stockCodes: [],
+        url: null,
+        publishedAt: "2026-09-27T13:00:00Z",
+      },
+    ],
+    total: 27,
+  });
+
+  it("search_news complete → 列表卡：标题链接/无 url 退化纯文本/方向中文徽标/重要度/total", () => {
+    render(<ChartToolRenderers />);
+    const sn = renderToolConfigs.find((c) => c.name === "search_news")!;
+    const { getByText, getByRole } = render(sn.render({ status: "complete", result: newsResult }) as React.ReactElement);
+    // 标题：有 url 为链接、无 url 退化纯文本
+    expect(getByRole("link", { name: "茅台三季报预增" }).getAttribute("href")).toBe("https://x/1");
+    expect(getByText("白酒板块承压")).toBeTruthy();
+    // 方向中文映射：BULLISH=利好 / BEARISH=利空
+    expect(getByText("利好")).toBeTruthy();
+    expect(getByText("利空")).toBeTruthy();
+    // 重要度 + total + 摘要行
+    expect(getByText("重要度 72")).toBeTruthy();
+    expect(getByText("共 27 条")).toBeTruthy();
+    expect(getByText("AI 摘要：净利润同比 +25%")).toBeTruthy();
+    expect(getByText("600519")).toBeTruthy();
+  });
+
+  it("search_news 空结果 → message 行（90 天话术），无条目列表", () => {
+    render(<ChartToolRenderers />);
+    const sn = renderToolConfigs.find((c) => c.name === "search_news")!;
+    const { getByText, container } = render(
+      sn.render({ status: "complete", result: '{"items":[],"message":"该条件下暂无情报（新闻仅保留 90 天内）"}' }) as React.ReactElement,
+    );
+    expect(getByText("该条件下暂无情报（新闻仅保留 90 天内）")).toBeTruthy();
+    expect(container.querySelector("ul")).toBeNull(); // 空信封无条目列表
+  });
+
+  it("search_news 错误 result → 降级折叠卡；inProgress → 骨架", () => {
+    render(<ChartToolRenderers />);
+    const sn = renderToolConfigs.find((c) => c.name === "search_news")!;
+    const { container } = render(
+      sn.render({ status: "complete", result: '{"error":"工具执行失败","hint":"请稍后重试"}' }) as React.ReactElement,
+    );
+    expect(container.querySelector("details.tool-card")).toBeTruthy();
+    cleanup();
+    const running = render(sn.render({ status: "inProgress" }) as React.ReactElement);
+    expect(running.container.querySelector(".tool-card.running")).toBeTruthy();
   });
 });

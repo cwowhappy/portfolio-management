@@ -32,3 +32,13 @@ export const IndustryParamsSchema = z.object({
 });
 export const PortfolioParamsSchema = z.object({});
 export const AllocationParamsSchema = z.object({});
+// ===== MS-20（P1 财经新闻采集与AI结构化）：search_news 与后端 @ToolParam 对齐 =====
+export const SearchNewsParamsSchema = z.object({
+  q: z.string().optional().describe("关键词，按标题近似匹配"),
+  stock: z.string().optional().describe("标的代码，如 600519"),
+  industry: z.string().optional().describe("申万一级行业码，如 801140"),
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("起始日期 yyyy-MM-dd（含）"),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("结束日期 yyyy-MM-dd（含）"),
+  minImportance: z.number().optional().describe("重要度下限 0..100"),
+  limit: z.number().optional().describe("返回条数，默认 10，最大 20"),
+});

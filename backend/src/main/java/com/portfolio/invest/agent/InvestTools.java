@@ -11,6 +11,8 @@ import com.portfolio.invest.domain.screening.StockScreeningResult;
 import com.portfolio.invest.domain.market.KlineBar;
 import com.portfolio.invest.domain.market.MarketDataException;
 import com.portfolio.invest.domain.market.MarketOverview;
+import com.portfolio.invest.application.intelligence.IntelligenceQueryService;
+import com.portfolio.invest.application.intelligence.NewsSearchFilter;
 import com.portfolio.invest.application.market.MarketDataService;
 import com.portfolio.invest.application.valuation.ValuationApplicationService;
 import io.agentscope.core.message.TextBlock;
@@ -19,24 +21,32 @@ import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolEmitter;
 import io.agentscope.core.tool.ToolParam;
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.StringJoiner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
-/** 投研 Agent 的 7 个数据工具：返回 JSON 文本；失败返回结构化错误（不抛异常）。 */
+/** 投研 Agent 的数据工具：返回 JSON 文本；失败返回结构化错误（不抛异常）。 */
 @Component
 public class InvestTools {
 
     private static final Logger log = LoggerFactory.getLogger(InvestTools.class);
+
+    /** search_news 空结果信封话术：新闻仅 90 天滚动保留（与清理口径一致）。 */
+    private static final String NEWS_EMPTY_MESSAGE = "该条件下暂无情报（新闻仅保留 90 天内）";
 
     private final MarketDataService market;
     private final ValuationApplicationService valuationApplicationService;
     private final com.portfolio.invest.application.screening.ScreeningApplicationService screening;
     private final com.portfolio.invest.application.market.FinancialQueryService financialQuery;
     private final com.portfolio.invest.application.industry.IndustryApplicationService industry;
+    private final IntelligenceQueryService intelligenceQuery;
     private final ObjectMapper mapper;
 
     public InvestTools(
@@ -45,12 +55,14 @@ public class InvestTools {
             com.portfolio.invest.application.screening.ScreeningApplicationService screening,
             com.portfolio.invest.application.market.FinancialQueryService financialQuery,
             com.portfolio.invest.application.industry.IndustryApplicationService industry,
+            IntelligenceQueryService intelligenceQuery,
             ObjectMapper mapper) {
         this.market = market;
         this.valuationApplicationService = valuationApplicationService;
         this.screening = screening;
         this.financialQuery = financialQuery;
         this.industry = industry;
+        this.intelligenceQuery = intelligenceQuery;
         // 注入 Spring Boot 已配置的 ObjectMapper（统一序列化行为；日期已在 ChartSpecs 预转为 ISO 字符串）。
         this.mapper = mapper;
     }
@@ -135,6 +147,51 @@ public class InvestTools {
             @ToolParam(name = "code", description = "6位A股代码，如 600519") String code,
             @ToolParam(name = "limit", description = "返回条数，默认 10，最大 20") Integer limit) {
         return run(() -> mapper.writeValueAsString(market.news(code, Math.min(limit == null ? 10 : limit, 20))));
+    }
+
+    @Tool(
+            name = "search_news",
+            description = "检索已结构化的财经新闻情报（近 90 天）：按关键词/标的/行业/日期区间/重要度组合过滤，"
+                    + "条目含 AI 摘要、方向（利好/利空/中性）与重要度。用户问某标的/行业/主题的新闻、"
+                    + "重大事件、利好利空时调用；与 get_news（源站原始新闻流）互补，本工具是抽取后情报。",
+            readOnly = true,
+            concurrencySafe = true)
+    public String searchNews(
+            @ToolParam(name = "q", description = "关键词，按标题近似匹配，如“回购”，可空") String q,
+            @ToolParam(name = "stock", description = "标的代码，如 600519，可空") String stock,
+            @ToolParam(name = "industry", description = "申万一级行业码，如 801140，可空") String industry,
+            @ToolParam(name = "from", description = "起始日期 yyyy-MM-dd（含），可空") String from,
+            @ToolParam(name = "to", description = "结束日期 yyyy-MM-dd（含），可空") String to,
+            @ToolParam(name = "minImportance", description = "重要度下限 0..100，可空") Integer minImportance,
+            @ToolParam(name = "limit", description = "返回条数，默认 10，最大 20") Integer limit) {
+        // 日期前置校验：格式错走参数错误（run() 兜底会误导为“工具执行失败”）
+        LocalDate fromDate;
+        LocalDate toDate;
+        try {
+            fromDate = parseDate(from);
+            toDate = parseDate(to);
+        } catch (DateTimeParseException e) {
+            return ToolResultBlocks.toError(mapper,
+                    "日期格式须为 yyyy-MM-dd（如 2026-09-01），实际收到 from=" + from + " to=" + to,
+                    "请修正 from/to 后重试");
+        }
+        return run(() -> {
+            IntelligenceQueryService.NewsSearchResult result = intelligenceQuery.searchNews(
+                    new NewsSearchFilter(q, stock, industry, fromDate, toDate, minImportance, limit));
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("items", result.items());
+            if (result.items().isEmpty()) {
+                body.put("message", NEWS_EMPTY_MESSAGE);
+            } else {
+                body.put("total", result.total());
+            }
+            return mapper.writeValueAsString(body);
+        });
+    }
+
+    /** 空白串归一 null；非法格式抛 DateTimeParseException 由调用方前置校验兜底。 */
+    private static LocalDate parseDate(String s) {
+        return s == null || s.isBlank() ? null : LocalDate.parse(s);
     }
 
     @Tool(
