@@ -34,6 +34,8 @@ public class AgentScopeIntelligenceChatPort implements IntelligenceChatPort {
     private final ObjectProvider<Model> models;
     private final Duration timeout;
 
+    /** @Autowired 显式指定：类存在测试便利双构造，Spring 无法隐式择一（Task 5 集成测试首启上下文时暴露）。 */
+    @org.springframework.beans.factory.annotation.Autowired
     public AgentScopeIntelligenceChatPort(ObjectProvider<Model> models) {
         this(models, CALL_TIMEOUT);
     }
