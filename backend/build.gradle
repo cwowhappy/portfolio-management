@@ -88,6 +88,9 @@ dependencies {
     implementation 'org.flywaydb:flyway-database-postgresql'
     // CSV 批量导入解析（M08-F12）：仅 application 层使用，domain 保持零第三方依赖（设计规格 §1.4）
     implementation 'org.apache.commons:commons-csv:1.11.0'
+    // 公告 PDF→文本内存解析（MS-21 D18）：pdfbox 3.x Loader 入口 + PDFTextStripper，零落盘；
+    // Boot BOM 不管 pdfbox，显式钉 3.0.x 最新（与 commons-csv 同款显式版本惯例）
+    implementation 'org.apache.pdfbox:pdfbox:3.0.8'
 
     // AgentScope Java 2.0.3（权限确认 HITL → AG-UI interrupt 映射自 2.0.3 实现，PR #2495）
     implementation 'io.agentscope:agentscope-core:2.0.3'
