@@ -1,0 +1,21 @@
+task_code: news_night
+task_name: 财经新闻采集-夜间低频
+# 与 news_fast 同源同表（设计 D1 双任务变频）：0-6 点每 2 小时（0/2/4/6 点整）补拉，
+# 覆盖 */10 档 23:00 后的空窗；夜间断档最坏翻满 max_pages 兜底，UPSERT 幂等去重。
+# 注：设计 §6 原文「0 */2 0-6 * * *」是 6 段式，CronTrigger.from_crontab 只认 5 段，
+# 等价改写为 0 0-6/2（小时 0-6 步长 2，语义不变）。
+source_ids:
+  - { source_id: eastmoney_fast_news, type: plugin, class: eastmoney_fast_news }
+  - { source_id: sina_zhibo_news, type: plugin, class: sina_zhibo_news }
+converter: field_mapping_news
+calc: null
+validator:
+  - { field: external_id, check: required, level: hard }
+  - { field: title, check: required, level: hard }
+  - { field: published_at, check: not_null, level: hard }
+target_table: intelligence_news_raw
+schedule: { type: cron, cron: "0 0-6/2 * * *" }
+enabled: true
+trading_day_gated: false
+retry_max: 2
+retry_backoff: fixed

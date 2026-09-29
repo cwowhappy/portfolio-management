@@ -5,8 +5,10 @@ load_task_defs → build_registries → assemble_collector，全量任务全部�
 Config 用占位值：插件源与 ConfigurableSource 均为惰性构造，装配不触外部 API。
 """
 
+import datetime as dt
 from pathlib import Path
 
+import pandas as pd
 import pytest
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
@@ -14,6 +16,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from collector.config import Config
 from collector.scheduler.jobs import assemble_collector, build_registries, load_task_defs, make_trigger
 from collector.sources.base import SourceError
+from collector.sources.news import NEWS_COLUMNS
 
 TASKS_DIR = Path(__file__).resolve().parent.parent / "tasks"
 
@@ -30,6 +33,8 @@ EXPECTED_TASKS = {
     "industry_index_close",
     "industry_valuation",
     "industry_valuation_backfill",
+    "news_fast",
+    "news_night",
     "shenwan_mapping",
     "stock_financial",
     "stock_valuation_daily",
@@ -64,6 +69,72 @@ def test_all_a_valuation_yaml_has_tushare_backup_source():
     defs = {d["task_code"]: d for d in load_task_defs(str(TASKS_DIR))}
     sources = [s["source_id"] for s in defs["all_a_valuation"]["source_ids"]]
     assert sources == ["akshare_spot_em", "all_a_spot_backup"]
+
+
+@pytest.mark.parametrize(
+    ("code", "cron"),
+    [("news_fast", "*/10 7-23 * * *"), ("news_night", "0 0-6/2 * * *")],
+)
+def test_news_tasks_yaml(code, cron):
+    """MS-20 设计 §6：双任务同表（intelligence_news_raw）、同源序（东财主→新浪降级）、
+    双档变频只差 task_code/cron；新闻跨非交易日，trading_day_gated 必须 false。
+    night 的 5 段式等价改写（设计原文 6 段式 from_crontab 不识别）见 YAML 注释。"""
+    defs = {d["task_code"]: d for d in load_task_defs(str(TASKS_DIR))}
+    d = defs[code]
+    assert d["target_table"] == "intelligence_news_raw"
+    assert [s["source_id"] for s in d["source_ids"]] == ["eastmoney_fast_news", "sina_zhibo_news"]
+    assert all(s["type"] == "plugin" for s in d["source_ids"])
+    assert d["converter"] == "field_mapping_news"
+    assert d["schedule"] == {"type": "cron", "cron": cron}
+    assert d["trading_day_gated"] is False
+    assert d["retry_max"] == 2
+    assert d["retry_backoff"] == "fixed"
+    assert d["calc"] is None
+    # 7 列输出契约的业务键与非空列 hard 校验（brief Step 1）
+    assert d["validator"] == [
+        {"field": "external_id", "check": "required", "level": "hard"},
+        {"field": "title", "check": "required", "level": "hard"},
+        {"field": "published_at", "check": "not_null", "level": "hard"},
+    ]
+
+
+def test_field_mapping_news_converter_passthrough():
+    """field_mapping_news 7 列同名映射：published_at 保持 datetime 对象（psycopg 原生
+    适配 TIMESTAMPTZ，勿 str 强转）、stock_tags 保持 JSON 字符串原样透传。"""
+    regs = _registries()
+    converter = regs["converter"].get("field_mapping_news")
+    published = dt.datetime(2026, 9, 29, 10, 29, 16, tzinfo=dt.timezone(dt.timedelta(hours=8)))
+    raw = pd.DataFrame(
+        [
+            {
+                "source": "eastmoney_724",
+                "external_id": "202609291029161",
+                "title": "央行开展1000亿元逆回购",
+                "summary": "央行公告内容",
+                "published_at": published,
+                "url": "https://finance.eastmoney.com/a/202609291029161.html",
+                "stock_tags": '["1.600825", "90.BK1365"]',
+            },
+            {
+                "source": "sina_zhibo",
+                "external_id": "152:10086",
+                "title": "快讯标题",
+                "summary": "【快讯标题】正文",
+                "published_at": published,
+                "url": None,
+                "stock_tags": '[{"code": "300226", "name": "上海钢联"}]',
+            },
+        ],
+        columns=NEWS_COLUMNS,
+    )
+    records = converter.convert(raw)
+    assert len(records) == 2
+    assert records[0]["source"] == "eastmoney_724"
+    assert records[0]["published_at"] == published  # datetime 对象未被 str() 化
+    assert records[0]["stock_tags"] == '["1.600825", "90.BK1365"]'
+    assert records[1]["url"] is None
+    # 空帧（*/10 增量无新条目）→ 空记录，不抛错
+    assert converter.convert(pd.DataFrame(columns=NEWS_COLUMNS)) == []
 
 
 def test_make_trigger_cron():

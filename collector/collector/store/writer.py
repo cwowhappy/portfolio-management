@@ -76,6 +76,16 @@ UPSERT_SQL = {
           tracking_index_code=EXCLUDED.tracking_index_code, tracking_index_name=EXCLUDED.tracking_index_name,
           category=EXCLUDED.category, updated_at=now()
     """,
+    # MS-20 新闻双任务（news_fast/news_night）同表：冲突键 (source, external_id)。
+    # published_at 保首见不更新（发布时刻是源站事实）；fetched_at 是采集观测时刻，刷新 now()。
+    "intelligence_news_raw": """
+        INSERT INTO intelligence_news_raw
+          (source, external_id, title, summary, published_at, url, stock_tags)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (source, external_id) DO UPDATE SET
+          title=EXCLUDED.title, summary=EXCLUDED.summary,
+          url=EXCLUDED.url, stock_tags=EXCLUDED.stock_tags, fetched_at=now()
+    """,
 }
 
 TABLE_COLUMNS = {
@@ -118,6 +128,15 @@ TABLE_COLUMNS = {
         "tracking_index_code",
         "tracking_index_name",
         "category",
+    ],
+    "intelligence_news_raw": [
+        "source",
+        "external_id",
+        "title",
+        "summary",
+        "published_at",
+        "url",
+        "stock_tags",
     ],
 }
 

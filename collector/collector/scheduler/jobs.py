@@ -27,6 +27,7 @@ from collector.scheduler.alerts import alerter_from_env
 from collector.scheduler.calendar import TradingCalendar
 from collector.scheduler.patrol import run_freshness_patrol
 from collector.scheduler.runner import TaskRunner
+from collector.sources.news import EastmoneyFastNewsSource, SinaZhiboNewsSource
 from collector.sources.plugins import (
     AllASpotBackupSource,
     BondIndexCloseSource,
@@ -307,6 +308,20 @@ def _field_columns():
                 "category": {"from": "category", "type": "str"},
             }
         ),
+        # MS-20 新闻：源输出已是 7 列终形，同名映射直通。published_at 为 aware datetime
+        # 对象，type: None 跳过 _coerce 强转（psycopg 原生适配 TIMESTAMPTZ，str 化反而丢精度）；
+        # stock_tags 已是 JSON 字符串，str 透传由 writer 直写 JSONB。
+        "field_mapping_news": FieldMappingConverter(
+            {
+                "source": {"from": "source", "type": "str"},
+                "external_id": {"from": "external_id", "type": "str"},
+                "title": {"from": "title", "type": "str"},
+                "summary": {"from": "summary", "type": "str"},
+                "published_at": {"from": "published_at", "type": None},
+                "url": {"from": "url", "type": "str"},
+                "stock_tags": {"from": "stock_tags", "type": "str"},
+            }
+        ),
     }
 
 
@@ -348,6 +363,10 @@ def build_registries(config):
             "industry_valuation_backfill": IndustryValuationBackfillSource(
                 "industry_valuation_backfill", conn_factory=conn_factory
             ),
+            # MS-20 新闻双源：registry key ≠ DB source 列值（eastmoney_724/sina_zhibo），
+            # conn_factory 供源内增量截断（查已存 external_id 集合）
+            "eastmoney_fast_news": EastmoneyFastNewsSource("eastmoney_fast_news", conn_factory=conn_factory),
+            "sina_zhibo_news": SinaZhiboNewsSource("sina_zhibo_news", conn_factory=conn_factory),
         },
     )
     converter_reg = ConverterRegistry(plugins=_field_columns())

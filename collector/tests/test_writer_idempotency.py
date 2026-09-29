@@ -1,7 +1,7 @@
-"""T3 落库铁律：七张业务目标表的真实 PG 幂等 upsert（valuation_snapshot 见 test_writer.py）。
+"""T3 落库铁律：八张业务目标表的真实 PG 幂等 upsert（valuation_snapshot 见 test_writer.py）。
 
 每张表：同主键重复 upsert → 不产生重复行、行数仍为 1、非键字段被更新为新值。
-upsert 键与各表 DDL（后端 Flyway V3/V4/V7/V13）对齐，见 collector/store/writer.py。
+upsert 键与各表 DDL（后端 Flyway V3/V4/V7/V13/V18、intelligence V3）对齐，见 collector/store/writer.py。
 """
 
 import datetime as dt
@@ -129,6 +129,64 @@ def test_etf_basic_upsert_idempotent(pg_conn):
     assert len(rows) == 1
     assert float(rows[0][0]) == 0.15
     assert float(rows[0][1]) == 0.012345  # 周更不触碰误差列
+
+
+def test_intelligence_news_raw_upsert_idempotent(pg_conn):
+    """冲突键 (source, external_id)（MS-20 P1，Flyway V3）：*/10 高频重跑幂等——
+    title/summary/url/stock_tags 刷新、fetched_at=now()，published_at 保首见不更新
+    （发布时刻是源站事实，非采集观测）；业务键含 source，两源同 external_id 互不覆盖。"""
+    store = Store()
+    utc8 = dt.timezone(dt.timedelta(hours=8))
+    rec = {
+        "source": "eastmoney_724",
+        "external_id": "202609291029161",
+        "title": "央行开展1000亿元逆回购",
+        "summary": "央行公告内容",
+        "published_at": dt.datetime(2026, 9, 29, 10, 29, 16, tzinfo=utc8),
+        "url": "https://finance.eastmoney.com/a/202609291029161.html",
+        "stock_tags": '["1.600825", "90.BK1365"]',
+    }
+    store.upsert(pg_conn, "intelligence_news_raw", [rec])
+    # 首见后手动回拨 fetched_at，验证第二次 upsert 确实刷新观测时刻
+    pg_conn.execute("UPDATE intelligence_news_raw SET fetched_at = now() - interval '1 hour'")
+    store.upsert(
+        pg_conn,
+        "intelligence_news_raw",
+        [
+            {
+                **rec,
+                "title": "（更新）央行开展1000亿元逆回购",
+                "summary": None,
+                "published_at": dt.datetime(2026, 9, 29, 11, 0, 0, tzinfo=utc8),  # 更晚，不应覆盖
+                "url": None,
+                "stock_tags": "[]",
+            }
+        ],
+    )
+    rows = pg_conn.execute(
+        "SELECT title, summary, published_at, url, stock_tags, fetched_at >= now() - interval '1 minute'"
+        " FROM intelligence_news_raw WHERE source=%s AND external_id=%s",
+        ("eastmoney_724", "202609291029161"),
+    ).fetchall()
+    assert len(rows) == 1
+    title, summary, published_at, url, stock_tags, fetched_recent = rows[0]
+    assert title == "（更新）央行开展1000亿元逆回购"
+    assert summary is None
+    assert url is None
+    assert published_at == dt.datetime(2026, 9, 29, 10, 29, 16, tzinfo=utc8)  # 保首见
+    assert stock_tags == []  # JSON 字符串 → JSONB 写入，psycopg 读回已解析 list
+    assert fetched_recent is True  # fetched_at=now() 已刷新
+
+    # 业务键含 source：新浪同 external_id 是另一条记录，不互相覆盖
+    store.upsert(
+        pg_conn,
+        "intelligence_news_raw",
+        [{**rec, "source": "sina_zhibo", "title": "新浪侧同名快讯"}],
+    )
+    count = pg_conn.execute(
+        "SELECT count(*) FROM intelligence_news_raw WHERE external_id=%s", ("202609291029161",)
+    ).fetchone()[0]
+    assert count == 2
 
 
 def test_index_constituent_replaces_members_on_rerun(pg_conn):
