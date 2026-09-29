@@ -51,7 +51,7 @@ public class PdfboxAnnouncementPdfTextPort implements AnnouncementPdfTextPort {
         } catch (IOException | RuntimeException e) {
             // InvalidPasswordException（加密）与损坏 IO 异常统一翻译；getText 对个别畸形内容流
             // 亦可能抛 RuntimeException，一并包裹，保证调用方只见端口异常
-            throw new AnnouncementPdfTextPortException("公告 PDF 解析失败（加密或损坏）: " + e.getMessage(), e);
+            throw new AnnouncementPdfTextPortException("公告 PDF 解析失败: " + e.getMessage(), e);
         }
     }
 }
