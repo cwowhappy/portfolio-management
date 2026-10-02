@@ -223,6 +223,60 @@ class AnnouncementPushServiceTest {
     }
 
     @Test
+    @DisplayName("给定 annTypes 仅 OTHER 但源站栏目非空，when推送，then类型行降级显示源站栏目（降级链中间级）")
+    void givenOnlyOtherLabelWithSourceColumn_whenPushExtracted_thenTypeLineShowsSourceColumn() {
+        when(announcementRepository.findExtractedMajorSince(SINCE)).thenReturn(List.of(
+                announcement(1L, "2026年半年度经营数据公告", null,
+                        List.of(AnnouncementType.OTHER), "https://x/d.pdf")));
+        when(subscriptionRepository.findAllWithStock(STOCK)).thenReturn(List.of(subscription(7L)));
+
+        service.pushExtracted(SINCE);
+
+        assertThat(sentBodyLines()).anySatisfy(line -> assertThat(line).isEqualTo("类型：半年度报告"));
+    }
+
+    @Test
+    @DisplayName("给定毛利率非空且同比为负，when推送，then毛利率行带正号、负同比不加正号")
+    void givenGrossMarginAndNegativeYoy_whenPushExtracted_thenPercentLinesSignedCorrectly() {
+        AnnouncementMetrics partialMetrics = new AnnouncementMetrics(new BigDecimal("98.1"),
+                new BigDecimal("8.4"), new BigDecimal("-10.5"), null, new BigDecimal("45.6"),
+                null, List.of());
+        when(announcementRepository.findExtractedMajorSince(SINCE)).thenReturn(List.of(
+                announcement(1L, "2026年半年度报告", partialMetrics,
+                        List.of(AnnouncementType.PERIODIC_REPORT), null)));
+        when(subscriptionRepository.findAllWithStock(STOCK)).thenReturn(List.of(subscription(7L)));
+
+        service.pushExtracted(SINCE);
+
+        assertThat(sentBodyLines())
+                .contains("毛利率：+45.6%", "净利润同比：-10.5%")
+                .noneMatch(line -> line.contains("扣非净利润") || line.contains("分红"));
+    }
+
+    @Test
+    @DisplayName("给定卡片标题恰 64 字符与 65 字符，when推送，then边界原样不加省略号、超限截为前 64 字符+省略号")
+    void givenCardTitleAtAndOverLimit_whenPushExtracted_thenBoundaryKeptAndOverTruncated() {
+        when(subscriptionRepository.findAllWithStock(STOCK)).thenReturn(List.of(subscription(7L)));
+        // 卡片标题前缀「【公告提醒】贵州茅台：」固定 11 字符：公告标题 53 字 → 恰 64；54 字 → 65 触发截断
+        when(announcementRepository.findExtractedMajorSince(SINCE))
+                .thenReturn(List.of(announcement(1L, "甲".repeat(53))));
+        service.pushExtracted(SINCE);
+        when(announcementRepository.findExtractedMajorSince(SINCE))
+                .thenReturn(List.of(announcement(2L, "乙".repeat(54))));
+        service.pushExtracted(SINCE);
+
+        ArgumentCaptor<String> titles = ArgumentCaptor.forClass(String.class);
+        verify(pushPort, times(2)).sendToUser(eq(OPEN_ID), titles.capture(), anyString(), any());
+        assertThat(titles.getAllValues().get(0)).as("恰 64 字符（含边界）原样输出，不加省略号")
+                .hasSize(64)
+                .isEqualTo("【公告提醒】贵州茅台：" + "甲".repeat(53));
+        assertThat(titles.getAllValues().get(1)).as("65 字符截为前 64 字符 + 省略号（按字符非字节）")
+                .hasSize(65)
+                .isEqualTo("【公告提醒】贵州茅台：" + "乙".repeat(53) + "…")
+                .endsWith("…");
+    }
+
+    @Test
     @DisplayName("给定单发返回失败，when推送，then留痕 FAIL 并带原因")
     void givenSendReturnsFalse_whenPushExtracted_thenFailLogged() {
         when(announcementRepository.findExtractedMajorSince(SINCE))
