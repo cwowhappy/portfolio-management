@@ -53,6 +53,16 @@ public class IntelligenceQueryService {
     static final String STOCK_OUT_OF_HOLDINGS_MESSAGE =
             "该标的不在你的持仓跟踪标的范围内（scope=holdings 仅检索持仓项目标的）";
 
+    /**
+     * scope 路径超采后仍全页未命中的残余护栏话术（全库最新页被 scope 外公告刷满——
+     * 非「检索无结果」，加 stock 定向或收窄日期可解）。
+     */
+    static final String SUBSCRIPTION_PAGE_MISS_MESSAGE =
+            "本页未命中你的订阅标的公告——可加 stock 参数定向检索或收窄日期范围";
+
+    static final String HOLDINGS_PAGE_MISS_MESSAGE =
+            "本页未命中你的持仓标的公告——可加 stock 参数定向检索或收窄日期范围";
+
     private final NewsRepository newsRepository;
     private final AnnouncementRepository announcementRepository;
     private final SubscriptionRepository subscriptionRepository;
@@ -88,8 +98,15 @@ public class IntelligenceQueryService {
      * {@link IntelligenceSubscription#defaults} 物化，空集短路返回引导语不打仓库）；
      * <b>holdings</b>=持仓 hook 全用户列表按 userId 过滤（hook 尽力而为不抛，失败空集
      * 同走引导语）；<b>all</b>=不过滤。scope 命中后标的过滤在<b>本页内存</b>完成
-     * （标的集小，不扩仓库 SQL IN——最小版口径）：total 为该页 scope 内命中数而非
-     * 全库精确 total；stock 参数不在标的集时短路返回（省一次仓库调用）。
+     * （标的集小，不扩仓库 SQL IN——最小版口径）。
+     *
+     * <p><b>scope 路径本页超采</b>（fix round 1）：全库最新页可能被全市场 major 公告
+     * 刷满，按 limit 取页会内存过滤成假空——故 pageSize 取 {@code min(100, max(20, limit×10))}
+     * （all 路径照旧取夹紧 limit），命中过滤后裁回前 limit 条（published_at 倒序保持）；
+     * total 为超采页命中且裁回后的条数而非全库精确 total。超采后仍全页未命中
+     * （{@code items 空 ∧ page.total > 0}）给 scope 专属护栏话术（不用「检索无结果」
+     * 误导）。P4 web 检索升级 SQL IN 后超采与护栏自然废止。stock 参数不在标的集时
+     * 短路返回（省一次仓库调用）。
      */
     public AnnouncementSearchResult searchAnnouncements(Long userId, AnnouncementSearchFilter filter) {
         int limit = Math.min(
@@ -107,13 +124,22 @@ public class IntelligenceQueryService {
                         ? STOCK_OUT_OF_SUBSCRIPTION_MESSAGE : STOCK_OUT_OF_HOLDINGS_MESSAGE);
             }
         }
-        PageQuery query = new PageQuery(1, limit, blankToNull(filter.q()), blankToNull(filter.stock()),
+        // scope 路径超采（见方法 javadoc）；all 路径照夹紧 limit
+        int pageSize = scopeStocks == null ? limit
+                : Math.min(PageQuery.MAX_PAGE_SIZE, Math.max(MAX_LIMIT, limit * 10));
+        PageQuery query = new PageQuery(1, pageSize, blankToNull(filter.q()), blankToNull(filter.stock()),
                 null, filter.from(), filter.to(), null, filter.type(), null);
         PageResult<AnnouncementRecord> page = announcementRepository.search(query);
         List<AnnouncementItemView> items = page.items().stream()
                 .filter(r -> scopeStocks == null || scopeStocks.contains(r.stockCode()))
+                .limit(limit)
                 .map(AnnouncementItemView::of)
                 .toList();
+        if (scopeStocks != null && items.isEmpty() && page.total() > 0) {
+            // 残余护栏：全库有公告但超采页全被 scope 外刷满——非「检索无结果」
+            return AnnouncementSearchResult.empty(scope == AnnouncementScope.SUBSCRIPTION
+                    ? SUBSCRIPTION_PAGE_MISS_MESSAGE : HOLDINGS_PAGE_MISS_MESSAGE);
+        }
         long total = scopeStocks == null ? page.total() : items.size();
         return new AnnouncementSearchResult(items, total, null);
     }

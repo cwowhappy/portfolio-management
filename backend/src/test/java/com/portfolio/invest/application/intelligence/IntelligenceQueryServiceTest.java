@@ -143,6 +143,16 @@ class IntelligenceQueryServiceTest {
         return new AnnouncementSearchFilter(null, stock, null, null, null, scope, null);
     }
 
+    /** 桩：7L 用户订阅给定标的码集合。 */
+    private void stubSubscription(String... stockCodes) {
+        when(subscriptionRepository.findByUserId(7L)).thenReturn(Optional.of(
+                IntelligenceSubscription.reconstitute(7L, true, List.of(),
+                        java.util.Arrays.stream(stockCodes)
+                                .map(code -> new SubscriptionStock(code, null))
+                                .toList(),
+                        Instant.parse("2026-09-01T00:00:00Z"))));
+    }
+
     @Test
     @DisplayName("给定 scope=all 与全参过滤器，when公告检索，then PageQuery 十参映射且不做 scope 过滤")
     void givenAllScope_whenSearchAnnouncements_thenMapsPageQueryWithoutScopeFilter() {
@@ -197,7 +207,7 @@ class IntelligenceQueryServiceTest {
 
         assertThat(result.items()).extracting(v -> v.title())
                 .containsExactly("茅台回购公告", "宁德业绩预告");
-        assertThat(result.total()).as("页内 scope 命中数（最小版口径，非全库精确 total）").isEqualTo(2);
+        assertThat(result.total()).as("超采页 scope 命中且裁回 limit 后的条数（最小版口径，非全库精确 total）").isEqualTo(2);
         assertThat(result.scopeMessage()).isNull();
         verify(announcementRepository).search(argThat(q -> q.stockCode() == null)); // scope 不注入 SQL
     }
@@ -250,10 +260,7 @@ class IntelligenceQueryServiceTest {
     @Test
     @DisplayName("给定 stock 不在订阅标的集，when检索，then 空结果+范围外话术且不打仓库")
     void givenStockOutOfScope_whenSearchAnnouncements_thenOutOfRangeWithoutRepoHit() {
-        when(subscriptionRepository.findByUserId(7L)).thenReturn(Optional.of(
-                IntelligenceSubscription.reconstitute(7L, true, List.of(),
-                        List.of(new SubscriptionStock("600519", "贵州茅台")),
-                        Instant.parse("2026-09-01T00:00:00Z"))));
+        stubSubscription("600519");
 
         var result = service.searchAnnouncements(7L,
                 announcementFilter(AnnouncementScope.SUBSCRIPTION, "000001"));
@@ -261,6 +268,68 @@ class IntelligenceQueryServiceTest {
         assertThat(result.items()).isEmpty();
         assertThat(result.scopeMessage()).contains("不在").contains("订阅");
         verifyNoInteractions(announcementRepository);
+    }
+
+    // ===== fix round 1（Important #1）：scope 路径本页超采 + 残余护栏话术 =====
+
+    @Test
+    @DisplayName("给定 scope 路径，when检索，then 本页超采：pageSize=min(100, max(20, limit×10)) 而非 limit")
+    void givenScopePath_whenSearchAnnouncements_thenPageOverfetched() {
+        stubSubscription("600519");
+        when(announcementRepository.search(any())).thenReturn(new PageResult<>(List.of(), 0, 1, 100));
+
+        service.searchAnnouncements(7L, new AnnouncementSearchFilter(
+                null, null, null, null, null, AnnouncementScope.SUBSCRIPTION, null)); // limit 缺省 10 → 100
+        service.searchAnnouncements(7L, new AnnouncementSearchFilter(
+                null, null, null, null, null, AnnouncementScope.SUBSCRIPTION, 2));    // 2×10=20
+        service.searchAnnouncements(7L, new AnnouncementSearchFilter(
+                null, null, null, null, null, AnnouncementScope.SUBSCRIPTION, 5));    // 5×10=50
+
+        verifyAnnouncementPage(1, 100);
+        verifyAnnouncementPage(1, 20);
+        verifyAnnouncementPage(1, 50);
+    }
+
+    @Test
+    @DisplayName("给定超采页混入 scope 外条目，when limit=3 检索，then 裁回前 3 条且顺序保持")
+    void givenOverfetchedPage_whenSearchAnnouncements_thenTruncatedToLimitInOrder() {
+        stubSubscription("600519");
+        // 12 条交替：偶位 scope 内（600519）、奇位 scope 外（000001）——顺序即仓库 published_at 倒序
+        List<AnnouncementRecord> mixed = new java.util.ArrayList<>();
+        for (int i = 0; i < 12; i++) {
+            mixed.add(announcement(i % 2 == 0 ? "600519" : "000001", "公告" + i, null, null));
+        }
+        when(announcementRepository.search(any())).thenReturn(new PageResult<>(mixed, 12, 1, 100));
+
+        var result = service.searchAnnouncements(7L, new AnnouncementSearchFilter(
+                null, null, null, null, null, AnnouncementScope.SUBSCRIPTION, 3));
+
+        assertThat(result.items()).extracting(v -> v.title())
+                .containsExactly("公告0", "公告2", "公告4"); // 前 3 条 scope 内、倒序保持
+        assertThat(result.total()).isEqualTo(3);
+        assertThat(result.scopeMessage()).isNull();
+    }
+
+    @Test
+    @DisplayName("给定超采页全市场刷满 scope 外且 total>0，when检索，then 残余护栏专属话术而非假空「检索无结果」")
+    void givenOverfetchedPageAllOutOfScope_whenSearchAnnouncements_thenGuardMessageNotFalseEmpty() {
+        stubSubscription("600519");
+        when(announcementRepository.search(any())).thenReturn(new PageResult<>(
+                List.of(announcement("000001", "全市场major刷满", null, null)), 100, 1, 100));
+
+        var subscription = service.searchAnnouncements(7L,
+                announcementFilter(AnnouncementScope.SUBSCRIPTION, null));
+
+        assertThat(subscription.items()).isEmpty();
+        assertThat(subscription.scopeMessage()).contains("未命中").contains("订阅");
+
+        when(subscriptionHook.activePositionTargets()).thenReturn(List.of(
+                new IntelligenceTarget(7L, 101L, "600519", "贵州茅台")));
+        var holdings = service.searchAnnouncements(7L,
+                announcementFilter(AnnouncementScope.HOLDINGS, null));
+
+        assertThat(holdings.items()).isEmpty();
+        assertThat(holdings.scopeMessage()).contains("未命中").contains("持仓");
     }
 
     @Test
