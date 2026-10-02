@@ -174,6 +174,31 @@ class AnnouncementExtractionServiceTest {
     }
 
     @Test
+    @DisplayName("给定巨潮3类直判形态标题（码链栏目不可判），when抽取批，then标题臂命中全部送审")
+    void givenCninfoDirectTypeTitles_whenExtractPending_thenAllSentToLlmViaTitleArm() throws Exception {
+        // ann_type_source 为巨潮通用分类码链（探测报告 §3.4：不可作类型判据）——栏目臂必不命中
+        givenPending(
+                announcement(1L, "关于公司2026年度非公开发行A股股票预案", "01010503||010112", "https://x/1.pdf", true),
+                announcement(2L, "关于公开增发A股股票的公告", "010112", "https://x/2.pdf", true),
+                announcement(3L, "关于实施2026年度配股的公告", "010112", "https://x/3.pdf", true),
+                announcement(4L, "2026年限制性股票股权激励计划（草案）", "010112", "https://x/4.pdf", true),
+                announcement(5L, "关于公司股票被实施退市风险警示的公告", "010112", "https://x/5.pdf", true),
+                announcement(6L, "关于公司股票交易被实施其他风险警示的公告", "010112", "https://x/6.pdf", true));
+        when(pdfFetcher.download(any())).thenReturn("pdf".getBytes(StandardCharsets.UTF_8));
+        when(pdfTextPort.extract(any(byte[].class))).thenReturn("发行方案与激励安排的正文内容。");
+        when(chatPort.complete(any(), any())).thenReturn(Optional.of(outcome("{\"metrics\":{},\"annTypes\":[]}")));
+
+        service.extractPending();
+
+        // fix round 1 补全：巨潮 3 类直判（定增配股/股权激励/退市风险）标题臂命中，不再落杂项空抽取
+        verify(chatPort, times(6)).complete(any(), any());
+        ArgumentCaptor<AnnouncementExtractResult> captor = ArgumentCaptor.forClass(AnnouncementExtractResult.class);
+        verify(announcementRepository, times(6)).upsertExtract(anyLong(), captor.capture());
+        assertThat(captor.getAllValues()).extracting(AnnouncementExtractResult::status)
+                .containsOnly(ExtractStatus.SUCCESS);
+    }
+
+    @Test
     @DisplayName("给定无类型语义的杂项公告，when抽取批，thenSUCCESS空抽取落库不下载不调LLM")
     void givenMiscAnnouncement_whenExtractPending_thenSuccessEmptyWithoutLlmOrDownload() throws Exception {
         givenPending(announcement(1L, "关于召开2026年第三次临时股东会的通知", "召开股东大会通知", "https://static.cninfo.com.cn/finalpage/b.pdf", false));

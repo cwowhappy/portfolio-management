@@ -28,10 +28,11 @@ import org.springframework.stereotype.Service;
  * 游标窗口内（{@link #EXTRACTION_LOOKBACK_DAYS} 个自然日含当日）的 PENDING 公告按
  * {@code extract-batch-size} 循环取批逐条抽取。
  *
- * <p><b>送审预筛（fix round 1 裁定）</b>：标题命中 {@link #TITLE_REVIEW_KEYWORDS} 任一
- * 关键词（业绩类 + 增持/减持/回购/关联交易宽栏目 4 类），或 ann_type_source 命中
- * {@link #COLUMN_TYPE_KEYWORDS} 十类直判栏目（探测报告 §4.3 备源映射全量；东财中文栏目
- * 可判，巨潮 ann_type_source 为通用分类码链不可判，靠标题臂兜底）——其一即送 LLM。
+ * <p><b>送审预筛（fix round 1 裁定 + 同根因补全）</b>：标题命中 {@link #TITLE_REVIEW_KEYWORDS}
+ * 任一关键词（业绩类 + 增持/减持/回购/关联交易宽栏目 4 类 + 直判 3 类跨源收口词——两源
+ * 一视同仁），或 ann_type_source 命中 {@link #COLUMN_TYPE_KEYWORDS} 十类直判栏目（探测
+ * 报告 §4.3 备源映射全量；东财中文栏目可判，巨潮 ann_type_source 为通用分类码链不可判，
+ * 靠标题臂兜底）——其一即送 LLM。
  * 宽栏目 4 类走正常 LLM 路径（PDF 照常下载、无 pdf_url 凭标题；metrics 预期全 null +
  * undisclosed 全六项，annTypes 获得标签）。未命中的杂项公告（股东大会通知/会议决议/
  * 其他公告等无类型语义条目）不下载不调 LLM，直接 SUCCESS 空抽取落库
@@ -69,17 +70,21 @@ public class AnnouncementExtractionService {
     static final int MIN_TITLE_LENGTH = 8;
 
     /**
-     * 送审标题关键词表（常量化；fix round 1 裁定扩词）：标题命中任一即送 LLM。业绩类
-     * （任务原六词 + 真实标题完整形态召回补全——「年报」等缩写作子串匹配不到「年度报告」
-     * 标题，召回优先；业绩预增/预减/预亏/扭亏变体）+ 宽栏目 4 类（增持/减持/回购/关联交易
-     * ——控制器裁定并入，否则 T8 type 检索 4/11 枚举值结构性恒空；「回购」子串已覆盖
-     * 「股份回购」）。
+     * 送审标题关键词表（常量化；fix round 1 裁定扩词 + 同根因补全）：标题命中任一即送 LLM。
+     * 业绩类（任务原六词 + 真实标题完整形态召回补全——「年报」等缩写作子串匹配不到
+     * 「年度报告」标题，召回优先；业绩预增/预减/预亏/扭亏变体）+ 宽栏目 4 类
+     * （增持/减持/回购/关联交易——控制器裁定并入，否则 T8 type 检索 4/11 枚举值结构性
+     * 恒空；「回购」子串已覆盖「股份回购」）+ 直判 3 类跨源收口词（增发/配股/非公开发行/
+     * 股权激励/退市/风险警示——巨潮 ann_type_source 为通用码链不可判栏目，这 3 类巨潮行
+     * 只有标题臂可依，否则与东财同类行形成无成本侧理由的跨源不对称；「非公开发行」为
+     * 「向特定对象发行/非公开发行股票」类定增标题的实态判词）。
      */
     static final List<String> TITLE_REVIEW_KEYWORDS = List.of(
             "业绩预告", "业绩快报", "业绩预增", "业绩预减", "业绩预亏", "业绩扭亏",
             "定期报告", "年度报告", "半年度报告", "季度报告", "中期报告",
             "年报", "半年报", "季报", "一季报", "三季报", "中报",
-            "增持", "减持", "回购", "关联交易");
+            "增持", "减持", "回购", "关联交易",
+            "增发", "配股", "非公开发行", "股权激励", "退市", "风险警示");
 
     /** 源站栏目关键词 → 直判类型对（探测报告 §4.3 备源映射全量，与 collector 栏目判据同款）：命中即送 LLM 且并入 annTypes 并集。 */
     private record ColumnTypeKeyword(String keyword, AnnouncementType type) {
