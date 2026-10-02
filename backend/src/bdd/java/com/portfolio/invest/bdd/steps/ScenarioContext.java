@@ -51,6 +51,7 @@ public class ScenarioContext {
     private Long firstFalsifierReviewId;
     private Long lastFalsifierReviewId;
     private String intelligenceNewsJson;
+    private String intelligenceAnnouncementJson;
     private final List<PortfolioOverviewView> overviews = new ArrayList<>();
     private List<StockScreeningResult> screeningResults;
     private ScreeningException screeningError;
@@ -264,6 +265,14 @@ public class ScenarioContext {
 
     public void setIntelligenceNewsJson(String intelligenceNewsJson) {
         this.intelligenceNewsJson = intelligenceNewsJson;
+    }
+
+    public String getIntelligenceAnnouncementJson() {
+        return intelligenceAnnouncementJson;
+    }
+
+    public void setIntelligenceAnnouncementJson(String intelligenceAnnouncementJson) {
+        this.intelligenceAnnouncementJson = intelligenceAnnouncementJson;
     }
 
     public List<PortfolioOverviewView> getOverviews() {
