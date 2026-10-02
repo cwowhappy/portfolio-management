@@ -31,4 +31,16 @@ public class IntelligencePushLogRepositoryImpl implements PushLogRepository {
                 log.userId(), log.pushType().name(), log.target(), log.refTable(), log.refId(),
                 log.status().name(), log.error(), log.sentAt().atOffset(ZoneOffset.UTC));
     }
+
+    @Override
+    public boolean existsAnnouncementPush(Long announcementId, Long userId) {
+        Boolean found = jdbc.queryForObject("""
+                SELECT EXISTS(SELECT 1 FROM intelligence_push_log
+                              WHERE push_type = 'ANNOUNCEMENT'
+                                AND ref_table = 'intelligence_announcement'
+                                AND ref_id = ? AND user_id = ?
+                                AND status IN ('OK', 'SKIPPED_NO_BINDING'))
+                """, Boolean.class, announcementId, userId);
+        return Boolean.TRUE.equals(found);
+    }
 }
