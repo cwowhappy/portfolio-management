@@ -59,6 +59,7 @@ class UserToolkitFactoryTest {
         return new UserToolkitFactory(investTools, repository, clientPool,
                 mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
                 mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
+                mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
                 new com.fasterxml.jackson.databind.ObjectMapper()).build(1L);
     }
 
@@ -126,6 +127,7 @@ class UserToolkitFactoryTest {
         Toolkit toolkit = new UserToolkitFactory(investTools, repository, clientPool,
                 mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
                 mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
+                mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
                 new com.fasterxml.jackson.databind.ObjectMapper()).build(1L);
 
         assertThat(toolkit.getTool("trade_cal")).as("配置缺失 → MCP 工具不注册").isNull();
@@ -155,6 +157,7 @@ class UserToolkitFactoryTest {
         Toolkit toolkit = new UserToolkitFactory(investTools, repository, clientPool,
                 mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
                 mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
+                mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
                 new com.fasterxml.jackson.databind.ObjectMapper()).build(1L);
 
         assertThat(toolkit.getTool("trade_cal")).as("配置停用 → MCP 工具不注册").isNull();
@@ -185,6 +188,7 @@ class UserToolkitFactoryTest {
         Toolkit toolkit = new UserToolkitFactory(investTools, repository, clientPool,
                 mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
                 mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
+                mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
                 new com.fasterxml.jackson.databind.ObjectMapper()).build(1L);
 
         assertThat(toolkit.getTool("trade_cal")).as("密钥缺失 → MCP 工具不注册").isNull();
@@ -209,6 +213,7 @@ class UserToolkitFactoryTest {
         Toolkit toolkit = new UserToolkitFactory(investTools, repository, clientPool,
                 mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
                 mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
+                mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
                 new com.fasterxml.jackson.databind.ObjectMapper()).build(1L);
 
         assertThat(toolkit.getTool("search_stock")).as("内置工具不受影响").isNotNull();
@@ -241,13 +246,14 @@ class UserToolkitFactoryTest {
         Toolkit toolkit = new UserToolkitFactory(investTools, repository, clientPool,
                 mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
                 mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
+                mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
                 new com.fasterxml.jackson.databind.ObjectMapper()).build(1L);
 
         assertThat(toolkit.getTool("b_tool")).as("正常端点 B 的工具照常注册（单点失败不拖垮装配）").isNotNull();
         assertThat(toolkit.getTool("search_stock")).as("内置工具不受影响").isNotNull();
     }
 
-    @DisplayName("装配后内置工具含 5 新工具 + research_draft + search_news（无 MCP 环境共 14 个）")
+    @DisplayName("装配后内置工具含 5 新工具 + research_draft + search_news + search_announcements（无 MCP 环境共 15 个）")
     @Test
     void givenInvestToolsAndUserServices_whenBuild_thenRegistersUserTools() {
         InvestTools investTools = mock(InvestTools.class);
@@ -258,11 +264,13 @@ class UserToolkitFactoryTest {
         Toolkit toolkit = new UserToolkitFactory(investTools, repository, clientPool,
                 mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
                 mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
+                mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
                 new com.fasterxml.jackson.databind.ObjectMapper()).build(1L);
 
         var names = toolkit.getToolNames();
         assertThat(names).contains("screen_stocks", "analyze_financials", "analyze_industry",
-                "analyze_portfolio", "suggest_allocation", "research_draft", "search_news");
-        assertThat(names).as("7 既有 + 5 新 + research_draft + search_news（inline mock 保留 @Tool 注解扫描）").hasSize(14);
+                "analyze_portfolio", "suggest_allocation", "research_draft", "search_news",
+                "search_announcements");
+        assertThat(names).as("7 既有 + 5 新 + research_draft + search_news + search_announcements（inline mock 保留 @Tool 注解扫描）").hasSize(15);
     }
 }

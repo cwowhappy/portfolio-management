@@ -4,6 +4,7 @@ import {
   ValuationParamsSchema,
   OverviewParamsSchema,
   SearchNewsParamsSchema,
+  SearchAnnouncementsParamsSchema,
 } from "@/lib/tool-params";
 
 describe("tool-params（useRenderTool parameters 用的入参 schema）", () => {
@@ -33,5 +34,24 @@ describe("tool-params（useRenderTool parameters 用的入参 schema）", () => 
   it("search_news：日期格式非法被拒（yyyy-MM-dd 契约）", () => {
     expect(SearchNewsParamsSchema.safeParse({ from: "2026/09/01" }).success).toBe(false);
     expect(SearchNewsParamsSchema.safeParse({ to: "20260928" }).success).toBe(false);
+  });
+  it("search_announcements：七参数全可空，日期须 yyyy-MM-dd，scope 三枚举", () => {
+    expect(SearchAnnouncementsParamsSchema.safeParse({}).success).toBe(true);
+    expect(
+      SearchAnnouncementsParamsSchema.safeParse({
+        stock: "600519",
+        type: "BUYBACK",
+        from: "2026-09-01",
+        to: "2026-09-28",
+        q: "回购",
+        scope: "holdings",
+        limit: 20,
+      }).success,
+    ).toBe(true);
+    expect(SearchAnnouncementsParamsSchema.safeParse({ scope: "mine" }).success).toBe(false);
+  });
+  it("search_announcements：日期格式非法被拒（yyyy-MM-dd 契约）", () => {
+    expect(SearchAnnouncementsParamsSchema.safeParse({ from: "2026/09/01" }).success).toBe(false);
+    expect(SearchAnnouncementsParamsSchema.safeParse({ to: "20260928" }).success).toBe(false);
   });
 });

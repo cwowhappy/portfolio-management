@@ -42,3 +42,13 @@ export const SearchNewsParamsSchema = z.object({
   minImportance: z.number().optional().describe("重要度下限 0..100"),
   limit: z.number().optional().describe("返回条数，默认 10，最大 20"),
 });
+// ===== MS-21（P2 公告与财报要点采集）：search_announcements 与后端 @ToolParam 对齐 =====
+export const SearchAnnouncementsParamsSchema = z.object({
+  stock: z.string().optional().describe("标的代码，如 600519"),
+  type: z.string().optional().describe("公告类型枚举名，如 BUYBACK"),
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("起始日期 yyyy-MM-dd（含）"),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("结束日期 yyyy-MM-dd（含）"),
+  q: z.string().optional().describe("关键词，按标题近似匹配"),
+  scope: z.enum(["all", "subscription", "holdings"]).optional().describe("检索范围，缺省 all"),
+  limit: z.number().optional().describe("返回条数，默认 10，最大 20"),
+});

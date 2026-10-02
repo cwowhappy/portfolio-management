@@ -20,6 +20,11 @@ final class ToolResultBlocks {
         ToolResultBlock get() throws Exception;
     }
 
+    @FunctionalInterface
+    interface StringSupplier {
+        String get() throws Exception;
+    }
+
     /** 失败不 emit，返回错误 JSON 文本（前端 ChartCard 嗅探降级）；MarketDataException 给数据源专属提示。 */
     static ToolResultBlock runBlock(Logger log, ObjectMapper mapper, BlockSupplier supplier) {
         try {
@@ -30,6 +35,19 @@ final class ToolResultBlocks {
         } catch (Exception e) {
             log.error("工具执行异常", e);
             return ToolResultBlock.text(toError(mapper, "工具执行失败", "请稍后重试"));
+        }
+    }
+
+    /** String 返回版兜底（InvestTools.run 同款形状，UserInvestTools 的 JSON 工具共用，防复制体漂移）。 */
+    static String runString(Logger log, ObjectMapper mapper, StringSupplier supplier) {
+        try {
+            return supplier.get();
+        } catch (MarketDataException e) {
+            log.warn("工具数据获取失败: code={}, msg={}", e.getCode(), e.getMessage());
+            return toError(mapper, e.getMessage(), "数据源暂不可用，请稍后重试或换个问法");
+        } catch (Exception e) {
+            log.error("工具执行异常", e);
+            return toError(mapper, "工具执行失败", "请稍后重试");
         }
     }
 

@@ -38,12 +38,12 @@ const tableSpec = {
 };
 
 describe("ChartToolRenderers", () => {
-  it("注册 4 既有 + 5 MS-12 + research_draft + search_news 具名渲染器（无 agentId，05 §4.1）", () => {
+  it("注册 4 既有 + 5 MS-12 + research_draft + search_news + search_announcements 具名渲染器（无 agentId，05 §4.1）", () => {
     render(<ChartToolRenderers />);
     expect(renderToolConfigs.map((c) => c.name)).toEqual(
       ["get_kline", "get_valuation", "get_market_overview", "get_financials",
         "screen_stocks", "analyze_financials", "analyze_industry", "suggest_allocation", "analyze_portfolio",
-        "research_draft", "search_news"]);
+        "research_draft", "search_news", "search_announcements"]);
     expect(renderToolConfigs.every((c) => "parameters" in c)).toBe(true);
   });
 
@@ -185,6 +185,94 @@ describe("ChartToolRenderers", () => {
     expect(container.querySelector("details.tool-card")).toBeTruthy();
     cleanup();
     const running = render(sn.render({ status: "inProgress" }) as React.ReactElement);
+    expect(running.container.querySelector(".tool-card.running")).toBeTruthy();
+  });
+
+  // ===== search_announcements（MS-21 P2 Task 8）：公告列表卡——标题链接/类型徽标兜底链/
+  // 六字段要点行/scope 回显 =====
+  const announcementResult = JSON.stringify({
+    items: [
+      {
+        title: "贵州茅台 2026 年半年度报告",
+        stockCode: "600519",
+        stockName: "贵州茅台",
+        annTypes: ["PERIODIC_REPORT"],
+        annTypeSource: "半年报",
+        metrics: {
+          revenueYi: 128.56,
+          netProfitYi: 31.2,
+          netProfitYoyPct: 25.3,
+          deductedProfitYi: null,
+          grossMarginPct: 91.5,
+          dividendDesc: "每10股派2元",
+          undisclosed: [],
+        },
+        pdfUrl: "https://x/1.pdf",
+        publishedAt: "2026-09-28T13:00:00Z",
+      },
+      {
+        title: "平安银行回购进展",
+        stockCode: "000001",
+        stockName: "平安银行",
+        annTypes: [],
+        annTypeSource: "回购公告",
+        metrics: null,
+        pdfUrl: null,
+        publishedAt: "2026-09-27T13:00:00Z",
+      },
+    ],
+    total: 17,
+  });
+
+  it("search_announcements complete → 列表卡：标题链接/类型徽标兜底链/六字段要点行/scope 回显/total", () => {
+    render(<ChartToolRenderers />);
+    const sa = renderToolConfigs.find((c) => c.name === "search_announcements")!;
+    const { getByText, getByRole } = render(
+      sa.render({ status: "complete", result: announcementResult, parameters: { scope: "holdings" } }) as React.ReactElement,
+    );
+    // 标题：有 pdfUrl 为链接、无 pdfUrl 退化纯文本
+    expect(getByRole("link", { name: "贵州茅台 2026 年半年度报告" }).getAttribute("href")).toBe("https://x/1.pdf");
+    expect(getByText("平安银行回购进展")).toBeTruthy();
+    // 类型徽标：annTypes 中文；空数组退化 annTypeSource 兜底
+    expect(getByText("定期报告")).toBeTruthy();
+    expect(getByText("回购公告")).toBeTruthy();
+    // 六字段要点行（metrics 非空字段才出、null 字段不渲染；同比/毛利率带符号与推送卡片同款；整行精确匹配避免祖先元素多命中）
+    expect(getByText("营收 128.56 亿 · 归母净利 31.2 亿 · 净利同比 +25.3% · 毛利率 +91.5% · 分红 每10股派2元")).toBeTruthy();
+    // 标的名/码行 + scope 回显 + total
+    expect(getByText("贵州茅台 600519")).toBeTruthy();
+    expect(getByText("持仓范围")).toBeTruthy();
+    expect(getByText("共 17 条")).toBeTruthy();
+  });
+
+  it("search_announcements 空结果 → message 行（scope 引导语），无条目列表；all 不回显 scope", () => {
+    render(<ChartToolRenderers />);
+    const sa = renderToolConfigs.find((c) => c.name === "search_announcements")!;
+    const { getByText, container } = render(
+      sa.render({
+        status: "complete",
+        result: '{"items":[],"message":"未设置订阅标的——可先到「情报订阅」添加关注股票后再检索"}',
+        parameters: { scope: "subscription" },
+      }) as React.ReactElement,
+    );
+    expect(getByText("未设置订阅标的——可先到「情报订阅」添加关注股票后再检索")).toBeTruthy();
+    expect(container.querySelector("ul")).toBeNull(); // 空信封无条目列表
+    expect(getByText("订阅范围")).toBeTruthy(); // scope=subscription 回显
+    cleanup();
+    const all = render(
+      sa.render({ status: "complete", result: announcementResult, parameters: { scope: "all" } }) as React.ReactElement,
+    );
+    expect(all.queryByText("订阅范围")).toBeNull(); // all 不回显 scope 徽标
+  });
+
+  it("search_announcements 错误 result → 降级折叠卡；inProgress → 骨架", () => {
+    render(<ChartToolRenderers />);
+    const sa = renderToolConfigs.find((c) => c.name === "search_announcements")!;
+    const { container } = render(
+      sa.render({ status: "complete", result: '{"error":"工具执行失败","hint":"请稍后重试"}' }) as React.ReactElement,
+    );
+    expect(container.querySelector("details.tool-card")).toBeTruthy();
+    cleanup();
+    const running = render(sa.render({ status: "inProgress" }) as React.ReactElement);
     expect(running.container.querySelector(".tool-card.running")).toBeTruthy();
   });
 });
