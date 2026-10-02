@@ -86,7 +86,12 @@ class PdfFetcherTest {
     void givenOversizedContentLength_whenDownload_thenRejectedBeforeBodyRead() {
         server.createContext("/huge", ex -> {
             ex.sendResponseHeaders(200, (long) MAX_BYTES + 1);
-            ex.close();
+            // 声明的 20MB+ 正文只写一小段即关：响应头须随首段正文可靠下发——只 close 不写
+            // 正文时 JDK HttpServer 可能在头尚未送达客户端前就粗暴断连（header parser
+            // received no bytes，环境相关的既有偶发）；客户端仍在头快判处拒绝，语义不变
+            try (OutputStream os = ex.getResponseBody()) {
+                os.write(new byte[256 * 1024]);
+            }
         });
 
         assertThatThrownBy(() -> fetcher.download(base + "/huge"))
