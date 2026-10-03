@@ -393,6 +393,31 @@ class InvestToolsTest {
         assertThat(out.getOutput().get(0).toString()).contains("error");
     }
 
+    @DisplayName("screen_stocks 白名单外指数（LLM 幻觉值）：降级全市场不致败，真实条件仍生效")
+    @Test
+    void givenHallucinatedIndex_whenScreenStocks_thenDegradesToNullIndex() throws Exception {
+        var result = new com.portfolio.invest.domain.screening.StockScreeningResult(
+                "600519", "贵州茅台", "801140", "白酒",
+                new BigDecimal("25.0"), new BigDecimal("8.0"), null,
+                new BigDecimal("32.0"), null, null, null, null, null, null,
+                new BigDecimal("2.1E12"), null);
+        when(screening.screen(any())).thenReturn(List.of(result));
+
+        // e2e 实录：LLM 对未提及指数的提问会幻觉传 indexCode="." 与 ""，domain 白名单构造器直接抛异常致整查询失败
+        ToolResultBlock out = tools.screenStocks(
+                20.0, null, null, 15.0, null, null, null, null, null, null, null, null,
+                null, ".", null, null, 10, block -> { });
+        ToolResultBlock blank = tools.screenStocks(
+                20.0, null, null, 15.0, null, null, null, null, null, null, null, null,
+                null, " ", null, null, 10, block -> { });
+
+        assertThat(out.getOutput().get(0).toString()).contains("贵州茅台");
+        assertThat(blank.getOutput().get(0).toString()).contains("贵州茅台");
+        verify(screening, org.mockito.Mockito.times(2)).screen(
+                org.mockito.ArgumentMatchers.argThat(c ->
+                        c.indexCode() == null && c.roeMin() != null));
+    }
+
     @DisplayName("screen_stocks 空结果：不 emit，安全摘要")
     @Test
     void givenEmptyResults_whenScreenStocks_thenNoEmitSafeSummary() {

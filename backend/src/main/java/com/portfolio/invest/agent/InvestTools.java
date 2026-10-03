@@ -336,12 +336,18 @@ public class InvestTools {
                 return ToolResultBlock.text(ToolResultBlocks.toError(mapper, "不支持的排序字段: " + sort,
                         "可用: " + ScreeningCriteria.SORTABLE_FIELDS));
             }
+            // 指数入参防御（e2e 实录 LLM 幻觉值如 "."）：白名单外降级全市场，避免 domain 构造器
+            // 抛 INVALID_INDEX 致整查询失败——indexCode 是范围收窄而非核心条件，真实筛选条件仍生效
+            String idx = indexCode == null ? null : indexCode.trim();
+            if (idx != null && !ScreeningCriteria.INDEX_WHITELIST.contains(idx)) {
+                idx = null; // 空串/幻觉值统一降级全市场（e2e 实录 LLM 传过 "." 与 ""）
+            }
             ScreeningCriteria criteria = new ScreeningCriteria(
                     bd(peTtmMax), bd(pbMax), bd(dividendYieldMin), bd(roeMin), bd(roaMin),
                     bd(grossMarginMin), bd(debtToAssetsMax), bd(currentRatioMin), bd(revenueYoyMin),
                     bd(netprofitYoyMin), bd(totalMvMin), bd(turnoverRateMin),
                     industryCode == null || industryCode.isBlank() ? null : industryCode,
-                    indexCode == null || indexCode.isBlank() ? null : indexCode,
+                    idx,
                     sort,
                     "asc".equalsIgnoreCase(sortDirection) ? SortDirection.ASC : SortDirection.DESC,
                     Math.max(1, Math.min(limit == null ? 20 : limit, 50)));
