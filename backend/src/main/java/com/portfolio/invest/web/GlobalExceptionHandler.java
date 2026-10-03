@@ -166,13 +166,18 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(status).body(new ApiError(e.code(), e.getMessage()));
     }
 
-    /** intelligence 域（P4 工作台/订阅）：NOT_FOUND→404、INVALID_FILTER→422、default→400（照 research 范式）。 */
+    /**
+     * intelligence 域（P4 工作台/订阅/绑定）：NOT_FOUND→404、INVALID_FILTER 与绑定面
+     * 两码（BINDING_CODE_EXPIRED / OPEN_ID_TAKEN，D8）→422、default→400（照 research 范式）。
+     */
     @ExceptionHandler(com.portfolio.invest.domain.intelligence.IntelligenceException.class)
     public ResponseEntity<ApiError> intelligence(
             com.portfolio.invest.domain.intelligence.IntelligenceException e) {
         HttpStatus status = switch (e.code()) {
             case IntelligenceErrorCode.NOT_FOUND -> HttpStatus.NOT_FOUND;
-            case IntelligenceErrorCode.INVALID_FILTER -> HttpStatus.UNPROCESSABLE_CONTENT;
+            case IntelligenceErrorCode.INVALID_FILTER,
+                 IntelligenceErrorCode.BINDING_CODE_EXPIRED,
+                 IntelligenceErrorCode.OPEN_ID_TAKEN -> HttpStatus.UNPROCESSABLE_CONTENT;
             default -> HttpStatus.BAD_REQUEST;
         };
         return ResponseEntity.status(status).body(new ApiError(e.code(), e.getMessage()));

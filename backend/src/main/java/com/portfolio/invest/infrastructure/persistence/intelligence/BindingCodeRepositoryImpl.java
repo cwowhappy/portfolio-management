@@ -21,6 +21,15 @@ public class BindingCodeRepositoryImpl implements BindingCodeRepository {
     }
 
     @Override
+    public boolean trySave(String code, Long userId, Instant expiresAt) {
+        // ON CONFLICT DO NOTHING：PK 撞码返回 0（false）而非抛约束违例——调用方换码重生成
+        return jdbc.update(
+                "INSERT INTO intelligence_binding_code (code, user_id, expires_at, used_at)"
+                        + " VALUES (?, ?, ?, NULL) ON CONFLICT (code) DO NOTHING",
+                code, userId, expiresAt.atOffset(ZoneOffset.UTC)) == 1;
+    }
+
+    @Override
     public int deleteExpiredBefore(Instant cutoff) {
         return jdbc.update("DELETE FROM intelligence_binding_code WHERE expires_at < ?",
                 cutoff.atOffset(ZoneOffset.UTC));

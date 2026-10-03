@@ -379,6 +379,8 @@ public class InvestProperties {
         private long dailyTokenGuardrail = 2_000_000L;
         private int briefMaxItems = 25;
         private int briefMinItems = 15;
+        /** 绑定码 TTL 分钟数（D8：设置页生成 6 位数字码，10 分钟内飞书发码核销）。 */
+        private int bindingCodeTtlMinutes = 10;
 
         public int getMajorThreshold() { return majorThreshold; }
         public void setMajorThreshold(int majorThreshold) { this.majorThreshold = majorThreshold; }
@@ -392,6 +394,8 @@ public class InvestProperties {
         public void setBriefMaxItems(int briefMaxItems) { this.briefMaxItems = briefMaxItems; }
         public int getBriefMinItems() { return briefMinItems; }
         public void setBriefMinItems(int briefMinItems) { this.briefMinItems = briefMinItems; }
+        public int getBindingCodeTtlMinutes() { return bindingCodeTtlMinutes; }
+        public void setBindingCodeTtlMinutes(int bindingCodeTtlMinutes) { this.bindingCodeTtlMinutes = bindingCodeTtlMinutes; }
     }
 
     /** SMTP 发信（M01-F06，阿里云企业邮箱）。空值 = 未启用，发信入口返回「系统未配置邮件服务」。 */

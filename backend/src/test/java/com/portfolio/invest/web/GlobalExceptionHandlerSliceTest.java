@@ -92,6 +92,18 @@ class GlobalExceptionHandlerSliceTest {
             throw new IntelligenceException("SOME_FUTURE_CODE", "未知错误码");
         }
 
+        @GetMapping("/intelligence-binding-expired")
+        void intelligenceBindingExpired() {
+            throw new IntelligenceException(IntelligenceErrorCode.BINDING_CODE_EXPIRED,
+                    "绑定码无效或已过期");
+        }
+
+        @GetMapping("/intelligence-open-id-taken")
+        void intelligenceOpenIdTaken() {
+            throw new IntelligenceException(IntelligenceErrorCode.OPEN_ID_TAKEN,
+                    "该飞书账号已绑定其他用户");
+        }
+
         @GetMapping("/missing-param")
         void missingParam(@RequestParam String q) {}
 
@@ -175,6 +187,24 @@ class GlobalExceptionHandlerSliceTest {
         mvc.perform(get("/test-throw/intelligence-unknown"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("SOME_FUTURE_CODE"));
+    }
+
+    @DisplayName("情报域BINDING_CODE_EXPIRED映射422（绑定码过期/已核销，D8 一次性）")
+    @Test
+    void givenIntelligenceBindingExpired_whenRequestThrows_thenReturn422() throws Exception {
+        mvc.perform(get("/test-throw/intelligence-binding-expired"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value(IntelligenceErrorCode.BINDING_CODE_EXPIRED))
+                .andExpect(jsonPath("$.message").value("绑定码无效或已过期"));
+    }
+
+    @DisplayName("情报域OPEN_ID_TAKEN映射422（open_id 已绑其他用户）")
+    @Test
+    void givenIntelligenceOpenIdTaken_whenRequestThrows_thenReturn422() throws Exception {
+        mvc.perform(get("/test-throw/intelligence-open-id-taken"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value(IntelligenceErrorCode.OPEN_ID_TAKEN))
+                .andExpect(jsonPath("$.message").value("该飞书账号已绑定其他用户"));
     }
 
     @DisplayName("缺少必填query参数映射400")

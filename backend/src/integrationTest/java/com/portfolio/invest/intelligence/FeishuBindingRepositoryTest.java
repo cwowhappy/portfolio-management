@@ -54,6 +54,30 @@ class FeishuBindingRepositoryTest extends PostgresTestSupport {
         assertThat(repository.findOpenIdByUserId(userId)).isEmpty();
     }
 
+    @Test
+    @DisplayName("给定已绑定用户，when按 userId 解绑，then删除绑定行并返回 true（open_id 随行释放）")
+    void givenBoundUser_whenDeleteByUserId_thenRowDeletedAndTrue() {
+        Long userId = insertUser("bind_it_del");
+        jdbc.update("INSERT INTO intelligence_feishu_binding(user_id, open_id) VALUES(?, 'ou-del')",
+                userId);
+
+        boolean deleted = repository.deleteByUserId(userId);
+
+        assertThat(deleted).isTrue();
+        assertThat(repository.findOpenIdByUserId(userId)).as("解绑后立即可见——旧 open_id 不再收推送").isEmpty();
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM intelligence_feishu_binding WHERE user_id = ?",
+                Integer.class, userId)).isZero();
+    }
+
+    @Test
+    @DisplayName("给定未绑定用户，when按 userId 解绑，then无行可删返回 false（幂等语义）")
+    void givenUnboundUser_whenDeleteByUserId_thenFalse() {
+        Long userId = insertUser("bind_it_del_none");
+
+        assertThat(repository.deleteByUserId(userId)).isFalse();
+    }
+
     // ── fixture 助手 ───────────────────────────────────────────────
 
     /** 照 SubscriptionRepositoryTest 的 insertUser 先例（app_user 为 feishu_binding 的 FK 目标）。 */
