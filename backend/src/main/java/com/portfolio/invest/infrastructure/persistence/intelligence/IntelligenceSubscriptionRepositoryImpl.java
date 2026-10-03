@@ -71,13 +71,16 @@ public class IntelligenceSubscriptionRepositoryImpl implements SubscriptionRepos
     @Override
     public List<Long> findUserIdsWithPushEnabled() {
         // 总开关默认开（#27/F16）：无订阅行 = 默认 push_enabled=true——LEFT JOIN app_user
-        // 全员为底，仅显式关闭（s.push_enabled=FALSE）被排除；零行部署/绑定未存订阅
-        // 的用户均在受众，不因无行静默失联
+        // 为底，仅显式关闭（s.push_enabled=FALSE）被排除；零行部署/绑定未存订阅
+        // 的用户均在受众，不因无行静默失联。账号门（fix round 2）：受众须审批通过且
+        // 未停用（status=APPROVED ∧ enabled）——PENDING 不旁路审批门收 DM、
+        // REJECTED/停用用户不续收
         return jdbc.queryForList(
                 """
                         SELECT u.id FROM app_user u
                         LEFT JOIN intelligence_subscription s ON s.user_id = u.id
-                        WHERE s.user_id IS NULL OR s.push_enabled = TRUE
+                        WHERE u.status = 'APPROVED' AND u.enabled = TRUE
+                          AND (s.user_id IS NULL OR s.push_enabled = TRUE)
                         ORDER BY u.id
                         """,
                 Long.class);

@@ -140,17 +140,30 @@ class BriefPushServiceTest {
     }
 
     @Test
-    @DisplayName("给定受众为空（全员显式关闭，默认开口径下唯一空态），when推送，then不推不留痕可观测跳过")
-    void givenEmptyAudience_whenPush_thenSkippedWithoutSendOrLog() {
+    @DisplayName("给定受众为空（全员显式关闭，默认开口径下唯一空态），when推送，then不推不留痕且INFO可观测")
+    void givenEmptyAudience_whenPush_thenSkippedWithoutSendButLogged() {
         when(briefRepository.findByDate(TODAY)).thenReturn(
                 Optional.of(archived(106L, BriefStatus.GENERATED, CONTENT_MD, null)));
         when(subscriptionRepository.findUserIdsWithPushEnabled()).thenReturn(List.of());
+        ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger)
+                org.slf4j.LoggerFactory.getLogger(BriefPushService.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
 
-        service.pushBrief();
+        try {
+            service.pushBrief();
 
-        verify(pushPort, never()).sendToGroup(anyString(), anyString(), anyList());
-        verify(pushPort, never()).sendToUser(anyString(), anyString(), anyString(), anyList());
-        verify(pushLogRepository, never()).save(any());
+            verify(pushPort, never()).sendToGroup(anyString(), anyString(), anyList());
+            verify(pushPort, never()).sendToUser(anyString(), anyString(), anyString(), anyList());
+            verify(pushLogRepository, never()).save(any());
+            assertThat(appender.list).as("空受众一行 INFO 留观测（全员显式关闭是默认开口径下唯一空态）")
+                    .anyMatch(event -> event.getLevel() == ch.qos.logback.classic.Level.INFO
+                            && event.getFormattedMessage().contains("无推送受众"));
+        } finally {
+            logger.detachAppender(appender);
+        }
     }
 
     @Test

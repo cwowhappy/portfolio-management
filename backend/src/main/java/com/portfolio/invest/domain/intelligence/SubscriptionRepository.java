@@ -27,6 +27,8 @@ public interface SubscriptionRepository {
      * 推送受众用户 id 全集（盘前简报收件人口径，P4 消费）。总开关默认开（#27/F16
      * 「无行=默认 pushEnabled=true」口径，LEFT JOIN app_user）：无订阅行用户与显式开
      * 用户都在受众，仅显式关闭用户被排除——零行部署/绑定而未存订阅的用户不因此失联。
+     * 账号门：仅审批通过（APPROVED）且未停用（enabled）的用户可入受众——PENDING 不
+     * 旁路审批门收推送，REJECTED/管理员停用用户不续收。
      */
     List<Long> findUserIdsWithPushEnabled();
 

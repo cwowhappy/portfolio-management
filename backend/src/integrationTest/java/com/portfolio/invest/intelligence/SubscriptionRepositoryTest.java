@@ -119,19 +119,24 @@ class SubscriptionRepositoryTest extends PostgresTestSupport {
     }
 
     @Test
-    @DisplayName("findUserIdsWithPushEnabled：无行（默认开）与显式开命中、显式关不命中（#27 总开关默认开口径）")
-    void givenEnabledDisabledAndAbsentUsers_whenFindUserIdsWithPushEnabled_thenDefaultOnAndEnabledHit() {
-        Long enabled = insertUser("sub_it_en");
-        Long disabled = insertUser("sub_it_dis");
-        Long absent = insertUser("sub_it_absent");
-        repository.save(IntelligenceSubscription.defaults(enabled));           // 行：显式开
-        repository.save(IntelligenceSubscription.defaults(disabled).togglePush(false)); // 行：显式关
+    @DisplayName("findUserIdsWithPushEnabled：审批通过未停用者默认开/显式开命中；显式关、PENDING、停用均不命中")
+    void givenVariousAccountStates_whenFindUserIdsWithPushEnabled_thenOnlyActiveApprovedHit() {
+        Long enabled = insertUser("sub_it_en");                                // 行：显式开
+        Long absent = insertUser("sub_it_absent");                             // 无行：默认开
+        Long disabled = insertUser("sub_it_dis");                              // 行：显式关
+        Long pendingNoRow = insertUser("sub_it_pend_nr", "PENDING", true);     // 待审无行
+        Long pendingRowOn = insertUser("sub_it_pend_row", "PENDING", true);    // 待审 + 行开
+        Long suspended = insertUser("sub_it_susp", "APPROVED", false);         // 已停用 + 行开
+        repository.save(IntelligenceSubscription.defaults(enabled));
+        repository.save(IntelligenceSubscription.defaults(disabled).togglePush(false));
+        repository.save(IntelligenceSubscription.defaults(pendingRowOn));
+        repository.save(IntelligenceSubscription.defaults(suspended));
 
         assertThat(repository.findUserIdsWithPushEnabled())
-                .as("无行=默认开（LEFT JOIN 口径）与行开都在受众，仅显式关被排除"
-                        + "（contains 而非 exactly：共享容器可能有兄弟类/admin 残留用户，同为默认开属预期）")
+                .as("受众=审批通过且未停用 ∧（无行默认开或显式开）；PENDING/停用/显式关一律排除"
+                        + "（contains 而非 exactly：共享容器可能有兄弟类/admin 残留用户，符合口径属预期）")
                 .contains(enabled, absent)
-                .doesNotContain(disabled);
+                .doesNotContain(disabled, pendingNoRow, pendingRowOn, suspended);
     }
 
     @Test
@@ -165,8 +170,13 @@ class SubscriptionRepositoryTest extends PostgresTestSupport {
 
     /** 照 IntelligenceCleanupTest 的 insertUser 先例（app_user 为 subscription 的 FK 目标）。 */
     private Long insertUser(String username) {
-        jdbc.update("INSERT INTO app_user(username, password_hash, role, status)"
-                + " VALUES(?, 'x', 'USER', 'APPROVED')", username);
+        return insertUser(username, "APPROVED", true);
+    }
+
+    /** 参数化账号状态（受众口径测试：PENDING/停用形态）。 */
+    private Long insertUser(String username, String status, boolean enabled) {
+        jdbc.update("INSERT INTO app_user(username, password_hash, role, status, enabled)"
+                + " VALUES(?, 'x', 'USER', ?, ?)", username, status, enabled);
         return jdbc.queryForObject("SELECT id FROM app_user WHERE username=?", Long.class, username);
     }
 

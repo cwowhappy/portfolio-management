@@ -30,7 +30,8 @@ import org.springframework.stereotype.Service;
 /**
  * 盘前简报推送（D11 P1 群推版 → D17 P4 个性化升级）：交易日 08:30（生成 08:00 之后）读
  * 当日档，逐 {@code findUserIdsWithPushEnabled} 用户分流（受众=总开关默认开口径 #27：
- * 无订阅行与显式开都在，仅显式关不在——零行部署全员可收，绑定未存订阅者同样可见）：
+ * 无订阅行与显式开都在，仅显式关不在——零行部署全员可收，绑定未存订阅者同样可见；
+ * 且账号须审批通过未停用，PENDING/停用用户不入受众）：
  *
  * <ul>
  *   <li><b>绑定用户单发</b>（{@code SubscriptionService.findOpenId} 命中 → sendToUser）：
