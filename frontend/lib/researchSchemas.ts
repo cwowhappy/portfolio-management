@@ -38,6 +38,8 @@ export const ProjectViewSchema = z.object({
   title: z.string(),
   currentStage: ResearchStageSchema,
   status: ProjectStatusSchema,
+  /** 项目级情报提醒开关（M16-F11 回收，默认 true——决策 #26）。 */
+  intelligenceAlertEnabled: z.boolean(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

@@ -29,6 +29,7 @@ const activeProject: ProjectView = {
   title: "茅台重启研究",
   currentStage: "STRATEGY",
   status: "ACTIVE",
+  intelligenceAlertEnabled: true,
   createdAt: "2026-09-20T08:00:00Z",
   updatedAt: "2026-09-28T08:00:00Z",
 };

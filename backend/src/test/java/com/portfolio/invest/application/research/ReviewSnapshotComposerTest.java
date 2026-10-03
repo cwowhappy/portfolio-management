@@ -64,7 +64,7 @@ class ReviewSnapshotComposerTest {
 
     private static ResearchProject project() {
         return ResearchProject.reconstitute(5L, 9L, CODE, "贵州茅台", "801120",
-                "茅台扩产研究", ResearchStage.REVIEW, ProjectStatus.ACTIVE, 0L, NOW, NOW);
+                "茅台扩产研究", ResearchStage.REVIEW, ProjectStatus.ACTIVE, true, 0L, NOW, NOW);
     }
 
     /** 同标的两持仓（id 11/22）：trade 跨 position 归并。 */

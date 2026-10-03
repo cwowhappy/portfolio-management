@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import {
   fetchFinancials,
   fetchKline,
@@ -219,6 +220,14 @@ export default function MarketBoard() {
                   <span className="tabular ml-2 text-[12px] text-[color:var(--color-ink-faint)]">
                     {quote.code} · {quote.time || "—"}
                   </span>
+                  {/* 情报工作台互跳（M16-F11）：深链所选标的进过滤初值 */}
+                  <Link
+                    href={`/intelligence?stock=${selected.code}`}
+                    data-testid="market-intelligence-link"
+                    className="ml-3 rounded border border-[color:var(--color-line)] px-2 py-0.5 text-[11px] text-[color:var(--color-ink-dim)] transition-colors hover:text-[color:var(--color-accent)]"
+                  >
+                    情报
+                  </Link>
                 </p>
                 <p className={"tabular mt-1 text-[44px] font-medium leading-none " + upCls(quote.changePct)}>
                   {quote.price.toFixed(2)}

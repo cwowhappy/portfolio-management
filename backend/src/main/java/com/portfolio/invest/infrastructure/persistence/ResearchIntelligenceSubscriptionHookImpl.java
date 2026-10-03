@@ -12,11 +12,12 @@ import org.springframework.stereotype.Component;
 
 /**
  * 持仓情报挂接实现（D12，决策 #26）：查 research_project 的
- * status=ACTIVE ∧ current_stage=POSITION ∧ intelligence_alert_enabled=true（V2 表 + V3 加列）。
+ * status=ACTIVE ∧ current_stage=POSITION ∧ intelligence_alert_enabled=true（V2 表 + V3 加列；
+ * 开关写路径 = ResearchApplicationService#setIntelligenceAlert，M16-F11）。
  * 走 {@link JdbcTemplate} 原生 SQL 而非 JPA derived query——返回投影
- * {@link IntelligenceTarget}（userId/projectId/stockCode/stockName）而非聚合，且
- * {@code ResearchProjectJpaEntity.fromDomain} 无该开关字段映射（domain 端口不动，经 JPA
- * 门面读写反而有覆盖列风险），照 BindingCodeRepositoryImpl 的单查询先例最薄。
+ * {@link IntelligenceTarget}（userId/projectId/stockCode/stockName）而非聚合（开关虽已入
+ * {@code ResearchProject} 域字段与 JPA 映射，本查询仍无需装回聚合），照
+ * BindingCodeRepositoryImpl 的单查询先例最薄。
  *
  * <p>照 {@link com.portfolio.invest.infrastructure.im.FeishuResearchFalsifierNotifier} 模式：
  * @Component 无条件注册；尽力而为——任何失败记 WARN 返回空集，绝不抛

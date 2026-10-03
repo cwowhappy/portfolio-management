@@ -80,11 +80,19 @@ export default function IndustryDrilldown({ industryCode }: { industryCode: stri
           {industryName || industryCode}{prosperity && <span className="ml-2 text-base">{PROSPERITY_LABEL[prosperity as keyof typeof PROSPERITY_LABEL]}</span>}
         </h1>
         <span className="text-sm text-[color:var(--color-ink-dim)]">成员 {stocks.length}</span>
-        {user && (
-          <span className="ml-auto">
+        <span className="ml-auto flex items-center gap-2">
+          {/* 情报工作台互跳（M16-F11）：深链本行业进过滤初值 */}
+          <Link
+            href={`/intelligence?industry=${industryCode}`}
+            data-testid="industry-intelligence-link"
+            className="rounded-md px-3 py-1.5 text-xs border border-[color:var(--color-line)] hover:bg-[color:var(--color-panel)]"
+          >
+            情报
+          </Link>
+          {user && (
             <ResearchNoteDialog industryCode={industryCode} industryName={industryName} />
-          </span>
-        )}
+          )}
+        </span>
       </div>
 
       {/* 三 tab 组（样式逐字照 ScreenerBoard 先例）；「产业链」MS-10 P3 激活 */}

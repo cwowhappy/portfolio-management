@@ -32,6 +32,46 @@ class ResearchProjectTest {
         assertThat(p.version()).isNull();
     }
 
+    @DisplayName("立项情报提醒默认开（决策 #26：项目开关默认 TRUE）")
+    @Test
+    void givenCreate_thenIntelligenceAlertDefaultsTrue() {
+        assertThat(project().intelligenceAlertEnabled()).isTrue();
+    }
+
+    @DisplayName("withIntelligenceAlert 返回新实例且原实例不变（不可变聚合）")
+    @Test
+    void givenEnabledProject_whenWithIntelligenceAlertFalse_thenNewInstanceAndOriginalUntouched() {
+        var p = project();
+        var disabled = p.withIntelligenceAlert(false);
+        assertThat(disabled.intelligenceAlertEnabled()).isFalse();
+        // 不可变：原实例保持开，其余字段原样携带（照 changeStage 先例）
+        assertThat(p.intelligenceAlertEnabled()).isTrue();
+        assertThat(disabled.id()).isEqualTo(p.id());
+        assertThat(disabled.title()).isEqualTo(p.title());
+        assertThat(disabled.currentStage()).isEqualTo(p.currentStage());
+        assertThat(disabled.status()).isEqualTo(p.status());
+        // 再切回开，双向往返
+        assertThat(disabled.withIntelligenceAlert(true).intelligenceAlertEnabled()).isTrue();
+    }
+
+    @DisplayName("withIntelligenceAlert 同值幂等返回原实例（照 changeStage 同值语义）")
+    @Test
+    void givenSameValue_whenWithIntelligenceAlert_thenSameInstance() {
+        var p = project();
+        assertThat(p.withIntelligenceAlert(true)).isSameAs(p);
+        var disabled = p.withIntelligenceAlert(false);
+        assertThat(disabled.withIntelligenceAlert(false)).isSameAs(disabled);
+    }
+
+    @DisplayName("既有 wither（archive/changeStage/rename）携带情报开关字段")
+    @Test
+    void givenDisabledProject_whenOtherWithers_thenFlagCarriedThrough() {
+        var p = project().withIntelligenceAlert(false);
+        assertThat(p.archive().intelligenceAlertEnabled()).isFalse();
+        assertThat(p.changeStage(ResearchStage.REVIEW).intelligenceAlertEnabled()).isFalse();
+        assertThat(p.rename("新标题").intelligenceAlertEnabled()).isFalse();
+    }
+
     @DisplayName("行业代码可空（立项不强制行业）")
     @Test
     void givenNullIndustry_whenCreate_thenSucceed() {
@@ -142,7 +182,7 @@ class ResearchProjectTest {
     @Test
     void givenAllFields_whenReconstitute_thenCarriedThrough() {
         var p = ResearchProject.reconstitute(9L, 1L, "600519", "贵州茅台", "BK0477", "标题",
-                ResearchStage.POSITION, ProjectStatus.ARCHIVED, 3L, CREATED, CREATED.plusSeconds(60));
+                ResearchStage.POSITION, ProjectStatus.ARCHIVED, false, 3L, CREATED, CREATED.plusSeconds(60));
         assertThat(p.id()).isEqualTo(9L);
         assertThat(p.userId()).isEqualTo(1L);
         assertThat(p.stockCode()).isEqualTo("600519");
@@ -151,6 +191,7 @@ class ResearchProjectTest {
         assertThat(p.title()).isEqualTo("标题");
         assertThat(p.currentStage()).isEqualTo(ResearchStage.POSITION);
         assertThat(p.status()).isEqualTo(ProjectStatus.ARCHIVED);
+        assertThat(p.intelligenceAlertEnabled()).isFalse();
         assertThat(p.version()).isEqualTo(3L);
         assertThat(p.createdAt()).isEqualTo(CREATED);
         assertThat(p.updatedAt()).isEqualTo(CREATED.plusSeconds(60));

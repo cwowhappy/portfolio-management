@@ -17,12 +17,14 @@ public final class ResearchProject {
     private final String title;
     private final ResearchStage currentStage;
     private final ProjectStatus status;
+    private final boolean intelligenceAlertEnabled;
     private final Long version;
     private final Instant createdAt;
     private final Instant updatedAt;
 
     private ResearchProject(Long id, Long userId, String stockCode, String stockName, String industryCode,
                             String title, ResearchStage currentStage, ProjectStatus status,
+                            boolean intelligenceAlertEnabled,
                             Long version, Instant createdAt, Instant updatedAt) {
         this.id = id;
         this.userId = userId;
@@ -32,6 +34,7 @@ public final class ResearchProject {
         this.title = title;
         this.currentStage = currentStage;
         this.status = status;
+        this.intelligenceAlertEnabled = intelligenceAlertEnabled;
         this.version = version;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
@@ -55,16 +58,17 @@ public final class ResearchProject {
             throw new ResearchException(ResearchErrorCode.STAGE_REQUIRED, "初始阶段不能为空");
         }
         Instant now = Instant.now();
+        // 情报提醒开关默认开（决策 #26：项目级开关默认 TRUE，D13/M16-F11 回收）
         return new ResearchProject(null, userId, stockCode, stockName, industryCode, title,
-                initialStage, ProjectStatus.ACTIVE, null, now, now);
+                initialStage, ProjectStatus.ACTIVE, true, null, now, now);
     }
 
     public static ResearchProject reconstitute(Long id, Long userId, String stockCode, String stockName,
                                                String industryCode, String title, ResearchStage currentStage,
-                                               ProjectStatus status, Long version,
-                                               Instant createdAt, Instant updatedAt) {
+                                               ProjectStatus status, boolean intelligenceAlertEnabled,
+                                               Long version, Instant createdAt, Instant updatedAt) {
         return new ResearchProject(id, userId, stockCode, stockName, industryCode, title,
-                currentStage, status, version, createdAt, updatedAt);
+                currentStage, status, intelligenceAlertEnabled, version, createdAt, updatedAt);
     }
 
     /** 归档（S1）：幂等语义，ARCHIVED 再归档原样返回。 */
@@ -73,7 +77,7 @@ public final class ResearchProject {
             return this;
         }
         return new ResearchProject(id, userId, stockCode, stockName, industryCode, title,
-                currentStage, ProjectStatus.ARCHIVED, version, createdAt, Instant.now());
+                currentStage, ProjectStatus.ARCHIVED, intelligenceAlertEnabled, version, createdAt, Instant.now());
     }
 
     /** 切换当前阶段（D4 灵活流转：任意跳转/回退，不校验顺序）。 */
@@ -85,7 +89,7 @@ public final class ResearchProject {
             return this;
         }
         return new ResearchProject(id, userId, stockCode, stockName, industryCode, title,
-                stage, status, version, createdAt, Instant.now());
+                stage, status, intelligenceAlertEnabled, version, createdAt, Instant.now());
     }
 
     /** 改标题。 */
@@ -97,7 +101,20 @@ public final class ResearchProject {
             return this;
         }
         return new ResearchProject(id, userId, stockCode, stockName, industryCode, newTitle,
-                currentStage, status, version, createdAt, Instant.now());
+                currentStage, status, intelligenceAlertEnabled, version, createdAt, Instant.now());
+    }
+
+    /**
+     * 情报提醒开关（M16-F11 回收，D13/决策 #26）：默认开，关即从持仓情报挂接
+     * （{@code ResearchIntelligenceSubscriptionHookImpl} 查 intelligence_alert_enabled）消失；
+     * 同值幂等返回原实例（照 changeStage 同值语义）。
+     */
+    public ResearchProject withIntelligenceAlert(boolean enabled) {
+        if (enabled == intelligenceAlertEnabled) {
+            return this;
+        }
+        return new ResearchProject(id, userId, stockCode, stockName, industryCode, title,
+                currentStage, status, enabled, version, createdAt, Instant.now());
     }
 
     public Long id() { return id; }
@@ -108,6 +125,7 @@ public final class ResearchProject {
     public String title() { return title; }
     public ResearchStage currentStage() { return currentStage; }
     public ProjectStatus status() { return status; }
+    public boolean intelligenceAlertEnabled() { return intelligenceAlertEnabled; }
     public Long version() { return version; }
     public Instant createdAt() { return createdAt; }
     public Instant updatedAt() { return updatedAt; }

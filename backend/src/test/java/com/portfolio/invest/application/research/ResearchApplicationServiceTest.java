@@ -103,7 +103,7 @@ class ResearchApplicationServiceTest {
 
     private static ResearchProject project(Long id, Long userId, ResearchStage stage, ProjectStatus status) {
         return ResearchProject.reconstitute(id, userId, "600519", "贵州茅台", "801120",
-                "茅台扩产研究", stage, status, 0L, NOW, NOW);
+                "茅台扩产研究", stage, status, true, 0L, NOW, NOW);
     }
 
     private static StrategyDoc strategy(StrategyState state, String low, String high) {
@@ -176,6 +176,43 @@ class ResearchApplicationServiceTest {
         assertThatThrownBy(() -> service.getProject(1L, 404L))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.NOT_FOUND));
+    }
+
+    // —— 情报提醒开关（M16-F11 回收）——
+
+    @DisplayName("setIntelligenceAlert：wither 保存 + 视图回读开关位")
+    @Test
+    void givenOwnProject_whenSetIntelligenceAlertFalse_thenSavedAndReflectedInView() {
+        when(repository.findById(5L)).thenReturn(Optional.of(project(5L, 1L,
+                ResearchStage.POSITION, ProjectStatus.ACTIVE)));
+        when(repository.save(any(ResearchProject.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        var view = service.setIntelligenceAlert(1L, 5L,
+                new ResearchApplicationService.SetIntelligenceAlertCommand(Boolean.FALSE));
+
+        assertThat(view.intelligenceAlertEnabled()).isFalse();
+        // 保存的是 wither 产物（开关关、其余字段原样）
+        ArgumentCaptor<ResearchProject> captor = ArgumentCaptor.forClass(ResearchProject.class);
+        verify(repository).save(captor.capture());
+        assertThat(captor.getValue().intelligenceAlertEnabled()).isFalse();
+        assertThat(captor.getValue().currentStage()).isEqualTo(ResearchStage.POSITION);
+        assertThat(captor.getValue().title()).isEqualTo("茅台扩产研究");
+        // 开关切换不写 journal 事件（订阅行为非研究事件，项目时间线零噪音）
+        verify(journalRepository, never()).save(any(JournalEntry.class));
+    }
+
+    @DisplayName("setIntelligenceAlert：非本人项目 → NOT_FOUND 且零保存")
+    @Test
+    void givenOthersProject_whenSetIntelligenceAlert_thenNotFoundWithoutSave() {
+        when(repository.findById(5L)).thenReturn(Optional.of(project(5L, 2L,
+                ResearchStage.POSITION, ProjectStatus.ACTIVE)));
+
+        assertThatThrownBy(() -> service.setIntelligenceAlert(1L, 5L,
+                        new ResearchApplicationService.SetIntelligenceAlertCommand(Boolean.FALSE)))
+                .isInstanceOfSatisfying(ResearchException.class,
+                        e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.NOT_FOUND));
+        verify(repository, never()).save(any(ResearchProject.class));
     }
 
     // —— 归档 ——
@@ -433,7 +470,7 @@ class ResearchApplicationServiceTest {
     void givenProjects_whenList_thenActiveByDefaultAndStageQFiltered() {
         ResearchProject maotai = project(5L, 1L, ResearchStage.NEW_ANALYSIS, ProjectStatus.ACTIVE);
         ResearchProject yanhuang = ResearchProject.reconstitute(6L, 1L, "000858", "五粮液", null,
-                "五粮液研究", ResearchStage.STRATEGY, ProjectStatus.ACTIVE, 0L, NOW, NOW);
+                "五粮液研究", ResearchStage.STRATEGY, ProjectStatus.ACTIVE, true, 0L, NOW, NOW);
         when(repository.findByUserId(1L, ProjectStatus.ACTIVE)).thenReturn(List.of(yanhuang, maotai));
 
         assertThat(service.listProjects(1L, null, null, null)).hasSize(2);

@@ -7,14 +7,21 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.portfolio.invest.agent.UserInvestTools;
 import com.portfolio.invest.application.allocation.AllocationApplicationService;
+import com.portfolio.invest.application.intelligence.AnnouncementPushService;
+import com.portfolio.invest.application.intelligence.IntelligencePushPort;
 import com.portfolio.invest.application.intelligence.IntelligenceQueryService;
 import com.portfolio.invest.application.portfolio.PortfolioApplicationService;
+import com.portfolio.invest.config.InvestProperties;
 import io.cucumber.java.After;
 import io.cucumber.java.zh_cn.假如;
 import io.cucumber.java.zh_cn.当;
 import io.cucumber.java.zh_cn.那么;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.Map;
+import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
@@ -45,6 +52,13 @@ public class AnnouncementSearchSteps {
     private static final String HOLDING_TITLE = "贵州茅台关于以集中竞价方式回购公司股份的公告";
     private static final String OTHER_STOCK_TITLE = "宁德时代关于签订日常经营重大合同的公告";
 
+    // —— 推送场景 fixture（M16-F11 回收：journal 时间线【情报】条目）——
+    private static final String PUSH_USERNAME = "bdd-ann-push";
+    private static final String PUSH_PROJECT_TITLE = "BDD公告推送留痕项目";
+    private static final String PUSH_EXTERNAL_ID = "bdd-ann-push";
+    private static final String PUSH_ANN_TITLE = "贵州茅台关于控股股东增持计划的公告";
+    private static final String PUSH_OPEN_ID = "bdd-open-id-ann-push";
+
     @Autowired
     PortfolioApplicationService portfolioService;
 
@@ -62,6 +76,20 @@ public class AnnouncementSearchSteps {
 
     @Autowired
     ScenarioContext ctx;
+
+    @Autowired
+    AnnouncementPushService announcementPushService;
+
+    /** 推送口为 CucumberSpringConfig 的 @MockitoBean（单发 stub OK，不打真实飞书）。 */
+    @Autowired
+    IntelligencePushPort intelligencePushPort;
+
+    /** 推送场景临时开 im 门禁（appId/appSecret），@After 复原。 */
+    @Autowired
+    InvestProperties investProperties;
+
+    /** 推送场景项目 id（journal 断言锚点）。 */
+    private Long pushProjectId;
 
     @假如("已入库含抽取结果的茅台业绩预告公告与一条未抽取公告")
     @Transactional
@@ -83,7 +111,7 @@ public class AnnouncementSearchSteps {
     @Transactional
     public void 已有持仓项目与公告() {
         Long userId = insertUser(HOLDER_USERNAME);
-        insertResearchProject(userId, "600519", "贵州茅台");
+        insertResearchProject(userId, "600519", "贵州茅台", HOLDER_PROJECT_TITLE);
         Long holdingId = insertAnnouncement("bdd-ann-hold", "600519", "贵州茅台", HOLDING_TITLE,
                 "股份回购", true, "2026-09-28");
         insertExtract(holdingId, """
@@ -94,6 +122,64 @@ public class AnnouncementSearchSteps {
         // scope 外标的公告：非持仓标的，scope=holdings 内存过滤应排除（同日更晚入库，页序在前）
         insertAnnouncement("bdd-ann-other", "300750", "宁德时代", OTHER_STOCK_TITLE,
                 "其他", true, "2026-09-29");
+    }
+
+    /**
+     * 推送场景 fixture（M16-F11 回收）：建仓持仓项目（hook 消费口径）+ 飞书绑定
+     * （有 open_id 才实发不 SKIPPED）+ 新抽取 major 公告（findExtractedMajorSince 命中窗口）。
+     */
+    @假如("已有绑定飞书的建仓持仓研究项目且已入库该标的新抽取公告")
+    @Transactional
+    public void 已有绑定项目与新公告() {
+        Long userId = insertUser(PUSH_USERNAME);
+        pushProjectId = insertResearchProject(userId, "600519", "贵州茅台", PUSH_PROJECT_TITLE);
+        jdbcTemplate.update("INSERT INTO intelligence_feishu_binding(user_id, open_id) VALUES (?, ?)",
+                userId, PUSH_OPEN_ID);
+        Long announcementId = insertAnnouncement(PUSH_EXTERNAL_ID, "600519", "贵州茅台", PUSH_ANN_TITLE,
+                "股份回购", true, "2026-09-28");
+        insertExtract(announcementId, """
+                {"revenueYi":415.20,"netProfitYi":31.20,"netProfitYoyPct":55.10,
+                 "deductedProfitYi":null,"grossMarginPct":null,"dividendDesc":null,
+                 "undisclosed":["扣非净利润","毛利率","分红"]}
+                """, "[\"BUYBACK\"]");
+    }
+
+    /** 触发推送批：开 im 门禁（服务级 appId/appSecret 检查）+ 单发口 stub OK，全链不打真实飞书。 */
+    @当("公告定向推送批触发")
+    public void 公告推送批触发() {
+        investProperties.getIm().setAppId("bdd-app-id");
+        investProperties.getIm().setAppSecret("bdd-app-secret");
+        Mockito.when(intelligencePushPort.sendToUser(Mockito.eq(PUSH_OPEN_ID), Mockito.anyString(),
+                        Mockito.anyString(), Mockito.anyList()))
+                .thenReturn(true);
+        announcementPushService.pushExtracted(Instant.now().minus(Duration.ofHours(1)));
+    }
+
+    @那么("推送留痕状态为 {string}")
+    public void 断言推送留痕(String status) {
+        // 按 fixture 用户锚定：即便他场景残留订阅受众命中同公告，也不与本断言串行
+        String actual = jdbcTemplate.queryForObject("""
+                SELECT p.status FROM intelligence_push_log p
+                JOIN intelligence_announcement a ON a.id = p.ref_id
+                JOIN app_user u ON u.id = p.user_id
+                WHERE p.ref_table = 'intelligence_announcement'
+                  AND a.external_id = ? AND u.username = ?
+                """, String.class, PUSH_EXTERNAL_ID, PUSH_USERNAME);
+        assertThat(actual).isEqualTo(status);
+    }
+
+    /** journal 回执（D14）：RESEARCH_EVENT + 「【情报】」前缀标题 + 卡片正文（类型/要点/原文链接）。 */
+    @那么("项目 journal 时间线含【情报】公告条目")
+    public void 断言项目时间线含情报条目() {
+        Map<String, Object> row = jdbcTemplate.queryForMap(
+                "SELECT type, title, content, project_id FROM journal_entry WHERE project_id = ?",
+                pushProjectId);
+        assertThat(row.get("type")).isEqualTo("RESEARCH_EVENT");
+        assertThat((String) row.get("title")).startsWith("【情报】").contains(PUSH_ANN_TITLE);
+        assertThat((String) row.get("content"))
+                .contains("类型：")
+                .contains("归母净利润：31.20 亿元")
+                .contains("原文：https://static.cninfo.com.cn/" + PUSH_EXTERNAL_ID + ".pdf");
     }
 
     @当("用户询问 {string}，Agent 调用 search_announcements 工具检索")
@@ -158,9 +244,24 @@ public class AnnouncementSearchSteps {
     @After
     public void 清理公告种子() {
         jdbcTemplate.update("DELETE FROM intelligence_announcement WHERE external_id LIKE 'bdd-ann-%'");
+        // 推送场景收尾：journal/push_log/binding 先于用户与项目删（FK 链）；im 门禁与推送口 stub 复原
+        jdbcTemplate.update("""
+                DELETE FROM journal_entry WHERE user_id IN
+                    (SELECT id FROM app_user WHERE username IN (?, ?))
+                """, HOLDER_USERNAME, PUSH_USERNAME);
+        jdbcTemplate.update("""
+                DELETE FROM intelligence_push_log WHERE user_id IN
+                    (SELECT id FROM app_user WHERE username IN (?, ?))
+                """, HOLDER_USERNAME, PUSH_USERNAME);
+        jdbcTemplate.update("DELETE FROM intelligence_feishu_binding WHERE open_id = ?", PUSH_OPEN_ID);
+        investProperties.getIm().setAppId("");
+        investProperties.getIm().setAppSecret("");
+        Mockito.reset(intelligencePushPort);
         // research_project FK 引用 app_user：先删项目再删用户
-        jdbcTemplate.update("DELETE FROM research_project WHERE title = ?", HOLDER_PROJECT_TITLE);
-        jdbcTemplate.update("DELETE FROM app_user WHERE username = ?", HOLDER_USERNAME);
+        jdbcTemplate.update("DELETE FROM research_project WHERE title IN (?, ?)",
+                HOLDER_PROJECT_TITLE, PUSH_PROJECT_TITLE);
+        jdbcTemplate.update("DELETE FROM app_user WHERE username IN (?, ?)", HOLDER_USERNAME, PUSH_USERNAME);
+        pushProjectId = null;
     }
 
     /** UserInvestTools 同款构造（UserToolkitFactory 装配形状）；scope=all 路径不消费 userId。 */
@@ -218,14 +319,16 @@ public class AnnouncementSearchSteps {
                 "SELECT id FROM app_user WHERE username = ?", Long.class, username);
     }
 
-    /** 直插建仓持仓阶段研究项目（hook 消费口径：ACTIVE ∧ POSITION ∧ intelligence_alert_enabled）。 */
-    private void insertResearchProject(Long userId, String stockCode, String stockName) {
+    /** 直插建仓持仓阶段研究项目（hook 消费口径：ACTIVE ∧ POSITION ∧ intelligence_alert_enabled），返回 id。 */
+    private Long insertResearchProject(Long userId, String stockCode, String stockName, String title) {
         jdbcTemplate.update("""
                         INSERT INTO research_project
                             (user_id, stock_code, stock_name, title, current_stage, status,
                              intelligence_alert_enabled)
                         VALUES (?, ?, ?, ?, 'POSITION', 'ACTIVE', TRUE)
                         """,
-                userId, stockCode, stockName, HOLDER_PROJECT_TITLE);
+                userId, stockCode, stockName, title);
+        return jdbcTemplate.queryForObject(
+                "SELECT id FROM research_project WHERE title = ?", Long.class, title);
     }
 }

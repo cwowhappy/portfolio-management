@@ -176,6 +176,24 @@ describe("MarketBoard", () => {
     expect(m.fetchNews).toHaveBeenCalledWith("600519", 8);
   });
 
+  it("个股报价头挂「情报」入口深链所选标的（M16-F11 互跳）", async () => {
+    render(<MarketBoard />);
+    await waitFor(() => expect(screen.getByText("上证指数")).toBeTruthy());
+    await selectStock();
+    const link = await waitFor(() => {
+      const el = screen.getByRole("link", { name: "情报" }) as HTMLAnchorElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+    expect(link.getAttribute("href")).toBe("/intelligence?stock=600519");
+  });
+
+  it("未选股票时不渲染「情报」入口", async () => {
+    render(<MarketBoard />);
+    await waitFor(() => expect(screen.getByText("上证指数")).toBeTruthy());
+    expect(screen.queryByRole("link", { name: "情报" })).toBeNull();
+  });
+
   it("加载期间显示骨架屏", async () => {
     let resolveQuote!: (v: Quote) => void;
     m.fetchQuote.mockImplementation(

@@ -56,7 +56,7 @@ class ResearchFalsifierScanServiceTest {
 
     private static ResearchProject project(Long id, Long userId, String stockCode) {
         return ResearchProject.reconstitute(id, userId, stockCode, "贵州茅台", "801120",
-                "茅台扩产研究", ResearchStage.POSITION, ProjectStatus.ACTIVE, 0L, NOW, NOW);
+                "茅台扩产研究", ResearchStage.POSITION, ProjectStatus.ACTIVE, true, 0L, NOW, NOW);
     }
 
     private static StrategyDoc strategy(Long projectId) {

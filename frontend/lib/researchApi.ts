@@ -97,6 +97,18 @@ export const patchProject = (id: number, body: PatchProjectInput) =>
 export const archiveProject = (id: number) =>
   request<ProjectView>(`/api/research/projects/${id}/archive`, "POST", undefined, ProjectViewSchema);
 
+/**
+ * 情报提醒开关（M16-F11 回收，D13/决策 #26 默认开）：开关关即该项目从持仓情报挂接消失；
+ * enabled 缺失 → 400；非本人/不存在 → 404（不泄漏存在性）。
+ */
+export const setIntelligenceAlert = (id: number, enabled: boolean) =>
+  request<ProjectView>(
+    `/api/research/projects/${id}/intelligence-alert`,
+    "PUT",
+    { enabled },
+    ProjectViewSchema,
+  );
+
 export const getStrategy = (id: number) =>
   request<StrategyView>(`/api/research/projects/${id}/strategy`, "GET", undefined, StrategyViewSchema);
 

@@ -1,5 +1,6 @@
 package com.portfolio.invest.bdd;
 
+import com.portfolio.invest.application.intelligence.IntelligencePushPort;
 import com.portfolio.invest.infrastructure.market.EastmoneyClient;
 import com.portfolio.invest.infrastructure.market.SinaClient;
 import com.portfolio.invest.infrastructure.market.TencentClient;
@@ -69,6 +70,14 @@ public class CucumberSpringConfig extends PostgresTestSupport {
 
     @MockitoBean
     TencentClient tencentClient;
+
+    /**
+     * 情报推送口打桩（M16-F11 BDD 公告推送场景）：推送服务全链真实（命中集 union +
+     * push_log 留痕 + journal 回执），仅飞书单发口 stub——全程不打真实飞书 API；
+     * 未 stub 场景默认 false（与未配置飞书的真实降级语义一致，不改变既有行为）。
+     */
+    @MockitoBean
+    IntelligencePushPort intelligencePushPort;
 
     /**
      * 发信桩：@Primary 覆盖未配置 SMTP 的 SmtpMailSender。T5 起注册为三段式（发码→携码注册），

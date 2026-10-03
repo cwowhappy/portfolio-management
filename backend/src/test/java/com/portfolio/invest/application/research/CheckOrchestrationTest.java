@@ -51,7 +51,7 @@ class CheckOrchestrationTest {
     private static ResearchProject project() {
         return ResearchProject.reconstitute(5L, 1L, "600519", "贵州茅台", "801120",
                 "茅台扩产研究", com.portfolio.invest.domain.research.ResearchStage.POSITION,
-                com.portfolio.invest.domain.research.ProjectStatus.ACTIVE, 0L, NOW, NOW);
+                com.portfolio.invest.domain.research.ProjectStatus.ACTIVE, true, 0L, NOW, NOW);
     }
 
     private static Position position(String code, String qty) {

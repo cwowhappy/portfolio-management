@@ -102,6 +102,9 @@ public class ResearchApplicationService {
     public record UpdateProjectCommand(String title, ResearchStage currentStage,
                                        List<@Valid ManualMark> manualMarks) {}
 
+    /** PUT 情报提醒开关命令（M16-F11 回收，D13/决策 #26）：enabled 必填（缺失 → 400）。 */
+    public record SetIntelligenceAlertCommand(@NotNull Boolean enabled) {}
+
     /**
      * PUT 证伪条件项：kind 决定构造工厂，字段校验由 Falsifier 工厂承担；
      * eventChecked 仅 EVENT 消费（人工勾选「已确认事件」置位的唯一写路径），PREDICATE 忽略。
@@ -246,6 +249,17 @@ public class ResearchApplicationService {
             writeEvent(archived, "已归档", "研究项目「" + archived.title() + "」已归档");
         }
         return ProjectView.from(archived);
+    }
+
+    /**
+     * 情报提醒开关（M16-F11 回收，D13/决策 #26）：开关关即该项目从持仓情报挂接
+     * （{@code ResearchIntelligenceSubscriptionHookImpl} 查 intelligence_alert_enabled）消失。
+     * 不写 journal 事件——订阅行为非研究事件，项目时间线零噪音。
+     */
+    @Transactional
+    public ProjectView setIntelligenceAlert(Long userId, Long projectId, SetIntelligenceAlertCommand cmd) {
+        ResearchProject project = requireProject(userId, projectId);
+        return ProjectView.from(repository.save(project.withIntelligenceAlert(cmd.enabled())));
     }
 
     /** 策略查询：未创建过草稿 → NOT_FOUND（详情视图以 strategy=null 表达同一事实）。 */

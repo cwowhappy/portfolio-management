@@ -57,6 +57,13 @@ describe("IndustryDrilldown", () => {
     expect(screen.getByText(/2025-12-31/)).toBeTruthy(); // 营收报告期角标
   });
 
+  it("页头挂「情报」入口深链本行业（M16-F11 互跳）", async () => {
+    render(<IndustryDrilldown industryCode="801780" />);
+    await screen.findByText("工商银行");
+    const link = screen.getByRole("link", { name: "情报" }) as HTMLAnchorElement;
+    expect(link.getAttribute("href")).toBe("/intelligence?industry=801780");
+  });
+
   it("排序切换触发重新拉取", async () => {
     render(<IndustryDrilldown industryCode="801780" />);
     await screen.findByText("工商银行");

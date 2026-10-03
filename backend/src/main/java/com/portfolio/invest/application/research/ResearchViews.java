@@ -33,14 +33,15 @@ public final class ResearchViews {
 
     private ResearchViews() {}
 
-    /** 项目行视图（列表与详情共用）。 */
+    /** 项目行视图（列表与详情共用）；intelligenceAlertEnabled 为项目级情报提醒开关（M16-F11）。 */
     public record ProjectView(Long id, String stockCode, String stockName, String industryCode,
                               String title, ResearchStage currentStage, ProjectStatus status,
+                              boolean intelligenceAlertEnabled,
                               Instant createdAt, Instant updatedAt) {
 
         public static ProjectView from(ResearchProject p) {
             return new ProjectView(p.id(), p.stockCode(), p.stockName(), p.industryCode(), p.title(),
-                    p.currentStage(), p.status(), p.createdAt(), p.updatedAt());
+                    p.currentStage(), p.status(), p.intelligenceAlertEnabled(), p.createdAt(), p.updatedAt());
         }
     }
 
