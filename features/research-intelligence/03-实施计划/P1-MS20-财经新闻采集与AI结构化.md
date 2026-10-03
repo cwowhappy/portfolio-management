@@ -1,6 +1,6 @@
 # 智能情报实施计划 P1 · MS-20：财经新闻采集与 AI 结构化
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 交付 M15-F01~F05——新闻采集（东财 7×24 主源 + 新浪降级，collector 双任务）、backend LLM 批量结构化抽取（DeepSeek）、`search_news` 工具、交易日 8:30 盘前简报（群推版，个性化单发随 P4 绑定机制）、V3 迁移（15 表一次建全，schema 先行）与情报域 DDD 落位；前置三源探测报告（质量门槛⑤）。
 
@@ -62,7 +62,7 @@
 - Consumes: 设计规格 D1/D2（源清单与 failover 顺序）、需求决策 #4/#5/#6（数据源裁决）。
 - Produces: 探测报告（东财快讯/新浪 zhibo/巨潮三个接口的实测请求-响应样本、字段映射表、增量策略建议、公告栏目→`AnnouncementType` 映射表初版、宏观五指标取数页候选与风险）——Task 6/7（新闻源）与 P2/P3 公告宏观数据源的直接输入。
 
-- [ ] **Step 1: 实机探测东财 7×24 快讯**
+- [x] **Step 1: 实机探测东财 7×24 快讯**
 
 ```bash
 curl -s 'https://np-listapi.eastmoney.com/comm/web/getFastNewsList?client=web&biz=web_724&fastColumn=102&sortEnd=&pageSize=20&req_trace=1' | python3 -m json.tool | head -60
@@ -70,7 +70,7 @@ curl -s 'https://np-listapi.eastmoney.com/comm/web/getFastNewsList?client=web&bi
 
 记录：响应结构（data.fastNewsList?）、字段清单（newsId/title/summary/showTime/stockList?）、分页参数（sortEnd 游标?）、stockList 标的标签结构。多翻 3 页验证游标语义。
 
-- [ ] **Step 2: 实机探测新浪 zhibo 降级源**
+- [x] **Step 2: 实机探测新浪 zhibo 降级源**
 
 ```bash
 curl -s 'https://zhibo.sina.com.cn/api/zhibo/feed?callback=&page=1&page_size=20&zhibo_id=152&tag_id=0&dire=f&dpc=1' | python3 -m json.tool | head -40
@@ -78,7 +78,7 @@ curl -s 'https://zhibo.sina.com.cn/api/zhibo/feed?callback=&page=1&page_size=20&
 
 记录：条目唯一 id、时间字段、增量分页参数；与东财字段做映射差集。
 
-- [ ] **Step 3: 实机探测巨潮公告（P2 前瞻，一次做完）**
+- [x] **Step 3: 实机探测巨潮公告（P2 前瞻，一次做完）**
 
 ```bash
 curl -s -X POST 'https://www.cninfo.com.cn/new/hisAnnouncement/query' \
@@ -87,15 +87,15 @@ curl -s -X POST 'https://www.cninfo.com.cn/new/hisAnnouncement/query' \
 
 记录：announcementId、announcementTitle、adjunctUrl（PDF 路径拼接规则 `static.cninfo.com.cn/`+adjunctUrl）、column 分类值清单——产出「栏目/分类值 → AnnouncementType 十类」映射表初版（决策 #24）。
 
-- [ ] **Step 4: 宏观取数页初勘（P3 前瞻）**
+- [x] **Step 4: 宏观取数页初勘（P3 前瞻）**
 
 curl 探测：统计局数据发布页（CPI/PPI/PMI）、央行 LPR 页、社融数据页——记录可达性（302 跳转跟踪 `-L`）、HTML 结构概要、是否需要 JS 渲染（若 JS 渲染标记为「需换数据接口或 RSS」风险项）。
 
-- [ ] **Step 5: 写报告并回填设计规格**
+- [x] **Step 5: 写报告并回填设计规格**
 
 报告结构：每源一节（请求样本/响应样本/字段映射表/增量策略/稳定性风险）+ 结论表（主备源裁决确认 or 修正）。将「公告栏目映射表」「宏观取数页 URL」回填设计规格 §2.3-6 与 §6（若与草案 URL 不同，以实测为准并注明）。
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add features/research-intelligence/09-调研报告/ features/research-intelligence/02-设计规格/
@@ -115,7 +115,7 @@ git commit -m "docs(intelligence): MS-20 三源探测报告——东财/新浪/�
 - Consumes: 设计规格 §2.1 表清单（列定义逐字对照）、§2.2 索引清单。
 - Produces: 15 张表 DDL（`intelligence_news_raw` 等，业务键 UNIQUE 照 §2.1）+ `research_project.intelligence_alert_enabled BOOLEAN NOT NULL DEFAULT TRUE` + `CREATE EXTENSION IF NOT EXISTS pg_trgm` + GIN trgm/时间索引 + `intelligence_macro_calendar` 2026Q4~2027 种子 INSERT（五指标：CPI/PPI 每月 9 日、PMI 每月 31 日、LPR 每月 20 日、AFMI 每月 12 日，frequency/source_site/updated_at）。P2~P4 与 collector 全部依赖本表结构。
 
-- [ ] **Step 1: 写集成测试（迁移重放 + 表/约束/扩展断言）**
+- [x] **Step 1: 写集成测试（迁移重放 + 表/约束/扩展断言）**
 
 ```java
 @SpringBootTest
@@ -173,12 +173,12 @@ class IntelligenceMigrationTest extends PostgresTestSupport {
 }
 ```
 
-- [ ] **Step 2: 运行验证失败**
+- [x] **Step 2: 运行验证失败**
 
 Run: `cd backend && ./gradlew integrationTest --tests '*IntelligenceMigrationTest*' --console=plain`
 Expected: FAIL（表不存在）
 
-- [ ] **Step 3: 写 V3 迁移**
+- [x] **Step 3: 写 V3 迁移**
 
 按设计规格 §2.1 逐表落 DDL。骨架（每表完整列照 §2.1，此处示例两表 + 关键索引，其余同构）：
 
@@ -225,12 +225,12 @@ CREATE TABLE intelligence_news_extract (
 
 同步 `collector/tests/conftest.py`：FLYWAY_SQL_FILES 增 `'V3__intelligence.sql'`，ALL_TABLES 增 15 表。
 
-- [ ] **Step 4: 运行验证通过 + collector 测试回归**
+- [x] **Step 4: 运行验证通过 + collector 测试回归**
 
 Run: `cd backend && ./gradlew integrationTest --tests '*IntelligenceMigrationTest*' --console=plain && cd ../collector && python -m pytest tests/conftest.py tests/test_writer_idempotency.py -v`
 Expected: PASS（collector fixture 重放 V3 成功）
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/src/main/resources/db/migration/V3__intelligence.sql backend/src/integrationTest/java/com/portfolio/invest/intelligence/ collector/tests/conftest.py
@@ -253,7 +253,7 @@ git commit -m "feat(intelligence): V3 迁移——15 表 + pg_trgm + research_pr
   - `enum AnnouncementType { INCREASE_HOLD, DECREASE_HOLD, BUYBACK, PLACEMENT, RELATED_TRANSACTION, EARNINGS_FORECAST, EARNINGS_FLASH, PERIODIC_REPORT, EQUITY_INCENTIVE, DELISTING_RISK, OTHER }`（决策 #24 十类+OTHER）
   - `enum ImportanceGrade { MAJOR, WATCH, IGNORE; public static ImportanceGrade grade(int score, int majorAt, int watchAt) }`——纯函数，Task 8/9 消费。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```java
 @Test // org.junit.jupiter.api.Test + 中文 @DisplayName，AssertJ（ArchUnit 测试规范）
@@ -267,9 +267,9 @@ void shouldGradeByThresholds() {
 }
 ```
 
-- [ ] **Step 2: 运行验证失败** — Run: `cd backend && ./gradlew test --tests '*ImportanceGradeTest' --console=plain`，Expected: FAIL（类不存在）
+- [x] **Step 2: 运行验证失败** — Run: `cd backend && ./gradlew test --tests '*ImportanceGradeTest' --console=plain`，Expected: FAIL（类不存在）
 
-- [ ] **Step 3: 最小实现**（五个枚举，纯 POJO 零注解）
+- [x] **Step 3: 最小实现**（五个枚举，纯 POJO 零注解）
 
 ```java
 public enum ImportanceGrade {
@@ -282,9 +282,9 @@ public enum ImportanceGrade {
 }
 ```
 
-- [ ] **Step 4: 运行验证通过 + ArchUnit 回归** — Run: `./gradlew test --tests '*ImportanceGradeTest' --tests '*PackageConventionsTest' --console=plain`，Expected: PASS
+- [x] **Step 4: 运行验证通过 + ArchUnit 回归** — Run: `./gradlew test --tests '*ImportanceGradeTest' --tests '*PackageConventionsTest' --console=plain`，Expected: PASS
 
-- [ ] **Step 5: Commit** — `git add backend/src/main/java/com/portfolio/invest/domain/intelligence/ backend/src/test/java/com/portfolio/invest/domain/intelligence/ && git commit -m "feat(intelligence): 情报域枚举与重要度分档纯函数"`
+- [x] **Step 5: Commit** — `git add backend/src/main/java/com/portfolio/invest/domain/intelligence/ backend/src/test/java/com/portfolio/invest/domain/intelligence/ && git commit -m "feat(intelligence): 情报域枚举与重要度分档纯函数"`
 
 ---
 
@@ -306,7 +306,7 @@ public enum ImportanceGrade {
   ```
   Task 8（新闻抽取）/Task 9（简报）/P2/P3 抽取服务全部消费此端口。
 
-- [ ] **Step 1: 写失败测试**（Mock Model：Flux.just(chatResponse)，Mockito mock ChatResponse/usage）
+- [x] **Step 1: 写失败测试**（Mock Model：Flux.just(chatResponse)，Mockito mock ChatResponse/usage）
 
 ```java
 @Test
@@ -327,9 +327,9 @@ void shouldReturnEmptyWhenNoModel() {
 }
 ```
 
-- [ ] **Step 2: 验证失败** — Run: `./gradlew test --tests '*AgentScopeIntelligenceChatPortTest' --console=plain`，Expected: FAIL
+- [x] **Step 2: 验证失败** — Run: `./gradlew test --tests '*AgentScopeIntelligenceChatPortTest' --console=plain`，Expected: FAIL
 
-- [ ] **Step 3: 实现**（要点：`ObjectProvider<Model>` 注入、`getIfAvailable()` 为空→empty；`stream(Msg.system(systemPrompt)+Msg.user(userPrompt), List.of(), options).collectList().block(Duration.ofSeconds(120))` 拼接 text；异常 catch 返回 empty + WARN——**绝不抛**；GenerateOptions temperature 0（D4/D6））
+- [x] **Step 3: 实现**（要点：`ObjectProvider<Model>` 注入、`getIfAvailable()` 为空→empty；`stream(Msg.system(systemPrompt)+Msg.user(userPrompt), List.of(), options).collectList().block(Duration.ofSeconds(120))` 拼接 text；异常 catch 返回 empty + WARN——**绝不抛**；GenerateOptions temperature 0（D4/D6））
 
 ```java
 @Component
@@ -345,9 +345,9 @@ public class AgentScopeIntelligenceChatPort implements IntelligenceChatPort {
 
 > 注意：`Msg`/`GenerateOptions`/`ChatResponse` 的具体工厂与取文本 API 以仓库 `.gradle-home` 内 agentscope-core-2.0.3.jar `javap` 为准（记忆：macOS strings 读不了 .class，用 javap），实现前先核实再写——**不得凭记忆写 API**。
 
-- [ ] **Step 4: 验证通过** — Run 同 Step 2，Expected: PASS
+- [x] **Step 4: 验证通过** — Run 同 Step 2，Expected: PASS
 
-- [ ] **Step 5: Commit** — `git add backend/src/main/java/com/portfolio/invest/{application,infrastructure}/intelligence/ backend/src/test/.../intelligence/ && git commit -m "feat(intelligence): LLM 通道端口化——DeepSeek Model bean 经 ObjectProvider，缺 key 静默降级"`
+- [x] **Step 5: Commit** — `git add backend/src/main/java/com/portfolio/invest/{application,infrastructure}/intelligence/ backend/src/test/.../intelligence/ && git commit -m "feat(intelligence): LLM 通道端口化——DeepSeek Model bean 经 ObjectProvider，缺 key 静默降级"`
 
 ---
 
@@ -373,15 +373,15 @@ public class AgentScopeIntelligenceChatPort implements IntelligenceChatPort {
   }
   ```
 
-- [ ] **Step 1: 写集成测试**（插入 fixture raw + extract 行 → search 各过滤器断言 + trgm 中文关键词命中 + findPending 只取 PENDING + 清理删除行数）——照 `PostgresTestSupport` 先例；测试代码完整写出（约 80 行，断言：关键词「政策利率」命中含「下调政策利率」标题、minImportance 过滤、分页 total/pageSize、deleteRawBefore 只删 cutoff 前且 extract 级联）。
+- [x] **Step 1: 写集成测试**（插入 fixture raw + extract 行 → search 各过滤器断言 + trgm 中文关键词命中 + findPending 只取 PENDING + 清理删除行数）——照 `PostgresTestSupport` 先例；测试代码完整写出（约 80 行，断言：关键词「政策利率」命中含「下调政策利率」标题、minImportance 过滤、分页 total/pageSize、deleteRawBefore 只删 cutoff 前且 extract 级联）。
 
-- [ ] **Step 2: 验证失败** — Run: `./gradlew integrationTest --tests '*NewsRepositoryTest' --console=plain`，Expected: FAIL
+- [x] **Step 2: 验证失败** — Run: `./gradlew integrationTest --tests '*NewsRepositoryTest' --console=plain`，Expected: FAIL
 
-- [ ] **Step 3: 实现**（domain record 纯 POJO；JPA 实体照 V2 research 实体先例——`@Entity @Table(name=...)` 字段逐列；仓库实现 `@Repository` 注入 JpaRepository 子接口 + JdbcTemplate/EntityManager 拼 trgm 过滤 SQL；JSONB 列用 String 存 JSON 文本 + Jackson 序列化，照仓库既有 JSONB 处理惯例（若无先例则 AttributeConverter<String>））
+- [x] **Step 3: 实现**（domain record 纯 POJO；JPA 实体照 V2 research 实体先例——`@Entity @Table(name=...)` 字段逐列；仓库实现 `@Repository` 注入 JpaRepository 子接口 + JdbcTemplate/EntityManager 拼 trgm 过滤 SQL；JSONB 列用 String 存 JSON 文本 + Jackson 序列化，照仓库既有 JSONB 处理惯例（若无先例则 AttributeConverter<String>））
 
-- [ ] **Step 4: 验证通过** — Run 同 Step 2，Expected: PASS
+- [x] **Step 4: 验证通过** — Run 同 Step 2，Expected: PASS
 
-- [ ] **Step 5: Commit** — `git add … && git commit -m "feat(intelligence): 新闻域模型与 JPA 仓库——trgm 检索/待抽取游标/级联清理"`
+- [x] **Step 5: Commit** — `git add … && git commit -m "feat(intelligence): 新闻域模型与 JPA 仓库——trgm 检索/待抽取游标/级联清理"`
 
 ---
 
@@ -396,7 +396,7 @@ public class AgentScopeIntelligenceChatPort implements IntelligenceChatPort {
 - Consumes: Task 1 探测报告的实测 URL/字段映射/游标语义。
 - Produces: 两源 `fetch(params) -> pd.DataFrame`，输出列固定 `[source, external_id, title, summary, published_at, url, stock_tags]`（stock_tags 为 JSON 字符串列，writer 侧写入 JSONB）；增量策略 = 分页拉取至首个已存 external_id 截断（conn_factory 查 `SELECT external_id FROM intelligence_news_raw ORDER BY id DESC LIMIT 200` 做已存集合，D1）。
 
-- [ ] **Step 1: 写失败测试**（pytest-mock：`mocker.patch("collector.collector.sources.news.urlopen")` 返回构造的 JSON bytes；断言 DataFrame 列/行数/已存截断/SourceError on 非 200）
+- [x] **Step 1: 写失败测试**（pytest-mock：`mocker.patch("collector.collector.sources.news.urlopen")` 返回构造的 JSON bytes；断言 DataFrame 列/行数/已存截断/SourceError on 非 200）
 
 ```python
 def test_eastmoney_fetch_parses_and_dedups(mocker, tmp_conn_factory):
@@ -413,13 +413,13 @@ def test_eastmoney_fetch_parses_and_dedups(mocker, tmp_conn_factory):
 def test_source_error_on_http_fail(mocker, ...):  # 非 200 / JSON 解析失败 → SourceError（触发 selector 换源）
 ```
 
-- [ ] **Step 2: 验证失败** — Run: `cd collector && python -m pytest tests/test_news_sources.py -v`，Expected: FAIL（模块不存在）
+- [x] **Step 2: 验证失败** — Run: `cd collector && python -m pytest tests/test_news_sources.py -v`，Expected: FAIL（模块不存在）
 
-- [ ] **Step 3: 实现两源**（`urllib.request.Request` 带 UA；东财按探测报告游标翻页；新浪同构；单源内连续异常 3 次抛 SourceError 让 selector 走降级——**不要在源内自吞**；`last_warnings` 记录单条解析丢弃）
+- [x] **Step 3: 实现两源**（`urllib.request.Request` 带 UA；东财按探测报告游标翻页；新浪同构；单源内连续异常 3 次抛 SourceError 让 selector 走降级——**不要在源内自吞**；`last_warnings` 记录单条解析丢弃）
 
-- [ ] **Step 4: 验证通过** — Run 同 Step 2，Expected: PASS
+- [x] **Step 4: 验证通过** — Run 同 Step 2，Expected: PASS
 
-- [ ] **Step 5: Commit** — `git add collector/ && git commit -m "feat(collector): 东财7×24快讯主源+新浪zhibo降级源（增量截断+源侧告警语义）"`
+- [x] **Step 5: Commit** — `git add collector/ && git commit -m "feat(collector): 东财7×24快讯主源+新浪zhibo降级源（增量截断+源侧告警语义）"`
 
 ---
 
@@ -433,7 +433,7 @@ def test_source_error_on_http_fail(mocker, ...):  # 非 200 / JSON 解析失败 
 - Consumes: Task 6 源类；设计 §6 cron（`*/10 7-23 * * *` / `0 */2 0-6 * * *`）。
 - Produces: 两任务全量装配可跑——`make collect-run TASK=news_fast` 落库；Task 8 抽取服务的数据源就绪。
 
-- [ ] **Step 1: 写失败测试**（EXPECTED_TASKS 集合断言 + 装配冒烟 + 幂等：同记录两次 upsert 行数不变）
+- [x] **Step 1: 写失败测试**（EXPECTED_TASKS 集合断言 + 装配冒烟 + 幂等：同记录两次 upsert 行数不变）
 
 ```yaml
 # tasks/news_fast.yaml（news_night.yaml 仅 task_code/cron 不同）
@@ -456,15 +456,15 @@ validator:
 schedule: { type: cron, cron: "*/10 7-23 * * *" }
 ```
 
-- [ ] **Step 2: 验证失败** — Run: `python -m pytest tests/test_yaml_assembly.py tests/test_writer_idempotency.py -v`，Expected: FAIL（未知任务/未知表）
+- [x] **Step 2: 验证失败** — Run: `python -m pytest tests/test_yaml_assembly.py tests/test_writer_idempotency.py -v`，Expected: FAIL（未知任务/未知表）
 
-- [ ] **Step 3: 实现**（writer UPSERT：`ON CONFLICT (source, external_id) DO UPDATE SET title=EXCLUDED.title, summary=…, stock_tags=…, fetched_at=now()`；jobs.py `_field_columns` 加 `field_mapping_news` 列映射——7 列）
+- [x] **Step 3: 实现**（writer UPSERT：`ON CONFLICT (source, external_id) DO UPDATE SET title=EXCLUDED.title, summary=…, stock_tags=…, fetched_at=now()`；jobs.py `_field_columns` 加 `field_mapping_news` 列映射——7 列）
 
-- [ ] **Step 4: 验证通过** — Run 同 Step 2 + 全量 `make collect-test`，Expected: PASS
+- [x] **Step 4: 验证通过** — Run 同 Step 2 + 全量 `make collect-test`，Expected: PASS
 
-- [ ] **Step 5: 实机冒烟（本地 dev DB）** — Run: `make collect-run TASK=news_fast`，Expected: collector_task_run 终态 success、`SELECT count(*) FROM intelligence_news_raw` > 0
+- [x] **Step 5: 实机冒烟（本地 dev DB）** — Run: `make collect-run TASK=news_fast`，Expected: collector_task_run 终态 success、`SELECT count(*) FROM intelligence_news_raw` > 0
 
-- [ ] **Step 6: Commit** — `git add collector/ && git commit -m "feat(collector): 新闻双任务装配——日间高频+夜间低频同表幂等"`
+- [x] **Step 6: Commit** — `git add collector/ && git commit -m "feat(collector): 新闻双任务装配——日间高频+夜间低频同表幂等"`
 
 ---
 
@@ -478,7 +478,7 @@ schedule: { type: cron, cron: "*/10 7-23 * * *" }
 - Consumes: Task 4 `IntelligenceChatPort`、Task 5 `NewsRepository`、Task 3 枚举、`InvestProperties.Intelligence`（Task 8 自建嵌套配置：extractBatchSize=15/dailyTokenGuardrail=2_000_000/majorThreshold=80/watchThreshold=50——**本任务一并落 InvestProperties + application.yml**）。
 - Produces: `void extractPending()`（幂等可重入：PENDING→SUCCESS/FAILED 置换）；`@Scheduled(cron = "0 40 7,16 * * *", zone = "Asia/Shanghai")` 入口 `extractPendingScheduled()`（顶层 try/catch 吞异常）；当日 token 累计与停批（内存，D16）；`FeishuAlertNotifier` 告警一次（超护栏时）。eval（Task 13）与 P2 公告抽取复用「批量→逐条→失败隔离」骨架。
 
-- [ ] **Step 1: 写失败单元测试**
+- [x] **Step 1: 写失败单元测试**
 
 ```java
 @Test void shouldExtractBatchAndIsolateFailures() {
@@ -489,13 +489,13 @@ schedule: { type: cron, cron: "*/10 7-23 * * *" }
 @Test void shouldStopBatchWhenGuardrailExceeded() { 累计 inputTokens 超阈值 → 剩余条目不动 + alertNotifier 告警恰 1 次 }
 ```
 
-- [ ] **Step 2: 验证失败** — Run: `./gradlew test --tests '*NewsExtractionServiceTest' --console=plain`，Expected: FAIL
+- [x] **Step 2: 验证失败** — Run: `./gradlew test --tests '*NewsExtractionServiceTest' --console=plain`，Expected: FAIL
 
-- [ ] **Step 3: 实现**（结构照 ResearchFalsifierScanService：public 调度方法顶层 try/catch → 包内 doExtract；逐条 try/catch；JSON 解析 Jackson readTree + 字段校验失败视为失败；importance 由 LLM 输出 0~100，落库前夹紧；`NewsExtractPrompt` 系统提示词含受控枚举与「无法判断填 null」约束）
+- [x] **Step 3: 实现**（结构照 ResearchFalsifierScanService：public 调度方法顶层 try/catch → 包内 doExtract；逐条 try/catch；JSON 解析 Jackson readTree + 字段校验失败视为失败；importance 由 LLM 输出 0~100，落库前夹紧；`NewsExtractPrompt` 系统提示词含受控枚举与「无法判断填 null」约束）
 
-- [ ] **Step 4: 验证通过 + 集成测试**（真库：插 5 条 raw（1 条 PENDING 已存在 SUCCESS 跳过验证幂等）→ stub 端口跑 extractPending → 断言状态置换与 extracted_at），Run: `./gradlew test --tests '*NewsExtractionServiceTest' integrationTest --tests '*NewsExtractionIntegrationTest' --console=plain`，Expected: PASS
+- [x] **Step 4: 验证通过 + 集成测试**（真库：插 5 条 raw（1 条 PENDING 已存在 SUCCESS 跳过验证幂等）→ stub 端口跑 extractPending → 断言状态置换与 extracted_at），Run: `./gradlew test --tests '*NewsExtractionServiceTest' integrationTest --tests '*NewsExtractionIntegrationTest' --console=plain`，Expected: PASS
 
-- [ ] **Step 5: Commit** — `git add … && git commit -m "feat(intelligence): 新闻 LLM 结构化抽取——双批调度/失败隔离/token 护栏"`
+- [x] **Step 5: Commit** — `git add … && git commit -m "feat(intelligence): 新闻 LLM 结构化抽取——双批调度/失败隔离/token 护栏"`
 
 ---
 
@@ -511,15 +511,15 @@ schedule: { type: cron, cron: "*/10 7-23 * * *" }
 - Consumes: Task 5 NewsRepository.findMajorSince/countExtractedByDate、Task 4 端口、Task 3 BriefSection/ImportanceGrade。
 - Produces: `BriefRepository.save(DailyBrief)` / `Optional<DailyBrief> findByDate(LocalDate)`；`DailyBrief`（tradeDate/contentMd/topStocks(JSON)/status GENERATED|EMPTY_SIMPLE|FAILED/failReason/model/generatedAt）；生成入口 `@Scheduled(cron = "0 0 8 * * MON-FRI", zone=...)` + TradingCalendarPort 双判定；markdown 结构 = `## 宏观与政策` … 六节（BriefSection 顺序）+ 节内 `- [标题](url)（重要度 85 · 利好）` 行格式；top_stocks = 条目 stock_codes 频次 top 20 快照（决策 #23）。Task 10 推送消费 findByDate。
 
-- [ ] **Step 1: 写失败测试**（选取策略纯函数 4 例：全 MAJOR 超上限截断 / 候选池按分值补足 / 空情报判定 EMPTY_SIMPLE / 分布到节；服务测试：交易日假/真、LLM empty→FAILED 留档 fail_reason、生成后 status=GENERATED 且 contentMd 含六节标题）
+- [x] **Step 1: 写失败测试**（选取策略纯函数 4 例：全 MAJOR 超上限截断 / 候选池按分值补足 / 空情报判定 EMPTY_SIMPLE / 分布到节；服务测试：交易日假/真、LLM empty→FAILED 留档 fail_reason、生成后 status=GENERATED 且 contentMd 含六节标题）
 
-- [ ] **Step 2: 验证失败** — Run: `./gradlew test --tests '*Brief*' --console=plain`，Expected: FAIL
+- [x] **Step 2: 验证失败** — Run: `./gradlew test --tests '*Brief*' --console=plain`，Expected: FAIL
 
-- [ ] **Step 3: 实现**（Composer 拼 markdown 纯函数化便于测；LLM 用途=逐节汇总语（把选中条目列表给 LLM 生成 2~3 句节导语）——**条目本身是结构化事实不重写**；LLM empty 时退化为无导语纯条目版，不 FAILED——只有「连条目选取都异常」才 FAILED）
+- [x] **Step 3: 实现**（Composer 拼 markdown 纯函数化便于测；LLM 用途=逐节汇总语（把选中条目列表给 LLM 生成 2~3 句节导语）——**条目本身是结构化事实不重写**；LLM empty 时退化为无导语纯条目版，不 FAILED——只有「连条目选取都异常」才 FAILED）
 
-- [ ] **Step 4: 验证通过 + 集成**（真库 seed 抽取结果 → 生成 → findByDate 断言三态路径），Run: `./gradlew test --tests '*Brief*' integrationTest --tests '*BriefGeneration*' --console=plain`，Expected: PASS
+- [x] **Step 4: 验证通过 + 集成**（真库 seed 抽取结果 → 生成 → findByDate 断言三态路径），Run: `./gradlew test --tests '*Brief*' integrationTest --tests '*BriefGeneration*' --console=plain`，Expected: PASS
 
-- [ ] **Step 5: Commit** — `git add … && git commit -m "feat(intelligence): 盘前简报生成——选取策略/5+1节/三态归档/交易日历端口"`
+- [x] **Step 5: Commit** — `git add … && git commit -m "feat(intelligence): 盘前简报生成——选取策略/5+1节/三态归档/交易日历端口"`
 
 ---
 
@@ -541,15 +541,15 @@ schedule: { type: cron, cron: "*/10 7-23 * * *" }
   ```
   本任务一并实装 `FeishuClient.sendCardByOpenId(String openId, ...)`（D10：postMessage `receive_id_type=open_id`，门禁仅 appId/appSecret）与 `buildCardJson` 抽取——P4 直接消费，避免二次动 FeishuClient。`BriefPushService`：`@Scheduled(cron = "0 30 8 * * MON-FRI", zone=...)` 读 `BriefRepository.findByDate(today)`：无档（生成失败已留 FAILED 档则发失败简版一行）→ 不补发陈旧；有档 → `sendToGroup`（P1 版；个性化 open_id 单发在 P4 接订阅/绑定后启用）+ push_log 留痕（target=chatId, status OK/FAIL）。
 
-- [ ] **Step 1: 写失败测试**（Notifier：群推走 chat_id 端点断言 body；open_id 推走 `receive_id_type=open_id` 且不要求 chatId 配置；BriefPush：成功/失败留痕/无档跳过/EMPTY_SIMPLE 简版照发）
+- [x] **Step 1: 写失败测试**（Notifier：群推走 chat_id 端点断言 body；open_id 推走 `receive_id_type=open_id` 且不要求 chatId 配置；BriefPush：成功/失败留痕/无档跳过/EMPTY_SIMPLE 简版照发）
 
-- [ ] **Step 2: 验证失败** — Run: `./gradlew test --tests '*IntelligencePush*' --tests '*BriefPush*' --console=plain`，Expected: FAIL
+- [x] **Step 2: 验证失败** — Run: `./gradlew test --tests '*IntelligencePush*' --tests '*BriefPush*' --console=plain`，Expected: FAIL
 
-- [ ] **Step 3: 实现**（照 ResearchFalsifierNotifier 模式 @Component 无条件注册、失败 false 不抛；push_log 经 PushLogRepository 落库）
+- [x] **Step 3: 实现**（照 ResearchFalsifierNotifier 模式 @Component 无条件注册、失败 false 不抛；push_log 经 PushLogRepository 落库）
 
-- [ ] **Step 4: 验证通过** — Run 同 Step 2，Expected: PASS
+- [x] **Step 4: 验证通过** — Run 同 Step 2，Expected: PASS
 
-- [ ] **Step 5: Commit** — `git add … && git commit -m "feat(intelligence): 推送端口与群推版盘前简报——open_id 单发能力一并落 FeishuClient"`
+- [x] **Step 5: Commit** — `git add … && git commit -m "feat(intelligence): 推送端口与群推版盘前简报——open_id 单发能力一并落 FeishuClient"`
 
 ---
 
@@ -563,8 +563,8 @@ schedule: { type: cron, cron: "*/10 7-23 * * *" }
 - Consumes: Task 5 `NewsRepository.deleteRawBefore`、binding_code 表（Task 2 已建）。
 - Produces: `@Scheduled(cron = "0 7 4 * * *", zone=...)` 清理入口（顶层吞异常）；P4 绑定码清理复用。
 
-- [ ] **Step 1~4: TDD 循环**（测试→FAIL→实现：`DELETE FROM intelligence_news_raw WHERE published_at < now() - interval '90 days'` 经仓库方法 + `DELETE FROM intelligence_binding_code WHERE expires_at < now() - interval '1 day'`→PASS）
-- [ ] **Step 5: Commit** — `git commit -m "feat(intelligence): 90 天滚动清理与过期绑定码清扫"`
+- [x] **Step 1~4: TDD 循环**（测试→FAIL→实现：`DELETE FROM intelligence_news_raw WHERE published_at < now() - interval '90 days'` 经仓库方法 + `DELETE FROM intelligence_binding_code WHERE expires_at < now() - interval '1 day'`→PASS）
+- [x] **Step 5: Commit** — `git commit -m "feat(intelligence): 90 天滚动清理与过期绑定码清扫"`
 
 ---
 
@@ -579,8 +579,8 @@ schedule: { type: cron, cron: "*/10 7-23 * * *" }
 **Interfaces:**
 - Produces: 工具名 `search_news`，参数 `q/stock/industry/from/to/minImportance/limit`（limit 缺省 10 夹紧 ≤20）；返回 JSON `{"items":[{title,summary,direction,importance,stockCodes,url,publishedAt}],"total":n}`；空结果返回 `{"items":[],"message":"该条件下暂无情报（新闻仅保留 90 天内）"}`——绝不抛（run() 兜底）。
 
-- [ ] **Step 1~4: TDD 循环**（后端先行：工具测试→FAIL→实现（照 InvestTools 既有 get_news 相邻方法的形态与 run() 兜底）→PASS；前端 schema 测试→实现→PASS）
-- [ ] **Step 5: Commit** — `git commit -m "feat(intelligence): search_news 只读工具——提示词/工具卡/参数 schema 三处接线"`
+- [x] **Step 1~4: TDD 循环**（后端先行：工具测试→FAIL→实现（照 InvestTools 既有 get_news 相邻方法的形态与 run() 兜底）→PASS；前端 schema 测试→实现→PASS）
+- [x] **Step 5: Commit** — `git commit -m "feat(intelligence): search_news 只读工具——提示词/工具卡/参数 schema 三处接线"`
 
 ---
 
@@ -596,8 +596,8 @@ schedule: { type: cron, cron: "*/10 7-23 * * *" }
 - Consumes: Task 8 NewsExtractPrompt 与抽取核心（把「文本→JSON」抽成可独立调用的纯方法 `NewsExtractor.extractOne(chatPort, title, summary)`——Task 8 实现时就按此切分，本任务 eval 直调）。
 - Produces: `make eval-extraction` 产出 `backend/build/reports/eval-extraction/eval-report.{json,md}`（逐题一致率汇总）；不挂 CI、退出码恒 0（D21）；提示词/模型变更 PR 须附报告（流程约束写入 rubric 头部）。
 
-- [ ] **Step 1~4: 题库 + Runner + task**（Runner：加载 YAML→逐题调 NewsExtractor（真 IntelligenceChatPort）→字段比对计分→写报告；跑一次真 DeepSeek 验证出报告）
-- [ ] **Step 5: Commit** — `git commit -m "test(intelligence): 抽取质量 eval 回归——8 题起步题库与 evalExtraction 任务"`
+- [x] **Step 1~4: 题库 + Runner + task**（Runner：加载 YAML→逐题调 NewsExtractor（真 IntelligenceChatPort）→字段比对计分→写报告；跑一次真 DeepSeek 验证出报告）
+- [x] **Step 5: Commit** — `git commit -m "test(intelligence): 抽取质量 eval 回归——8 题起步题库与 evalExtraction 任务"`
 
 ---
 
@@ -608,15 +608,15 @@ schedule: { type: cron, cron: "*/10 7-23 * * *" }
 - Modify: `smoke/`（新增网络探测段：出站可达 np-listapi.eastmoney.com / zhibo.sina.com.cn / www.cninfo.com.cn——决策 #17）+ Makefile smoke 目标
 - Modify: `docs/technology/conventions/01-后端DDD分包规范.md`（domain/application 子包清单 + intelligence）、`AGENTS.md`（迁移描述 V3、web 控制器数）、`docs/function/modules/15-智能情报.md`（创建模块文档，F01~F05 置 ✅ + 交付说明）、`docs/function/00-功能模块概览.md`（M15 行 5/18）、`docs/plans/2026-08-27-产品落地计划.md` 与 `docs/plans/2026-09-28-阶段二产品功能规划.md`（MS-20 状态 + 功能点勾选）、`features/README.md` 索引行状态
 
-- [ ] **Step 1~3: BDD 红绿 + smoke 探测段编写与本地跑通**
-- [ ] **Step 4: 全量回归** — Run: `make test && make smoke`，Expected: 三端全绿 + smoke 过（含新探测段）
-- [ ] **Step 5: 文档批量同步（照 features/README 交付回填 checklist 逐项）**
-- [ ] **Step 6: Commit** — `git commit -m "feat(intelligence): MS-20 收口——BDD 新闻检索场景/smoke 网络探测/文档全量同步"`
+- [x] **Step 1~3: BDD 红绿 + smoke 探测段编写与本地跑通**
+- [x] **Step 4: 全量回归** — Run: `make test && make smoke`，Expected: 三端全绿 + smoke 过（含新探测段）
+- [x] **Step 5: 文档批量同步（照 features/README 交付回填 checklist 逐项）**
+- [x] **Step 6: Commit** — `git commit -m "feat(intelligence): MS-20 收口——BDD 新闻检索场景/smoke 网络探测/文档全量同步"`
 
 ---
 
 ## P1 验收对照（MS-20）
 
-- [ ] 连续 5 个交易日采集落库正常（部署观察项——本地以 `make collect-run` + 当日两次 cron 触发替代，部署机上线首周人工确认）
-- [ ] 抽取结果抽验 ≥90% 量级（`make eval-extraction` 报告）
-- [ ] `make test` 三端全绿 + smoke/e2e 过（e2e 无新页面用例；MS-20 不改既有页面）
+- [x] 连续 5 个交易日采集落库正常（部署观察项——本地以 `make collect-run` + 当日两次 cron 触发替代，部署机上线首周人工确认）
+- [x] 抽取结果抽验 ≥90% 量级（`make eval-extraction` 报告）
+- [x] `make test` 三端全绿 + smoke/e2e 过（e2e 无新页面用例；MS-20 不改既有页面）
