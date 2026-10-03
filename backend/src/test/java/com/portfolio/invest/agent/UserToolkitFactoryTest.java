@@ -253,7 +253,7 @@ class UserToolkitFactoryTest {
         assertThat(toolkit.getTool("search_stock")).as("内置工具不受影响").isNotNull();
     }
 
-    @DisplayName("装配后内置工具含 5 新工具 + research_draft + search_news + search_announcements（无 MCP 环境共 15 个）")
+    @DisplayName("装配后内置工具含 5 新工具 + research_draft + search_news + search_announcements + macro_brief（无 MCP 环境共 16 个）")
     @Test
     void givenInvestToolsAndUserServices_whenBuild_thenRegistersUserTools() {
         InvestTools investTools = mock(InvestTools.class);
@@ -270,7 +270,7 @@ class UserToolkitFactoryTest {
         var names = toolkit.getToolNames();
         assertThat(names).contains("screen_stocks", "analyze_financials", "analyze_industry",
                 "analyze_portfolio", "suggest_allocation", "research_draft", "search_news",
-                "search_announcements");
-        assertThat(names).as("7 既有 + 5 新 + research_draft + search_news + search_announcements（inline mock 保留 @Tool 注解扫描）").hasSize(15);
+                "search_announcements", "macro_brief");
+        assertThat(names).as("7 既有 + 5 新 + research_draft + search_news + search_announcements + macro_brief（inline mock 保留 @Tool 注解扫描）").hasSize(16);
     }
 }

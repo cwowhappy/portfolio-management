@@ -8,25 +8,43 @@ import com.portfolio.invest.domain.intelligence.AnnouncementRepository;
 import com.portfolio.invest.domain.intelligence.AnnouncementType;
 import com.portfolio.invest.domain.intelligence.Direction;
 import com.portfolio.invest.domain.intelligence.IntelligenceSubscription;
+import com.portfolio.invest.domain.intelligence.MacroPoint;
 import com.portfolio.invest.domain.intelligence.NewsRecord;
 import com.portfolio.invest.domain.intelligence.NewsRepository;
 import com.portfolio.invest.domain.intelligence.PageQuery;
 import com.portfolio.invest.domain.intelligence.PageResult;
+import com.portfolio.invest.domain.intelligence.PolicyConfidence;
+import com.portfolio.invest.domain.intelligence.PolicyDirection;
+import com.portfolio.invest.domain.intelligence.PolicyEvent;
+import com.portfolio.invest.domain.intelligence.PolicyRepository;
+import com.portfolio.invest.domain.intelligence.PolicyStrength;
 import com.portfolio.invest.domain.intelligence.SubscriptionRepository;
 import com.portfolio.invest.domain.intelligence.SubscriptionStock;
+import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
- * 情报检索用例（MS-20 Task 12 最小版 + MS-21 Task 8 公告检索）：组装 {@link PageQuery}
- * 委托 {@link NewsRepository#search} / {@link AnnouncementRepository#search}，把合并视图
- * 收敛为条目视图（LLM 工具与 P4 web 查询共用口径）。P4 扩四区块（板块/政策链/简报档/抽取统计）。
+ * 情报检索用例（MS-20 Task 12 最小版 + MS-21 Task 8 公告检索 + MS-22 Task 6 宏观简报）：
+ * 组装 {@link PageQuery} 委托 {@link NewsRepository#search} /
+ * {@link AnnouncementRepository#search} / {@link PolicyRepository#searchEvents}，把合并
+ * 视图收敛为条目视图（LLM 工具与 P4 web 查询共用口径）。P4 扩四区块（板块/政策链/
+ * 简报档/抽取统计）。
  *
- * <p>limit 夹紧 1..20（缺省 10）单点收口在本服务——工具层与 web 层不各自防御；
+ * <p>limit 夹紧 1..20（缺省 10）与 macroBrief 的 indicators 解析 / policyDays 夹紧
+ * 1..90（缺省 30）单点收口在本服务——工具层与 web 层不各自防御；
  * page 固定 1（工具场景只取第一页）。
  */
 @Service
@@ -37,6 +55,23 @@ public class IntelligenceQueryService {
 
     /** 单页条数上限（工具口径；PageQuery 的 100 上限是 web 大分页口径）。 */
     static final int MAX_LIMIT = 20;
+
+    /** 宏观简报缺省指标全集：五先行指标 + 国债收益率两点（F13 决策 #12 + T4 跨表合成）。 */
+    static final List<String> MACRO_BRIEF_ALL_INDICATORS = List.of(
+            "CPI", "PPI", "PMI", "LPR", "AFMI",
+            MacroPoint.INDICATOR_TY1Y, MacroPoint.INDICATOR_TY10Y);
+
+    /** 宏观简报每指标历史序列期数（近 5 期迷你趋势，LLM 上下文友好）。 */
+    static final int MACRO_BRIEF_SERIES_LIMIT = 5;
+
+    /** 政策回看天数缺省值。 */
+    static final int DEFAULT_POLICY_DAYS = 30;
+
+    /** 政策回看天数上限。 */
+    static final int MAX_POLICY_DAYS = 90;
+
+    /** 市场时区（政策窗口「今日」口径，与宏观采集/简报调度 zone 一致）。 */
+    private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
 
     /** scope=subscription 空集话术（未设置订阅标的，引导先订阅再定向检索）。 */
     static final String SUBSCRIPTION_EMPTY_MESSAGE =
@@ -67,15 +102,36 @@ public class IntelligenceQueryService {
     private final AnnouncementRepository announcementRepository;
     private final SubscriptionRepository subscriptionRepository;
     private final IntelligenceSubscriptionHook subscriptionHook;
+    private final MacroQueryService macroQueryService;
+    private final PolicyRepository policyRepository;
+    private final Clock clock;
 
+    @Autowired
     public IntelligenceQueryService(NewsRepository newsRepository,
                                     AnnouncementRepository announcementRepository,
                                     SubscriptionRepository subscriptionRepository,
-                                    IntelligenceSubscriptionHook subscriptionHook) {
+                                    IntelligenceSubscriptionHook subscriptionHook,
+                                    MacroQueryService macroQueryService,
+                                    PolicyRepository policyRepository) {
+        this(newsRepository, announcementRepository, subscriptionRepository, subscriptionHook,
+                macroQueryService, policyRepository, Clock.system(ZONE));
+    }
+
+    /** 测试构造器：注入时钟（macroBrief 的政策窗口「今日」与 generatedAt 可确定化）。 */
+    IntelligenceQueryService(NewsRepository newsRepository,
+                             AnnouncementRepository announcementRepository,
+                             SubscriptionRepository subscriptionRepository,
+                             IntelligenceSubscriptionHook subscriptionHook,
+                             MacroQueryService macroQueryService,
+                             PolicyRepository policyRepository,
+                             Clock clock) {
         this.newsRepository = newsRepository;
         this.announcementRepository = announcementRepository;
         this.subscriptionRepository = subscriptionRepository;
         this.subscriptionHook = subscriptionHook;
+        this.macroQueryService = macroQueryService;
+        this.policyRepository = policyRepository;
+        this.clock = clock;
     }
 
     /**
@@ -165,6 +221,66 @@ public class IntelligenceQueryService {
     /** 空白串归一为 null（空白关键词不启用条件）。 */
     private static String blankToNull(String s) {
         return s == null || s.isBlank() ? null : s;
+    }
+
+    /**
+     * 宏观简报（MS-22 Task 6）：指标节（latest + 近 5 期序列）+ 政策节（近 policyDays 天
+     * searchEvents，direction 不过滤）+ 缺失指标显式列出。
+     *
+     * <p>指标串解析：逗号分隔 trim/大写/去重保序，空/空白归
+     * {@link #MACRO_BRIEF_ALL_INDICATORS}；policyDays 夹紧 1..90（缺省 30）。latest 一次
+     * 取全指标后按请求序装配——请求指标在 latest 无命中（含未知指标码）进 missing
+     * （F13 缺失不编造不省略），不查 series。TY 两点 series 恒空列表原样透传（T4 裁定：
+     * 「仅最新点、无历史序列」的 note 字段翻译归工具层，服务层不当数据缺失处理）。
+     * 政策窗口为 [今日-policyDays+1, 今日] 闭区间（Asia/Shanghai，与抽取游标窗口同口径）。
+     */
+    public MacroBriefResult macroBrief(MacroBriefFilter filter) {
+        List<String> requested = requestedIndicators(filter.indicators());
+        int policyDays = filter.policyDays() == null ? DEFAULT_POLICY_DAYS
+                : Math.min(Math.max(filter.policyDays(), 1), MAX_POLICY_DAYS);
+        LocalDate today = LocalDate.now(clock);
+
+        Map<String, MacroPoint> latestByIndicator = new LinkedHashMap<>();
+        for (MacroPoint point : macroQueryService.latest()) {
+            latestByIndicator.put(point.indicator(), point);
+        }
+        List<MacroIndicatorView> indicators = new ArrayList<>();
+        List<String> missing = new ArrayList<>();
+        for (String indicator : requested) {
+            MacroPoint point = latestByIndicator.get(indicator);
+            if (point == null) {
+                missing.add(indicator);
+                continue;
+            }
+            List<SeriesPoint> series = macroQueryService
+                    .series(indicator, MACRO_BRIEF_SERIES_LIMIT).stream()
+                    .map(p -> new SeriesPoint(p.period(), p.value()))
+                    .toList();
+            indicators.add(new MacroIndicatorView(indicator, point.value(), point.yoy(),
+                    point.period(), point.periodType(), series));
+        }
+
+        PageResult<PolicyEvent> page = policyRepository.searchEvents(new PageQuery(
+                1, MAX_LIMIT, null, null, null, today.minusDays(policyDays - 1L), today,
+                null, null, null, null));
+        List<PolicyItemView> policies = page.items().stream().map(PolicyItemView::of).toList();
+        return new MacroBriefResult(indicators, policies, page.total(), missing,
+                Instant.now(clock));
+    }
+
+    /** 指标串解析：逗号分隔 trim + 大写归一 + 去重保序；空/空白归全七缺省。 */
+    private static List<String> requestedIndicators(String indicators) {
+        if (indicators == null || indicators.isBlank()) {
+            return MACRO_BRIEF_ALL_INDICATORS;
+        }
+        Set<String> normalized = new LinkedHashSet<>();
+        for (String part : indicators.split(",")) {
+            String trimmed = part.trim();
+            if (!trimmed.isEmpty()) {
+                normalized.add(trimmed.toUpperCase(Locale.ROOT));
+            }
+        }
+        return normalized.isEmpty() ? MACRO_BRIEF_ALL_INDICATORS : List.copyOf(normalized);
     }
 
     /**
@@ -259,6 +375,93 @@ public class IntelligenceQueryService {
         static AnnouncementItemView of(AnnouncementRecord r) {
             return new AnnouncementItemView(r.title(), r.stockCode(), r.stockName(),
                     r.annTypes(), r.annTypeSource(), r.metrics(), r.pdfUrl(), r.publishedAt());
+        }
+    }
+
+    /**
+     * 宏观简报结果信封（MS-22 Task 6）：指标节 + 政策节 + 缺失指标 + 生成时刻。
+     *
+     * @param indicators 指标条目（请求序，缺失指标不在此——在 missing）
+     * @param policies   政策条目（近 policyDays 天，direction 不过滤；含 isPolicy=false 兜底行）
+     * @param total      政策命中总数（可大于条目数）
+     * @param missing    缺失指标码（库中无 latest 命中，含未知指标码；F13 显式列出）
+     * @param generatedAt 生成时刻（数据截止期别在每指标的 period 字段）
+     */
+    public record MacroBriefResult(
+            List<MacroIndicatorView> indicators,
+            List<PolicyItemView> policies,
+            long total,
+            List<String> missing,
+            Instant generatedAt) {
+
+        public MacroBriefResult {
+            indicators = indicators == null ? List.of() : List.copyOf(indicators);
+            policies = policies == null ? List.of() : List.copyOf(policies);
+            missing = missing == null ? List.of() : List.copyOf(missing);
+        }
+    }
+
+    /**
+     * 宏观指标条目视图（工具 JSON 与前端简报卡的契约形状）。
+     *
+     * @param indicator  指标码（CPI/PPI/PMI/LPR/AFMI/TY1Y/TY10Y）
+     * @param value      最新值（可空——源未给出时缺席而非编造）
+     * @param yoy        最新一期同比（可空）
+     * @param period     数据截止期别（月度 YYYY-MM / 日度 YYYY-MM-DD——引用时注明）
+     * @param periodType 期别类型（MONTH / DAY）
+     * @param series     近 5 期序列（period 倒序——最新在前）；TY 两点恒空列表
+     *                   （工具层翻译 note 字段，勿当数据缺失）
+     */
+    public record MacroIndicatorView(
+            String indicator,
+            BigDecimal value,
+            BigDecimal yoy,
+            String period,
+            String periodType,
+            List<SeriesPoint> series) {
+
+        public MacroIndicatorView {
+            series = series == null ? List.of() : List.copyOf(series);
+        }
+    }
+
+    /** 序列单期投影（period 倒序）：期别 + 值。 */
+    public record SeriesPoint(String period, BigDecimal value) {
+    }
+
+    /**
+     * 政策条目视图（工具 JSON 与前端简报卡的契约形状）。
+     *
+     * @param title       政策标题
+     * @param direction   政策取向（EASING 宽松 / TIGHTENING 收紧 / NEUTRAL 中性）
+     * @param strength    政策力度（HIGH 强 / MEDIUM 中 / LOW 弱）
+     * @param areas       影响领域
+     * @param summary     一句话摘要（哨兵文案 = 非政策兜底行）
+     * @param confidence  置信度（LOW = 低置信标注）
+     * @param isPolicy    是否政策类发布（false = 非政策兜底行，调用方据此标注展示）
+     * @param url         原文链接
+     * @param publishedAt 发布时间
+     */
+    public record PolicyItemView(
+            String title,
+            PolicyDirection direction,
+            PolicyStrength strength,
+            List<String> areas,
+            String summary,
+            PolicyConfidence confidence,
+            boolean isPolicy,
+            String url,
+            Instant publishedAt) {
+
+        public PolicyItemView {
+            areas = areas == null ? List.of() : List.copyOf(areas);
+        }
+
+        /** 合并视图 → 条目视图：九字段直传（isPolicy 派生标记保留，兜底行也返回）。 */
+        static PolicyItemView of(PolicyEvent e) {
+            return new PolicyItemView(e.title(), e.direction(), e.strength(),
+                    e.affectedAreas(), e.summary(), e.confidence(), e.isPolicy(),
+                    e.url(), e.publishedAt());
         }
     }
 }

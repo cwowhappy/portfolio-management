@@ -16,6 +16,7 @@ import com.portfolio.invest.domain.intelligence.BriefStatus;
 import com.portfolio.invest.domain.intelligence.DailyBrief;
 import com.portfolio.invest.domain.intelligence.Direction;
 import com.portfolio.invest.domain.intelligence.ExtractStatus;
+import com.portfolio.invest.domain.intelligence.MacroCalendarEntry;
 import com.portfolio.invest.domain.intelligence.NewsRecord;
 import com.portfolio.invest.domain.intelligence.NewsRepository;
 import com.portfolio.invest.domain.intelligence.BriefRepository;
@@ -32,9 +33,10 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 /**
- * 盘前简报生成服务单元切片（mock 仓库/LLM 端口/交易日历；Composer/Policy 用真实纯函数）：
- * 交易日假不生成、幂等跳过（当日已有档不重复生成）、选取窗口=昨日 15:00（上海）+
- * 候选池阈值=watch 线、GENERATED 六节结构+节导语+top_stocks 频次快照、
+ * 盘前简报生成服务单元切片（mock 仓库/LLM 端口/交易日历/宏观查询；Composer/Policy 用
+ * 真实纯函数）：交易日假不生成、幂等跳过（当日已有档不重复生成）、选取窗口=昨日 15:00
+ * （上海）+ 候选池阈值=watch 线、GENERATED 六节结构+节导语+top_stocks 频次快照+
+ * 宏观与政策节尾日历附行（D22 有/无命中两态，calendarOn 异常降级不加行）、
  * LLM empty/空串/异常一律降级无导语纯条目版（不 FAILED）、无候选 EMPTY_SIMPLE
  * （今日无重大情报+数据截止）、管线异常 FAILED 留档 fail_reason、调度顶层吞异常。
  * 附 BriefComposer 边界直测：null url/方向行格式与 top_stocks 20 截断。
@@ -54,15 +56,18 @@ class BriefGenerationServiceTest {
     private final BriefRepository briefRepository = mock(BriefRepository.class);
     private final IntelligenceChatPort chatPort = mock(IntelligenceChatPort.class);
     private final TradingCalendarPort tradingCalendar = mock(TradingCalendarPort.class);
+    private final MacroQueryService macroQueryService = mock(MacroQueryService.class);
     private final InvestProperties props = new InvestProperties();
     private BriefGenerationService service;
 
     @BeforeEach
     void setUp() {
         service = new BriefGenerationService(newsRepository, briefRepository, chatPort,
-                tradingCalendar, props, CLOCK);
+                tradingCalendar, macroQueryService, props, CLOCK);
         when(tradingCalendar.isTradingDay(any())).thenReturn(true);
         when(briefRepository.findByDate(any())).thenReturn(Optional.empty());
+        // D22 附行缺省无命中（各测试按需覆盖）；mock List 返回 null 会 NPE
+        when(macroQueryService.calendarOn(any())).thenReturn(List.of());
     }
 
     @Test
@@ -234,7 +239,7 @@ class BriefGenerationServiceTest {
 
         BriefComposer.Composed composed = BriefComposer.compose(TODAY,
                 BriefSelectionPolicy.select(List.of(noUrl, neutral), 80, 50, 2, 25),
-                Map.of(), WINDOW_START, CLOCK.instant());
+                Map.of(), WINDOW_START, CLOCK.instant(), null);
 
         assertThat(composed.contentMd()).contains("- 无链接情报（重要度 88）"); // 无 url 无方向
         assertThat(composed.contentMd()).contains("- [第2号情报](https://example.com/n2)（重要度 60 · 中性）");
@@ -251,12 +256,73 @@ class BriefGenerationServiceTest {
 
         BriefComposer.Composed composed = BriefComposer.compose(TODAY,
                 BriefSelectionPolicy.select(candidates, 80, 50, 15, 25),
-                Map.of(), WINDOW_START, CLOCK.instant());
+                Map.of(), WINDOW_START, CLOCK.instant(), null);
 
         // 频次降序（S01/S02 各 2 次）+ 同频代码字典序，截断前 20：S21/S22 出局
         assertThat(composed.topStocks()).hasSize(20);
         assertThat(composed.topStocks().subList(0, 2)).containsExactly("S01", "S02");
         assertThat(composed.topStocks()).doesNotContain("S21", "S22");
+    }
+
+    // ── D22（MS-22 Task 6）：宏观与政策节尾日历附行 有/无命中两态 ──────────
+
+    /** 当日预期发布日历条目（V3 seed 形态：source_site=国家统计局/中国人民银行）。 */
+    private static MacroCalendarEntry calendarEntry(String indicator, String sourceSite) {
+        return new MacroCalendarEntry(indicator, TODAY, "MONTH", sourceSite,
+                Instant.parse("2026-09-01T00:00:00Z"));
+    }
+
+    @Test
+    @DisplayName("给定当日日历有预期发布，when生成简报，then宏观与政策节尾附日历行（含来源）")
+    void givenCalendarHits_whenGenerate_thenCalendarLineAppendedToMacroSection() {
+        when(newsRepository.findMajorSince(any(), anyInt())).thenReturn(List.of(news(1, 90, "MACRO")));
+        when(macroQueryService.calendarOn(TODAY)).thenReturn(List.of(
+                calendarEntry("CPI", "国家统计局"), calendarEntry("LPR", "中国人民银行")));
+        when(newsRepository.countPendingInWindow(any(), anyInt())).thenReturn(0L);
+
+        service.generateBrief();
+
+        verify(macroQueryService).calendarOn(TODAY);
+        ArgumentCaptor<DailyBrief> captor = ArgumentCaptor.forClass(DailyBrief.class);
+        verify(briefRepository).save(captor.capture());
+        String md = captor.getValue().contentMd();
+        assertThat(md).contains(
+                "📅 今日预期发布：CPI（来源：国家统计局）、LPR（来源：中国人民银行）");
+        // 附行落宏观与政策节尾：位于本节条目之后、下一节「行业与板块」标题之前
+        int lineAt = md.indexOf("📅 今日预期发布");
+        int macroAt = md.indexOf("## 宏观与政策");
+        int nextSectionAt = md.indexOf("## 行业与板块");
+        assertThat(lineAt).isGreaterThan(macroAt).isLessThan(nextSectionAt);
+    }
+
+    @Test
+    @DisplayName("给定当日日历无命中，when生成简报，then不加日历行（0 条不加行）")
+    void givenNoCalendarHits_whenGenerate_thenNoCalendarLine() {
+        when(newsRepository.findMajorSince(any(), anyInt())).thenReturn(List.of(news(1, 90, "MACRO")));
+        when(newsRepository.countPendingInWindow(any(), anyInt())).thenReturn(0L);
+
+        service.generateBrief();
+
+        verify(macroQueryService).calendarOn(TODAY);
+        ArgumentCaptor<DailyBrief> captor = ArgumentCaptor.forClass(DailyBrief.class);
+        verify(briefRepository).save(captor.capture());
+        assertThat(captor.getValue().contentMd()).doesNotContain("今日预期发布");
+        assertThat(captor.getValue().status()).isEqualTo(BriefStatus.GENERATED);
+    }
+
+    @Test
+    @DisplayName("给定日历查询抛异常，when生成简报，then降级不加行仍 GENERATED（不拖垮归档）")
+    void givenCalendarBlowsUp_whenGenerate_thenDegradeWithoutLine() {
+        when(newsRepository.findMajorSince(any(), anyInt())).thenReturn(List.of(news(1, 90, "MACRO")));
+        when(macroQueryService.calendarOn(any())).thenThrow(new IllegalStateException("db down"));
+        when(newsRepository.countPendingInWindow(any(), anyInt())).thenReturn(0L);
+
+        service.generateBrief();
+
+        ArgumentCaptor<DailyBrief> captor = ArgumentCaptor.forClass(DailyBrief.class);
+        verify(briefRepository).save(captor.capture());
+        assertThat(captor.getValue().status()).isEqualTo(BriefStatus.GENERATED);
+        assertThat(captor.getValue().contentMd()).contains("- [第1号情报](https://example.com/n1)");
     }
 
     // ── fixture 助手 ───────────────────────────────────────────────

@@ -12,6 +12,7 @@ describe("ToolCallCard MS-12 标签", () => {
     ["analyze_financials", "财报解读"],
     ["analyze_industry", "行业分析"],
     ["search_announcements", "公告检索"],
+    ["macro_brief", "宏观简报"],
   ])("%s 显示中文标签 %s", (tool, label) => {
     render(<ToolCallCard toolCallId="tc1" toolName={tool} status="executing" />);
     expect(screen.getByText(label)).toBeTruthy();

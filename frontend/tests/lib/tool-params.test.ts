@@ -5,6 +5,7 @@ import {
   OverviewParamsSchema,
   SearchNewsParamsSchema,
   SearchAnnouncementsParamsSchema,
+  MacroBriefParamsSchema,
 } from "@/lib/tool-params";
 
 describe("tool-params（useRenderTool parameters 用的入参 schema）", () => {
@@ -53,5 +54,14 @@ describe("tool-params（useRenderTool parameters 用的入参 schema）", () => 
   it("search_announcements：日期格式非法被拒（yyyy-MM-dd 契约）", () => {
     expect(SearchAnnouncementsParamsSchema.safeParse({ from: "2026/09/01" }).success).toBe(false);
     expect(SearchAnnouncementsParamsSchema.safeParse({ to: "20260928" }).success).toBe(false);
+  });
+  it("macro_brief：两参数全可空，indicators 为逗号分隔串、policyDays 为数值", () => {
+    expect(MacroBriefParamsSchema.safeParse({}).success).toBe(true);
+    expect(
+      MacroBriefParamsSchema.safeParse({ indicators: "CPI,PMI,TY1Y", policyDays: 45 }).success,
+    ).toBe(true);
+  });
+  it("macro_brief：policyDays 非数值被拒（数值契约）", () => {
+    expect(MacroBriefParamsSchema.safeParse({ policyDays: "30" }).success).toBe(false);
   });
 });

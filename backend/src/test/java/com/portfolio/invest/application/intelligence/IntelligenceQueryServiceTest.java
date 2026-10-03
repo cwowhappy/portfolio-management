@@ -2,8 +2,11 @@ package com.portfolio.invest.application.intelligence;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -17,14 +20,22 @@ import com.portfolio.invest.domain.intelligence.AnnouncementType;
 import com.portfolio.invest.domain.intelligence.Direction;
 import com.portfolio.invest.domain.intelligence.ExtractStatus;
 import com.portfolio.invest.domain.intelligence.IntelligenceSubscription;
+import com.portfolio.invest.domain.intelligence.MacroPoint;
 import com.portfolio.invest.domain.intelligence.NewsRecord;
 import com.portfolio.invest.domain.intelligence.NewsRepository;
 import com.portfolio.invest.domain.intelligence.PageResult;
+import com.portfolio.invest.domain.intelligence.PolicyConfidence;
+import com.portfolio.invest.domain.intelligence.PolicyDirection;
+import com.portfolio.invest.domain.intelligence.PolicyEvent;
+import com.portfolio.invest.domain.intelligence.PolicyRepository;
+import com.portfolio.invest.domain.intelligence.PolicyStrength;
 import com.portfolio.invest.domain.intelligence.SubscriptionRepository;
 import com.portfolio.invest.domain.intelligence.SubscriptionStock;
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -32,23 +43,36 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * 情报检索用例（MS-20 Task 12 最小版 + MS-21 Task 8 公告检索）：limit 夹紧 1..20 +
- * 过滤器→PageQuery 映射 + 合并视图→条目视图映射（news：AI 摘要优先退化源站摘要；
- * announcement：八字段直传）+ 公告 scope 三态（all 不过滤 / subscription 订阅标的集
- * 空集短路 / holdings hook 按 userId 过滤）。P4 扩四区块查询。
+ * 情报检索用例（MS-20 Task 12 最小版 + MS-21 Task 8 公告检索 + MS-22 Task 6 宏观简报）：
+ * limit 夹紧 1..20 + 过滤器→PageQuery 映射 + 合并视图→条目视图映射（news：AI 摘要优先
+ * 退化源站摘要；announcement：八字段直传）+ 公告 scope 三态（all 不过滤 / subscription
+ * 订阅标的集空集短路 / holdings hook 按 userId 过滤）+ macroBrief（指标串解析归一去重、
+ * policyDays 夹紧 1..90、缺失指标显式、政策九字段含 isPolicy 标记）。P4 扩四区块查询。
  */
 class IntelligenceQueryServiceTest {
+
+    /** 固定时钟：上海 2026-10-03 10:15（macroBrief 政策窗口「今日」与 generatedAt 可确定化）。 */
+    private static final Clock FIXED_CLOCK =
+            Clock.fixed(Instant.parse("2026-10-03T02:15:00Z"), ZoneId.of("Asia/Shanghai"));
 
     private final NewsRepository newsRepository = mock(NewsRepository.class);
     private final AnnouncementRepository announcementRepository = mock(AnnouncementRepository.class);
     private final SubscriptionRepository subscriptionRepository = mock(SubscriptionRepository.class);
     private final IntelligenceSubscriptionHook subscriptionHook = mock(IntelligenceSubscriptionHook.class);
+    private final MacroQueryService macroQueryService = mock(MacroQueryService.class);
+    private final PolicyRepository policyRepository = mock(PolicyRepository.class);
     private IntelligenceQueryService service;
 
     @BeforeEach
     void setUp() {
         service = new IntelligenceQueryService(newsRepository, announcementRepository,
-                subscriptionRepository, subscriptionHook);
+                subscriptionRepository, subscriptionHook, macroQueryService, policyRepository,
+                FIXED_CLOCK);
+        // macroBrief 桩缺省（mock List 返回 null 会 NPE，各测试按需覆盖）
+        when(macroQueryService.latest()).thenReturn(List.of());
+        when(macroQueryService.series(any(), anyInt())).thenReturn(List.of());
+        when(policyRepository.searchEvents(any()))
+                .thenReturn(new PageResult<>(List.of(), 0, 1, 20));
     }
 
     /** 已抽取 SUCCESS 的完整记录（前半 raw + 后半抽取侧全有值）。 */
@@ -371,5 +395,134 @@ class IntelligenceQueryServiceTest {
     private void verifyAnnouncementPage(int page, int pageSize) {
         verify(announcementRepository, org.mockito.Mockito.times(1)).search(argThat(q ->
                 q.page() == page && q.pageSize() == pageSize));
+    }
+
+    // ===== MS-22 Task 6：macroBrief（指标节 + 政策节 + 缺失显式）=====
+
+    /** 宏观观测点（series/latest 共用形态，value/yoy 同值简化）。 */
+    private static MacroPoint macroPoint(String indicator, String period, String periodType, String value) {
+        return new MacroPoint(indicator, period, periodType, new BigDecimal(value), null, null, null);
+    }
+
+    /** 政策事件合并视图（isPolicy 由哨兵 summary 派生——sentinel=false 行走 {@link PolicyEvent#of} 工厂）。 */
+    private static PolicyEvent policyEvent(long id, String title, PolicyDirection direction,
+            PolicyStrength strength, String summary) {
+        return PolicyEvent.of(id, id, "pboc", "ext-" + id, title, "https://x/p" + id,
+                Instant.parse("2026-09-28T09:30:00Z"), direction, strength,
+                List.of("房地产", "基建"), summary, PolicyConfidence.HIGH,
+                ExtractStatus.SUCCESS, "deepseek-chat", Instant.parse("2026-09-28T10:00:00Z"));
+    }
+
+    @Test
+    @DisplayName("给定缺省过滤器，when宏观简报，then全七指标各取 latest+series(5) 与近30天政策窗口")
+    void givenDefaultFilter_whenMacroBrief_thenAllIndicatorsAndThirtyDayWindow() {
+        when(macroQueryService.latest()).thenReturn(List.of(
+                macroPoint("CPI", "2026-09", "MONTH", "0.6"),
+                macroPoint("PPI", "2026-09", "MONTH", "-0.8"),
+                macroPoint("PMI", "2026-09", "MONTH", "50.4"),
+                macroPoint("LPR", "2026-09", "MONTH", "3.0"),
+                macroPoint("AFMI", "2026-09", "MONTH", "102.1"),
+                macroPoint(MacroPoint.INDICATOR_TY1Y, "2026-09-30", "DAY", "1.45"),
+                macroPoint(MacroPoint.INDICATOR_TY10Y, "2026-09-30", "DAY", "1.75")));
+
+        var result = service.macroBrief(new MacroBriefFilter(null, null));
+
+        // 全七指标缺省序（五先行 + TY1Y/TY10Y），每指标 series 各取前 5 期（最新在前）
+        verify(macroQueryService).latest();
+        for (String ind : List.of("CPI", "PPI", "PMI", "LPR", "AFMI",
+                MacroPoint.INDICATOR_TY1Y, MacroPoint.INDICATOR_TY10Y)) {
+            verify(macroQueryService).series(ind, 5);
+        }
+        assertThat(result.indicators()).extracting(v -> v.indicator())
+                .containsExactly("CPI", "PPI", "PMI", "LPR", "AFMI",
+                        MacroPoint.INDICATOR_TY1Y, MacroPoint.INDICATOR_TY10Y);
+        assertThat(result.missing()).isEmpty();
+        assertThat(result.generatedAt()).isEqualTo(FIXED_CLOCK.instant());
+        // 政策窗口：近 30 天闭区间含今日（2026-09-04..2026-10-03），direction 不过滤，pageSize 20
+        verify(policyRepository).searchEvents(argThat(q -> q.page() == 1 && q.pageSize() == 20
+                && LocalDate.of(2026, 9, 4).equals(q.from())
+                && LocalDate.of(2026, 10, 3).equals(q.to())
+                && q.direction() == null && q.keyword() == null));
+    }
+
+    @Test
+    @DisplayName("给定指标串变体，when解析，then trim+大写+去重保序；空白归全七缺省")
+    void givenIndicatorVariants_whenMacroBrief_thenNormalizedDedupedOrDefaults() {
+        var result = service.macroBrief(new MacroBriefFilter(" cpi,PMI ,CPI ", null));
+        assertThat(result.missing()).as("归一（trim+大写）去重后按请求序").containsExactly("CPI", "PMI");
+
+        var blank = service.macroBrief(new MacroBriefFilter("  ", null));
+        assertThat(blank.missing()).as("空白归全七缺省").containsExactly(
+                "CPI", "PPI", "PMI", "LPR", "AFMI", "TY1Y", "TY10Y");
+        verify(macroQueryService, org.mockito.Mockito.times(2)).latest(); // 每次调用各取一次 latest
+    }
+
+    @Test
+    @DisplayName("给定越界 policyDays，when宏观简报，then夹紧 1..90：999→90 天窗、0→单日窗")
+    void givenOutOfRangePolicyDays_whenMacroBrief_thenClampedWindow() {
+        service.macroBrief(new MacroBriefFilter(null, 999)); // 90 天窗：2026-07-06..2026-10-03
+        verify(policyRepository).searchEvents(argThat(q ->
+                LocalDate.of(2026, 7, 6).equals(q.from()) && LocalDate.of(2026, 10, 3).equals(q.to())));
+
+        service.macroBrief(new MacroBriefFilter(null, 0)); // 1 天窗：from=to=今日
+        verify(policyRepository).searchEvents(argThat(q ->
+                LocalDate.of(2026, 10, 3).equals(q.from()) && LocalDate.of(2026, 10, 3).equals(q.to())));
+    }
+
+    @Test
+    @DisplayName("给定部分指标无数据，when宏观简报，then缺失显式列出且不取 series（F13 不编造不省略）")
+    void givenMissingIndicators_whenMacroBrief_thenExplicitMissingWithoutSeriesCall() {
+        when(macroQueryService.latest()).thenReturn(List.of(
+                macroPoint("CPI", "2026-09", "MONTH", "0.6"),
+                macroPoint(MacroPoint.INDICATOR_TY1Y, "2026-09-30", "DAY", "1.45")));
+        when(macroQueryService.series(eq("CPI"), anyInt())).thenReturn(List.of(
+                macroPoint("CPI", "2026-09", "MONTH", "0.6"),
+                macroPoint("CPI", "2026-08", "MONTH", "0.5")));
+
+        var result = service.macroBrief(new MacroBriefFilter("CPI,PMI,TY1Y,GDP", null));
+
+        // 缺失（库中无 latest）与未知指标码同显式列出，请求序保持
+        assertThat(result.missing()).containsExactly("PMI", "GDP");
+        assertThat(result.indicators()).hasSize(2);
+        var cpi = result.indicators().get(0);
+        assertThat(cpi.value()).isEqualByComparingTo("0.6");
+        assertThat(cpi.period()).isEqualTo("2026-09");
+        assertThat(cpi.periodType()).isEqualTo("MONTH");
+        assertThat(cpi.series()).extracting(IntelligenceQueryService.SeriesPoint::period)
+                .as("序列 period 倒序——最新在前").containsExactly("2026-09", "2026-08");
+        var ty = result.indicators().get(1);
+        assertThat(ty.series()).as("TY 无历史序列原样空列表透传（工具层翻译 note）").isEmpty();
+        // 仅命中指标取 series，缺失指标不查（也无从查起）
+        verify(macroQueryService).series("CPI", 5);
+        verify(macroQueryService).series(MacroPoint.INDICATOR_TY1Y, 5);
+        verify(macroQueryService, never()).series(eq("PMI"), anyInt());
+        verify(macroQueryService, never()).series(eq("GDP"), anyInt());
+    }
+
+    @Test
+    @DisplayName("给定含非政策兜底行的检索页，when宏观简报，then九字段映射且 isPolicy=false 标记保留")
+    void givenPolicyPageWithFallbackRow_whenMacroBrief_thenViewMapsFieldsWithMarker() {
+        when(policyRepository.searchEvents(any())).thenReturn(new PageResult<>(List.of(
+                policyEvent(1L, "央行降准", PolicyDirection.EASING, PolicyStrength.HIGH, "降准 0.5 个百分点"),
+                policyEvent(2L, "领导活动新闻", PolicyDirection.NEUTRAL, PolicyStrength.LOW,
+                        PolicyEvent.NON_POLICY_SUMMARY)), 5, 1, 20));
+
+        var result = service.macroBrief(new MacroBriefFilter("CPI", null));
+
+        assertThat(result.total()).isEqualTo(5);
+        assertThat(result.policies()).hasSize(2);
+        var first = result.policies().get(0);
+        assertThat(first.title()).isEqualTo("央行降准");
+        assertThat(first.direction()).isEqualTo(PolicyDirection.EASING);
+        assertThat(first.strength()).isEqualTo(PolicyStrength.HIGH);
+        assertThat(first.areas()).containsExactly("房地产", "基建");
+        assertThat(first.summary()).isEqualTo("降准 0.5 个百分点");
+        assertThat(first.confidence()).isEqualTo(PolicyConfidence.HIGH);
+        assertThat(first.isPolicy()).isTrue();
+        assertThat(first.url()).isEqualTo("https://x/p1");
+        assertThat(first.publishedAt()).isEqualTo(Instant.parse("2026-09-28T09:30:00Z"));
+        var fallback = result.policies().get(1);
+        assertThat(fallback.isPolicy()).as("非政策兜底行也返回但带 isPolicy=false 标记").isFalse();
+        assertThat(fallback.confidence()).isEqualTo(PolicyConfidence.HIGH);
     }
 }

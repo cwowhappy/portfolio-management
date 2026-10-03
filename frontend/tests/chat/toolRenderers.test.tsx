@@ -38,12 +38,12 @@ const tableSpec = {
 };
 
 describe("ChartToolRenderers", () => {
-  it("注册 4 既有 + 5 MS-12 + research_draft + search_news + search_announcements 具名渲染器（无 agentId，05 §4.1）", () => {
+  it("注册 4 既有 + 5 MS-12 + research_draft + search_news + search_announcements + macro_brief 具名渲染器（无 agentId，05 §4.1）", () => {
     render(<ChartToolRenderers />);
     expect(renderToolConfigs.map((c) => c.name)).toEqual(
       ["get_kline", "get_valuation", "get_market_overview", "get_financials",
         "screen_stocks", "analyze_financials", "analyze_industry", "suggest_allocation", "analyze_portfolio",
-        "research_draft", "search_news", "search_announcements"]);
+        "research_draft", "search_news", "search_announcements", "macro_brief"]);
     expect(renderToolConfigs.every((c) => "parameters" in c)).toBe(true);
   });
 
@@ -273,6 +273,111 @@ describe("ChartToolRenderers", () => {
     expect(container.querySelector("details.tool-card")).toBeTruthy();
     cleanup();
     const running = render(sa.render({ status: "inProgress" }) as React.ReactElement);
+    expect(running.container.querySelector(".tool-card.running")).toBeTruthy();
+  });
+
+  // ===== macro_brief（MS-22 Task 6）：宏观简报卡——指标表 + 政策列表两段 =====
+  const macroBriefResult = JSON.stringify({
+    indicators: [
+      {
+        indicator: "CPI",
+        value: 0.6,
+        yoy: 0.6,
+        period: "2026-09",
+        periodType: "MONTH",
+        series: [
+          { period: "2026-09", value: 0.6 },
+          { period: "2026-08", value: 0.5 },
+          { period: "2026-07", value: 0.4 },
+        ],
+      },
+      {
+        indicator: "TY1Y",
+        value: 1.45,
+        period: "2026-09-30",
+        periodType: "DAY",
+        note: "国债收益率仅最新点、无历史序列",
+      },
+    ],
+    policies: [
+      {
+        title: "央行降准",
+        direction: "EASING",
+        strength: "HIGH",
+        areas: ["房地产", "基建"],
+        summary: "降准 0.5 个百分点",
+        confidence: "HIGH",
+        isPolicy: true,
+        url: "https://x/p1",
+        publishedAt: "2026-09-28T09:30:00Z",
+      },
+      {
+        title: "领导活动新闻",
+        direction: "NEUTRAL",
+        strength: "LOW",
+        areas: [],
+        summary: "非政策类动态（过滤兜底）",
+        confidence: "LOW",
+        isPolicy: false,
+        url: "https://x/p2",
+        publishedAt: "2026-09-27T09:30:00Z",
+      },
+    ],
+    total: 12,
+    missing: [{ indicator: "PMI", missing: true }],
+    generatedAt: "2026-10-03T02:15:00Z",
+  });
+
+  it("macro_brief complete → 指标表（值/期别/近5期迷你串）+ TY note + 缺失行 + 政策列表（方向徽标/力度/领域/链接/非政策标记）", () => {
+    render(<ChartToolRenderers />);
+    const mb = renderToolConfigs.find((c) => c.name === "macro_brief")!;
+    const { getByText, getByRole } = render(
+      mb.render({ status: "complete", result: macroBriefResult }) as React.ReactElement,
+    );
+    // 指标表：indicator/value/period/近5期迷你串（最新在前 → 值降序串）
+    expect(getByText("CPI")).toBeTruthy();
+    expect(getByText("0.6")).toBeTruthy();
+    expect(getByText("2026-09")).toBeTruthy();
+    expect(getByText("0.6→0.5→0.4")).toBeTruthy();
+    // TY 无历史：note 直接展示（勿当数据缺失）
+    expect(getByText("国债收益率仅最新点、无历史序列")).toBeTruthy();
+    expect(getByText("TY1Y")).toBeTruthy();
+    // 缺失行渲染：指标码 + 「数据缺失」单元（不编造值）
+    expect(getByText("PMI")).toBeTruthy();
+    expect(getByText("数据缺失")).toBeTruthy();
+    // 政策列表：标题链接 + 方向徽标（EASING=宽松）+ 力度 + 影响领域 + 摘要 + 非政策标记 + total
+    expect(getByRole("link", { name: "央行降准" }).getAttribute("href")).toBe("https://x/p1");
+    expect(getByText("宽松")).toBeTruthy();
+    expect(getByText("强")).toBeTruthy();
+    expect(getByText("房地产 / 基建")).toBeTruthy();
+    expect(getByText("降准 0.5 个百分点")).toBeTruthy();
+    expect(getByText("非政策类")).toBeTruthy();
+    expect(getByText("共 12 条")).toBeTruthy();
+  });
+
+  it("macro_brief 空政策 → note 行且无政策列表；错误 → 降级折叠卡；inProgress → 骨架", () => {
+    render(<ChartToolRenderers />);
+    const mb = renderToolConfigs.find((c) => c.name === "macro_brief")!;
+    const empty = render(
+      mb.render({
+        status: "complete",
+        result: JSON.stringify({
+          indicators: [{ indicator: "CPI", value: 0.6, period: "2026-09", periodType: "MONTH", series: [] }],
+          policies: [],
+          note: "该窗口内暂无政策事件（可调大 policyDays 或稍后再试）",
+          missing: [],
+          generatedAt: "2026-10-03T02:15:00Z",
+        }),
+      }) as React.ReactElement,
+    );
+    expect(empty.getByText("该窗口内暂无政策事件（可调大 policyDays 或稍后再试）")).toBeTruthy();
+    cleanup();
+    const error = render(
+      mb.render({ status: "complete", result: '{"error":"工具执行失败","hint":"请稍后重试"}' }) as React.ReactElement,
+    );
+    expect(error.container.querySelector("details.tool-card")).toBeTruthy();
+    cleanup();
+    const running = render(mb.render({ status: "inProgress" }) as React.ReactElement);
     expect(running.container.querySelector(".tool-card.running")).toBeTruthy();
   });
 });

@@ -28,8 +28,9 @@ import org.springframework.stereotype.Service;
  * {@link BriefRepository}（Task 10 推送读档，生成/推送解耦）。
  *
  * <p>三态归档：GENERATED（正常，LLM 逐节导语缺席时为纯条目版——LLM empty/空串/异常一律
- * 降级不 FAILED，只有条目选取管线异常才 FAILED 留档 fail_reason）/ EMPTY_SIMPLE（窗口
- * 无达阈值情报，决策 #22：一句话 + 数据截止期别）/ FAILED。
+ * 降级不 FAILED，只有条目选取管线异常才 FAILED 留档 fail_reason；D22 宏观日历附行查询
+ * 失败同降级不加行）/ EMPTY_SIMPLE（窗口无达阈值情报，决策 #22：一句话 + 数据截止期别）/
+ * FAILED。
  *
  * <p>幂等：findByDate 当日已有档（任一状态）即跳过——重跑不重复生成；FAILED 不自动
  * 重试（留档供查），人工清理行后可重生成。调度顶层吞异常护调度线程（照
@@ -61,25 +62,27 @@ public class BriefGenerationService {
     private final BriefRepository briefRepository;
     private final IntelligenceChatPort chatPort;
     private final TradingCalendarPort tradingCalendar;
+    private final MacroQueryService macroQueryService;
     private final InvestProperties props;
     private final Clock clock;
 
     @Autowired
     public BriefGenerationService(NewsRepository newsRepository, BriefRepository briefRepository,
                                   IntelligenceChatPort chatPort, TradingCalendarPort tradingCalendar,
-                                  InvestProperties props) {
-        this(newsRepository, briefRepository, chatPort, tradingCalendar, props,
+                                  MacroQueryService macroQueryService, InvestProperties props) {
+        this(newsRepository, briefRepository, chatPort, tradingCalendar, macroQueryService, props,
                 Clock.system(ZONE));
     }
 
     /** 测试构造器：注入时钟。 */
     BriefGenerationService(NewsRepository newsRepository, BriefRepository briefRepository,
                            IntelligenceChatPort chatPort, TradingCalendarPort tradingCalendar,
-                           InvestProperties props, Clock clock) {
+                           MacroQueryService macroQueryService, InvestProperties props, Clock clock) {
         this.newsRepository = newsRepository;
         this.briefRepository = briefRepository;
         this.chatPort = chatPort;
         this.tradingCalendar = tradingCalendar;
+        this.macroQueryService = macroQueryService;
         this.props = props;
         this.clock = clock;
     }
@@ -134,12 +137,26 @@ public class BriefGenerationService {
             logPendingBacklog(today);
             return;
         }
-        BriefComposer.Composed composed =
-                BriefComposer.compose(today, selection, leadsFor(selection), windowStart, now);
+        BriefComposer.Composed composed = BriefComposer.compose(today, selection,
+                leadsFor(selection), windowStart, now, macroCalendarLine(today));
         briefRepository.save(DailyBrief.generated(today, composed.contentMd(),
                 composed.topStocks(), model(), now));
         log.info("盘前简报已归档（tradeDate={}，入选 {} 条）", today, selection.selected().size());
         logPendingBacklog(today);
+    }
+
+    /**
+     * D22 宏观与政策节尾日历附行：当日预期发布的指标（calendarOn（today，Asia/Shanghai
+     * 自然日）命中 seed 日历）；0 条不加行（null）。日历查询失败降级不加行——附行是
+     * 增值信息，不因日历读故障拖垮整份简报归档（照节导语降级先例）。
+     */
+    private String macroCalendarLine(LocalDate today) {
+        try {
+            return BriefComposer.calendarLine(macroQueryService.calendarOn(today));
+        } catch (Exception e) {
+            log.warn("宏观日历附行查询失败，降级不加行（tradeDate={}）", today, e);
+            return null;
+        }
     }
 
     /**

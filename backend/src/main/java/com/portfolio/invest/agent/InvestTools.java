@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.portfolio.invest.agent.chart.ChartSpecs;
 import com.portfolio.invest.agent.research.ResearchDraftSpec;
+import com.portfolio.invest.domain.intelligence.MacroPoint;
 import com.portfolio.invest.domain.market.Financials;
 import com.portfolio.invest.domain.screening.ScreeningCriteria;
 import com.portfolio.invest.domain.screening.SortDirection;
@@ -12,6 +13,7 @@ import com.portfolio.invest.domain.market.KlineBar;
 import com.portfolio.invest.domain.market.MarketDataException;
 import com.portfolio.invest.domain.market.MarketOverview;
 import com.portfolio.invest.application.intelligence.IntelligenceQueryService;
+import com.portfolio.invest.application.intelligence.MacroBriefFilter;
 import com.portfolio.invest.application.intelligence.NewsSearchFilter;
 import com.portfolio.invest.application.market.MarketDataService;
 import com.portfolio.invest.application.valuation.ValuationApplicationService;
@@ -40,6 +42,12 @@ public class InvestTools {
 
     /** search_news 空结果信封话术：新闻仅 90 天滚动保留（与清理口径一致）。 */
     private static final String NEWS_EMPTY_MESSAGE = "该条件下暂无情报（新闻仅保留 90 天内）";
+
+    /** macro_brief 空政策话术：窗口内无命中（政策库长期保留，非「无数据」）。 */
+    private static final String POLICY_EMPTY_NOTE = "该窗口内暂无政策事件（可调大 policyDays 或稍后再试）";
+
+    /** TY 两点无历史序列 note（T4 裁定随行：跨表只合成最新点——note 交代而非空数组，勿当数据缺失）。 */
+    private static final String TY_NO_HISTORY_NOTE = "国债收益率仅最新点、无历史序列";
 
     private final MarketDataService market;
     private final ValuationApplicationService valuationApplicationService;
@@ -192,6 +200,68 @@ public class InvestTools {
     /** 空白串归一 null；非法格式抛 DateTimeParseException 由调用方前置校验兜底。 */
     private static LocalDate parseDate(String s) {
         return s == null || s.isBlank() ? null : LocalDate.parse(s);
+    }
+
+    @Tool(
+            name = "macro_brief",
+            description = "宏观简报：五先行指标（CPI/PPI/PMI/LPR/AFMI）最新值与近 5 期走势、"
+                    + "国债收益率（TY1Y/TY10Y 最新点）与近 policyDays 天政策事件（取向/力度/影响领域/摘要/原文链接）。"
+                    + "用户问宏观环境、通胀、利率、货币政策或近期政策动态时调用；"
+                    + "结果为结构化事实（每指标带数据截止期别 period，引用时注明），"
+                    + "「市场含义」由你自己解读，但事实必须来自工具结果。",
+            readOnly = true,
+            concurrencySafe = true)
+    public String macroBrief(
+            @ToolParam(name = "indicators", description = "指标码逗号分隔：CPI/PPI/PMI/LPR/AFMI"
+                    + "（五先行月度指标）+ TY1Y/TY10Y（国债收益率），可空（缺省全部七项）") String indicators,
+            @ToolParam(name = "policyDays", description = "政策事件回看天数，默认 30，最大 90") Integer policyDays) {
+        // YAGNI 裁定（MS-22 Task 6）：「市场含义」不在本工具内调 LLM 生成模板句——工具输出
+        // 纯结构化事实 + 数据截止期别，市场含义解读留 Agent 对话层基于工具结果自然生成
+        // （事实与观点分离；待简报/推送到宏观节的落地需求出现再评估，v1 不做）。
+        return run(() -> {
+            IntelligenceQueryService.MacroBriefResult result = intelligenceQuery.macroBrief(
+                    new MacroBriefFilter(indicators, policyDays));
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("indicators", result.indicators().stream()
+                    .map(InvestTools::indicatorEntry).toList());
+            body.put("policies", result.policies());
+            if (result.policies().isEmpty()) {
+                body.put("note", POLICY_EMPTY_NOTE);
+            } else {
+                body.put("total", result.total());
+            }
+            body.put("missing", result.missing().stream()
+                    .map(InvestTools::missingEntry).toList());
+            body.put("generatedAt", result.generatedAt());
+            return mapper.writeValueAsString(body);
+        });
+    }
+
+    /** 指标条目 JSON：TY 两点 series 空翻译为 note 字段（T4 裁定随行，勿当数据缺失）。 */
+    private static Map<String, Object> indicatorEntry(IntelligenceQueryService.MacroIndicatorView v) {
+        Map<String, Object> entry = new LinkedHashMap<>();
+        entry.put("indicator", v.indicator());
+        entry.put("value", v.value());
+        if (v.yoy() != null) {
+            entry.put("yoy", v.yoy());
+        }
+        entry.put("period", v.period());
+        entry.put("periodType", v.periodType());
+        if (v.series().isEmpty() && (MacroPoint.INDICATOR_TY1Y.equals(v.indicator())
+                || MacroPoint.INDICATOR_TY10Y.equals(v.indicator()))) {
+            entry.put("note", TY_NO_HISTORY_NOTE);
+        } else {
+            entry.put("series", v.series());
+        }
+        return entry;
+    }
+
+    /** 缺失指标条目 JSON：{indicator,missing:true} 显式列出（F13 缺失不编造不省略）。 */
+    private static Map<String, Object> missingEntry(String indicator) {
+        Map<String, Object> entry = new LinkedHashMap<>();
+        entry.put("indicator", indicator);
+        entry.put("missing", true);
+        return entry;
     }
 
     @Tool(

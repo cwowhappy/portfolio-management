@@ -2,6 +2,7 @@ package com.portfolio.invest.application.intelligence;
 
 import com.portfolio.invest.domain.intelligence.BriefSection;
 import com.portfolio.invest.domain.intelligence.Direction;
+import com.portfolio.invest.domain.intelligence.MacroCalendarEntry;
 import com.portfolio.invest.domain.intelligence.NewsRecord;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -12,6 +13,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 简报 markdown 拼装纯函数（D17/决策 #20/#23）：5+1 节固定顺序（节名照决策 #20），节内
@@ -38,13 +40,15 @@ public final class BriefComposer {
 
     /**
      * 正常版拼装：标题 + 数据截止行 + 六节（BriefSection 固定顺序），节内=导语（可选）
-     * + 条目行（无 url 退化为纯标题、无方向省略方向段）；空节以占位行交代。
+     * + 条目行（无 url 退化为纯标题、无方向省略方向段）；空节以占位行交代；
+     * 宏观与政策节尾按 {@code macroCalendarLine} 追加日历附行（D22，null 不加行）。
      *
-     * @param leads 各节导语（无导语节缺席于 map 即可，null 安全）
+     * @param leads             各节导语（无导语节缺席于 map 即可，null 安全）
+     * @param macroCalendarLine 当日预期发布附行（{@link #calendarLine} 产出；null/空不加行）
      */
     public static Composed compose(LocalDate tradeDate, BriefSelectionPolicy.Selection selection,
                                    Map<BriefSection, String> leads, Instant windowStart,
-                                   Instant windowEnd) {
+                                   Instant windowEnd, String macroCalendarLine) {
         StringBuilder md = new StringBuilder();
         md.append("# 盘前情报速递（").append(tradeDate).append("）\n\n");
         md.append("数据截止：").append(format(windowEnd))
@@ -60,6 +64,10 @@ public final class BriefComposer {
                 md.append("（本节暂无入选条目）\n");
             } else {
                 items.forEach(item -> md.append(itemLine(item)).append('\n'));
+            }
+            if (section == BriefSection.MACRO && macroCalendarLine != null
+                    && !macroCalendarLine.isBlank()) {
+                md.append('\n').append(macroCalendarLine).append('\n');
             }
         }
         return new Composed(md.toString(), topStocks(selection.selected()));
@@ -83,6 +91,21 @@ public final class BriefComposer {
             case GLOBAL -> "海外与大宗";
             case OTHER -> "其他要闻";
         };
+    }
+
+    /**
+     * D22 简报日历附行：当日预期发布的指标（calendarOn 命中）拼「📅 今日预期发布：
+     * CPI（来源：国家统计局）、LPR（来源：中国人民银行）」，逐条带各自来源；
+     * 空列表返回 null（0 条不加行）。预期非承诺（F14）——文案用「预期发布」。
+     */
+    static String calendarLine(List<MacroCalendarEntry> entries) {
+        if (entries == null || entries.isEmpty()) {
+            return null;
+        }
+        String joined = entries.stream()
+                .map(e -> e.indicator() + "（来源：" + e.sourceSite() + "）")
+                .collect(Collectors.joining("、"));
+        return "📅 今日预期发布：" + joined;
     }
 
     /** 条目行：有 url 为链接形态；无方向省略「· 方向」段（无法判断 ≠ 中性）。 */

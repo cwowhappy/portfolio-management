@@ -52,3 +52,8 @@ export const SearchAnnouncementsParamsSchema = z.object({
   scope: z.enum(["all", "subscription", "holdings"]).optional().describe("检索范围，缺省 all"),
   limit: z.number().optional().describe("返回条数，默认 10，最大 20"),
 });
+// ===== MS-22（P3 Task 6）：macro_brief 与后端 @ToolParam 对齐 =====
+export const MacroBriefParamsSchema = z.object({
+  indicators: z.string().optional().describe("指标码逗号分隔：CPI/PPI/PMI/LPR/AFMI + TY1Y/TY10Y，缺省全部"),
+  policyDays: z.number().optional().describe("政策事件回看天数，默认 30，最大 90"),
+});

@@ -17,6 +17,7 @@ const TOOL_LABELS: Record<string, string> = {
   analyze_industry: "行业分析",
   search_news: "新闻检索",
   search_announcements: "公告检索",
+  macro_brief: "宏观简报",
 };
 
 /** 无参工具在参数为空时显示的友好文案 */
@@ -49,6 +50,7 @@ function prettyArgs(toolName: string, parameters: unknown): string {
   if (obj.stock) parts.push(String(obj.stock));
   if (obj.query) parts.push(String(obj.query));
   if (obj.q) parts.push(String(obj.q));
+  if (obj.indicators) parts.push(String(obj.indicators));
   if (obj.period) parts.push(String(obj.period));
   if (obj.limit) parts.push("近" + String(obj.limit) + "根");
   if (parts.length > 0) return parts.join(" · ");
