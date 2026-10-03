@@ -8,10 +8,14 @@ import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.portfolio.invest.application.intelligence.AnnouncementExtractor;
 import com.portfolio.invest.application.intelligence.IntelligenceChatPort;
 import com.portfolio.invest.application.intelligence.NewsExtractor;
+import com.portfolio.invest.application.intelligence.PolicyExtractor;
 import com.portfolio.invest.domain.intelligence.AnnouncementMetrics;
 import com.portfolio.invest.domain.intelligence.AnnouncementType;
 import com.portfolio.invest.domain.intelligence.Direction;
 import com.portfolio.invest.domain.intelligence.ImportanceGrade;
+import com.portfolio.invest.domain.intelligence.PolicyConfidence;
+import com.portfolio.invest.domain.intelligence.PolicyDirection;
+import com.portfolio.invest.domain.intelligence.PolicyStrength;
 import com.portfolio.invest.infrastructure.intelligence.AgentScopeIntelligenceChatPort;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
@@ -45,22 +49,28 @@ import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
  * 不改生产类可见性。唯一差异：apiKey 显式入 ModelCreationContext（生产靠 provider 回退
  * System.getenv），使仅存在于 .env 的 key 也可用。
  *
- * <p><b>双 kind（MS-21 Task 9）</b>：题库 {@code kind} 字段区分新闻题（缺省 news，P1 题库
- * 无该字段）与公告题（announcement，直调 {@link AnnouncementExtractor#extractOne}）。新闻题比对
- * 口径（题库文件头注释与本实现互为对照）：stock_codes 全集相等（空数组=断言无标的）；
- * direction 期望非 null 时须一致（null=容忍不确定，不断言）；importance 按 80/50 阈值判档，
- * 跨档但分数落在阈值 ±10 内按容差不计错；event_type 期望非空时须一致（大小写不敏感）。
- * 公告题比对口径：metrics 五数值字段（revenueYi/netProfitYi/netProfitYoyPct/deductedProfitYi/
- * grossMarginPct）期望键 BigDecimal 等值（compareTo，容忍尾零差异；期望缺失该键=不断言）；
- * dividendDesc 期望非 null=断言实际非 null（披露识别；文本措辞不强一致，报告留实得值人工抽阅，
- * null 断言经 undisclosed「分红」联动守护——YAML 显式 null 与缺省不可区分，不做 null 直断）；
- * undisclosed 期望每项须在实际 undisclosed 命中，且六个规范名联动断言对应字段为 null
- * （未披露字段 null 且进 undisclosed 的契约）；annTypes 期望集 ⊆ 实际集（栏目直判 ∪ LLM 精判
- * 并集语义，允许多）。
+ * <p><b>三 kind（MS-21 Task 9 双 kind + MS-22 Task 8 增政策）</b>：题库 {@code kind} 字段区分
+ * 新闻题（缺省 news，P1 题库无该字段）、公告题（announcement，直调
+ * {@link AnnouncementExtractor#extractOne}）与政策题（policy，直调
+ * {@link PolicyExtractor#extractOne}）。新闻题比对口径（题库文件头注释与本实现互为对照）：
+ * stock_codes 全集相等（空数组=断言无标的）；direction 期望非 null 时须一致（null=容忍不确定，
+ * 不断言）；importance 按 80/50 阈值判档，跨档但分数落在阈值 ±10 内按容差不计错；event_type
+ * 期望非空时须一致（大小写不敏感）。公告题比对口径：metrics 五数值字段（revenueYi/netProfitYi/
+ * netProfitYoyPct/deductedProfitYi/grossMarginPct）期望键 BigDecimal 等值（compareTo，容忍尾零
+ * 差异；期望缺失该键=不断言）；dividendDesc 期望非 null=断言实际非 null（披露识别；文本措辞
+ * 不强一致，报告留实得值人工抽阅，null 断言经 undisclosed「分红」联动守护——YAML 显式 null
+ * 与缺省不可区分，不做 null 直断）；undisclosed 期望每项须在实际 undisclosed 命中，且六个规范名
+ * 联动断言对应字段为 null（未披露字段 null 且进 undisclosed 的契约）；annTypes 期望集 ⊆ 实际集
+ * （栏目直判 ∪ LLM 精判并集语义，允许多）。政策题比对口径：policy_direction/strength/confidence
+ * 三受控枚举期望非 null 时须一致（null=容忍不确定，不断言）；affected_areas 期望集 ⊆ 实际集
+ * （部分命中，允许多；期望缺失=不断言）；is_policy 期望非 null 时须一致（false=非政策兜底行——
+ * PolicyExtractor 哨兵置换 direction=NEUTRAL/strength=LOW/confidence=LOW 落库而非丢弃，
+ * 期望哨兵值即守护该转换链）；summary 恒断言非空（SUCCESS 的解析契约锚点）。
  *
  * <p>报告写 {@code backend/build/reports/eval-extraction/eval-report.{json,md}}
- * （schema=eval-extraction-report/2，公告维度为 /2 新增；汇总：parse 成功率 + 新闻四指标 +
- * 公告三指标 metrics/undisclosed/annTypes + 总体 PASS）。
+ * （schema=eval-extraction-report/3，公告维度为 /2 新增、政策维度为 /3 新增；汇总：parse 成功率 +
+ * 新闻四指标 + 公告三指标 metrics/undisclosed/annTypes + 政策五指标 direction/strength/
+ * confidence/affectedAreas/isPolicy + 总体 PASS）。
  *
  * <p>定位（D21，同 evalAgent 的 agent-testing 口径）：报告即产出——退出码恒 0、不抛
  * （题库 schema 错误与框架异常写 ERROR 报告后同样正常退出）；DEEPSEEK_API_KEY 未配置时
@@ -82,6 +92,7 @@ public final class ExtractionEvalRunner {
     /** kind 取值（题库缺省 news——P1 新闻题库无 kind 字段）。 */
     private static final String KIND_NEWS = "news";
     private static final String KIND_ANNOUNCEMENT = "announcement";
+    private static final String KIND_POLICY = "policy";
 
     /**
      * 公告 metrics 五数值字段白名单（期望 metrics 键的 fail-fast 校验；dividendDesc 为文本，
@@ -106,7 +117,9 @@ public final class ExtractionEvalRunner {
     /**
      * 期望（snake_case 键与题库 YAML 对齐）。前四项为新闻题（kind=news）；四项之后为公告题
      * （kind=announcement）：metrics（五数值字段 camelCase 键 → 期望 BigDecimal）、
-     * dividend_desc、undisclosed、ann_types（AnnouncementType 枚举名数组，装载时 fail-fast 校验）。
+     * dividend_desc、undisclosed、ann_types（AnnouncementType 枚举名数组，装载时 fail-fast 校验）；
+     * 末五项为政策题（kind=policy）：policy_direction/strength/confidence 三受控枚举、
+     * affected_areas、is_policy（false=非政策哨兵转换链断言）。
      */
     public record Expectation(
             @JsonProperty("stock_codes") List<String> stockCodes,
@@ -116,12 +129,18 @@ public final class ExtractionEvalRunner {
             Map<String, BigDecimal> metrics,
             @JsonProperty("dividend_desc") String dividendDesc,
             List<String> undisclosed,
-            @JsonProperty("ann_types") List<String> annTypes) {
+            @JsonProperty("ann_types") List<String> annTypes,
+            @JsonProperty("policy_direction") PolicyDirection policyDirection,
+            PolicyStrength strength,
+            PolicyConfidence confidence,
+            @JsonProperty("affected_areas") List<String> affectedAreas,
+            @JsonProperty("is_policy") Boolean isPolicy) {
     }
 
-    /** kind 缺省 news；news 用 summary、announcement 用 pdf_text。 */
+    /** kind 缺省 news；news 用 summary、announcement 用 pdf_text、policy 用 content_text。 */
     public record ExtractionQuestion(String id, String kind, String title, String summary,
-            @JsonProperty("pdf_text") String pdfText, Expectation expect) {
+            @JsonProperty("pdf_text") String pdfText,
+            @JsonProperty("content_text") String contentText, Expectation expect) {
     }
 
     /** 单题单维度结论：PASS 一致 / TOLERATED 跨档但阈值±10 内 / FAIL 不一致 / SKIP 未断言或无法比对。 */
@@ -132,16 +151,18 @@ public final class ExtractionEvalRunner {
 
     /**
      * outcome 取抽取器三态 + ERROR（单题框架异常兜底，理论不可达：端口吞异常）；
-     * newsFields/announcementFields 按 kind 二选一非空（非 SUCCESS 均为 null）。
+     * newsFields/announcementFields/policyFields 按 kind 三选一非空（非 SUCCESS 均为 null）。
      */
     private record QuestionResult(ExtractionQuestion question, String outcome, boolean pass,
                                   long durationMs, long inputTokens,
                                   NewsExtractor.ExtractedFields newsFields,
                                   AnnouncementExtractor.ExtractedFields announcementFields,
+                                  PolicyExtractor.ExtractedFields policyFields,
                                   List<DimensionResult> dimensions) {
     }
 
-    private record Summary(int total, int newsTotal, int announcementTotal, int success,
+    private record Summary(int total, int newsTotal, int announcementTotal, int policyTotal,
+                           int success,
                            int parseFailed, int llmUnavailable, int error,
                            int stockPass, int stockAsserted,
                            int directionPass, int directionAsserted,
@@ -149,6 +170,11 @@ public final class ExtractionEvalRunner {
                            int annMetricsPass, int annMetricsAsserted,
                            int annUndisclosedPass, int annUndisclosedAsserted,
                            int annTypesPass, int annTypesAsserted,
+                           int policyDirectionPass, int policyDirectionAsserted,
+                           int policyStrengthPass, int policyStrengthAsserted,
+                           int policyConfidencePass, int policyConfidenceAsserted,
+                           int policyAreasPass, int policyAreasAsserted,
+                           int policyIsPolicyPass, int policyIsPolicyAsserted,
                            int overallPass) {
     }
 
@@ -182,23 +208,21 @@ public final class ExtractionEvalRunner {
         // —— --list：只装载校验题库并打印清单（干跑，不起 LLM、不连任何外部端点） ——
         if (list) {
             System.out.printf("%-40s %-12s %-8s %-7s %-10s %s%n",
-                    "id", "kind", "dir", "grade", "event", "stocks/annTypes");
+                    "id", "kind", "dir", "grade", "event", "stocks/annTypes/areas");
             for (ExtractionQuestion q : questions) {
                 System.out.printf("%-40s %-12s %-8s %-7s %-10s %s%n", q.id(),
                         kindOf(q),
-                        q.expect().direction() == null ? "-" : q.expect().direction(),
+                        expectDirectionLabel(q),
                         q.expect().importance(),
                         q.expect().eventType() == null ? "-" : q.expect().eventType(),
-                        isAnnouncement(q)
-                                ? String.valueOf(q.expect().annTypes())
-                                : String.valueOf(q.expect().stockCodes() == null
-                                        ? List.of() : q.expect().stockCodes()));
+                        expectTailLabel(q));
             }
-            System.out.printf("[eval-extraction] --list 干跑通过：装载 %d 题（news %d / announcement %d），"
+            System.out.printf("[eval-extraction] --list 干跑通过：装载 %d 题（news %d / announcement %d / policy %d），"
                             + "schema 校验全部通过（未起 LLM）%n",
                     questions.size(),
-                    questions.stream().filter(q -> !isAnnouncement(q)).count(),
-                    questions.stream().filter(ExtractionEvalRunner::isAnnouncement).count());
+                    questions.stream().filter(q -> KIND_NEWS.equals(kindOf(q))).count(),
+                    questions.stream().filter(ExtractionEvalRunner::isAnnouncement).count(),
+                    questions.stream().filter(ExtractionEvalRunner::isPolicy).count());
             return;
         }
 
@@ -244,12 +268,14 @@ public final class ExtractionEvalRunner {
         IntelligenceChatPort chatPort = new AgentScopeIntelligenceChatPort(models);
         NewsExtractor newsExtractor = new NewsExtractor();
         AnnouncementExtractor announcementExtractor = new AnnouncementExtractor();
+        PolicyExtractor policyExtractor = new PolicyExtractor();
 
         System.out.printf("[eval-extraction] 题库装载 %d 题；通道=AgentScopeIntelligenceChatPort（deepseek/%s @ %s）%n",
                 questions.size(), model, baseUrl);
         List<QuestionResult> results = new ArrayList<>();
         for (ExtractionQuestion q : questions) {
-            QuestionResult result = runOne(newsExtractor, announcementExtractor, chatPort, q);
+            QuestionResult result = runOne(newsExtractor, announcementExtractor, policyExtractor,
+                    chatPort, q);
             results.add(result);
             String misses = result.dimensions().stream()
                     .filter(d -> d.status() == Status.FAIL)
@@ -284,15 +310,30 @@ public final class ExtractionEvalRunner {
                     s.annUndisclosedPass(), s.annUndisclosedAsserted(),
                     s.annTypesPass(), s.annTypesAsserted());
         }
+        if (s.policyTotal() > 0) {
+            System.out.printf(
+                    "[eval-extraction]   政策（%d 题）：direction 一致率 %d/%d｜strength 一致率 %d/%d｜"
+                            + "confidence 一致率 %d/%d｜affectedAreas 命中率 %d/%d｜isPolicy 一致率 %d/%d%n",
+                    s.policyTotal(), s.policyDirectionPass(), s.policyDirectionAsserted(),
+                    s.policyStrengthPass(), s.policyStrengthAsserted(),
+                    s.policyConfidencePass(), s.policyConfidenceAsserted(),
+                    s.policyAreasPass(), s.policyAreasAsserted(),
+                    s.policyIsPolicyPass(), s.policyIsPolicyAsserted());
+        }
     }
 
     // ———— 单题执行与比对 ————
 
     private QuestionResult runOne(NewsExtractor newsExtractor, AnnouncementExtractor announcementExtractor,
+                                  PolicyExtractor policyExtractor,
                                   IntelligenceChatPort chatPort, ExtractionQuestion q) {
-        return isAnnouncement(q)
-                ? runAnnouncementOne(announcementExtractor, chatPort, q)
-                : runNewsOne(newsExtractor, chatPort, q);
+        if (isAnnouncement(q)) {
+            return runAnnouncementOne(announcementExtractor, chatPort, q);
+        }
+        if (isPolicy(q)) {
+            return runPolicyOne(policyExtractor, chatPort, q);
+        }
+        return runNewsOne(newsExtractor, chatPort, q);
     }
 
     private QuestionResult runNewsOne(NewsExtractor extractor, IntelligenceChatPort chatPort,
@@ -308,7 +349,7 @@ public final class ExtractionEvalRunner {
             List<DimensionResult> dimensions = evaluateNews(q, outcome.fields());
             boolean pass = dimensions.stream().noneMatch(d -> d.status() == Status.FAIL);
             return new QuestionResult(q, outcome.status().name(), pass, duration, outcome.inputTokens(),
-                    outcome.fields(), null, dimensions);
+                    outcome.fields(), null, null, dimensions);
         } catch (Throwable t) { // 理论不可达（端口吞异常不抛）；防单题框架异常中断整批
             return failed(q, "ERROR", System.currentTimeMillis() - start, 0,
                     newsSkipDimensions(t.getClass().getSimpleName() + ": " + t.getMessage()));
@@ -330,16 +371,38 @@ public final class ExtractionEvalRunner {
             List<DimensionResult> dimensions = evaluateAnnouncement(q, outcome.fields());
             boolean pass = dimensions.stream().noneMatch(d -> d.status() == Status.FAIL);
             return new QuestionResult(q, outcome.status().name(), pass, duration, outcome.inputTokens(),
-                    null, outcome.fields(), dimensions);
+                    null, outcome.fields(), null, dimensions);
         } catch (Throwable t) { // 理论不可达（端口吞异常不抛）；防单题框架异常中断整批
             return failed(q, "ERROR", System.currentTimeMillis() - start, 0,
                     announcementSkipDimensions(t.getClass().getSimpleName() + ": " + t.getMessage()));
         }
     }
 
+    /** 政策题：直调 PolicyExtractor（title + 政策正文段，输入截断在提示词层）。 */
+    private QuestionResult runPolicyOne(PolicyExtractor extractor, IntelligenceChatPort chatPort,
+                                        ExtractionQuestion q) {
+        long start = System.currentTimeMillis();
+        try {
+            PolicyExtractor.ExtractionOutcome outcome =
+                    extractor.extractOne(chatPort, q.title(), q.contentText());
+            long duration = System.currentTimeMillis() - start;
+            if (outcome.status() != PolicyExtractor.OutcomeStatus.SUCCESS) {
+                return failed(q, outcome.status().name(), duration, outcome.inputTokens(),
+                        policySkipDimensions("抽取未成功（" + outcome.status() + "），字段比对跳过"));
+            }
+            List<DimensionResult> dimensions = evaluatePolicy(q, outcome.fields());
+            boolean pass = dimensions.stream().noneMatch(d -> d.status() == Status.FAIL);
+            return new QuestionResult(q, outcome.status().name(), pass, duration, outcome.inputTokens(),
+                    null, null, outcome.fields(), dimensions);
+        } catch (Throwable t) { // 理论不可达（端口吞异常不抛）；防单题框架异常中断整批
+            return failed(q, "ERROR", System.currentTimeMillis() - start, 0,
+                    policySkipDimensions(t.getClass().getSimpleName() + ": " + t.getMessage()));
+        }
+    }
+
     private static QuestionResult failed(ExtractionQuestion q, String outcome, long duration, long tokens,
                                          List<DimensionResult> dimensions) {
-        return new QuestionResult(q, outcome, false, duration, tokens, null, null, dimensions);
+        return new QuestionResult(q, outcome, false, duration, tokens, null, null, null, dimensions);
     }
 
     private static List<DimensionResult> newsSkipDimensions(String reason) {
@@ -356,6 +419,16 @@ public final class ExtractionEvalRunner {
                 new DimensionResult("dividendDesc", Status.SKIP, reason),
                 new DimensionResult("undisclosed", Status.SKIP, reason),
                 new DimensionResult("annTypes", Status.SKIP, reason));
+    }
+
+    private static List<DimensionResult> policySkipDimensions(String reason) {
+        return List.of(
+                new DimensionResult("direction", Status.SKIP, reason),
+                new DimensionResult("strength", Status.SKIP, reason),
+                new DimensionResult("confidence", Status.SKIP, reason),
+                new DimensionResult("affectedAreas", Status.SKIP, reason),
+                new DimensionResult("isPolicy", Status.SKIP, reason),
+                new DimensionResult("summary", Status.SKIP, reason));
     }
 
     /** 新闻四维度比对（口径见类 javadoc 与题库文件头）。 */
@@ -483,6 +556,60 @@ public final class ExtractionEvalRunner {
         return dims;
     }
 
+    /**
+     * 政策六维度比对（口径见类 javadoc 与 policy-001.yaml 文件头）：三受控枚举一致 /
+     * affectedAreas 部分命中（期望 ⊆ 实际）/ isPolicy 一致（false=哨兵转换链）/ summary 非空。
+     */
+    private static List<DimensionResult> evaluatePolicy(ExtractionQuestion q,
+                                                        PolicyExtractor.ExtractedFields f) {
+        List<DimensionResult> dims = new ArrayList<>();
+        Expectation e = q.expect();
+        dims.add(enumDim("direction", e.policyDirection(), f.direction()));
+        dims.add(enumDim("strength", e.strength(), f.strength()));
+        dims.add(enumDim("confidence", e.confidence(), f.confidence()));
+        // affectedAreas：期望 ⊆ 实际（部分命中，允许多；期望缺失 = 不断言）
+        if (e.affectedAreas() == null) {
+            dims.add(new DimensionResult("affectedAreas", Status.SKIP,
+                    "expect 未断言，实得 " + f.affectedAreas()));
+        } else {
+            Set<String> actual = new LinkedHashSet<>(f.affectedAreas());
+            Set<String> missing = new LinkedHashSet<>(e.affectedAreas());
+            missing.removeAll(actual);
+            dims.add(missing.isEmpty()
+                    ? new DimensionResult("affectedAreas", Status.PASS,
+                            "期望 " + e.affectedAreas() + " ⊆ 实得 " + actual)
+                    : new DimensionResult("affectedAreas", Status.FAIL,
+                            "期望 " + e.affectedAreas() + " 实得 " + actual + "（漏 " + missing + "）"));
+        }
+        // isPolicy：与抽取 isPolicy 一致（false = 非政策兜底行，哨兵字段由其余维度守护）
+        if (e.isPolicy() == null) {
+            dims.add(new DimensionResult("isPolicy", Status.SKIP,
+                    "expect 未断言，实得 " + f.isPolicy()));
+        } else if (e.isPolicy() == f.isPolicy()) {
+            dims.add(new DimensionResult("isPolicy", Status.PASS, "一致: " + f.isPolicy()));
+        } else {
+            dims.add(new DimensionResult("isPolicy", Status.FAIL,
+                    "期望 " + e.isPolicy() + " 实得 " + f.isPolicy()));
+        }
+        // summary：SUCCESS 的解析契约锚点，恒断言非空
+        dims.add(f.summary() != null && !f.summary().isBlank()
+                ? new DimensionResult("summary", Status.PASS,
+                        "非空（" + f.summary().length() + " 字）：「" + f.summary() + "」")
+                : new DimensionResult("summary", Status.FAIL, "SUCCESS 但 summary 空白（违反解析契约）"));
+        return dims;
+    }
+
+    /** 政策枚举维度比对：期望 null=容忍不确定（SKIP）；否则须一致。 */
+    private static DimensionResult enumDim(String name, Enum<?> expected, Enum<?> actual) {
+        if (expected == null) {
+            return new DimensionResult(name, Status.SKIP, "expect 未断言，实得 " + actual);
+        }
+        if (expected == actual) {
+            return new DimensionResult(name, Status.PASS, "一致: " + actual);
+        }
+        return new DimensionResult(name, Status.FAIL, "期望 " + expected + " 实得 " + actual);
+    }
+
     /** metrics 数值字段按 camelCase 键取值（装载校验保证键在白名单内）。 */
     private static BigDecimal metricOf(AnnouncementMetrics m, String key) {
         if (m == null) {
@@ -578,8 +705,9 @@ public final class ExtractionEvalRunner {
 
     private static void validate(ExtractionQuestion q, String file) {
         require(q.id() != null && !q.id().isBlank(), file, "id 缺失");
-        require(q.kind() == null || KIND_NEWS.equals(q.kind()) || KIND_ANNOUNCEMENT.equals(q.kind()), file,
-                q.id() + ": kind 非法（" + q.kind() + "，合法取值 news/announcement，缺省 news）");
+        require(q.kind() == null || KIND_NEWS.equals(q.kind()) || KIND_ANNOUNCEMENT.equals(q.kind())
+                || KIND_POLICY.equals(q.kind()), file,
+                q.id() + ": kind 非法（" + q.kind() + "，合法取值 news/announcement/policy，缺省 news）");
         require(q.title() != null && !q.title().isBlank(), file, q.id() + ": title 缺失");
         require(q.expect() != null, file, q.id() + ": expect 缺失");
         if (isAnnouncement(q)) {
@@ -608,6 +736,12 @@ public final class ExtractionEvalRunner {
                     }
                 }
             }
+        } else if (isPolicy(q)) {
+            require(q.contentText() != null && !q.contentText().isBlank(), file,
+                    q.id() + ": content_text 缺失（政策题主输入）");
+            require(q.expect().affectedAreas() == null || q.expect().affectedAreas().stream()
+                            .noneMatch(a -> a == null || a.isBlank()),
+                    file, q.id() + ": expect.affected_areas 须为非空字符串数组");
         } else {
             require(q.summary() != null && !q.summary().isBlank(), file, q.id() + ": summary 缺失");
             require(q.expect().importance() != null, file,
@@ -622,8 +756,35 @@ public final class ExtractionEvalRunner {
         return KIND_ANNOUNCEMENT.equals(q.kind());
     }
 
+    private static boolean isPolicy(ExtractionQuestion q) {
+        return KIND_POLICY.equals(q.kind());
+    }
+
     private static String kindOf(ExtractionQuestion q) {
-        return isAnnouncement(q) ? KIND_ANNOUNCEMENT : KIND_NEWS;
+        if (isAnnouncement(q)) {
+            return KIND_ANNOUNCEMENT;
+        }
+        return isPolicy(q) ? KIND_POLICY : KIND_NEWS;
+    }
+
+    /** --list 的 dir 列：news 取 direction、policy 取 policy_direction（均为 null 显示 -）。 */
+    private static Object expectDirectionLabel(ExtractionQuestion q) {
+        if (isPolicy(q)) {
+            return q.expect().policyDirection() == null ? "-" : q.expect().policyDirection();
+        }
+        return q.expect().direction() == null ? "-" : q.expect().direction();
+    }
+
+    /** --list 的末列：news=stock_codes、announcement=ann_types、policy=affected_areas。 */
+    private static String expectTailLabel(ExtractionQuestion q) {
+        if (isAnnouncement(q)) {
+            return String.valueOf(q.expect().annTypes());
+        }
+        if (isPolicy(q)) {
+            return String.valueOf(q.expect().affectedAreas() == null ? List.of() : q.expect().affectedAreas())
+                    + (q.expect().isPolicy() == null ? "" : " isPolicy=" + q.expect().isPolicy());
+        }
+        return String.valueOf(q.expect().stockCodes() == null ? List.of() : q.expect().stockCodes());
     }
 
     private static void require(boolean condition, String file, String message) {
@@ -637,6 +798,7 @@ public final class ExtractionEvalRunner {
     private static Summary summarize(List<QuestionResult> results) {
         int newsTotal = 0;
         int announcementTotal = 0;
+        int policyTotal = 0;
         int success = 0;
         int newsSuccess = 0;
         int stockPass = 0;
@@ -650,11 +812,24 @@ public final class ExtractionEvalRunner {
         int annUndisclosedAsserted = 0;
         int annTypesPass = 0;
         int annTypesAsserted = 0;
+        int policyDirectionPass = 0;
+        int policyDirectionAsserted = 0;
+        int policyStrengthPass = 0;
+        int policyStrengthAsserted = 0;
+        int policyConfidencePass = 0;
+        int policyConfidenceAsserted = 0;
+        int policyAreasPass = 0;
+        int policyAreasAsserted = 0;
+        int policyIsPolicyPass = 0;
+        int policyIsPolicyAsserted = 0;
         int overallPass = 0;
         for (QuestionResult r : results) {
             boolean announcement = isAnnouncement(r.question());
+            boolean policy = isPolicy(r.question());
             if (announcement) {
                 announcementTotal++;
+            } else if (policy) {
+                policyTotal++;
             } else {
                 newsTotal++;
             }
@@ -680,6 +855,38 @@ public final class ExtractionEvalRunner {
                             annTypesPass++;
                         }
                     }
+                } else if (policy) {
+                    Expectation e = r.question().expect();
+                    if (e.policyDirection() != null) {
+                        policyDirectionAsserted++;
+                        if (dimension(r, "direction").status() == Status.PASS) {
+                            policyDirectionPass++;
+                        }
+                    }
+                    if (e.strength() != null) {
+                        policyStrengthAsserted++;
+                        if (dimension(r, "strength").status() == Status.PASS) {
+                            policyStrengthPass++;
+                        }
+                    }
+                    if (e.confidence() != null) {
+                        policyConfidenceAsserted++;
+                        if (dimension(r, "confidence").status() == Status.PASS) {
+                            policyConfidencePass++;
+                        }
+                    }
+                    if (e.affectedAreas() != null) {
+                        policyAreasAsserted++;
+                        if (dimension(r, "affectedAreas").status() == Status.PASS) {
+                            policyAreasPass++;
+                        }
+                    }
+                    if (e.isPolicy() != null) {
+                        policyIsPolicyAsserted++;
+                        if (dimension(r, "isPolicy").status() == Status.PASS) {
+                            policyIsPolicyPass++;
+                        }
+                    }
                 } else {
                     newsSuccess++;
                     if (dimension(r, "stock").status() == Status.PASS) {
@@ -703,7 +910,7 @@ public final class ExtractionEvalRunner {
                 overallPass++;
             }
         }
-        return new Summary(results.size(), newsTotal, announcementTotal, success,
+        return new Summary(results.size(), newsTotal, announcementTotal, policyTotal, success,
                 (int) results.stream().filter(r -> "PARSE_FAILED".equals(r.outcome())).count(),
                 (int) results.stream().filter(r -> "LLM_UNAVAILABLE".equals(r.outcome())).count(),
                 (int) results.stream().filter(r -> "ERROR".equals(r.outcome())).count(),
@@ -712,6 +919,11 @@ public final class ExtractionEvalRunner {
                 annMetricsPass, annMetricsAsserted,
                 annUndisclosedPass, annUndisclosedAsserted,
                 annTypesPass, annTypesAsserted,
+                policyDirectionPass, policyDirectionAsserted,
+                policyStrengthPass, policyStrengthAsserted,
+                policyConfidencePass, policyConfidenceAsserted,
+                policyAreasPass, policyAreasAsserted,
+                policyIsPolicyPass, policyIsPolicyAsserted,
                 overallPass);
     }
 
@@ -719,7 +931,7 @@ public final class ExtractionEvalRunner {
         return r.dimensions().stream().filter(d -> d.name().equals(name)).findFirst().orElseThrow();
     }
 
-    // ———— 报告（JSON 机读 + Markdown 人读，schema=eval-extraction-report/2——公告维度为 /2 新增） ————
+    // ———— 报告（JSON 机读 + Markdown 人读，schema=eval-extraction-report/3——公告维度为 /2 新增、政策维度为 /3 新增） ————
 
     private static final class Report {
 
@@ -731,7 +943,7 @@ public final class ExtractionEvalRunner {
 
         void writeRun(List<QuestionResult> results, String model, String baseUrl) throws IOException {
             ObjectNode root = JSON.createObjectNode();
-            root.put("schema", "eval-extraction-report/2");
+            root.put("schema", "eval-extraction-report/3");
             root.put("generatedAt", ZonedDateTime.now().toString());
             root.put("status", "RUN");
             ObjectNode subject = root.putObject("subjectModel");
@@ -748,7 +960,7 @@ public final class ExtractionEvalRunner {
 
         void writeSkip(String reason) throws IOException {
             ObjectNode root = JSON.createObjectNode();
-            root.put("schema", "eval-extraction-report/2");
+            root.put("schema", "eval-extraction-report/3");
             root.put("generatedAt", ZonedDateTime.now().toString());
             root.put("status", "SKIP");
             root.put("skipReason", reason);
@@ -758,7 +970,7 @@ public final class ExtractionEvalRunner {
 
         void writeError(Throwable t) throws IOException {
             ObjectNode root = JSON.createObjectNode();
-            root.put("schema", "eval-extraction-report/2");
+            root.put("schema", "eval-extraction-report/3");
             root.put("generatedAt", ZonedDateTime.now().toString());
             root.put("status", "ERROR");
             root.put("error", t.getClass().getName() + ": " + t.getMessage());
@@ -779,6 +991,7 @@ public final class ExtractionEvalRunner {
             node.put("total", s.total());
             node.put("newsTotal", s.newsTotal());
             node.put("announcementTotal", s.announcementTotal());
+            node.put("policyTotal", s.policyTotal());
             node.put("parseSuccess", s.success());
             node.put("parseFailed", s.parseFailed());
             node.put("llmUnavailable", s.llmUnavailable());
@@ -805,6 +1018,22 @@ public final class ExtractionEvalRunner {
             ObjectNode annTypes = announcement.putObject("annTypes");
             annTypes.put("pass", s.annTypesPass());
             annTypes.put("asserted", s.annTypesAsserted());
+            ObjectNode policy = node.putObject("policy");
+            ObjectNode policyDirection = policy.putObject("direction");
+            policyDirection.put("pass", s.policyDirectionPass());
+            policyDirection.put("asserted", s.policyDirectionAsserted());
+            ObjectNode policyStrength = policy.putObject("strength");
+            policyStrength.put("pass", s.policyStrengthPass());
+            policyStrength.put("asserted", s.policyStrengthAsserted());
+            ObjectNode policyConfidence = policy.putObject("confidence");
+            policyConfidence.put("pass", s.policyConfidencePass());
+            policyConfidence.put("asserted", s.policyConfidenceAsserted());
+            ObjectNode policyAreas = policy.putObject("affectedAreas");
+            policyAreas.put("pass", s.policyAreasPass());
+            policyAreas.put("asserted", s.policyAreasAsserted());
+            ObjectNode policyIsPolicy = policy.putObject("isPolicy");
+            policyIsPolicy.put("pass", s.policyIsPolicyPass());
+            policyIsPolicy.put("asserted", s.policyIsPolicyAsserted());
             return node;
         }
 
@@ -849,6 +1078,30 @@ public final class ExtractionEvalRunner {
                 annExpect.set("undisclosed", stringArray(r.question().expect().undisclosed()));
                 annExpect.set("ann_types", stringArray(r.question().expect().annTypes()));
             }
+            if (isPolicy(r.question())) {
+                ObjectNode polExpect = expect;
+                if (r.question().expect().policyDirection() != null) {
+                    polExpect.put("policy_direction", r.question().expect().policyDirection().name());
+                } else {
+                    polExpect.putNull("policy_direction");
+                }
+                if (r.question().expect().strength() != null) {
+                    polExpect.put("strength", r.question().expect().strength().name());
+                } else {
+                    polExpect.putNull("strength");
+                }
+                if (r.question().expect().confidence() != null) {
+                    polExpect.put("confidence", r.question().expect().confidence().name());
+                } else {
+                    polExpect.putNull("confidence");
+                }
+                polExpect.set("affected_areas", stringArray(r.question().expect().affectedAreas()));
+                if (r.question().expect().isPolicy() != null) {
+                    polExpect.put("is_policy", r.question().expect().isPolicy());
+                } else {
+                    polExpect.putNull("is_policy");
+                }
+            }
             if (r.newsFields() != null) {
                 NewsExtractor.ExtractedFields f = r.newsFields();
                 ObjectNode actual = node.putObject("actual");
@@ -892,6 +1145,28 @@ public final class ExtractionEvalRunner {
                 ArrayNode annTypes = actual.putArray("annTypes");
                 r.announcementFields().annTypes().forEach(t -> annTypes.add(t.name()));
             }
+            if (r.policyFields() != null) {
+                ObjectNode actual = node.putObject("actual");
+                PolicyExtractor.ExtractedFields f = r.policyFields();
+                if (f.direction() != null) {
+                    actual.put("direction", f.direction().name());
+                } else {
+                    actual.putNull("direction");
+                }
+                if (f.strength() != null) {
+                    actual.put("strength", f.strength().name());
+                } else {
+                    actual.putNull("strength");
+                }
+                actual.set("affectedAreas", stringArray(f.affectedAreas()));
+                actual.put("summary", f.summary());
+                if (f.confidence() != null) {
+                    actual.put("confidence", f.confidence().name());
+                } else {
+                    actual.putNull("confidence");
+                }
+                actual.put("isPolicy", f.isPolicy());
+            }
             ArrayNode dims = node.putArray("dimensions");
             for (DimensionResult d : r.dimensions()) {
                 ObjectNode dim = dims.addObject();
@@ -911,7 +1186,7 @@ public final class ExtractionEvalRunner {
                     .append("（生产同款 AgentScopeIntelligenceChatPort，抽取 temperature 0）\n");
             md.append("- 题库：extraction/*.yaml（").append(s.total()).append(" 题——news ")
                     .append(s.newsTotal()).append(" / announcement ").append(s.announcementTotal())
-                    .append("）\n\n");
+                    .append(" / policy ").append(s.policyTotal()).append("）\n\n");
             md.append("## 汇总\n\n| 指标 | 结果 |\n|---|---|\n");
             md.append("| parse 成功率 | ").append(rate(s.success(), s.total())).append(" |\n");
             md.append("| stock 命中率（新闻） | ").append(rate(s.stockPass(), s.stockAsserted())).append(" |\n");
@@ -926,6 +1201,16 @@ public final class ExtractionEvalRunner {
                     .append(rate(s.annUndisclosedPass(), s.annUndisclosedAsserted())).append(" |\n");
             md.append("| annTypes 命中率（公告） | ")
                     .append(rate(s.annTypesPass(), s.annTypesAsserted())).append(" |\n");
+            md.append("| direction 一致率（政策） | ")
+                    .append(rate(s.policyDirectionPass(), s.policyDirectionAsserted())).append(" |\n");
+            md.append("| strength 一致率（政策） | ")
+                    .append(rate(s.policyStrengthPass(), s.policyStrengthAsserted())).append(" |\n");
+            md.append("| confidence 一致率（政策） | ")
+                    .append(rate(s.policyConfidencePass(), s.policyConfidenceAsserted())).append(" |\n");
+            md.append("| affectedAreas 命中率（政策） | ")
+                    .append(rate(s.policyAreasPass(), s.policyAreasAsserted())).append(" |\n");
+            md.append("| isPolicy 一致率（政策） | ")
+                    .append(rate(s.policyIsPolicyPass(), s.policyIsPolicyAsserted())).append(" |\n");
             md.append("| 总体 PASS | ").append(rate(s.overallPass(), s.total())).append(" |\n");
             if (s.parseFailed() + s.llmUnavailable() + s.error() > 0) {
                 md.append("\n> 异常结局：PARSE_FAILED=").append(s.parseFailed())
@@ -935,7 +1220,7 @@ public final class ExtractionEvalRunner {
             }
             md.append("\n## 逐题（新闻）\n\n| id | outcome | 判定 | stock | direction | 档位(实得) | event_type | 耗时 | in tok |\n|---|---|---|---|---|---|---|---|---|\n");
             for (QuestionResult r : results) {
-                if (isAnnouncement(r.question())) {
+                if (!KIND_NEWS.equals(kindOf(r.question()))) {
                     continue;
                 }
                 String gradeCell;
@@ -968,6 +1253,31 @@ public final class ExtractionEvalRunner {
                         .append(" | ").append(cell(r, "dividendDesc"))
                         .append(" | ").append(cell(r, "undisclosed"))
                         .append(" | ").append(cell(r, "annTypes"))
+                        .append(" | ").append(String.format(Locale.ROOT, "%.1fs", r.durationMs() / 1000.0))
+                        .append(" | ").append(r.inputTokens())
+                        .append(" |\n");
+            }
+            md.append("\n## 逐题（政策）\n\n| id | outcome | 判定 | direction | strength | confidence | affectedAreas | isPolicy | summary | 耗时 | in tok |\n|---|---|---|---|---|---|---|---|---|---|---|\n");
+            for (QuestionResult r : results) {
+                if (!isPolicy(r.question())) {
+                    continue;
+                }
+                String summaryCell;
+                if (r.policyFields() != null) {
+                    summaryCell = r.policyFields().summary() == null ? "—"
+                            : "「" + r.policyFields().summary() + "」";
+                } else {
+                    summaryCell = "—";
+                }
+                md.append("| ").append(r.question().id())
+                        .append(" | ").append(r.outcome())
+                        .append(" | ").append(r.pass() ? "PASS" : "FAIL")
+                        .append(" | ").append(cell(r, "direction"))
+                        .append(" | ").append(cell(r, "strength"))
+                        .append(" | ").append(cell(r, "confidence"))
+                        .append(" | ").append(cell(r, "affectedAreas"))
+                        .append(" | ").append(cell(r, "isPolicy"))
+                        .append(" | ").append(summaryCell)
                         .append(" | ").append(String.format(Locale.ROOT, "%.1fs", r.durationMs() / 1000.0))
                         .append(" | ").append(r.inputTokens())
                         .append(" |\n");
