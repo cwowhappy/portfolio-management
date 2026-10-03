@@ -53,7 +53,7 @@ infrastructure ──→ {domain, application, config}
 
 | 包 | 职责 |
 |---|---|
-| `web/` | HTTP 接入层：20 个 `@RestController`（Auth/UserAdmin/Conversation/Market/Health/Valuation/Portfolio/Journal/Allocation/Analytics/Screening/Watchlist/McpConfig/SkillConfig/Industry/IndustryWatch/Wiki/IndustryCuration/Research/IntelligenceSubscription）+ `InvestAguiRuntimeContextResolver`（AG-UI 请求上下文）+ `GlobalExceptionHandler`（`@RestControllerAdvice`，异常→HTTP 状态映射）。只做路由/参数校验/异常翻译 |
+| `web/` | HTTP 接入层：21 个 `@RestController`（Auth/UserAdmin/Conversation/Market/Health/Valuation/Portfolio/Journal/Allocation/Analytics/Screening/Watchlist/McpConfig/SkillConfig/Industry/IndustryWatch/Wiki/IndustryCuration/Research/Intelligence/IntelligenceSubscription）+ `InvestAguiRuntimeContextResolver`（AG-UI 请求上下文）+ `GlobalExceptionHandler`（`@RestControllerAdvice`，异常→HTTP 状态映射）。只做路由/参数校验/异常翻译 |
 | `application/` | 用例编排与事务边界，`*ApplicationService` 结尾；持有对外 DTO |
 | `domain/` | **纯 POJO，零 Spring/JPA 注解**；实体/值对象/仓库接口（由 infrastructure 实现） |
 | `infrastructure/` | `persistence`（JPA 实体+仓库实现+Flyway）、`security`、`seed`、`market`（东方财富/新浪客户端 + 缓存/限流装饰器）、`cache`（`TtlCache` + `CacheConfig`） |

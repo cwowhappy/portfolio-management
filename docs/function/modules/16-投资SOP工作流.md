@@ -1,6 +1,6 @@
 # M16 · 投资 SOP 工作流
 
-> **状态**：✅ 已完成（F11 顺延） | **进度**：15/16 | **目标版本**：阶段二（MS-24~27，2026-09-29 PR #81）
+> **状态**：✅ 已完成（F11 已随 M15 MS-23 回收，16/16 收齐） | **进度**：16/16 | **目标版本**：阶段二（MS-24~27，2026-09-29 PR #81；F11 回收 2026-10-03 feature/research-intelligence 分支待合并）
 > **页面**：`/research`（新增，列表 + 详情 + 立项表单）、对话内四个 SOP Skill 引导 + 草稿卡
 > **上游规格**：[需求规格 v1.0](../../../features/invest-sop/01-需求规格/需求规格说明.md)（决策 D1~D23）/ [设计规格 v1.0](../../../features/invest-sop/02-设计规格/设计规格说明.md)（S1~S7）
 
@@ -22,7 +22,7 @@
 | F08 | 项目与 journal/wiki 联动 | ✅ | 阶段二 | RESEARCH_EVENT 入时间线 + 反查 |
 | F09 | 建仓计划 | ✅ | 阶段二 | 凯利手动算术 + Σ占比硬校验 |
 | F10 | 买入纪律检查单 | ✅ | 阶段二 | 纯函数三态 + append-only 留痕 |
-| F11 | 持仓情报监控 | ⏳ | 阶段二 | **顺延 M15**（D14：接口位已留） |
+| F11 | 持仓情报监控 | ✅ | 阶段二 | 原**顺延 M15**（D14），已随 M15 MS-23 回收（2026-10-03） |
 | F12 | 加减仓/卖出纪律检查 | ✅ | 阶段二 | 与 F10 同服务 + 证伪核对 |
 | F13 | 复盘模板三档 | ✅ | 阶段二 | 常量表驱动（MS-24 收敛只改常量） |
 | F14 | 复盘数据自动带入 | ✅ | 阶段二 | 快照写入定格 + 批次时间窗归因 |
@@ -49,7 +49,7 @@
 
 - **F09 建仓计划**：分批方案整替保存；凯利 f\*=p−(1−p)/b 手动参数（D23，计划示例 0.2 系笔误勘误为 0.4）；Σ占比 >1 唯一硬拒（D5 例外，=1 恰过）。
 - **F10/F12 检查单**：`DisciplineCheckService` 纯函数（PASS/HIT/UNSET 三态，规则未配置=「未设定」中性）；消费 M13 PrincipleRule（application 层 RuleInput 转换，domain 零横依赖）；页面级确认卡（D18 仿审批卡 UI 不经 useInterrupt，与 portfolio 交易录入解耦）；`research_check_record` append-only（OVERRIDDEN 必填理由）；卖出检查注入证伪核对条目。
-- **F11 情报监控**：**顺延 M15**（D14 验收拆分不阻塞）——`IntelligenceSubscriptionHook` 接口位已留（2026-09-29 随 M15 命名原则由 `IntelSubscriptionHook` 改名）。
+- **F11 情报监控**：原**顺延 M15**（D14 验收拆分不阻塞）——已于 M15 MS-23 回收（2026-10-03）：`ResearchIntelligenceSubscriptionHookImpl` 消费项目 `intelligence_alert_enabled` 开关（详情页 UI + `PUT /api/research/projects/{id}/intelligence-alert`），持仓项目公告推送 + journal 时间线「【情报】」条目，详见 [M15 模块文档](15-智能情报.md) MS-23 交付说明。
 - **证伪求值**：`FalsifierEvaluator` 四谓词纯函数（缺数据 skipped 不冒充、EVENT 恒 pending 人工勾选、basis 可解释含口径）；日终扫描 18:43 错峰（ACTIVE+POSITION、未评审去重、Ruling-19 条件编辑后重新提醒）；飞书文案仅项目名+条件名零数字（D15）。
 
 ### MS-27 · 复盘闭环（F13~F16）
@@ -61,5 +61,5 @@
 
 ## 四、关联
 
-- **消费 M13**：PrincipleRule 4 指标（检查）、wiki seeding/回流通道；**消费 M12**：analytics nav/trade 流水（复盘快照）；**消费 M08**：portfolio 流水（归因圈选软引用）；**依赖 M15**：F11 情报订阅（顺延，接口位）；**journal**：RESEARCH_EVENT 时间线与反查。
+- **消费 M13**：PrincipleRule 4 指标（检查）、wiki seeding/回流通道；**消费 M12**：analytics nav/trade 流水（复盘快照）；**消费 M08**：portfolio 流水（归因圈选软引用）；**依赖 M15**：F11 情报订阅（已随 M15 MS-23 回收）；**journal**：RESEARCH_EVENT 时间线与反查。
 - **v2 已知限制**（终审 triage）：对话侧草稿保存为引导性死路（会话↔项目绑定未落任务——草稿生成后需到 /research 页保存）、SOP seeding 并发窗口（无 (user_id,title) 唯一约束，硬化需拍板同名语义）、research_draft 对话链缺真浏览器 e2e（需 LLM fixture harness）。
