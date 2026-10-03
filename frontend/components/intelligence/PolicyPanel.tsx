@@ -205,17 +205,21 @@ export default function PolicyPanel({ q }: { q: string }) {
                         非政策类
                       </span>
                     )}
-                    <span
-                      className={
-                        "shrink-0 rounded border px-1.5 py-0.5 text-[10px] leading-none " +
-                        DIRECTION_CLASS[it.direction]
-                      }
-                    >
-                      {DIRECTION_LABELS[it.direction]}
-                    </span>
-                    <span className="shrink-0 text-[11px] text-[color:var(--color-ink-faint)]">
-                      {STRENGTH_LABELS[it.strength] ?? it.strength}
-                    </span>
+                    {it.direction && (
+                      <span
+                        className={
+                          "shrink-0 rounded border px-1.5 py-0.5 text-[10px] leading-none " +
+                          DIRECTION_CLASS[it.direction]
+                        }
+                      >
+                        {DIRECTION_LABELS[it.direction]}
+                      </span>
+                    )}
+                    {it.strength && (
+                      <span className="shrink-0 text-[11px] text-[color:var(--color-ink-faint)]">
+                        {STRENGTH_LABELS[it.strength] ?? it.strength}
+                      </span>
+                    )}
                     {time && (
                       <span className="shrink-0 text-[11px] tabular text-[color:var(--color-ink-faint)]">
                         {time}

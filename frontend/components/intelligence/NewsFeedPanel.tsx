@@ -162,14 +162,14 @@ export default function NewsFeedPanel({
             className="divide-y divide-[color:var(--color-line-soft)] rounded-2xl border border-[color:var(--color-line)] bg-[color:var(--color-panel)]/70 px-4"
             data-testid="intel-news-list"
           >
-            {data.items.map((it) => {
+            {data.items.map((it, i) => {
               const time = formatPublished(it.publishedAt);
               const codes = it.stockCodes.join(" / ");
               return (
-                <li key={it.url} className="py-3">
+                <li key={`${i}-${it.url ?? it.title ?? ""}`} className="py-3">
                   <div className="flex items-start gap-2">
                     <a
-                      href={it.url}
+                      href={it.url ?? undefined}
                       target="_blank"
                       rel="noreferrer"
                       className="min-w-0 flex-1 truncate text-sm text-[color:var(--color-accent)] hover:underline"

@@ -36,7 +36,7 @@ export type BriefStatus = z.infer<typeof BriefStatusSchema>;
 
 // —— 条目视图（R1~R3/R5/R8 条目形状）——
 
-/** 新闻条目：direction/importance 未抽取为 null；keyNumbers/stockCodes 恒数组（空集归一）。 */
+/** 新闻条目：direction/importance 未抽取、新浪源 url 双缺为 null；keyNumbers/stockCodes 恒数组（空集归一）。 */
 export const NewsItemSchema = z.object({
   title: z.string(),
   summary: z.string(),
@@ -44,7 +44,7 @@ export const NewsItemSchema = z.object({
   importance: z.number().int().nullable(),
   keyNumbers: z.array(z.string()),
   stockCodes: z.array(z.string()),
-  url: z.string(),
+  url: z.string().nullable(),
   publishedAt: z.string(),
 });
 export type NewsItem = z.infer<typeof NewsItemSchema>;
@@ -61,27 +61,27 @@ export const AnnouncementMetricsSchema = z.object({
 });
 export type AnnouncementMetrics = z.infer<typeof AnnouncementMetricsSchema>;
 
-/** 公告条目：未抽取行 metrics/annTypeSource 为 null、annTypes 归一空数组。 */
+/** 公告条目：未抽取行 metrics/annTypeSource、cninfo 源 stockName 缺/adjunctUrl 空的 pdfUrl 为 null、annTypes 归一空数组。 */
 export const AnnouncementItemSchema = z.object({
   title: z.string(),
   stockCode: z.string(),
-  stockName: z.string(),
+  stockName: z.string().nullable(),
   annTypes: z.array(AnnouncementTypeSchema),
   annTypeSource: z.string().nullable(),
   metrics: AnnouncementMetricsSchema.nullable(),
-  pdfUrl: z.string(),
+  pdfUrl: z.string().nullable(),
   publishedAt: z.string(),
 });
 export type AnnouncementItem = z.infer<typeof AnnouncementItemSchema>;
 
-/** 政策条目：isPolicy=false 为非政策兜底行（展示层据此降权标注）。 */
+/** 政策条目：isPolicy=false 为非政策兜底行（展示层据此降权标注）；direction/strength/confidence 抽取「无法判断」为 null（徽标不渲染）。 */
 export const PolicyItemSchema = z.object({
   title: z.string(),
-  direction: PolicyDirectionSchema,
-  strength: PolicyStrengthSchema,
+  direction: PolicyDirectionSchema.nullable(),
+  strength: PolicyStrengthSchema.nullable(),
   areas: z.array(z.string()),
   summary: z.string(),
-  confidence: PolicyConfidenceSchema,
+  confidence: PolicyConfidenceSchema.nullable(),
   isPolicy: z.boolean(),
   url: z.string(),
   publishedAt: z.string(),

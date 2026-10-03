@@ -275,6 +275,30 @@ describe("IntelligenceBoard", () => {
     );
   });
 
+  it("可空字段 null 形态：政策 direction/strength null 不渲染方向/力度徽标，新闻 url null 不出链接（终审 I-2）", async () => {
+    api.fetchNews.mockResolvedValue(newsPage([news({ title: "无链接新闻", url: null })]));
+    api.fetchPolicies.mockResolvedValue(
+      policyPage([
+        policy({ title: "取向未判政策", direction: null, strength: null, confidence: null }),
+      ]),
+    );
+    render(<IntelligenceBoard />);
+
+    // 新闻 url null：标题仍在但 anchor 无 href（React 省略属性）
+    const el = await screen.findByText("无链接新闻");
+    expect(el.closest("a")?.getAttribute("href")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("intel-tab-policies"));
+    expect(await screen.findByText("取向未判政策")).toBeTruthy();
+    // direction null：三个方向徽标（span 形态，排除下拉 option）均不渲染
+    expect(screen.queryByText("宽松", { selector: "span" })).toBeNull();
+    expect(screen.queryByText("收紧", { selector: "span" })).toBeNull();
+    expect(screen.queryByText("中性", { selector: "span" })).toBeNull();
+    // strength null：力度文案不渲染
+    expect(screen.queryByText("强")).toBeNull();
+    expect(screen.queryByText("中")).toBeNull();
+  });
+
   it("双空态：无过滤 intel-empty（去行情台 CTA）；有过滤 intel-empty-filtered；清除过滤恢复", async () => {
     render(<IntelligenceBoard />);
     expect(await screen.findByTestId("intel-empty")).toBeTruthy();

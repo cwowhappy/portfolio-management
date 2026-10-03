@@ -45,8 +45,10 @@ import org.mockito.ArgumentCaptor;
 
 /**
  * 公告定向推送单元切片（mock 仓库/绑定/hook/推送端口/留痕仓库；订阅聚合用真实 domain 对象）：
- * D12/D15/决策 #26 union 命中（手动订阅 ∪ POSITION 持仓 hook）→ 按 (announcement, user)
- * 聚合一次 sendToUser（同用户多路命中去重；多条公告逐条推送不跨公告聚合）→ push_log 留痕
+ * D12/D15/决策 #26 union 命中（手动订阅 ∪ POSITION 持仓 hook）→ 受众门（终审 I-1：两臂
+ * 命中集统一按 findUserIdsWithPushEnabled 过滤——显式关推送/未过账号门用户不推）→
+ * 按 (announcement, user) 聚合一次 sendToUser（同用户多路命中去重；多条公告逐条推送不跨
+ * 公告聚合）→ push_log 留痕
  * （OK/FAIL/SKIPPED_NO_BINDING 三态）→ 幂等查重跳过 → metrics 空降级标题+链接 →
  * journal 留痕激活（D14：hook 命中项目经 JournalEntryRepository 写 RESEARCH_EVENT
  * 「【情报】」事件；SKIPPED 未送达不写；journal 失败不挡推送）→
@@ -77,6 +79,8 @@ class AnnouncementPushServiceTest {
         service = new AnnouncementPushService(announcementRepository, subscriptionRepository, hook,
                 bindingRepository, pushPort, pushLogRepository, journalRepository, props, CLOCK);
         when(hook.activePositionTargets()).thenReturn(List.of());
+        // 受众门缺省口径：7/9 两位既有 fixture 用户均为 APPROVED∧enabled 且推送开（默认开）
+        when(subscriptionRepository.findUserIdsWithPushEnabled()).thenReturn(List.of(7L, 9L));
         when(subscriptionRepository.findAllWithStock(anyString())).thenReturn(List.of());
         when(bindingRepository.findOpenIdByUserId(anyLong())).thenReturn(Optional.of(OPEN_ID));
         when(pushLogRepository.existsAnnouncementPush(anyLong(), anyLong())).thenReturn(false);
@@ -141,6 +145,44 @@ class AnnouncementPushServiceTest {
 
         verify(pushPort, times(1)).sendToUser(anyString(), anyString(), anyString(), any());
         verify(pushLogRepository, times(1)).save(captor().capture());
+    }
+
+    // ── 受众门（终审 I-1：两臂命中集统一按 findUserIdsWithPushEnabled 过滤）──────
+
+    @Test
+    @DisplayName("给定用户显式关推送（不在受众集）但持有匹配标的的 POSITION 项目，when推送，then hook 臂被受众门拦下不推不留痕")
+    void givenPushDisabledUserWithPositionProject_whenPushExtracted_thenHookArmSuppressedByAudienceGate() {
+        when(announcementRepository.findExtractedMajorSince(SINCE))
+                .thenReturn(List.of(announcement(1L, "2026年半年度报告")));
+        // 受众集为空：唯一候选用户 7 显式关推送——hook 臂 SQL 不查订阅表，靠受众门拦截
+        when(subscriptionRepository.findUserIdsWithPushEnabled()).thenReturn(List.of());
+        when(hook.activePositionTargets())
+                .thenReturn(List.of(new IntelligenceTarget(7L, 100L, STOCK, "贵州茅台")));
+
+        service.pushExtracted(SINCE);
+
+        verify(pushPort, never()).sendToUser(anyString(), anyString(), anyString(), any());
+        verify(pushLogRepository, never()).save(any());
+        verify(journalRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("给定 PENDING 用户（未过账号门，不在受众集）经订阅与 hook 两臂命中，when推送，then两臂均被受众门过滤不推不留痕")
+    void givenPendingUserOutsideAudience_whenPushExtracted_thenBothArmsSuppressed() {
+        when(announcementRepository.findExtractedMajorSince(SINCE))
+                .thenReturn(List.of(announcement(1L, "2026年半年度报告")));
+        // 受众仅 APPROVED∧enabled 的用户 7；用户 9 为 PENDING——findAllWithStock 与 hook SQL
+        // 均无账号门（仓库只滤 push_enabled），两臂原始命中仍会返回用户 9
+        when(subscriptionRepository.findUserIdsWithPushEnabled()).thenReturn(List.of(7L));
+        when(subscriptionRepository.findAllWithStock(STOCK)).thenReturn(List.of(subscription(9L)));
+        when(hook.activePositionTargets())
+                .thenReturn(List.of(new IntelligenceTarget(9L, 100L, STOCK, "贵州茅台")));
+
+        service.pushExtracted(SINCE);
+
+        verify(bindingRepository, never()).findOpenIdByUserId(anyLong());
+        verify(pushPort, never()).sendToUser(anyString(), anyString(), anyString(), any());
+        verify(pushLogRepository, never()).save(any());
     }
 
     @Test

@@ -347,7 +347,8 @@ export default function IntelligenceSettingsPage() {
                   <div className="text-xs text-red-600">绑定码已过期，请生成新码</div>
                 ) : (
                   <div className="text-xs text-[color:var(--color-ink-dim)]">
-                    在飞书中对机器人发送此码完成绑定（有效期 10 分钟）
+                    在飞书中对机器人发送此码完成绑定（有效期 10 分钟）；若要查询股票，请改用“绑定
+                    600519”格式发送
                   </div>
                 )}
                 <div className="flex gap-2">

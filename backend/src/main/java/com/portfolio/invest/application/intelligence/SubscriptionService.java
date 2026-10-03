@@ -18,6 +18,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -120,7 +121,8 @@ public class SubscriptionService {
         Instant expiresAt = Instant.now(clock).plus(Duration.ofMinutes(
                 props.getIntelligence().getBindingCodeTtlMinutes()));
         for (int attempt = 1; attempt <= MAX_CODE_ATTEMPTS; attempt++) {
-            String code = String.format("%06d", random.nextInt(CODE_SPACE));
+            // Locale.ROOT 钉死本地化：%d 虽不本地化，钉住可防未来格式符演化受系统 locale 影响
+            String code = String.format(Locale.ROOT, "%06d", random.nextInt(CODE_SPACE));
             if (bindingCodeRepository.trySave(code, userId, expiresAt)) {
                 return new BindingCodeView(code, expiresAt);
             }

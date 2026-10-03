@@ -23,9 +23,11 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
@@ -40,9 +42,13 @@ import org.springframework.stereotype.Service;
  *
  * <ul>
  *   <li><b>命中集 = 手动订阅 ∪ 持仓 hook</b>（决策 #26 union）：订阅路走
- *       {@link SubscriptionRepository#findAllWithStock}（仓库已滤 push_enabled，开关关用户
- *       两路都不命中）；hook 路 {@link IntelligenceSubscriptionHook#activePositionTargets}
- *       一次取全量按 stockCode 分组（intelligence_alert_enabled 已在实现侧滤）。</li>
+ *       {@link SubscriptionRepository#findAllWithStock}（仓库已滤 push_enabled）；hook 路
+ *       {@link IntelligenceSubscriptionHook#activePositionTargets} 一次取全量按 stockCode
+ *       分组（intelligence_alert_enabled 已在实现侧滤）。两臂命中集再统一按
+ *       {@link SubscriptionRepository#findUserIdsWithPushEnabled} 受众集过滤——受众口径 =
+ *       总开关默认开（无订阅行也在，仅显式关闭被排除）∧ 账号门（APPROVED 且未停用），
+ *       故显式关推送用户（hook 臂 SQL 不查订阅表）与 PENDING/停用用户（两臂 SQL 均无
+ *       账号门）两路都不命中（受众集是两臂唯一的总开关/账号门，终审 I-1 补）。</li>
  *   <li><b>按 (announcement, user) 聚合一次推送</b>：同一用户经多路/多项目命中同一公告
  *       只发一条、留一行痕；多条公告逐条推送不跨公告聚合（重大公告逐条触达，决策 #8
  *       单条长文精神）。</li>
@@ -149,6 +155,11 @@ public class AnnouncementPushService implements AnnouncementPushTrigger {
             log.debug("推送窗口无完成抽取的 major 公告（since={}）", since);
             return;
         }
+        // 受众门（终审 I-1）：每批取一次总开关+账号门受众集（LEFT JOIN 默认开口径 + 仅
+        // APPROVED∧enabled），两臂命中集统一按此过滤——hook 臂 SQL 与 findAllWithStock
+        // 均不含账号门，受众集是显式关推送/未过审批用户不收公告的唯一防线（与
+        // BriefPushService 收件人口径同源）。
+        Set<Long> audience = new HashSet<>(subscriptionRepository.findUserIdsWithPushEnabled());
         Map<String, List<IntelligenceTarget>> hookByStock = subscriptionHook.activePositionTargets()
                 .stream()
                 .collect(Collectors.groupingBy(IntelligenceTarget::stockCode));
@@ -156,23 +167,31 @@ public class AnnouncementPushService implements AnnouncementPushTrigger {
                 since, announcements.size(), hookByStock.size());
         for (AnnouncementRecord announcement : announcements) {
             try {
-                pushOneAnnouncement(announcement, hookByStock);
+                pushOneAnnouncement(announcement, hookByStock, audience);
             } catch (Exception e) { // 单公告隔离：一条失败不挡其余
                 log.warn("公告推送单条失败（announcementId={}）：{}", announcement.id(), e.getMessage());
             }
         }
     }
 
-    /** 单公告：构建 union 命中集（订阅 ∪ hook，按 userId 聚合去重）→ 逐用户推送留痕。 */
+    /**
+     * 单公告：构建 union 命中集（订阅 ∪ hook，按 userId 聚合去重；两臂均先过受众门——
+     * 不在 audience 的用户不进 hits，直接静默跳过不留痕）→ 逐用户推送留痕。
+     */
     private void pushOneAnnouncement(AnnouncementRecord announcement,
-                                     Map<String, List<IntelligenceTarget>> hookByStock) {
+                                     Map<String, List<IntelligenceTarget>> hookByStock,
+                                     Set<Long> audience) {
         Map<Long, UserHit> hits = new TreeMap<>();
         for (IntelligenceSubscription subscription
                 : subscriptionRepository.findAllWithStock(announcement.stockCode())) {
-            hits.computeIfAbsent(subscription.userId(), UserHit::new);
+            if (audience.contains(subscription.userId())) {
+                hits.computeIfAbsent(subscription.userId(), UserHit::new);
+            }
         }
         for (IntelligenceTarget target : hookByStock.getOrDefault(announcement.stockCode(), List.of())) {
-            hits.computeIfAbsent(target.userId(), UserHit::new).projectIds().add(target.projectId());
+            if (audience.contains(target.userId())) {
+                hits.computeIfAbsent(target.userId(), UserHit::new).projectIds().add(target.projectId());
+            }
         }
         if (hits.isEmpty()) {
             return;

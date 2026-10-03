@@ -166,6 +166,40 @@ describe("情报工作台 REST 客户端（lib/intelligenceApi）", () => {
     expect(intel.empty).toBe(false);
   });
 
+  it("可空六字段全 null 的 wire 形态通过 safeParse（新浪 url 双缺/cninfo secName 缺与 adjunctUrl 空/政策抽取无法判断）", async () => {
+    // 终审 I-2 回归钉：后端合法 null 若被 schema 拒绝，safeParse 失败抛「数据格式异常」
+    fetchMock.mockResolvedValueOnce(
+      okResponse({ items: [{ ...validNewsItem, url: null }], total: 1, page: 1, pageSize: 20 }),
+    );
+    const news = await api.fetchNews();
+    expect(news.items[0].url).toBeNull();
+
+    fetchMock.mockResolvedValueOnce(
+      okResponse({
+        items: [{ ...validAnnouncementItem, stockName: null, pdfUrl: null }],
+        total: 1,
+        page: 1,
+        pageSize: 20,
+      }),
+    );
+    const anns = await api.fetchAnnouncements();
+    expect(anns.items[0].stockName).toBeNull();
+    expect(anns.items[0].pdfUrl).toBeNull();
+
+    fetchMock.mockResolvedValueOnce(
+      okResponse({
+        items: [{ ...validPolicyItem, direction: null, strength: null, confidence: null }],
+        total: 1,
+        page: 1,
+        pageSize: 20,
+      }),
+    );
+    const policies = await api.fetchPolicies();
+    expect(policies.items[0].direction).toBeNull();
+    expect(policies.items[0].strength).toBeNull();
+    expect(policies.items[0].confidence).toBeNull();
+  });
+
   it("订阅视图缺省实例 updatedAt 为 null、标的 name 可为 null", async () => {
     fetchMock.mockResolvedValue(okResponse(validSubscription));
     await expect(api.getSubscription()).resolves.toEqual(validSubscription);
