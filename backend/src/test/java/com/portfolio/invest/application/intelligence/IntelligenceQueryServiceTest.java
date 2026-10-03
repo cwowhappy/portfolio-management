@@ -1,6 +1,7 @@
 package com.portfolio.invest.application.intelligence;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.argThat;
@@ -17,9 +18,15 @@ import com.portfolio.invest.domain.intelligence.AnnouncementMetrics;
 import com.portfolio.invest.domain.intelligence.AnnouncementRecord;
 import com.portfolio.invest.domain.intelligence.AnnouncementRepository;
 import com.portfolio.invest.domain.intelligence.AnnouncementType;
+import com.portfolio.invest.domain.intelligence.BriefRepository;
+import com.portfolio.invest.domain.intelligence.BriefStatus;
+import com.portfolio.invest.domain.intelligence.DailyBrief;
 import com.portfolio.invest.domain.intelligence.Direction;
 import com.portfolio.invest.domain.intelligence.ExtractStatus;
+import com.portfolio.invest.domain.intelligence.IntelligenceErrorCode;
+import com.portfolio.invest.domain.intelligence.IntelligenceException;
 import com.portfolio.invest.domain.intelligence.IntelligenceSubscription;
+import com.portfolio.invest.domain.intelligence.MacroCalendarEntry;
 import com.portfolio.invest.domain.intelligence.MacroPoint;
 import com.portfolio.invest.domain.intelligence.NewsRecord;
 import com.portfolio.invest.domain.intelligence.NewsRepository;
@@ -43,11 +50,15 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * 情报检索用例（MS-20 Task 12 最小版 + MS-21 Task 8 公告检索 + MS-22 Task 6 宏观简报）：
- * limit 夹紧 1..20 + 过滤器→PageQuery 映射 + 合并视图→条目视图映射（news：AI 摘要优先
- * 退化源站摘要；announcement：八字段直传）+ 公告 scope 三态（all 不过滤 / subscription
- * 订阅标的集空集短路 / holdings hook 按 userId 过滤）+ macroBrief（指标串解析归一去重、
- * policyDays 夹紧 1..90、缺失指标显式、政策九字段含 isPolicy 标记）。P4 扩四区块查询。
+ * 情报检索用例（MS-20 Task 12 最小版 + MS-21 Task 8 公告检索 + MS-22 Task 6 宏观简报 +
+ * P4 Task 1 四区块扩全）：limit 夹紧 1..20 + 过滤器→PageQuery 映射 + 合并视图→条目视图
+ * 映射（news：AI 摘要优先退化源站摘要；announcement：八字段直传）+ 公告 scope 三态
+ * （all 不过滤 / subscription 订阅标的集空集短路 / holdings hook 按 userId 过滤——
+ * P4 起 scope 标的集经 PageQuery.stockCodes 以 SQL IN 下推仓库）+ macroBrief（指标串
+ * 解析归一去重、policyDays 夹紧 1..90、缺失指标显式、政策九字段含 isPolicy 标记）+
+ * P4 四区块分页（newsPage/announcementsPage/policies/briefs——PageQuery 夹紧与
+ * PageView 映射）+ briefDetail 缺档 NOT_FOUND + stockIntel 三路聚合 + 宏观页
+ * （macroOverview 序列装配 / calendar D22 七天缺省）。
  */
 class IntelligenceQueryServiceTest {
 
@@ -61,13 +72,14 @@ class IntelligenceQueryServiceTest {
     private final IntelligenceSubscriptionHook subscriptionHook = mock(IntelligenceSubscriptionHook.class);
     private final MacroQueryService macroQueryService = mock(MacroQueryService.class);
     private final PolicyRepository policyRepository = mock(PolicyRepository.class);
+    private final BriefRepository briefRepository = mock(BriefRepository.class);
     private IntelligenceQueryService service;
 
     @BeforeEach
     void setUp() {
         service = new IntelligenceQueryService(newsRepository, announcementRepository,
                 subscriptionRepository, subscriptionHook, macroQueryService, policyRepository,
-                FIXED_CLOCK);
+                briefRepository, FIXED_CLOCK);
         // macroBrief 桩缺省（mock List 返回 null 会 NPE，各测试按需覆盖）
         when(macroQueryService.latest()).thenReturn(List.of());
         when(macroQueryService.series(any(), anyInt())).thenReturn(List.of());
@@ -214,26 +226,28 @@ class IntelligenceQueryServiceTest {
     }
 
     @Test
-    @DisplayName("给定 scope=subscription 且订阅含两标的，when检索，then 条目按标的集内存过滤、total 为页内命中数")
-    void givenSubscriptionScope_whenSearchAnnouncements_thenFilteredBySubscriptionStocks() {
+    @DisplayName("给定 scope=subscription 且订阅含两标的，when检索，then 标的集以 SQL IN 下推、条目直传且 total 为全库精确值")
+    void givenSubscriptionScope_whenSearchAnnouncements_thenStockCodesPushedDownAsSqlIn() {
         when(subscriptionRepository.findByUserId(7L)).thenReturn(Optional.of(
                 IntelligenceSubscription.reconstitute(7L, true, List.of(),
                         List.of(new SubscriptionStock("600519", "贵州茅台"),
                                 new SubscriptionStock("300750", "宁德时代")),
                         Instant.parse("2026-09-01T00:00:00Z"))));
+        // SQL IN 后仓库已按标的集过滤——返回页即 scope 内条目，服务不再内存过滤
         when(announcementRepository.search(any())).thenReturn(new PageResult<>(List.of(
                 announcement("600519", "茅台回购公告", null, List.of(AnnouncementType.BUYBACK)),
-                announcement("000001", "范围外公告", null, null),
                 announcement("300750", "宁德业绩预告", null, List.of(AnnouncementType.EARNINGS_FORECAST))),
-                30, 1, 10));
+                27, 1, 10));
 
         var result = service.searchAnnouncements(7L, announcementFilter(AnnouncementScope.SUBSCRIPTION, null));
 
+        verify(announcementRepository).search(argThat(q -> q.stockCode() == null
+                && q.stockCodes() != null && q.stockCodes().size() == 2
+                && q.stockCodes().contains("600519") && q.stockCodes().contains("300750")));
         assertThat(result.items()).extracting(v -> v.title())
                 .containsExactly("茅台回购公告", "宁德业绩预告");
-        assertThat(result.total()).as("超采页 scope 命中且裁回 limit 后的条数（最小版口径，非全库精确 total）").isEqualTo(2);
+        assertThat(result.total()).as("SQL IN 后 total 为全库精确命中数（非超采页口径）").isEqualTo(27);
         assertThat(result.scopeMessage()).isNull();
-        verify(announcementRepository).search(argThat(q -> q.stockCode() == null)); // scope 不注入 SQL
     }
 
     @Test
@@ -249,19 +263,22 @@ class IntelligenceQueryServiceTest {
     }
 
     @Test
-    @DisplayName("给定 scope=holdings，when检索，then hook 全用户列表按 userId 过滤后命中")
-    void givenHoldingsScope_whenSearchAnnouncements_thenHookFilteredByUser() {
+    @DisplayName("给定 scope=holdings，when检索，then hook 全用户列表按 userId 过滤后以 SQL IN 下推")
+    void givenHoldingsScope_whenSearchAnnouncements_thenHookFilteredByUserAsSqlIn() {
         when(subscriptionHook.activePositionTargets()).thenReturn(List.of(
                 new IntelligenceTarget(7L, 101L, "600519", "贵州茅台"),
                 new IntelligenceTarget(8L, 201L, "000001", "平安银行"),
                 new IntelligenceTarget(7L, 102L, "300750", "宁德时代")));
+        // SQL IN 契约：仓库只回本人持仓标的的公告（他人标的已被 IN 排除在 SQL 层）
         when(announcementRepository.search(any())).thenReturn(new PageResult<>(List.of(
                 announcement("600519", "茅台公告", null, null),
-                announcement("000001", "他人持仓公告", null, null),
-                announcement("300750", "宁德公告", null, null)), 30, 1, 10));
+                announcement("300750", "宁德公告", null, null)), 2, 1, 10));
 
         var result = service.searchAnnouncements(7L, announcementFilter(AnnouncementScope.HOLDINGS, null));
 
+        verify(announcementRepository).search(argThat(q -> q.stockCodes() != null
+                && q.stockCodes().size() == 2
+                && q.stockCodes().contains("600519") && q.stockCodes().contains("300750")));
         assertThat(result.items()).extracting(v -> v.title())
                 .containsExactly("茅台公告", "宁德公告");
         assertThat(result.total()).isEqualTo(2);
@@ -294,52 +311,40 @@ class IntelligenceQueryServiceTest {
         verifyNoInteractions(announcementRepository);
     }
 
-    // ===== fix round 1（Important #1）：scope 路径本页超采 + 残余护栏话术 =====
+    // ===== P4 Task 1：scope 路径 SQL IN 升级（超采废止）+ 残余护栏话术 =====
 
     @Test
-    @DisplayName("给定 scope 路径，when检索，then 本页超采：pageSize=min(100, max(20, limit×10)) 而非 limit")
-    void givenScopePath_whenSearchAnnouncements_thenPageOverfetched() {
+    @DisplayName("给定 scope 路径，when检索，then 不再超采：pageSize=夹紧 limit 且标的集注入 stockCodes")
+    void givenScopePath_whenSearchAnnouncements_thenNoOverfetchAndStockCodesInjected() {
         stubSubscription("600519");
-        when(announcementRepository.search(any())).thenReturn(new PageResult<>(List.of(), 0, 1, 100));
+        when(announcementRepository.search(any())).thenReturn(new PageResult<>(List.of(), 0, 1, 10));
 
         service.searchAnnouncements(7L, new AnnouncementSearchFilter(
-                null, null, null, null, null, AnnouncementScope.SUBSCRIPTION, null)); // limit 缺省 10 → 100
+                null, null, null, null, null, AnnouncementScope.SUBSCRIPTION, null)); // limit 缺省 10
         service.searchAnnouncements(7L, new AnnouncementSearchFilter(
-                null, null, null, null, null, AnnouncementScope.SUBSCRIPTION, 2));    // 2×10=20
-        service.searchAnnouncements(7L, new AnnouncementSearchFilter(
-                null, null, null, null, null, AnnouncementScope.SUBSCRIPTION, 5));    // 5×10=50
+                null, null, null, null, null, AnnouncementScope.SUBSCRIPTION, 5));    // limit=5
 
-        verifyAnnouncementPage(1, 100);
-        verifyAnnouncementPage(1, 20);
-        verifyAnnouncementPage(1, 50);
+        verifyAnnouncementPage(1, 10);
+        verifyAnnouncementPage(1, 5);
+        verify(announcementRepository, org.mockito.Mockito.times(2)).search(argThat(q ->
+                q.stockCodes() != null && q.stockCodes().contains("600519")));
     }
 
     @Test
-    @DisplayName("给定超采页混入 scope 外条目，when limit=3 检索，then 裁回前 3 条且顺序保持")
-    void givenOverfetchedPage_whenSearchAnnouncements_thenTruncatedToLimitInOrder() {
-        stubSubscription("600519");
-        // 12 条交替：偶位 scope 内（600519）、奇位 scope 外（000001）——顺序即仓库 published_at 倒序
-        List<AnnouncementRecord> mixed = new java.util.ArrayList<>();
-        for (int i = 0; i < 12; i++) {
-            mixed.add(announcement(i % 2 == 0 ? "600519" : "000001", "公告" + i, null, null));
-        }
-        when(announcementRepository.search(any())).thenReturn(new PageResult<>(mixed, 12, 1, 100));
+    @DisplayName("给定 all 路径，when检索，then stockCodes 不注入（null 不过滤）")
+    void givenAllScope_whenSearchAnnouncements_thenNoStockCodes() {
+        when(announcementRepository.search(any())).thenReturn(new PageResult<>(List.of(), 0, 1, 10));
 
-        var result = service.searchAnnouncements(7L, new AnnouncementSearchFilter(
-                null, null, null, null, null, AnnouncementScope.SUBSCRIPTION, 3));
+        service.searchAnnouncements(7L, announcementFilter(AnnouncementScope.ALL, null));
 
-        assertThat(result.items()).extracting(v -> v.title())
-                .containsExactly("公告0", "公告2", "公告4"); // 前 3 条 scope 内、倒序保持
-        assertThat(result.total()).isEqualTo(3);
-        assertThat(result.scopeMessage()).isNull();
+        verify(announcementRepository).search(argThat(q -> q.stockCodes() == null));
     }
 
     @Test
-    @DisplayName("给定超采页全市场刷满 scope 外且 total>0，when检索，then 残余护栏专属话术而非假空「检索无结果」")
-    void givenOverfetchedPageAllOutOfScope_whenSearchAnnouncements_thenGuardMessageNotFalseEmpty() {
+    @DisplayName("给定仓库违约返回空页但 total>0（SQL IN 契约下不应发生），when检索，then 残余护栏话术仍兜底")
+    void givenRepoContractViolation_whenSearchAnnouncements_thenResidualGuardMessage() {
         stubSubscription("600519");
-        when(announcementRepository.search(any())).thenReturn(new PageResult<>(
-                List.of(announcement("000001", "全市场major刷满", null, null)), 100, 1, 100));
+        when(announcementRepository.search(any())).thenReturn(new PageResult<>(List.of(), 100, 1, 10));
 
         var subscription = service.searchAnnouncements(7L,
                 announcementFilter(AnnouncementScope.SUBSCRIPTION, null));
@@ -524,5 +529,240 @@ class IntelligenceQueryServiceTest {
         var fallback = result.policies().get(1);
         assertThat(fallback.isPolicy()).as("非政策兜底行也返回但带 isPolicy=false 标记").isFalse();
         assertThat(fallback.confidence()).isEqualTo(PolicyConfidence.HIGH);
+    }
+
+    // ===== P4 Task 1：四区块分页查询（newsPage/announcementsPage/policies/briefs）=====
+
+    @Test
+    @DisplayName("给定全参过滤器，when新闻分页查询，then PageQuery 逐字段映射且条目按 NewsItemView 映射进 PageView")
+    void givenFullFilter_whenNewsPage_thenMapsFilterAndViewIntoPageView() {
+        when(newsRepository.search(any())).thenReturn(new PageResult<>(List.of(extractedRecord()), 27, 2, 20));
+
+        var page = service.newsPage(new NewsFilter("机器人", "300024", "801140",
+                LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 28), 40, 2, 20));
+
+        verify(newsRepository).search(argThat(q -> q.page() == 2 && q.pageSize() == 20
+                && "机器人".equals(q.keyword()) && "300024".equals(q.stockCode())
+                && "801140".equals(q.industryCode())
+                && LocalDate.of(2026, 9, 1).equals(q.from())
+                && LocalDate.of(2026, 9, 28).equals(q.to())
+                && q.minImportance() == 40 && q.stockCodes() == null));
+        assertThat(page.total()).isEqualTo(27);
+        assertThat(page.page()).isEqualTo(2);
+        assertThat(page.pageSize()).isEqualTo(20);
+        assertThat(page.items()).hasSize(1);
+        assertThat(page.items().getFirst().summary()).as("条目映射复用工具口径（AI 摘要优先）").isEqualTo("AI 摘要");
+    }
+
+    @Test
+    @DisplayName("给定 page/pageSize 变体，when新闻分页查询，then 夹紧：null→1/20、page 0/-1→1、pageSize 0/-1/9999→1/100")
+    void givenPagingVariants_whenNewsPage_thenClampedByPageQuery() {
+        when(newsRepository.search(any())).thenReturn(new PageResult<>(List.of(), 0, 1, 20));
+
+        service.newsPage(new NewsFilter(null, null, null, null, null, null, null, null));
+        service.newsPage(new NewsFilter(null, null, null, null, null, null, 0, 0));
+        service.newsPage(new NewsFilter(null, null, null, null, null, null, -1, -1));
+        service.newsPage(new NewsFilter(null, null, null, null, null, null, 9999, 9999));
+
+        verifyMapping(1, 20);    // null/null → 缺省 1/20
+        org.mockito.Mockito.verify(newsRepository, org.mockito.Mockito.times(2)).search(argThat(q ->
+                q.page() == 1 && q.pageSize() == 1)); // page 0/-1 与 pageSize 0/-1 均夹到 1
+        verifyMapping(9999, 100); // page 无上限（深页码=空页），pageSize 9999 夹到 100
+    }
+
+    @Test
+    @DisplayName("给定全参过滤器（含 major），when公告分页查询，then PageQuery 映射（无 scope 概念）且夹紧生效")
+    void givenFullFilter_whenAnnouncementsPage_thenMapsFilterWithMajorAndClamps() {
+        when(announcementRepository.search(any())).thenReturn(new PageResult<>(List.of(), 0, 1, 20));
+
+        service.announcementsPage(new AnnouncementFilter("回购", "600519", AnnouncementType.BUYBACK,
+                LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 28), true, 0, 9999));
+
+        verify(announcementRepository).search(argThat(q -> q.page() == 1 && q.pageSize() == 100
+                && "回购".equals(q.keyword()) && "600519".equals(q.stockCode())
+                && q.type() == AnnouncementType.BUYBACK
+                && LocalDate.of(2026, 9, 1).equals(q.from())
+                && LocalDate.of(2026, 9, 28).equals(q.to())
+                && Boolean.TRUE.equals(q.major()) && q.stockCodes() == null));
+    }
+
+    @Test
+    @DisplayName("给定 direction 过滤器，when政策分页查询，then PageQuery 映射且条目九字段视图直传")
+    void givenDirectionFilter_whenPolicies_thenMapsFilterAndView() {
+        when(policyRepository.searchEvents(any())).thenReturn(new PageResult<>(List.of(
+                policyEvent(1L, "央行降准", PolicyDirection.EASING, PolicyStrength.HIGH, "降准 0.5 个百分点")),
+                3, 1, 20));
+
+        var page = service.policies(new PolicyFilter("降准", LocalDate.of(2026, 9, 1),
+                LocalDate.of(2026, 9, 28), PolicyDirection.EASING, 1, 20));
+
+        verify(policyRepository).searchEvents(argThat(q -> q.page() == 1 && q.pageSize() == 20
+                && "降准".equals(q.keyword())
+                && LocalDate.of(2026, 9, 1).equals(q.from())
+                && LocalDate.of(2026, 9, 28).equals(q.to())
+                && q.direction() == PolicyDirection.EASING));
+        assertThat(page.total()).isEqualTo(3);
+        assertThat(page.items()).hasSize(1);
+        assertThat(page.items().getFirst().direction()).isEqualTo(PolicyDirection.EASING);
+        assertThat(page.items().getFirst().isPolicy()).isTrue();
+    }
+
+    @Test
+    @DisplayName("给定简报过滤器，when简报分页查询，then q→keyword/stock→stockCode/from/to 映射且条目为档案行视图（不含正文）")
+    void givenBriefFilter_whenBriefs_thenMapsFilterAndBriefItemView() {
+        when(briefRepository.search(any())).thenReturn(new PageResult<>(List.of(DailyBrief.generated(
+                LocalDate.of(2026, 9, 28), "# 盘前情报速递", List.of("600519", "300750"),
+                "deepseek-chat", Instant.parse("2026-09-28T00:30:00Z"))), 9, 1, 20));
+
+        var page = service.briefs(new BriefFilter("机器人", LocalDate.of(2026, 9, 1),
+                LocalDate.of(2026, 9, 28), "600519", 1, 20));
+
+        verify(briefRepository).search(argThat(q -> q.page() == 1 && q.pageSize() == 20
+                && "机器人".equals(q.keyword()) && "600519".equals(q.stockCode())
+                && LocalDate.of(2026, 9, 1).equals(q.from())
+                && LocalDate.of(2026, 9, 28).equals(q.to())));
+        assertThat(page.total()).isEqualTo(9);
+        assertThat(page.items()).hasSize(1);
+        var item = page.items().getFirst();
+        assertThat(item.tradeDate()).isEqualTo(LocalDate.of(2026, 9, 28));
+        assertThat(item.status()).isEqualTo(BriefStatus.GENERATED);
+        assertThat(item.topStocks()).containsExactly("600519", "300750");
+        assertThat(item.model()).isEqualTo("deepseek-chat");
+        assertThat(item.generatedAt()).isEqualTo(Instant.parse("2026-09-28T00:30:00Z"));
+        org.mockito.Mockito.verifyNoInteractions(newsRepository); // 简报区块不碰新闻仓库
+    }
+
+    @Test
+    @DisplayName("给定已归档交易日，when简报详情，then全字段视图（含 contentMd/failReason）")
+    void givenArchivedBrief_whenBriefDetail_thenFullView() {
+        when(briefRepository.findByDate(LocalDate.of(2026, 9, 28))).thenReturn(Optional.of(
+                DailyBrief.failed(LocalDate.of(2026, 9, 28), "db down", "test-model",
+                        Instant.parse("2026-09-28T00:30:00Z"))));
+
+        var detail = service.briefDetail(LocalDate.of(2026, 9, 28));
+
+        assertThat(detail.tradeDate()).isEqualTo(LocalDate.of(2026, 9, 28));
+        assertThat(detail.status()).isEqualTo(BriefStatus.FAILED);
+        assertThat(detail.failReason()).isEqualTo("db down");
+        assertThat(detail.contentMd()).contains("生成失败");
+        assertThat(detail.topStocks()).isEmpty();
+        assertThat(detail.model()).isEqualTo("test-model");
+        assertThat(detail.generatedAt()).isEqualTo(Instant.parse("2026-09-28T00:30:00Z"));
+    }
+
+    @Test
+    @DisplayName("给定无档交易日，when简报详情，then抛 IntelligenceException NOT_FOUND")
+    void givenMissingBrief_whenBriefDetail_thenNotFound() {
+        when(briefRepository.findByDate(LocalDate.of(2026, 10, 1))).thenReturn(Optional.empty());
+
+        assertThatExceptionOfType(IntelligenceException.class)
+                .isThrownBy(() -> service.briefDetail(LocalDate.of(2026, 10, 1)))
+                .satisfies(e -> assertThat(e.code()).isEqualTo(IntelligenceErrorCode.NOT_FOUND))
+                .withMessageContaining("2026-10-01");
+    }
+
+    // ===== P4 Task 1：标的聚合 stockIntel（三路计数 + 各路最新 5 条 + 空态引导）=====
+
+    @Test
+    @DisplayName("给定有命中的标的，when标的聚合，then新闻/公告各取最新5条与精确计数、政策路恒0带说明、empty=false")
+    void givenStockWithHits_whenStockIntel_thenThreeWayCountsAndLatestFive() {
+        when(newsRepository.search(any())).thenReturn(new PageResult<>(
+                List.of(extractedRecord()), 12, 1, 5));
+        when(announcementRepository.search(any())).thenReturn(new PageResult<>(List.of(
+                announcement("600519", "茅台回购公告", null, null)), 3, 1, 5));
+
+        var intel = service.stockIntel("600519");
+
+        assertThat(intel.stockCode()).isEqualTo("600519");
+        assertThat(intel.newsTotal()).isEqualTo(12);
+        assertThat(intel.news()).hasSize(1);
+        assertThat(intel.news().getFirst().title()).isEqualTo("茅台三季报预增");
+        assertThat(intel.announcementTotal()).isEqualTo(3);
+        assertThat(intel.announcements()).extracting(v -> v.title()).containsExactly("茅台回购公告");
+        assertThat(intel.policyTotal()).as("政策事件无标的维度——计数恒 0").isZero();
+        assertThat(intel.policyNote()).contains("政策");
+        assertThat(intel.empty()).isFalse();
+        // 两路各取前 5 条（pageSize=5）
+        verify(newsRepository).search(argThat(q -> q.page() == 1 && q.pageSize() == 5
+                && "600519".equals(q.stockCode())));
+        verify(announcementRepository).search(argThat(q -> q.page() == 1 && q.pageSize() == 5
+                && "600519".equals(q.stockCode())));
+    }
+
+    @Test
+    @DisplayName("给定三路全零的标的，when标的聚合，then empty=true 空态引导")
+    void givenStockWithoutHits_whenStockIntel_thenEmptyFlagForGuidance() {
+        when(newsRepository.search(any())).thenReturn(new PageResult<>(List.of(), 0, 1, 5));
+        when(announcementRepository.search(any())).thenReturn(new PageResult<>(List.of(), 0, 1, 5));
+
+        var intel = service.stockIntel("301999");
+
+        assertThat(intel.newsTotal()).isZero();
+        assertThat(intel.announcementTotal()).isZero();
+        assertThat(intel.news()).isEmpty();
+        assertThat(intel.announcements()).isEmpty();
+        assertThat(intel.empty()).as("三路命中全零 → 前端空态引导").isTrue();
+    }
+
+    @Test
+    @DisplayName("给定空白标的码，when标的聚合，then抛 IntelligenceException INVALID_FILTER")
+    void givenBlankStockCode_whenStockIntel_thenInvalidFilter() {
+        assertThatExceptionOfType(IntelligenceException.class)
+                .isThrownBy(() -> service.stockIntel("  "))
+                .satisfies(e -> assertThat(e.code()).isEqualTo(IntelligenceErrorCode.INVALID_FILTER));
+        verifyNoInteractions(newsRepository, announcementRepository);
+    }
+
+    // ===== P4 Task 1：宏观页聚合（macroOverview + calendar，D22）=====
+
+    @Test
+    @DisplayName("给定指标串与序列期数，when宏观总览，then按请求序装配 latest+series(limit) 且缺失显式（无政策节）")
+    void givenIndicatorsAndLimit_whenMacroOverview_thenSeriesAssembledWithMissing() {
+        when(macroQueryService.latest()).thenReturn(List.of(
+                macroPoint("CPI", "2026-09", "MONTH", "0.6"),
+                macroPoint("PMI", "2026-09", "MONTH", "50.4")));
+        when(macroQueryService.series(eq("CPI"), anyInt())).thenReturn(List.of(
+                macroPoint("CPI", "2026-09", "MONTH", "0.6"),
+                macroPoint("CPI", "2026-08", "MONTH", "0.5")));
+
+        var overview = service.macroOverview("CPI,PMI,GDP", 12);
+
+        assertThat(overview.indicators()).extracting(v -> v.indicator()).containsExactly("CPI", "PMI");
+        assertThat(overview.indicators().getFirst().series())
+                .extracting(IntelligenceQueryService.SeriesPoint::period)
+                .containsExactly("2026-09", "2026-08");
+        assertThat(overview.missing()).containsExactly("GDP");
+        assertThat(overview.generatedAt()).isEqualTo(FIXED_CLOCK.instant());
+        verify(macroQueryService).series("CPI", 12); // 请求 limit 透传（MacroQueryService 夹紧 1..60）
+        verify(macroQueryService).series("PMI", 12);
+        org.mockito.Mockito.verifyNoInteractions(policyRepository); // 宏观页无政策节
+    }
+
+    @Test
+    @DisplayName("给定 null limit，when宏观总览，then序列期数缺省 5（与工具口径一致）")
+    void givenNullLimit_whenMacroOverview_thenDefaultSeriesLimit() {
+        when(macroQueryService.latest()).thenReturn(List.of(macroPoint("CPI", "2026-09", "MONTH", "0.6")));
+
+        service.macroOverview("CPI", null);
+
+        verify(macroQueryService).series("CPI", 5);
+    }
+
+    @Test
+    @DisplayName("给定天数变体，when宏观日历，then null→7 天缺省（D22）且条目视图映射透传")
+    void givenDaysVariants_whenCalendar_thenDefaultSevenDaysAndViewMapped() {
+        when(macroQueryService.calendarUpcoming(anyInt())).thenReturn(List.of(new MacroCalendarEntry(
+                "CPI", LocalDate.of(2026, 10, 13), "MONTH", "国家统计局",
+                Instant.parse("2026-09-30T00:00:00Z"))));
+
+        var calendar = service.calendar(null);
+
+        verify(macroQueryService).calendarUpcoming(7); // D22：未来 7 天预期发布
+        assertThat(calendar).hasSize(1);
+        assertThat(calendar.getFirst().indicator()).isEqualTo("CPI");
+        assertThat(calendar.getFirst().expectedDate()).isEqualTo(LocalDate.of(2026, 10, 13));
+        assertThat(calendar.getFirst().frequency()).isEqualTo("MONTH");
+        assertThat(calendar.getFirst().sourceSite()).isEqualTo("国家统计局");
+        assertThat(calendar.getFirst().updatedAt()).isEqualTo(Instant.parse("2026-09-30T00:00:00Z"));
     }
 }

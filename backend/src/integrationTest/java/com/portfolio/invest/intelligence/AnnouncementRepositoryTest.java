@@ -108,6 +108,33 @@ class AnnouncementRepositoryTest extends PostgresTestSupport {
     }
 
     @Test
+    @DisplayName("search：stockCodes 以 SQL IN 下推（P4 scope 升级）——多标的命中、空列表不过滤")
+    void givenVariousStocks_whenSearchByStockCodes_thenInClauseFilters() {
+        insertAnnouncement("in-1", "600519", "茅台公告", false, "2026-09-28T21:00:00");
+        insertAnnouncement("in-2", "300750", "宁德公告", false, "2026-09-28T20:00:00");
+        insertAnnouncement("in-3", "000001", "范围外公告", false, "2026-09-28T19:00:00");
+
+        // 双标的 IN：命中两行、倒序
+        var twoCodes = repository.search(new PageQuery(1, 20, null, null, null, null, null, null,
+                null, null, null, List.of("600519", "300750")));
+        assertThat(twoCodes.total()).isEqualTo(2);
+        assertThat(twoCodes.items()).extracting(AnnouncementRecord::externalId)
+                .containsExactly("in-1", "in-2");
+
+        // 单标的 IN：等值命中
+        assertThat(repository.search(new PageQuery(1, 20, null, null, null, null, null, null,
+                null, null, null, List.of("000001"))).total()).isEqualTo(1);
+
+        // 空列表 = 不过滤（PageQuery 归一 null）：全量 3 行
+        assertThat(repository.search(new PageQuery(1, 20, null, null, null, null, null, null,
+                null, null, null, List.of())).total()).isEqualTo(3);
+
+        // 与 keyword 组合：IN + 标题子串交集
+        assertThat(repository.search(new PageQuery(1, 20, "宁德", null, null, null, null, null,
+                null, null, null, List.of("600519", "300750"))).total()).isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("search：from/to 闭区间（Asia/Shanghai 自然日折算）过滤 published_at")
     void givenAnnouncementsAcrossDays_whenSearchByFromTo_thenInclusiveRangeHits() {
         insertAnnouncement("d-27", "600519", "27日公告", false, "2026-09-27T10:00:00");

@@ -7,6 +7,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.portfolio.invest.domain.conversation.ConversationErrorCode;
 import com.portfolio.invest.domain.conversation.ConversationException;
+import com.portfolio.invest.domain.intelligence.IntelligenceErrorCode;
+import com.portfolio.invest.domain.intelligence.IntelligenceException;
 import com.portfolio.invest.domain.portfolio.PortfolioErrorCode;
 import com.portfolio.invest.domain.portfolio.PortfolioException;
 import com.portfolio.invest.domain.user.UserErrorCode;
@@ -75,6 +77,21 @@ class GlobalExceptionHandlerSliceTest {
             throw new PortfolioException(PortfolioErrorCode.SELL_EXCEEDS_QUANTITY, "卖出数量超过持仓");
         }
 
+        @GetMapping("/intelligence-not-found")
+        void intelligenceNotFound() {
+            throw new IntelligenceException(IntelligenceErrorCode.NOT_FOUND, "当日简报不存在");
+        }
+
+        @GetMapping("/intelligence-invalid-filter")
+        void intelligenceInvalidFilter() {
+            throw new IntelligenceException(IntelligenceErrorCode.INVALID_FILTER, "stockCode 不能为空");
+        }
+
+        @GetMapping("/intelligence-unknown")
+        void intelligenceUnknown() {
+            throw new IntelligenceException("SOME_FUTURE_CODE", "未知错误码");
+        }
+
         @GetMapping("/missing-param")
         void missingParam(@RequestParam String q) {}
 
@@ -132,6 +149,32 @@ class GlobalExceptionHandlerSliceTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(PortfolioErrorCode.SELL_EXCEEDS_QUANTITY))
                 .andExpect(jsonPath("$.message").value("卖出数量超过持仓"));
+    }
+
+    @DisplayName("情报域NOT_FOUND映射404（briefDetail 缺档等）")
+    @Test
+    void givenIntelligenceNotFound_whenRequestThrows_thenReturn404() throws Exception {
+        mvc.perform(get("/test-throw/intelligence-not-found"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(IntelligenceErrorCode.NOT_FOUND))
+                .andExpect(jsonPath("$.message").value("当日简报不存在"));
+    }
+
+    @DisplayName("情报域INVALID_FILTER映射422（检索过滤器非法）")
+    @Test
+    void givenIntelligenceInvalidFilter_whenRequestThrows_thenReturn422() throws Exception {
+        mvc.perform(get("/test-throw/intelligence-invalid-filter"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value(IntelligenceErrorCode.INVALID_FILTER))
+                .andExpect(jsonPath("$.message").value("stockCode 不能为空"));
+    }
+
+    @DisplayName("情报域未知错误码落入默认分支映射400")
+    @Test
+    void givenIntelligenceUnknownCode_whenRequestThrows_thenReturn400() throws Exception {
+        mvc.perform(get("/test-throw/intelligence-unknown"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("SOME_FUTURE_CODE"));
     }
 
     @DisplayName("缺少必填query参数映射400")

@@ -1,6 +1,7 @@
 package com.portfolio.invest.web;
 
 import com.portfolio.invest.domain.conversation.ConversationErrorCode;
+import com.portfolio.invest.domain.intelligence.IntelligenceErrorCode;
 import com.portfolio.invest.domain.market.MarketDataErrorCode;
 import com.portfolio.invest.domain.market.MarketDataException;
 import com.portfolio.invest.domain.mcp.McpErrorCode;
@@ -160,6 +161,18 @@ public class GlobalExceptionHandler {
                     -> HttpStatus.UNPROCESSABLE_CONTENT;
             // F16 回流降级：wiki 写异常不阻断复盘（reflux_state 回 PENDING），502 提示可重试
             case ResearchErrorCode.REFLUX_WIKI_UNAVAILABLE -> HttpStatus.BAD_GATEWAY;
+            default -> HttpStatus.BAD_REQUEST;
+        };
+        return ResponseEntity.status(status).body(new ApiError(e.code(), e.getMessage()));
+    }
+
+    /** intelligence 域（P4 工作台/订阅）：NOT_FOUND→404、INVALID_FILTER→422、default→400（照 research 范式）。 */
+    @ExceptionHandler(com.portfolio.invest.domain.intelligence.IntelligenceException.class)
+    public ResponseEntity<ApiError> intelligence(
+            com.portfolio.invest.domain.intelligence.IntelligenceException e) {
+        HttpStatus status = switch (e.code()) {
+            case IntelligenceErrorCode.NOT_FOUND -> HttpStatus.NOT_FOUND;
+            case IntelligenceErrorCode.INVALID_FILTER -> HttpStatus.UNPROCESSABLE_CONTENT;
             default -> HttpStatus.BAD_REQUEST;
         };
         return ResponseEntity.status(status).body(new ApiError(e.code(), e.getMessage()));

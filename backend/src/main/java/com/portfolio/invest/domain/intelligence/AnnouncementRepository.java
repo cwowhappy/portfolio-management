@@ -14,9 +14,10 @@ public interface AnnouncementRepository {
 
     /**
      * 分页检索：keyword 走标题 trgm 近似（子串 LIKE 保底）+ stockCode 直列等值 +
-     * type 走 extract 侧 ann_types JSONB 包含（未抽取条目无标签不命中）+ from/to 闭区间
-     * （Asia/Shanghai 折算）+ major（采集侧栏目映射预判）过滤，published_at 倒序。
-     * total 与条目分两次查询（OFFSET/LIMIT 分页）。
+     * <b>stockCodes 标的集 SQL IN</b>（P4 scope 升级——与 stockCode 等值可叠加，空列表
+     * 不过滤）+ type 走 extract 侧 ann_types JSONB 包含（未抽取条目无标签不命中）+
+     * from/to 闭区间（Asia/Shanghai 折算）+ major（采集侧栏目映射预判）过滤，
+     * published_at 倒序。total 与条目分两次查询（OFFSET/LIMIT 分页）。
      */
     PageResult<AnnouncementRecord> search(PageQuery q);
 

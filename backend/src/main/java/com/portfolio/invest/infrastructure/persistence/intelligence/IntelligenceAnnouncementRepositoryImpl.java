@@ -84,6 +84,13 @@ public class IntelligenceAnnouncementRepositoryImpl implements AnnouncementRepos
             where.append(" AND r.stock_code = ?");
             args.add(q.stockCode().trim());
         }
+        if (q.stockCodes() != null && !q.stockCodes().isEmpty()) {
+            // 标的集 SQL IN 下推（P4 scope 升级）：占位符逐标的展开、参数依序绑定
+            // （用户输入绝不拼接进 SQL 文本）；PageQuery 已把空列表归一 null 不过滤
+            String placeholders = String.join(",", q.stockCodes().stream().map(c -> "?").toList());
+            where.append(" AND r.stock_code IN (").append(placeholders).append(")");
+            args.addAll(q.stockCodes());
+        }
         if (q.type() != null) {
             // ann_types 在 extract 侧：未抽取条目无标签，type 过滤不命中（语义正确）
             where.append(" AND e.ann_types @> ?::jsonb");
