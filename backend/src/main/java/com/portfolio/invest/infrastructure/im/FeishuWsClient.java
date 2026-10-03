@@ -7,6 +7,7 @@ import com.google.gson.JsonParser;
 import com.lark.oapi.event.EventDispatcher;
 import com.lark.oapi.service.im.ImService;
 import com.lark.oapi.service.im.v1.model.P2MessageReceiveV1;
+import com.portfolio.invest.application.im.ImCommandRouter;
 import com.portfolio.invest.application.im.ImInboundMessage;
 import com.portfolio.invest.application.im.ImMessageListener;
 import com.portfolio.invest.config.InvestProperties;
@@ -16,6 +17,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.stereotype.Component;
 
+import java.util.Optional;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -25,6 +27,9 @@ import java.util.concurrent.TimeUnit;
  * 关键语义（spike 实证）：ack 在 handler 返回后才发出——本类 handler 只做 解析+去重+转投线程池，
  * 慢工作（agent 调用）全部在 executor 线程；SDK 无重推去重，业务侧按 message_id 去重（5 分钟 TTL）。
  * 进程级单例（close() 不关 SDK 内部线程池，生命周期与进程一致）。
+ *
+ * <p>P4 Task 5：转投 listener 前先过 {@link ImCommandRouter} 命令前置路由（如飞书绑定码），
+ * 命中即 sendReply 回话术后返回——不进对话桥；未命中/无路由 bean 照旧透传。
  */
 @Component
 public class FeishuWsClient implements SmartLifecycle {
@@ -35,6 +40,10 @@ public class FeishuWsClient implements SmartLifecycle {
     /** 测试构造器直注；生产构造器注入 provider，start() 时解析——无桥接 bean 时显式告警、不破上下文装配。 */
     private volatile ImMessageListener listener;
     private final ObjectProvider<ImMessageListener> listenerProvider; // 生产路径；测试构造器为 null
+    /** 测试构造器直注；生产构造器注入 provider，dispatch 懒解析——无路由 bean 时透传对话桥。 */
+    private volatile ImCommandRouter router;
+    private final ObjectProvider<ImCommandRouter> routerProvider; // 生产路径；测试构造器为 null
+    private final FeishuClient feishuClient; // 命令命中的回复通道（同包直用，不经 ImReplyPort 门面）
     private final Executor executor;
     private final Cache<String, Boolean> seenMessages =
             CacheBuilder.newBuilder().expireAfterWrite(5, TimeUnit.MINUTES).maximumSize(1000).build();
@@ -42,24 +51,37 @@ public class FeishuWsClient implements SmartLifecycle {
     private volatile boolean running;
 
     @org.springframework.beans.factory.annotation.Autowired
-    public FeishuWsClient(InvestProperties props, ObjectProvider<ImMessageListener> listenerProvider) {
-        this(props, null, listenerProvider, Executors.newSingleThreadExecutor(r -> {
-            Thread t = new Thread(r, "feishu-dialogue");
-            t.setDaemon(true);
-            return t;
-        }));
+    public FeishuWsClient(InvestProperties props, ObjectProvider<ImMessageListener> listenerProvider,
+                          ObjectProvider<ImCommandRouter> routerProvider, FeishuClient feishuClient) {
+        this(props, null, listenerProvider, null, routerProvider, feishuClient,
+                Executors.newSingleThreadExecutor(r -> {
+                    Thread t = new Thread(r, "feishu-dialogue");
+                    t.setDaemon(true);
+                    return t;
+                }));
     }
 
-    /** 测试构造器：注入直执行/可控执行器。 */
+    /** 既有测试构造器（无命令路由/回复通道：命令不拦截，照旧透传 listener）。 */
     FeishuWsClient(InvestProperties props, ImMessageListener listener, Executor executor) {
-        this(props, listener, null, executor);
+        this(props, listener, null, null, null, null, executor);
+    }
+
+    /** 测试构造器：注入直执行/可控执行器 + 命令路由与回复通道（命令拦截路径）。 */
+    FeishuWsClient(InvestProperties props, ImMessageListener listener, ImCommandRouter router,
+                   FeishuClient feishuClient, Executor executor) {
+        this(props, listener, null, router, null, feishuClient, executor);
     }
 
     private FeishuWsClient(InvestProperties props, ImMessageListener listener,
-                           ObjectProvider<ImMessageListener> listenerProvider, Executor executor) {
+                           ObjectProvider<ImMessageListener> listenerProvider,
+                           ImCommandRouter router, ObjectProvider<ImCommandRouter> routerProvider,
+                           FeishuClient feishuClient, Executor executor) {
         this.props = props;
         this.listener = listener;
         this.listenerProvider = listenerProvider;
+        this.router = router;
+        this.routerProvider = routerProvider;
+        this.feishuClient = feishuClient;
         this.executor = executor;
     }
 
@@ -122,7 +144,8 @@ public class FeishuWsClient implements SmartLifecycle {
         }
     }
 
-    /** 解析+去重+异步转投（handler 内同步调用的部分保持轻薄，快速 ack）。 */
+    /** 解析+去重+异步转投（handler 内同步调用的部分保持轻薄，快速 ack）。
+     * 命令前置路由在 executor 线程内进行（bindByCode 落库属慢工作，不占 ack 路径）。 */
     void dispatch(String chatId, String messageId, String openId, String chatType, String msgType,
                   String contentJson) {
         if (messageId == null || seenMessages.getIfPresent(messageId) != null) {
@@ -132,11 +155,34 @@ public class FeishuWsClient implements SmartLifecycle {
         String text = extractText(contentJson);
         executor.execute(() -> {
             try {
-                listener.onMessage(new ImInboundMessage(chatId, messageId, openId, chatType, msgType, text));
-            } catch (Exception e) { // 尽力而为：桥接异常不外溢到 executor 线程
+                ImInboundMessage message =
+                        new ImInboundMessage(chatId, messageId, openId, chatType, msgType, text);
+                ImCommandRouter commandRouter = resolveRouter();
+                if (commandRouter != null) {
+                    Optional<String> reply = commandRouter.tryRoute(message);
+                    if (reply.isPresent()) {
+                        feishuClient.sendReply(messageId, reply.get());
+                        return; // 命令已处理：不进对话桥
+                    }
+                }
+                listener.onMessage(message);
+            } catch (Exception e) { // 尽力而为：桥接/路由异常不外溢到 executor 线程
                 log.error("飞书消息处理失败（messageId={}）", messageId, e);
             }
         });
+    }
+
+    /** 命令路由懒解析（生产 provider 单例查询，首次解析后记忆）；测试直注或无 bean 时按原值。 */
+    private ImCommandRouter resolveRouter() {
+        ImCommandRouter resolved = router;
+        if (resolved != null || routerProvider == null) {
+            return resolved;
+        }
+        resolved = routerProvider.getIfAvailable();
+        if (resolved != null) {
+            router = resolved;
+        }
+        return resolved;
     }
 
     private String extractText(String contentJson) {

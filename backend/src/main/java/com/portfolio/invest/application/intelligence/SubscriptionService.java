@@ -3,6 +3,8 @@ package com.portfolio.invest.application.intelligence;
 import com.portfolio.invest.config.InvestProperties;
 import com.portfolio.invest.domain.intelligence.BindingCodeRepository;
 import com.portfolio.invest.domain.intelligence.FeishuBindingRepository;
+import com.portfolio.invest.domain.intelligence.IntelligenceErrorCode;
+import com.portfolio.invest.domain.intelligence.IntelligenceException;
 import com.portfolio.invest.domain.intelligence.IntelligenceSubscription;
 import com.portfolio.invest.domain.intelligence.SubscriptionRepository;
 import com.portfolio.invest.domain.intelligence.SubscriptionStock;
@@ -18,6 +20,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,10 +29,10 @@ import org.springframework.transaction.annotation.Transactional;
  * update 全量替换语义（前端表单整体提交——基于当前聚合 wither 出新聚合整体保存，
  * 仓库差集同步保留未动标的的 added_at）。PUT 幂等：重复提交同一命令结果一致。
  *
- * <p>P4 Task 2 绑定数据面（D8）：generateCode（6 位数字、TTL
+ * <p>绑定数据面（D8）：generateCode（6 位数字、TTL
  * {@code invest.intelligence.binding-code-ttl-minutes}、PK 冲突重生成 ≤3）/ unbind /
- * findOpenId——核销（bindByCode）属 P4 Task 5 绑定闭环（ImCommandRouter +
- * BindingCommandHandler 联动），签名先行占位。
+ * findOpenId / bindByCode 核销（一次性 + open_id 冲突拒绝，P4 Task 5——
+ * BindingCommandHandler 经 ImCommandRouter 前置路由消费）。
  *
  * <p>视图排序单点收口在本服务（行业/标的按码升序），REST 与后续消费方不各自排序。
  */
@@ -105,7 +108,7 @@ public class SubscriptionService {
                 subscription.updatedAt());
     }
 
-    // ===== P4 Task 2：绑定数据面（D8；核销闭环见 Task 5 BindingCommandHandler）=====
+    // ===== 绑定数据面（D8：Task 2 生成/解绑/查询 + Task 5 核销闭环）=====
 
     /**
      * 生成绑定码（POST /api/intelligence/subscription/binding-code）：6 位数字、
@@ -136,13 +139,40 @@ public class SubscriptionService {
     }
 
     /**
-     * 绑定码核销（D8 一次性 + open_id 冲突拒绝）——属 P4 Task 5 绑定闭环
-     * （ImCommandRouter + BindingCommandHandler 联动），本签名先行占位；
-     * 失败态错误码 {@code BINDING_CODE_EXPIRED} / {@code OPEN_ID_TAKEN} 已入
-     * GlobalExceptionHandler 422 分支。
+     * 绑定码核销（D8 一次性 + open_id 冲突拒绝，P4 Task 5——BindingCommandHandler 经
+     * ImCommandRouter 消费，异常消息即话术基础）：
+     * <ol>
+     *   <li>前置校验：码不存在/已核销/已过期 → {@code BINDING_CODE_EXPIRED}；
+     *       open_id 已绑<b>其他</b>用户 → {@code OPEN_ID_TAKEN}（拒绝在核销前——码不浪费）</li>
+     *   <li>原子核销：{@code UPDATE ... WHERE used_at IS NULL} 受影响行数判定，
+     *       0 行 = 并发先核销 → {@code BINDING_CODE_EXPIRED}</li>
+     *   <li>落绑定：upsert 同 user_id 覆盖旧 open_id；并发窗口内 open_id 撞他人行由
+     *       UNIQUE(open_id) 约束违例兜底 → {@code OPEN_ID_TAKEN}（事务回滚连带撤销核销）</li>
+     * </ol>
+     * 三步同事务（@Transactional）：任一步抛出整体回滚，码不会被失败核销消耗。
      */
+    @Transactional
     public void bindByCode(String code, String openId) {
-        throw new UnsupportedOperationException("绑定核销由 P4 Task 5（BindingCommandHandler）落地");
+        Instant now = Instant.now(clock);
+        Long userId = bindingCodeRepository.findRedeemableUserId(code, now)
+                .orElseThrow(() -> new IntelligenceException(
+                        IntelligenceErrorCode.BINDING_CODE_EXPIRED, "绑定码无效或已过期，请在设置页重新生成"));
+        bindingRepository.findUserIdByOpenId(openId)
+                .filter(boundUserId -> !boundUserId.equals(userId))
+                .ifPresent(boundUserId -> {
+                    throw new IntelligenceException(
+                            IntelligenceErrorCode.OPEN_ID_TAKEN, "该飞书账号已绑定其他用户");
+                });
+        if (!bindingCodeRepository.tryMarkUsed(code, now)) {
+            throw new IntelligenceException(
+                    IntelligenceErrorCode.BINDING_CODE_EXPIRED, "绑定码无效或已过期，请在设置页重新生成");
+        }
+        try {
+            bindingRepository.upsert(userId, openId, now);
+        } catch (DataIntegrityViolationException e) {
+            throw new IntelligenceException(
+                    IntelligenceErrorCode.OPEN_ID_TAKEN, "该飞书账号已绑定其他用户");
+        }
     }
 
     /**

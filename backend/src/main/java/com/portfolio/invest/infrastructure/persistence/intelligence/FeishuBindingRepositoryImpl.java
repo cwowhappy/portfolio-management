@@ -1,6 +1,8 @@
 package com.portfolio.invest.infrastructure.persistence.intelligence;
 
 import com.portfolio.invest.domain.intelligence.FeishuBindingRepository;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -32,5 +34,23 @@ public class FeishuBindingRepositoryImpl implements FeishuBindingRepository {
     public boolean deleteByUserId(Long userId) {
         return jdbc.update("DELETE FROM intelligence_feishu_binding WHERE user_id = ?",
                 userId) == 1;
+    }
+
+    @Override
+    public Optional<Long> findUserIdByOpenId(String openId) {
+        List<Long> found = jdbc.query(
+                "SELECT user_id FROM intelligence_feishu_binding WHERE open_id = ?",
+                (rs, i) -> rs.getLong("user_id"), openId);
+        return found.stream().findFirst();
+    }
+
+    @Override
+    public void upsert(Long userId, String openId, Instant boundAt) {
+        // ON CONFLICT (user_id)：同用户重绑覆盖旧 open_id；open_id 撞他人行由
+        // UNIQUE(open_id) 抛约束违例（Spring 译 DataIntegrityViolationException）
+        jdbc.update("INSERT INTO intelligence_feishu_binding (user_id, open_id, bound_at)"
+                        + " VALUES (?, ?, ?) ON CONFLICT (user_id) DO UPDATE"
+                        + " SET open_id = EXCLUDED.open_id, bound_at = EXCLUDED.bound_at",
+                userId, openId, boundAt.atOffset(ZoneOffset.UTC));
     }
 }
