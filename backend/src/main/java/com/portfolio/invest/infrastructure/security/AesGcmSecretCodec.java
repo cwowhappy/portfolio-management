@@ -37,7 +37,7 @@ public class AesGcmSecretCodec implements McpSecretCodec {
 
     private final SecretKeySpec key;
     private final SecureRandom random = new SecureRandom();
-    /** 存量明文 warn 去重（按存量值，量级 = provider 数，不记明文进日志）。 */
+    /** 存量明文 warn 去重——按 sha256(存量值) 记键（不以明文常驻堆），量级 = provider 数。 */
     private final Set<String> warnedLegacyValues = ConcurrentHashMap.newKeySet();
 
     @Autowired
@@ -90,7 +90,7 @@ public class AesGcmSecretCodec implements McpSecretCodec {
             return stored;
         }
         if (!stored.startsWith(PREFIX)) {
-            if (warnedLegacyValues.add(stored)) {
+            if (warnedLegacyValues.add(legacyDedupeKey(stored))) {
                 log.warn("MCP token 为存量明文（无 {} 前缀），建议经 admin 端点覆写为密文", PREFIX);
             }
             return stored;
@@ -119,6 +119,17 @@ public class AesGcmSecretCodec implements McpSecretCodec {
         if (key == null) {
             throw new McpException(McpErrorCode.SECRET_KEY_MISSING,
                     "MCP_SECRET_KEY 未配置：请设置后重启（base64 编码的 32 字节 AES-256 密钥）");
+        }
+    }
+
+    /** warn 去重键：sha256 十六进制（不以明文为键常驻堆）。 */
+    private static String legacyDedupeKey(String value) {
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(digest);
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 不可用", e);
         }
     }
 }

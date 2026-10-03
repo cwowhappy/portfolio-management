@@ -204,4 +204,19 @@ class McpConfigApplicationServiceTest {
 
         assertThat(views).extracting(McpProviderView::hasToken).containsExactly(true, false);
     }
+
+    @DisplayName("工具清单读路径：解密失败降级空列表（不裸 500 打到用户设置页）")
+    @Test
+    void givenTools_whenDecryptFails_thenEmptyList() {
+        McpProvider p = McpProvider.reconstitute(3L, "wind", "Wind AIFin", AuthType.BEARER, null, "v1:broken", true, null, NOW);
+        McpUserConfig config = McpUserConfig.reconstitute(9L, 1L, 3L, true, List.of(), 1, NOW, NOW);
+        when(repo.findProviderById(3L)).thenReturn(Optional.of(p));
+        when(repo.findByUserIdAndProviderId(1L, 3L)).thenReturn(Optional.of(config));
+        when(codec.decrypt("v1:broken"))
+                .thenThrow(new McpException(McpErrorCode.SECRET_DECRYPT_FAILED, "token 解密失败"));
+
+        var tools = service.tools(1L, 3L);
+
+        assertThat(tools).isEmpty();
+    }
 }

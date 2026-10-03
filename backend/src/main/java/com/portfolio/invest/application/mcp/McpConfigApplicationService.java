@@ -85,9 +85,16 @@ public class McpConfigApplicationService {
         McpUserConfig config = repository.findByUserIdAndProviderId(userId, providerId)
                 .orElseThrow(() -> new McpException(McpErrorCode.CONFIG_NOT_FOUND, "配置不存在"));
         McpProvider provider = requireProvider(providerId);
-        return listTools(provider).stream()
-                .map(t -> new ToolView(t.name(), t.description(), !config.disabledTools().contains(t.name())))
-                .toList();
+        // 解密失败（密钥错配/坏行）降级空清单 + warn，不裸 500 打到用户设置页（终审 Important 2，
+        // 与装配路径「跳过 + warn」同构；连接测试走 TestResult.fail 通道不受影响）
+        try {
+            return listTools(provider).stream()
+                    .map(t -> new ToolView(t.name(), t.description(), !config.disabledTools().contains(t.name())))
+                    .toList();
+        } catch (McpException e) {
+            log.warn("MCP provider {} 工具清单解密失败，返回空清单：{}", provider.code(), e.getMessage());
+            return List.of();
+        }
     }
 
     @Transactional(readOnly = true)
