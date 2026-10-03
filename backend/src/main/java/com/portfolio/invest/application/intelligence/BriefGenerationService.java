@@ -45,8 +45,8 @@ public class BriefGenerationService {
     /** 市场时区（窗口折算与调度 zone 一致）。 */
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
 
-    /** 选取窗口起点时刻：昨日 15:00（收盘后）——「昨夜今晨」。 */
-    private static final LocalTime WINDOW_START_TIME = LocalTime.of(15, 0);
+    /** 选取窗口起点时刻：昨日 15:00（收盘后）——「昨夜今晨」。包内共享：推送附节同窗口取数。 */
+    static final LocalTime WINDOW_START_TIME = LocalTime.of(15, 0);
 
     /** fail_reason 截断长度（异常栈 toString 可能极长，留档取头部即可定位）。 */
     private static final int FAIL_REASON_MAX = 500;

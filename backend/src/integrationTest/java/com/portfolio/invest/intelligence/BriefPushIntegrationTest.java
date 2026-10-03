@@ -79,6 +79,15 @@ class BriefPushIntegrationTest extends PostgresTestSupport {
         jdbc.update("DELETE FROM trading_calendar");
         jdbc.update("INSERT INTO trading_calendar VALUES (?)",
                 java.sql.Date.valueOf(LocalDate.now(CST)));
+        // P4 个性化分流后群版仅当「存在 pushEnabled 且未绑定用户」才发：seed 一名开启推送、
+        // 未绑定飞书的用户保住群兜底路径（本类断言群推留痕行的前提）
+        jdbc.update("DELETE FROM intelligence_subscription WHERE user_id IN"
+                + " (SELECT id FROM app_user WHERE username = 'brief-push-user')");
+        jdbc.update("DELETE FROM app_user WHERE username = 'brief-push-user'");
+        jdbc.update("INSERT INTO app_user(username, password_hash, role, status)"
+                + " VALUES('brief-push-user', 'x', 'USER', 'APPROVED')");
+        jdbc.update("INSERT INTO intelligence_subscription(user_id, push_enabled)"
+                + " SELECT id, TRUE FROM app_user WHERE username = 'brief-push-user'");
     }
 
     @Test

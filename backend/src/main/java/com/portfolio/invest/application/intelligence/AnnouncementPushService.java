@@ -14,9 +14,13 @@ import com.portfolio.invest.domain.intelligence.PushLogRepository;
 import com.portfolio.invest.domain.intelligence.PushStatus;
 import com.portfolio.invest.domain.intelligence.PushType;
 import com.portfolio.invest.domain.intelligence.SubscriptionRepository;
+import com.portfolio.invest.domain.journal.JournalEntry;
+import com.portfolio.invest.domain.journal.JournalEntryRepository;
+import com.portfolio.invest.domain.journal.JournalEntryType;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
@@ -45,6 +49,9 @@ import org.springframework.stereotype.Service;
  *   <li><b>留痕三态</b>：OK / FAIL / SKIPPED_NO_BINDING（未绑定飞书——跳过单发仍留痕，
  *       P4 绑定就位后自然生效）。幂等：push_log 已有该 (公告, 用户) 的 OK/SKIPPED 行则
  *       跳过（FAIL 允许下批重推）。</li>
+ *   <li><b>journal 回执留痕</b>（D14，P4 激活）：实发（OK/FAIL）命中持仓项目时逐项目写
+ *       RESEARCH_EVENT「【情报】」事件（照 research writeEvent 全参形态）；SKIPPED 未送达
+ *       不写；journal 落库失败不挡推送。</li>
  *   <li><b>尽力而为</b>：顶层/单公告/单用户三层隔离，任一失败不挡其余；im 未配置
  *       （appId/appSecret 缺失）整体跳过不留痕（部署状态非推送失败，照
  *       {@code BriefPushService} 先例）。</li>
@@ -66,6 +73,12 @@ public class AnnouncementPushService implements AnnouncementPushTrigger {
     private static final String CARD_TEMPLATE = "blue";
     private static final int TITLE_MAX_CHARS = 64;
 
+    /** journal 留痕标题前缀（D14：项目时间线上以「【情报】」辨识情报域事件）。 */
+    private static final String JOURNAL_TITLE_PREFIX = "【情报】";
+
+    /** journal 标题列长（journal_entry.title VARCHAR(128)，V1 基线）——超长截断防落库违例。 */
+    private static final int JOURNAL_TITLE_MAX_CHARS = 128;
+
     /**
      * SKIPPED_NO_BINDING 行的 target 占位：列 NOT NULL（V3 DDL）而未绑定用户无 open_id
      * 可写，以哨兵落列——幂等查重只看 (push_type, ref, user, status)，不受影响。
@@ -78,6 +91,7 @@ public class AnnouncementPushService implements AnnouncementPushTrigger {
     private final FeishuBindingRepository bindingRepository;
     private final IntelligencePushPort pushPort;
     private final PushLogRepository pushLogRepository;
+    private final JournalEntryRepository journalRepository;
     private final InvestProperties props;
     private final Clock clock;
 
@@ -88,9 +102,10 @@ public class AnnouncementPushService implements AnnouncementPushTrigger {
                                    FeishuBindingRepository bindingRepository,
                                    IntelligencePushPort pushPort,
                                    PushLogRepository pushLogRepository,
+                                   JournalEntryRepository journalRepository,
                                    InvestProperties props) {
         this(announcementRepository, subscriptionRepository, subscriptionHook, bindingRepository,
-                pushPort, pushLogRepository, props, Clock.system(ZONE));
+                pushPort, pushLogRepository, journalRepository, props, Clock.system(ZONE));
     }
 
     /** 测试构造器：注入时钟。 */
@@ -100,6 +115,7 @@ public class AnnouncementPushService implements AnnouncementPushTrigger {
                             FeishuBindingRepository bindingRepository,
                             IntelligencePushPort pushPort,
                             PushLogRepository pushLogRepository,
+                            JournalEntryRepository journalRepository,
                             InvestProperties props, Clock clock) {
         this.announcementRepository = announcementRepository;
         this.subscriptionRepository = subscriptionRepository;
@@ -107,6 +123,7 @@ public class AnnouncementPushService implements AnnouncementPushTrigger {
         this.bindingRepository = bindingRepository;
         this.pushPort = pushPort;
         this.pushLogRepository = pushLogRepository;
+        this.journalRepository = journalRepository;
         this.props = props;
         this.clock = clock;
     }
@@ -184,29 +201,46 @@ public class AnnouncementPushService implements AnnouncementPushTrigger {
             pushLogRepository.save(new PushLog(null, hit.userId(), PushType.ANNOUNCEMENT,
                     NO_BINDING_TARGET, REF_TABLE, announcement.id(),
                     PushStatus.SKIPPED_NO_BINDING, null, Instant.now(clock)));
-            hit.projectIds().forEach(projectId ->
-                    writeProjectJournalHit(hit.userId(), projectId, announcement, bodyLines));
+            // 裁定（D14 收口）：SKIPPED（未送达）不写 journal——时间线记未送达事件无意义，
+            // journal 只留痕实际触达到用户的研究事件。
             return;
         }
         boolean ok = pushPort.sendToUser(openId.get(), title, CARD_TEMPLATE, bodyLines);
         pushLogRepository.save(new PushLog(null, hit.userId(), PushType.ANNOUNCEMENT, openId.get(),
                 REF_TABLE, announcement.id(), ok ? PushStatus.OK : PushStatus.FAIL,
                 ok ? null : "飞书单发返回失败", Instant.now(clock)));
+        // OK/FAIL 均已尝试触达（FAIL 是飞书侧失败，公告事实仍值得进时间线），逐项目留痕
         hit.projectIds().forEach(projectId ->
                 writeProjectJournalHit(hit.userId(), projectId, announcement, bodyLines));
     }
 
     /**
-     * journal 留痕方法位（D14，P4 回接收口激活）：推送命中持仓项目（IntelligenceTarget
-     * 带 projectId）时，按「【情报】」前缀复用 RESEARCH_EVENT 写项目时间线（公告标题/类型/
-     * 要点/链接）。本册不写 journal 表——空实现预留，激活时经 JournalEntryRepository
-     * 直写（照 application/research/ResearchApplicationService 私有 writeEvent 模式，
-     * JournalEntry.create 带 projectId 重载）。推送与留痕失败均不影响本方法（尽力而为）。
+     * journal 留痕（D14，P4 激活）：推送命中持仓项目（IntelligenceTarget 带 projectId）
+     * 时按「【情报】」前缀复用 RESEARCH_EVENT 写项目时间线——title=前缀+公告标题（截断
+     * 128 列长），content=卡片正文行（类型/要点/链接）拼装，照
+     * application/research/ResearchApplicationService 私有 writeEvent 的
+     * JournalEntry.create(projectId 重载) 全参形态。独立 try/catch：journal 是回执留痕，
+     * 落库失败不挡推送与 push_log（尽力而为）。
      */
     private void writeProjectJournalHit(Long userId, Long projectId, AnnouncementRecord announcement,
                                         List<String> bodyLines) {
-        // TODO P4（MS-23 回接收口）：JournalEntry.create(projectId 重载) + RESEARCH_EVENT 落库，
-        //   title=「【情报】」+ 公告标题，content=String.join("\n", bodyLines)。
+        try {
+            journalRepository.save(JournalEntry.create(userId, JournalEntryType.RESEARCH_EVENT,
+                    announcement.stockCode(), announcement.stockName(), null,
+                    truncateJournalTitle(JOURNAL_TITLE_PREFIX + announcement.title()),
+                    String.join("\n", bodyLines),
+                    null, null, null, null, null, LocalDate.now(clock), Instant.now(clock),
+                    projectId));
+        } catch (Exception e) {
+            log.warn("情报公告 journal 留痕失败（不挡推送留痕，userId={}，projectId={}）：{}",
+                    userId, projectId, e.getMessage());
+        }
+    }
+
+    /** journal 标题截断：超 128 列长截为前 127 字符 + 省略号（提示被截断，总长不超列限）。 */
+    private static String truncateJournalTitle(String title) {
+        return title.length() <= JOURNAL_TITLE_MAX_CHARS ? title
+                : title.substring(0, JOURNAL_TITLE_MAX_CHARS - 1) + "…";
     }
 
     // ── 卡片文案组装（纯函数，四类行形态见 Task 5 报告 §T7 消费口径）──────────

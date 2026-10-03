@@ -28,9 +28,13 @@ import com.portfolio.invest.domain.intelligence.PushStatus;
 import com.portfolio.invest.domain.intelligence.PushType;
 import com.portfolio.invest.domain.intelligence.SubscriptionRepository;
 import com.portfolio.invest.domain.intelligence.SubscriptionStock;
+import com.portfolio.invest.domain.journal.JournalEntry;
+import com.portfolio.invest.domain.journal.JournalEntryRepository;
+import com.portfolio.invest.domain.journal.JournalEntryType;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
@@ -44,7 +48,9 @@ import org.mockito.ArgumentCaptor;
  * D12/D15/决策 #26 union 命中（手动订阅 ∪ POSITION 持仓 hook）→ 按 (announcement, user)
  * 聚合一次 sendToUser（同用户多路命中去重；多条公告逐条推送不跨公告聚合）→ push_log 留痕
  * （OK/FAIL/SKIPPED_NO_BINDING 三态）→ 幂等查重跳过 → metrics 空降级标题+链接 →
- * journal 留痕方法位空实现不炸（P4 激活）→ 单公告/单用户/顶层三层异常隔离。
+ * journal 留痕激活（D14：hook 命中项目经 JournalEntryRepository 写 RESEARCH_EVENT
+ * 「【情报】」事件；SKIPPED 未送达不写；journal 失败不挡推送）→
+ * 单公告/单用户/顶层三层异常隔离。
  */
 class AnnouncementPushServiceTest {
 
@@ -60,6 +66,7 @@ class AnnouncementPushServiceTest {
     private final FeishuBindingRepository bindingRepository = mock(FeishuBindingRepository.class);
     private final IntelligencePushPort pushPort = mock(IntelligencePushPort.class);
     private final PushLogRepository pushLogRepository = mock(PushLogRepository.class);
+    private final JournalEntryRepository journalRepository = mock(JournalEntryRepository.class);
     private final InvestProperties props = new InvestProperties();
     private AnnouncementPushService service;
 
@@ -68,7 +75,7 @@ class AnnouncementPushServiceTest {
         props.getIm().setAppId("cli-app");
         props.getIm().setAppSecret("secret");
         service = new AnnouncementPushService(announcementRepository, subscriptionRepository, hook,
-                bindingRepository, pushPort, pushLogRepository, props, CLOCK);
+                bindingRepository, pushPort, pushLogRepository, journalRepository, props, CLOCK);
         when(hook.activePositionTargets()).thenReturn(List.of());
         when(subscriptionRepository.findAllWithStock(anyString())).thenReturn(List.of());
         when(bindingRepository.findOpenIdByUserId(anyLong())).thenReturn(Optional.of(OPEN_ID));
@@ -333,7 +340,7 @@ class AnnouncementPushServiceTest {
     }
 
     @Test
-    @DisplayName("给定 hook 命中项目且用户已绑定，when推送，then流程完整走通（journal 留痕方法位空实现不炸）")
+    @DisplayName("给定 hook 命中项目且用户已绑定，when推送，then流程完整走通（journal 留痕随行不炸）")
     void givenHookProjectHitWithBinding_whenPushExtracted_thenFlowCompletes() {
         when(announcementRepository.findExtractedMajorSince(SINCE))
                 .thenReturn(List.of(announcement(1L, "2026年半年度报告", fullMetrics(),
@@ -345,6 +352,120 @@ class AnnouncementPushServiceTest {
 
         verify(pushPort, times(1)).sendToUser(anyString(), anyString(), anyString(), any());
         verify(pushLogRepository, times(1)).save(captor().capture());
+    }
+
+    // ── journal 留痕激活（D14，P4 回接收口）────────────────────────
+
+    @Test
+    @DisplayName("给定 hook 命中项目且实发成功，when推送，then写一条 RESEARCH_EVENT journal（【情报】前缀/卡片正文/项目锚点）")
+    void givenHookProjectHitAndSent_whenPushExtracted_thenJournalEntrySavedWithFullShape() {
+        when(announcementRepository.findExtractedMajorSince(SINCE))
+                .thenReturn(List.of(announcement(1L, "2026年半年度报告", fullMetrics(),
+                        List.of(AnnouncementType.PERIODIC_REPORT), "https://x/a.pdf")));
+        when(hook.activePositionTargets())
+                .thenReturn(List.of(new IntelligenceTarget(7L, 100L, STOCK, "贵州茅台")));
+
+        service.pushExtracted(SINCE);
+
+        ArgumentCaptor<JournalEntry> entries = ArgumentCaptor.forClass(JournalEntry.class);
+        verify(journalRepository, times(1)).save(entries.capture());
+        JournalEntry entry = entries.getValue();
+        assertThat(entry.userId()).isEqualTo(7L);
+        assertThat(entry.type()).isEqualTo(JournalEntryType.RESEARCH_EVENT);
+        assertThat(entry.projectId()).as("研究事件必须锚定命中项目").isEqualTo(100L);
+        assertThat(entry.tradeId()).isNull();
+        assertThat(entry.stockCode()).isEqualTo(STOCK);
+        assertThat(entry.stockName()).isEqualTo("贵州茅台");
+        assertThat(entry.title()).isEqualTo("【情报】2026年半年度报告");
+        assertThat(entry.content()).as("content=卡片正文行拼装（类型/关键数字/原文链接）")
+                .isEqualTo(String.join("\n", sentBodyLines()));
+        assertThat(entry.eventDate()).isEqualTo(LocalDate.of(2026, 9, 29));
+        assertThat(entry.createdAt()).isEqualTo(CLOCK.instant());
+        assertThat(entry.targetPrice()).isNull();
+        assertThat(entry.stopLoss()).isNull();
+        assertThat(entry.periodType()).isNull();
+    }
+
+    @Test
+    @DisplayName("给定 hook 同用户命中两个项目，when推送，then一次推送但按项目各写一行 journal")
+    void givenHookTwoProjectsSameUser_whenPushExtracted_thenJournalWrittenPerProject() {
+        when(announcementRepository.findExtractedMajorSince(SINCE))
+                .thenReturn(List.of(announcement(1L, "2026年半年度报告")));
+        when(hook.activePositionTargets()).thenReturn(List.of(
+                new IntelligenceTarget(7L, 101L, STOCK, "贵州茅台"),
+                new IntelligenceTarget(7L, 100L, STOCK, "贵州茅台")));
+
+        service.pushExtracted(SINCE);
+
+        verify(pushPort, times(1)).sendToUser(anyString(), anyString(), anyString(), any()); // 推送去重
+        ArgumentCaptor<JournalEntry> entries = ArgumentCaptor.forClass(JournalEntry.class);
+        verify(journalRepository, times(2)).save(entries.capture());
+        assertThat(entries.getAllValues()).extracting(JournalEntry::projectId)
+                .containsExactlyInAnyOrder(100L, 101L);
+    }
+
+    @Test
+    @DisplayName("给定仅手动订阅命中（无项目锚点），when推送，then实发留痕但不写 journal")
+    void givenSubscriptionOnlyHit_whenPushExtracted_thenNoJournalWrite() {
+        when(announcementRepository.findExtractedMajorSince(SINCE))
+                .thenReturn(List.of(announcement(1L, "2026年半年度报告")));
+        when(subscriptionRepository.findAllWithStock(STOCK)).thenReturn(List.of(subscription(7L)));
+
+        service.pushExtracted(SINCE);
+
+        verify(pushPort, times(1)).sendToUser(anyString(), anyString(), anyString(), any());
+        verify(pushLogRepository, times(1)).save(any());
+        verify(journalRepository, never()).save(any()); // 订阅路无 projectId，无时间线锚点
+    }
+
+    @Test
+    @DisplayName("给定命中项目但用户未绑定（SKIPPED 未送达），when推送，then不写 journal（未送达事件进时间线无意义）")
+    void givenNoBindingWithProjectHit_whenPushExtracted_thenSkippedWithoutJournal() {
+        when(announcementRepository.findExtractedMajorSince(SINCE))
+                .thenReturn(List.of(announcement(1L, "2026年半年度报告")));
+        when(hook.activePositionTargets())
+                .thenReturn(List.of(new IntelligenceTarget(7L, 100L, STOCK, "贵州茅台")));
+        when(bindingRepository.findOpenIdByUserId(7L)).thenReturn(Optional.empty());
+
+        service.pushExtracted(SINCE);
+
+        verify(pushLogRepository, times(1)).save(captor().capture()); // SKIPPED_NO_BINDING 仍留痕
+        verify(journalRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("给定 journal 落库抛异常，when推送，then推送与 push_log 留痕不受影响且不抛")
+    void givenJournalSaveBlowsUp_whenPushExtracted_thenPushStillLoggedOkAndNoThrow() {
+        when(announcementRepository.findExtractedMajorSince(SINCE))
+                .thenReturn(List.of(announcement(1L, "2026年半年度报告")));
+        when(hook.activePositionTargets())
+                .thenReturn(List.of(new IntelligenceTarget(7L, 100L, STOCK, "贵州茅台")));
+        when(journalRepository.save(any())).thenThrow(new IllegalStateException("db down"));
+
+        assertThatCode(() -> service.pushExtracted(SINCE)).doesNotThrowAnyException();
+
+        verify(pushPort, times(1)).sendToUser(anyString(), anyString(), anyString(), any());
+        ArgumentCaptor<PushLog> logs = captor();
+        verify(pushLogRepository, times(1)).save(logs.capture());
+        assertThat(logs.getValue().status()).isEqualTo(PushStatus.OK);
+    }
+
+    @Test
+    @DisplayName("给定超长公告标题，when推送，then journal 标题截断到 128 列长（前缀+省略号保留可辨识）")
+    void givenOverlongAnnouncementTitle_whenPushExtracted_thenJournalTitleTruncatedToColumnLimit() {
+        when(announcementRepository.findExtractedMajorSince(SINCE))
+                .thenReturn(List.of(announcement(1L, "甲".repeat(200))));
+        when(hook.activePositionTargets())
+                .thenReturn(List.of(new IntelligenceTarget(7L, 100L, STOCK, "贵州茅台")));
+
+        service.pushExtracted(SINCE);
+
+        ArgumentCaptor<JournalEntry> entries = ArgumentCaptor.forClass(JournalEntry.class);
+        verify(journalRepository, times(1)).save(entries.capture());
+        assertThat(entries.getValue().title())
+                .hasSize(128)
+                .startsWith("【情报】")
+                .endsWith("…");
     }
 
     // ── fixture 助手 ───────────────────────────────────────────────
