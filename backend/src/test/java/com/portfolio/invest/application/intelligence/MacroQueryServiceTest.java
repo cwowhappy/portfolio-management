@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 
 import com.portfolio.invest.domain.intelligence.MacroPoint;
 import com.portfolio.invest.domain.intelligence.MacroRepository;
+import com.portfolio.invest.domain.intelligence.SourceSwitch;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -24,7 +25,7 @@ import org.junit.jupiter.api.Test;
 /**
  * MacroQueryService 夹紧与透传：series limit 夹紧 1..60、calendarUpcoming days 夹紧
  * 1..30 且窗口 today→today+days（Asia/Shanghai 时区、两端闭）、calendarOn 单日区间、
- * latest/recordSourceSwitch/lastSourceSwitchAt 纯委托仓库——夹紧单点收口在本服务，
+ * latest/recordSourceSwitch/findLatestSwitch 纯委托仓库——夹紧单点收口在本服务，
  * T6 工具层与 P4 web 层不各自防御（照 IntelligenceQueryService 先例）。
  */
 class MacroQueryServiceTest {
@@ -77,15 +78,16 @@ class MacroQueryServiceTest {
     }
 
     @Test
-    @DisplayName("given仓库返回，when latest/lastSourceSwitchAt，then原样透传")
-    void givenRepositoryReturns_whenLatestAndLastSwitchAt_thenPassedThrough() {
+    @DisplayName("given仓库返回，when latest/findLatestSwitch，then原样透传（含方向）")
+    void givenRepositoryReturns_whenLatestAndFindLatestSwitch_thenPassedThrough() {
+        SourceSwitch switchRow = new SourceSwitch("socfin", "m2", Instant.parse("2026-09-15T01:00:00Z"));
         when(repository.findLatestPerIndicator()).thenReturn(List.of(cpiPoint()));
-        when(repository.lastSourceSwitchAt("AFMI")).thenReturn(Optional.of(Instant.parse("2026-09-15T01:00:00Z")));
+        when(repository.findLatestSwitch("AFMI")).thenReturn(Optional.of(switchRow));
 
         assertThat(service.latest()).containsExactly(cpiPoint());
-        assertThat(service.lastSourceSwitchAt("AFMI")).contains(Instant.parse("2026-09-15T01:00:00Z"));
+        assertThat(service.findLatestSwitch("AFMI")).contains(switchRow);
         verify(repository).findLatestPerIndicator();
-        verify(repository).lastSourceSwitchAt("AFMI");
+        verify(repository).findLatestSwitch("AFMI");
         verifyNoMoreInteractions(repository);
     }
 

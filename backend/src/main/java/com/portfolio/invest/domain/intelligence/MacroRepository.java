@@ -1,6 +1,5 @@
 package com.portfolio.invest.domain.intelligence;
 
-import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -48,8 +47,9 @@ public interface MacroRepository {
     void insertSourceSwitch(String indicator, String fromSource, String toSource, String reason);
 
     /**
-     * 该指标最近一次源切换时间（{@code max(switched_at)}）；无留痕为 empty——
-     * 告警去重消费（同指标窗口内已告警过则不再重复告警）。
+     * 该指标最近一次源切换留痕（{@code switched_at} 最新一行，含 from/to 方向）；
+     * 无留痕为 empty——降级巡检以最新记录方向为「当前态」（to=m2 即降级态），
+     * 支撑「状态翻转才告警一次」的幂等判定（D19）。
      */
-    Optional<Instant> lastSourceSwitchAt(String indicator);
+    Optional<SourceSwitch> findLatestSwitch(String indicator);
 }

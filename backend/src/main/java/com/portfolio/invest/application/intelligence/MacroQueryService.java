@@ -3,8 +3,8 @@ package com.portfolio.invest.application.intelligence;
 import com.portfolio.invest.domain.intelligence.MacroCalendarEntry;
 import com.portfolio.invest.domain.intelligence.MacroPoint;
 import com.portfolio.invest.domain.intelligence.MacroRepository;
+import com.portfolio.invest.domain.intelligence.SourceSwitch;
 import java.time.Clock;
-import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
@@ -80,9 +80,9 @@ public class MacroQueryService {
         macroRepository.insertSourceSwitch(indicator, fromSource, toSource, reason);
     }
 
-    /** 该指标最近一次源切换时间（告警去重消费），无留痕为 empty。 */
-    public Optional<Instant> lastSourceSwitchAt(String indicator) {
-        return macroRepository.lastSourceSwitchAt(indicator);
+    /** 该指标最近一次源切换留痕（含 from/to 方向），无留痕为 empty——降级巡检消费。 */
+    public Optional<SourceSwitch> findLatestSwitch(String indicator) {
+        return macroRepository.findLatestSwitch(indicator);
     }
 
     /** 夹紧 1..upper（下界 1：非正数视为「至少取一期/一天」）。 */

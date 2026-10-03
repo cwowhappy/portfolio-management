@@ -23,7 +23,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * （treasury_yield_curve 1Y/10Y 各自最新交易日、部分采集日单期限不丢点）、
  * findSeries 的 period 倒序与 limit 截断、findCalendarBetween 对 V3 日历种子
  * （75 行，2026Q4~2027 五指标）的闭区间/同日多指标排序/月末推导、
- * insertSourceSwitch 落库与 lastSourceSwitchAt 的 max 口径。
+ * insertSourceSwitch 落库与 findLatestSwitch 的最新行方向口径。
  *
  * <p>共享容器卫生：macro_series / source_switch 仅本类读写（整表清）；
  * treasury_yield_curve 只清本查询读的 1Y/10Y 两期限（他测试种下的行不动的
@@ -176,22 +176,25 @@ class MacroRepositoryTest extends PostgresTestSupport {
     }
 
     @Test
-    @DisplayName("insertSourceSwitch：落库默认 switched_at；lastSourceSwitchAt 取该指标 max，未知指标 empty")
-    void givenSourceSwitchInserts_whenLastSourceSwitchAt_thenMaxForIndicatorOnly() {
-        repository.insertSourceSwitch("AFMI", "eastmoney", "pboc", "东方财富社融口径停更，切换央行原始口径");
-        repository.insertSourceSwitch("AFMI", "pboc", "eastmoney", "回切验证多行 max 口径");
+    @DisplayName("insertSourceSwitch：落库默认 switched_at；findLatestSwitch 取最新行含方向，未知指标 empty")
+    void givenSourceSwitchInserts_whenFindLatestSwitch_thenLatestRowWithDirection() {
+        repository.insertSourceSwitch("AFMI", "socfin", "m2", "社融主源连续2个发布期失败（降级）");
+        repository.insertSourceSwitch("AFMI", "m2", "socfin", "回切验证最新行方向口径");
         repository.insertSourceSwitch("CPI", "stats", "eastmoney", "统计局接口限流切换");
 
-        // 第一行回拨到确定的历史时刻：两行同指标时 lastSourceSwitchAt 必须取较新的第二行
+        // 第一行 AFMI 回拨到确定的历史时刻：两行同指标时 findLatestSwitch 必须取较新的第二行
         jdbc.update("UPDATE intelligence_source_switch SET switched_at = '2026-09-01 08:00:00+08'"
-                + " WHERE indicator='AFMI' AND to_source='pboc'");
+                + " WHERE indicator='AFMI' AND to_source='m2'");
 
-        var afmiAt = repository.lastSourceSwitchAt("AFMI");
-        assertThat(afmiAt).isPresent();
-        assertThat(afmiAt.get()).isAfter(java.time.Instant.parse("2026-09-01T00:00:00Z"));
-        assertThat(repository.lastSourceSwitchAt("CPI")).isPresent();
-        // 无留痕指标：empty（告警去重以「从未切换」起步）
-        assertThat(repository.lastSourceSwitchAt("PMI")).isEmpty();
+        var afmi = repository.findLatestSwitch("AFMI");
+        assertThat(afmi).isPresent();
+        // 方向语义（T7 告警恰一次的判定基准）：最新行 to=m2 即降级态——此处最新行为回切行
+        assertThat(afmi.get().fromSource()).isEqualTo("m2");
+        assertThat(afmi.get().toSource()).isEqualTo("socfin");
+        assertThat(afmi.get().switchedAt()).isAfter(java.time.Instant.parse("2026-09-01T00:00:00Z"));
+        assertThat(repository.findLatestSwitch("CPI")).isPresent();
+        // 无留痕指标：empty（巡检以「从未切换」= 健康态起步）
+        assertThat(repository.findLatestSwitch("PMI")).isEmpty();
         // 行数核验：三行留痕（重复切换即多行，幂等由服务层「状态变化才插」保证）
         assertThat(jdbc.queryForObject(
                 "SELECT count(*) FROM intelligence_source_switch", Integer.class)).isEqualTo(3);

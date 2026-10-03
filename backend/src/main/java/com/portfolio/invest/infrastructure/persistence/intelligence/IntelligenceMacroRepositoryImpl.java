@@ -3,6 +3,7 @@ package com.portfolio.invest.infrastructure.persistence.intelligence;
 import com.portfolio.invest.domain.intelligence.MacroCalendarEntry;
 import com.portfolio.invest.domain.intelligence.MacroPoint;
 import com.portfolio.invest.domain.intelligence.MacroRepository;
+import com.portfolio.invest.domain.intelligence.SourceSwitch;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
@@ -112,11 +113,16 @@ public class IntelligenceMacroRepositoryImpl implements MacroRepository {
     }
 
     @Override
-    public Optional<Instant> lastSourceSwitchAt(String indicator) {
-        OffsetDateTime latest = jdbc.queryForObject(
-                "SELECT max(switched_at) FROM intelligence_source_switch WHERE indicator = ?",
-                OffsetDateTime.class, indicator);
-        return Optional.ofNullable(latest).map(OffsetDateTime::toInstant);
+    public Optional<SourceSwitch> findLatestSwitch(String indicator) {
+        List<SourceSwitch> latest = jdbc.query("""
+                SELECT from_source, to_source, switched_at
+                FROM intelligence_source_switch
+                WHERE indicator = ?
+                ORDER BY switched_at DESC
+                LIMIT 1
+                """, (rs, i) -> new SourceSwitch(rs.getString("from_source"),
+                rs.getString("to_source"), instant(rs, "switched_at")), indicator);
+        return latest.stream().findFirst();
     }
 
     private static Instant instant(ResultSet rs, String column) throws SQLException {
