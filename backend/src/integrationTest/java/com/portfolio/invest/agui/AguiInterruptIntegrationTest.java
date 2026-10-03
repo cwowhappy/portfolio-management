@@ -121,11 +121,12 @@ class AguiInterruptIntegrationTest extends PostgresTestSupport {
         @Primary
         UserToolkitFactory writeToolkitFactory(InvestTools investTools,
                 McpConfigRepository mcpConfigRepository, McpClientPool mcpClientPool,
+                com.portfolio.invest.domain.mcp.McpSecretCodec secretCodec,
                 com.portfolio.invest.application.portfolio.PortfolioApplicationService portfolioService,
                 com.portfolio.invest.application.allocation.AllocationApplicationService allocationService,
                 com.portfolio.invest.application.intelligence.IntelligenceQueryService intelligenceQueryService,
                 ObjectMapper objectMapper) {
-            return new UserToolkitFactory(investTools, mcpConfigRepository, mcpClientPool,
+            return new UserToolkitFactory(investTools, mcpConfigRepository, mcpClientPool, secretCodec,
                     portfolioService, allocationService, intelligenceQueryService, objectMapper) {
                 @Override
                 public Toolkit build(Long userId) {

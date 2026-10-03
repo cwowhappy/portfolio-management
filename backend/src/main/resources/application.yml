@@ -110,6 +110,8 @@ invest:
     connect-timeout: 10s
     tool-timeout: 30s
     pool-max-size: 20
+    # token 加密主密钥（P1-10）：base64 32B；空白 = 未启用，不阻断启动、加解密调用时报错
+    secret-key: ${MCP_SECRET_KEY:}
     harness:
       workspace: .agentscope/workspace
       state-root: .agentscope/state

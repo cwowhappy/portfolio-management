@@ -15,6 +15,7 @@ import com.portfolio.invest.domain.mcp.McpEndpoint;
 import com.portfolio.invest.domain.mcp.McpErrorCode;
 import com.portfolio.invest.domain.mcp.McpException;
 import com.portfolio.invest.domain.mcp.McpProvider;
+import com.portfolio.invest.domain.mcp.McpSecretCodec;
 import com.portfolio.invest.domain.mcp.McpUserConfig;
 import java.time.Instant;
 import java.util.List;
@@ -30,11 +31,14 @@ class McpConfigApplicationServiceTest {
 
     private final McpConfigRepository repo = mock(McpConfigRepository.class);
     private final McpServerTester tester = mock(McpServerTester.class);
+    private final McpSecretCodec codec = mock(McpSecretCodec.class);
     private McpConfigApplicationService service;
 
     @BeforeEach
     void setUp() {
-        service = new McpConfigApplicationService(repo, tester);
+        // 默认明文直读 codec（存量值原样返回），密文路径由专项用例覆写
+        when(codec.decrypt(any())).thenAnswer(inv -> inv.getArgument(0));
+        service = new McpConfigApplicationService(repo, tester, codec);
     }
 
     private static McpProvider provider() {
@@ -107,5 +111,97 @@ class McpConfigApplicationServiceTest {
 
         assertThat(result.success()).isTrue();
         assertThat(result.tools()).extracting(McpToolDescriptor::name).containsExactly("get_stock_quote");
+    }
+
+    @DisplayName("管理员设置 token：加密后落库（密文不含明文）")
+    @Test
+    void givenSetToken_whenValid_thenEncryptedStored() {
+        when(repo.findProviderByCode("wind")).thenReturn(Optional.of(provider()));
+        when(codec.encrypt("new-token")).thenReturn("v1:ENCRYPTED");
+
+        service.setProviderToken("wind", "new-token");
+
+        verify(repo).updateProviderSecret(3L, "v1:ENCRYPTED");
+    }
+
+    @DisplayName("管理员设置 token：provider 不存在抛 PROVIDER_NOT_FOUND")
+    @Test
+    void givenSetToken_whenProviderMissing_thenThrowProviderNotFound() {
+        when(repo.findProviderByCode("nope")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.setProviderToken("nope", "t"))
+                .isInstanceOfSatisfying(McpException.class,
+                        e -> assertThat(e.code()).isEqualTo(McpErrorCode.PROVIDER_NOT_FOUND));
+        verify(repo, never()).updateProviderSecret(any(), any());
+    }
+
+    @DisplayName("管理员设置 token：空白/超长（>512）抛 INVALID_INPUT")
+    @Test
+    void givenSetToken_whenBlankOrTooLong_thenInvalidInput() {
+        assertThatThrownBy(() -> service.setProviderToken("wind", " "))
+                .isInstanceOfSatisfying(McpException.class,
+                        e -> assertThat(e.code()).isEqualTo(McpErrorCode.INVALID_INPUT));
+        assertThatThrownBy(() -> service.setProviderToken("wind", "x".repeat(513)))
+                .isInstanceOfSatisfying(McpException.class,
+                        e -> assertThat(e.code()).isEqualTo(McpErrorCode.INVALID_INPUT));
+    }
+
+    @DisplayName("管理员设置 token：密钥未配置时透传 SECRET_KEY_MISSING（提示配置 MCP_SECRET_KEY）")
+    @Test
+    void givenSetToken_whenKeyMissing_thenPropagate() {
+        when(repo.findProviderByCode("wind")).thenReturn(Optional.of(provider()));
+        when(codec.encrypt("t")).thenThrow(new McpException(McpErrorCode.SECRET_KEY_MISSING, "MCP_SECRET_KEY 未配置"));
+
+        assertThatThrownBy(() -> service.setProviderToken("wind", "t"))
+                .isInstanceOfSatisfying(McpException.class,
+                        e -> assertThat(e.code()).isEqualTo(McpErrorCode.SECRET_KEY_MISSING));
+    }
+
+    @DisplayName("连通测试：库内密文经解密后传入测试器")
+    @Test
+    void givenTest_whenSecretEncrypted_thenTesterReceivesDecrypted() {
+        McpProvider p = McpProvider.reconstitute(3L, "wind", "Wind AIFin", AuthType.BEARER, null, "v1:ENC", true, null, NOW);
+        McpEndpoint endpoint = McpEndpoint.reconstitute(5L, 3L, null, "Wind 数据",
+                "https://mcp.wind.com.cn/vserver_stock_data/mcp/", true, NOW);
+        when(repo.findProviderById(3L)).thenReturn(Optional.of(p));
+        when(repo.findEnabledEndpointsByProviderId(3L)).thenReturn(List.of(endpoint));
+        when(codec.decrypt("v1:ENC")).thenReturn("ak-secret");
+        when(tester.testConnection(p, endpoint, "ak-secret"))
+                .thenReturn(List.of(new McpToolDescriptor("get_stock_quote", "获取行情")));
+
+        TestResult result = service.test(3L);
+
+        assertThat(result.success()).isTrue();
+        verify(tester).testConnection(p, endpoint, "ak-secret");
+    }
+
+    @DisplayName("连通测试：解密失败落入 TestResult.fail（不冒泡异常）")
+    @Test
+    void givenTest_whenDecryptFails_thenTestResultFail() {
+        McpProvider p = McpProvider.reconstitute(3L, "wind", "Wind AIFin", AuthType.BEARER, null, "v1:broken", true, null, NOW);
+        McpEndpoint endpoint = McpEndpoint.reconstitute(5L, 3L, null, "Wind 数据",
+                "https://mcp.wind.com.cn/vserver_stock_data/mcp/", true, NOW);
+        when(repo.findProviderById(3L)).thenReturn(Optional.of(p));
+        when(repo.findEnabledEndpointsByProviderId(3L)).thenReturn(List.of(endpoint));
+        when(codec.decrypt("v1:broken"))
+                .thenThrow(new McpException(McpErrorCode.SECRET_DECRYPT_FAILED, "token 解密失败"));
+
+        TestResult result = service.test(3L);
+
+        assertThat(result.success()).isFalse();
+    }
+
+    @DisplayName("provider 视图带 hasToken 标记（已设=true 未设=false，不泄露密文）")
+    @Test
+    void givenProviders_whenList_thenHasTokenFlags() {
+        McpProvider withSecret = McpProvider.reconstitute(2L, "tushare", "Tushare", AuthType.BEARER, null, "v1:ENC", true, null, NOW);
+        McpProvider withoutSecret = McpProvider.reconstitute(3L, "wind", "Wind AIFin", AuthType.BEARER, null, null, true, null, NOW);
+        when(repo.findEnabledProviders()).thenReturn(List.of(withSecret, withoutSecret));
+        when(repo.findEnabledEndpointsByProviderId(2L)).thenReturn(List.of());
+        when(repo.findEnabledEndpointsByProviderId(3L)).thenReturn(List.of());
+
+        var views = service.providers();
+
+        assertThat(views).extracting(McpProviderView::hasToken).containsExactly(true, false);
     }
 }

@@ -12,7 +12,13 @@ vi.mock("@/lib/adminApi", () => ({
     disable: vi.fn(),
     resetPassword: vi.fn(),
     setEmail: vi.fn(),
+    setMcpProviderToken: vi.fn(),
   },
+}));
+
+// AdminBoard 内嵌 McpTokenSection（P1-10），其数据源列表走 mcpApi
+vi.mock("@/lib/mcpApi", () => ({
+  fetchProviders: vi.fn().mockResolvedValue([]),
 }));
 
 const api = vi.mocked(adminApi);

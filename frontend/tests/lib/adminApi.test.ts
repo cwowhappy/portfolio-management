@@ -113,4 +113,29 @@ describe("管理员 REST 客户端（lib/adminApi）", () => {
     const init = fetchMock.mock.calls[0][1] as RequestInit;
     expect((init.headers as Record<string, string>)["Content-Type"]).toBe("application/json");
   });
+
+  it("setMcpProviderToken() PUT /api/admin/mcp/providers/{code}/token 携带明文请求体（P1-10）", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 204,
+      json: vi.fn().mockResolvedValue(undefined),
+    } as unknown as Response);
+
+    await expect(adminApi.setMcpProviderToken("tushare", "tok-123")).resolves.toBeUndefined();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/admin/mcp/providers/tushare/token",
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({ token: "tok-123" }),
+        cache: "no-store",
+        credentials: "same-origin",
+      }),
+    );
+  });
+
+  it("setMcpProviderToken() 非 2xx 抛服务端 message（如密钥未配置 503）", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ code: "SECRET_KEY_MISSING", message: "MCP_SECRET_KEY 未配置" }, 503));
+    await expect(adminApi.setMcpProviderToken("tushare", "tok")).rejects.toThrow("MCP_SECRET_KEY 未配置");
+  });
 });

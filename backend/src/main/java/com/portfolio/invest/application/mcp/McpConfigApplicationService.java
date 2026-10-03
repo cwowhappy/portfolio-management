@@ -5,34 +5,43 @@ import com.portfolio.invest.domain.mcp.McpEndpoint;
 import com.portfolio.invest.domain.mcp.McpErrorCode;
 import com.portfolio.invest.domain.mcp.McpException;
 import com.portfolio.invest.domain.mcp.McpProvider;
+import com.portfolio.invest.domain.mcp.McpSecretCodec;
 import com.portfolio.invest.domain.mcp.McpUserConfig;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** 配置用例：provider 级视图 + 用户配置保存/删除 + 工具清单与连接测试。 */
+/** 配置用例：provider 级视图 + 用户配置保存/删除 + 工具清单与连接测试 + 管理员 token 设置（P1-10）。 */
 @Service
 public class McpConfigApplicationService {
+    private static final Logger log = LoggerFactory.getLogger(McpConfigApplicationService.class);
+    /** token 明文长度上限（FR-4，防误粘贴超长内容）。 */
+    private static final int MAX_TOKEN_LENGTH = 512;
+
     private final McpConfigRepository repository;
     private final McpServerTester tester;
+    private final McpSecretCodec codec;
     private final Clock clock;
 
     /** 主构造器（@Autowired：存在测试专用重载构造器时需显式指定注入入口）。 */
     @Autowired
-    public McpConfigApplicationService(McpConfigRepository repository, McpServerTester tester) {
+    public McpConfigApplicationService(McpConfigRepository repository, McpServerTester tester, McpSecretCodec codec) {
         // A3：application 层禁止直调 System 时钟，连接测试耗时经注入时钟测量
-        this(repository, tester, Clock.systemUTC());
+        this(repository, tester, codec, Clock.systemUTC());
     }
 
     /** 测试注入：自定义时钟（耗时测量可确定性）。 */
-    McpConfigApplicationService(McpConfigRepository repository, McpServerTester tester, Clock clock) {
+    McpConfigApplicationService(McpConfigRepository repository, McpServerTester tester, McpSecretCodec codec, Clock clock) {
         this.repository = repository;
         this.tester = tester;
+        this.codec = codec;
         this.clock = clock;
     }
 
@@ -94,11 +103,30 @@ public class McpConfigApplicationService {
     }
 
     private List<McpToolDescriptor> listTools(McpProvider provider) {
+        String token = codec.decrypt(provider.authSecretEnc());
         List<McpToolDescriptor> all = new ArrayList<>();
         for (McpEndpoint endpoint : repository.findEnabledEndpointsByProviderId(provider.id())) {
-            all.addAll(tester.testConnection(provider, endpoint, provider.authSecretEnc()));
+            all.addAll(tester.testConnection(provider, endpoint, token));
         }
         return all;
+    }
+
+    /**
+     * 管理员设置 provider token（P1-10，D1）：明文仅在本次调用内经过，加密后落库；
+     * 审计日志只记 provider code，不含明文/密文（NFR-1）。
+     */
+    @Transactional
+    public void setProviderToken(String providerCode, String token) {
+        if (token == null || token.isBlank()) {
+            throw new McpException(McpErrorCode.INVALID_INPUT, "token 不能为空");
+        }
+        if (token.length() > MAX_TOKEN_LENGTH) {
+            throw new McpException(McpErrorCode.INVALID_INPUT, "token 长度超过上限 " + MAX_TOKEN_LENGTH);
+        }
+        McpProvider provider = repository.findProviderByCode(providerCode)
+                .orElseThrow(() -> new McpException(McpErrorCode.PROVIDER_NOT_FOUND, "数据源不存在"));
+        repository.updateProviderSecret(provider.id(), codec.encrypt(token));
+        log.info("MCP provider {} token 已由管理员更新（密文落库）", providerCode);
     }
 
     private McpProvider requireProvider(Long providerId) {

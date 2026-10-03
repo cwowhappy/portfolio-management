@@ -25,4 +25,7 @@ export MAIL_TEST_FIXED_CODE="${MAIL_TEST_FIXED_CODE:-123456}"
 # 固定码开关：SmtpMailSender 启动守卫要求 test-mode 显式同开（防固定码泄入生产 env 后静默生效）
 export MAIL_TEST_MODE=1
 
+# P1-10 e2e：MCP token 加密测试主密钥（base64 32 字节全零——固定值，仅验证加密链路；生产严禁设置）
+export MCP_SECRET_KEY="${MCP_SECRET_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}"
+
 exec ./gradlew bootRun --console=plain

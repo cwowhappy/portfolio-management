@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { adminApi, type AdminUserView } from "@/lib/adminApi";
 import { checkPassword } from "@/lib/password";
+import McpTokenSection from "@/components/admin/McpTokenSection";
 
 const roleLabel: Record<AdminUserView["role"], string> = {
   ADMIN: "管理员",
@@ -380,6 +381,8 @@ export default function AdminBoard() {
           </table>
         </div>
       </section>
+
+      <McpTokenSection />
 
       {resetTarget && (
         <ResetPasswordDialog

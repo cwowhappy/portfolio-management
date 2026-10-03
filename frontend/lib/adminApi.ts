@@ -30,6 +30,20 @@ async function request<T>(path: string, schema: z.ZodType<T>, init?: RequestInit
   }
 }
 
+/** 无响应体请求（2xx 即成功，如 204；非 2xx 抛服务端 message）。 */
+async function requestNoContent(path: string, init?: RequestInit): Promise<void> {
+  const res = await fetch(path, {
+    credentials: "same-origin",
+    cache: "no-store",
+    ...init,
+    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+  });
+  if (!res.ok) {
+    const body: unknown = await res.json().catch(() => ({}));
+    throw new Error((body as { message?: string })?.message ?? "请求失败");
+  }
+}
+
 export const adminApi = {
   list: () => request("/api/admin/users", z.array(AdminUserViewSchema)),
   approve: (id: number) =>
@@ -49,5 +63,11 @@ export const adminApi = {
     request(`/api/admin/users/${id}/email`, AdminUserViewSchema, {
       method: "POST",
       body: JSON.stringify({ email }),
+    }),
+  /** P1-10：设置/更换 provider token；明文仅在请求体一次经过，响应 204 无回显。 */
+  setMcpProviderToken: (code: string, token: string) =>
+    requestNoContent(`/api/admin/mcp/providers/${code}/token`, {
+      method: "PUT",
+      body: JSON.stringify({ token }),
     }),
 };

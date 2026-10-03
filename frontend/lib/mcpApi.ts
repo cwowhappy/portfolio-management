@@ -4,7 +4,10 @@ import { request } from "./http";
 export const McpProviderSchema = z.object({
   id: z.number(), code: z.string(), name: z.string(),
   authType: z.enum(["NONE", "BEARER", "HEADER"]),
-  authHeader: z.string().nullable(), domains: z.array(z.string()),
+  authHeader: z.string().nullable(),
+  /** P1-10：仅报「token 是否已设」，不回显密文/明文。 */
+  hasToken: z.boolean(),
+  domains: z.array(z.string()),
 });
 export type McpProviderItem = z.infer<typeof McpProviderSchema>;
 

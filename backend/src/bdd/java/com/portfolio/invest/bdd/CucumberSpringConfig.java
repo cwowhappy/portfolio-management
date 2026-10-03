@@ -46,13 +46,20 @@ import reactor.core.publisher.Flux;
 @SpringBootTest(properties = {
         "DEEPSEEK_API_KEY=test-dummy-key",
         "ADMIN_USERNAME=" + CucumberSpringConfig.ADMIN_USERNAME,
-        "ADMIN_PASSWORD=" + CucumberSpringConfig.ADMIN_PASSWORD})
+        "ADMIN_PASSWORD=" + CucumberSpringConfig.ADMIN_PASSWORD,
+        "invest.mcp.secret-key=" + CucumberSpringConfig.MCP_SECRET_KEY})
 @AutoConfigureMockMvc
 public class CucumberSpringConfig extends PostgresTestSupport {
 
     /** 内置管理员（AdminSeedRunner 幂等种子，供审核/停用等管理员操作登录后台）。 */
     public static final String ADMIN_USERNAME = "bdd_admin";
     public static final String ADMIN_PASSWORD = "admin12345";
+
+    /**
+     * MCP token 加密测试主密钥（P1-10）：base64 编码的 32 字节全零（编译期常量，注解
+     * 属性要求）——BDD 只验证加密链路（admin 设置 → v1 密文落库 → 解密还原），不依赖密钥随机性。
+     */
+    public static final String MCP_SECRET_KEY = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
 
     /** bean 名按字段名推断为 investModel，精确替换 AgentConfig#investModel。 */
     @TestBean(methodName = "fixedReplyModel")

@@ -329,6 +329,8 @@ public class InvestProperties {
         private Duration connectTimeout = Duration.ofSeconds(10);
         private Duration toolTimeout = Duration.ofSeconds(30);
         private int poolMaxSize = 20;
+        /** token 加密主密钥（MCP_SECRET_KEY，base64 32B）。空白 = 未启用：不阻断启动，加解密调用时报错（P1-10）。 */
+        private String secretKey = "";
         private Harness harness = new Harness();
         public Duration getConnectTimeout() { return connectTimeout; }
         public void setConnectTimeout(Duration connectTimeout) { this.connectTimeout = connectTimeout; }
@@ -336,6 +338,8 @@ public class InvestProperties {
         public void setToolTimeout(Duration toolTimeout) { this.toolTimeout = toolTimeout; }
         public int getPoolMaxSize() { return poolMaxSize; }
         public void setPoolMaxSize(int poolMaxSize) { this.poolMaxSize = poolMaxSize; }
+        public String getSecretKey() { return secretKey; }
+        public void setSecretKey(String secretKey) { this.secretKey = secretKey; }
         public Harness getHarness() { return harness; }
         public void setHarness(Harness harness) { this.harness = harness; }
 

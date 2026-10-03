@@ -23,18 +23,21 @@ public class UserToolkitFactory {
     private final InvestTools investTools;
     private final McpConfigRepository repository;
     private final McpClientPool clientPool;
+    private final McpSecretCodec secretCodec;
     private final PortfolioApplicationService portfolioService;
     private final AllocationApplicationService allocationService;
     private final IntelligenceQueryService intelligenceQueryService;
     private final ObjectMapper mapper;
 
     public UserToolkitFactory(InvestTools investTools, McpConfigRepository repository, McpClientPool clientPool,
+                              McpSecretCodec secretCodec,
                               PortfolioApplicationService portfolioService,
                               AllocationApplicationService allocationService,
                               IntelligenceQueryService intelligenceQueryService, ObjectMapper mapper) {
         this.investTools = investTools;
         this.repository = repository;
         this.clientPool = clientPool;
+        this.secretCodec = secretCodec;
         this.portfolioService = portfolioService;
         this.allocationService = allocationService;
         this.intelligenceQueryService = intelligenceQueryService;
@@ -53,7 +56,13 @@ public class UserToolkitFactory {
             McpUserConfig config = repository.findByUserIdAndProviderId(userId, provider.id()).orElse(null);
             if (config == null || !config.enabled()) continue;
             if (provider.authType() != AuthType.NONE && (provider.authSecretEnc() == null || provider.authSecretEnc().isBlank())) continue;
-            String token = provider.authSecretEnc();
+            String token;
+            try {
+                token = secretCodec.decrypt(provider.authSecretEnc());
+            } catch (McpException e) {
+                log.warn("MCP provider {} token 解密失败，跳过装配：{}", provider.code(), e.getMessage());
+                continue;
+            }
             for (McpEndpoint endpoint : repository.findEnabledEndpointsByProviderId(provider.id())) {
                 try {
                     McpClientWrapper client = clientPool.acquire(provider, endpoint, token);

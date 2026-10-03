@@ -45,6 +45,9 @@ public class McpConfigRepositoryImpl implements McpConfigRepository {
     @Override public void deleteByUserIdAndProviderId(Long userId, Long providerId) {
         configJpa.deleteByUserIdAndProviderId(userId, providerId);
     }
+    @Override public void updateProviderSecret(Long providerId, String authSecretEnc) {
+        providerJpa.updateAuthSecretEnc(providerId, authSecretEnc);
+    }
 
     // e2e 种子（env 门控调用，见 HitlE2eSeedRunner）：按自然键幂等
     @Override public Optional<McpProvider> findProviderByCode(String code) {
