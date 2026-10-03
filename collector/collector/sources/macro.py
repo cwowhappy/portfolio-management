@@ -33,10 +33,14 @@ UPSERT 幂等）；**yoy 恒 None**（裁定：CPI/PPI 同比即主值、PMI 水
 backfill 意图——跳过截断翻满 max_pages 并按期别串序过滤窗口外条目。supports_range=True（月度
 历史回补；LPR 日频同理）。
 
-异常语义（沿 news/announcements 先例）：请求级失败（网络/超时/非 200/解码）重试
-``MACRO_RETRY_ATTEMPTS`` 次后抛 ``SourceError`` 走 selector 换源（**不自吞**）；**漂移即告警**——
-列表页非空却零关键词命中 / 详情表格·正文·xlsx 解析空帧 → ``SourceError`` 而非静默成功（增量
-已存全命中的空产出不算漂移）。
+异常语义（沿 news/announcements 先例，fix round 1 细化）：请求级失败（网络/超时/非 404/410
+状态/解码）重试 ``MACRO_RETRY_ATTEMPTS`` 次后抛 ``SourceError`` 走 selector 换源（**不自吞**）；
+**单条**结构漂移（详情表格/正文/xlsx 解析空帧、详情或附件 404——``_DriftError``）按条丢弃记
+``last_warnings`` 继续，**不毒化整轮**（如 LPR 同栏「带日期标题但正文无 LPR 句式」的公告滞留
+列表只持续告警，不每月失败整任务）；仅当**整轮产出为空**（零关键词命中或命中条目全部解析
+失败）且非「已存全命中」/「显式窗口过滤净空」时，收口聚合抛漂移 ``SourceError``（增量已存
+全命中的空产出不算漂移）。翻页页码 >1 的 404/410 = 上游静态存档有界越界——**干净终止**
+（已采行保留正常提交）；首页 404 仍按请求失败显性告警。
 """
 
 import datetime as dt
@@ -228,7 +232,7 @@ def _parse_tables(html):
         parser.feed(html)
         parser.close()
     except Exception as e:  # HTMLParser 极少抛（畸形标签容错强）；真异常按漂移处理
-        raise SourceError(f"详情页 HTML 解析失败：{e}") from e
+        raise _DriftError(f"详情页 HTML 解析失败：{e}") from e
     return parser.tables
 
 
@@ -257,6 +261,12 @@ def _to_decimal(raw):
 def _cells(row):
     """DataFrame 行 → strip 后的字符串 cell 列表（NaN/None → ""）。"""
     return ["" if c is None or (isinstance(c, float) and pd.isna(c)) else str(c).strip() for c in row]
+
+
+class _DriftError(SourceError):
+    """解析层结构漂移（表格/正文/xlsx 形态漂移、详情 404）：fetch 主循环按**单条**捕获丢弃
+    （记 last_warnings 继续，不毒化整轮）；仅整轮空产出时收口聚合抛出。请求级失败（网络/
+    非 404/410 状态）仍为基类 SourceError——直接穿透走 selector 换源，不进单条捕获。"""
 
 
 # ---------------------------------------------------------------- 源实现
@@ -314,8 +324,14 @@ class MacroPageSource(Source):
             self.sleep_fn(self.interval)
         self._req_seq += 1
 
-    def _get(self, url, as_bytes=False):
-        """单次 GET → str（utf-8 优先 gbk 兜底）或原始 bytes（xlsx）。请求级异常重试后抛 SourceError。"""
+    def _get(self, url, as_bytes=False, allow_missing=False):
+        """单次 GET → str（utf-8 优先 gbk 兜底）/原始 bytes（xlsx）/None。
+
+        请求级异常重试 attempts 次后抛 SourceError（走 selector 换源）；``allow_missing``
+        时 404/410 不重试、返回 None——供翻页页码 >1（上游静态存档有界，越界即干净终止，
+        已采行保留）与详情/附件链接（条目级软 404）使用；**首页**不得开 allow_missing
+        （源真不可达须显性失败）。
+        """
         last_error = None
         for _attempt in range(1, self.attempts + 1):
             self._polite()
@@ -324,6 +340,8 @@ class MacroPageSource(Source):
                     status = resp.status
                     body = resp.read()
                 if status != 200:
+                    if allow_missing and status in (404, 410):
+                        return None
                     raise OSError(f"HTTP {status}")
                 if as_bytes:
                     return body
@@ -421,7 +439,9 @@ class MacroPageSource(Source):
         return self._parse_xlsx_detail(url)
 
     def _parse_stats_detail(self, url, title, period_hint):
-        html = self._get(url)
+        html = self._get(url, allow_missing=True)  # 详情条目级 404/410 → 单条软丢弃
+        if html is None:
+            raise _DriftError(f"{self.source_id}: 详情页 404/410（条目可能已删除）：{url}")
         if self.indicator == "PMI":
             return self._parse_pmi(html, title, url, period_hint)
         return self._parse_cpi_ppi(html, title, url, period_hint)
@@ -429,7 +449,7 @@ class MacroPageSource(Source):
     def _parse_cpi_ppi(self, html, title, url, period_hint):
         tables = _parse_tables(html)
         if not tables:
-            raise SourceError(f"{self.source_id}: 详情页无表格（结构漂移），上游可能已变更：{url}")
+            raise _DriftError(f"{self.source_id}: 详情页无表格（结构漂移），上游可能已变更：{url}")
         for row in tables[0]:  # 双副本内容相同，取第一个表（§1.2）
             cells = [c.strip() for c in row]
             if len(cells) < 3:
@@ -438,7 +458,7 @@ class MacroPageSource(Source):
             value = _to_decimal(cells[2])  # 列序固定：环比|同比|累计——第三列表头文字随期别变，勿按表头定位
             if name == self.row_keyword and value is not None:
                 return self._row(period_hint, value, url, f"环比涨跌幅（%）{cells[1].strip()}")
-        raise SourceError(f"{self.source_id}: 详情表格未找到「{self.row_keyword}」headline 行（结构漂移）：{url}")
+        raise _DriftError(f"{self.source_id}: 详情表格未找到「{self.row_keyword}」headline 行（结构漂移）：{url}")
 
     def _parse_pmi(self, html, title, url, period_hint):
         tables = _parse_tables(html)
@@ -465,13 +485,16 @@ class MacroPageSource(Source):
         m = _PMI_BODY_RE.search(_visible_text(html))
         if m:
             return self._row(period_hint, _to_decimal(m.group(1)), url, "制造业采购经理指数（PMI，%）——正文兜底")
-        raise SourceError(f"{self.source_id}: PMI 表格与正文双路径均解析失败（结构漂移）：{url}")
+        raise _DriftError(f"{self.source_id}: PMI 表格与正文双路径均解析失败（结构漂移）：{url}")
 
     def _parse_lpr_detail(self, url, period_hint):
-        text = _visible_text(self._get(url))
+        html = self._get(url, allow_missing=True)
+        if html is None:
+            raise _DriftError(f"{self.source_id}: 详情页 404/410（条目可能已删除）：{url}")
+        text = _visible_text(html)
         m = _LPR_1Y_RE.search(text)
         if not m:
-            raise SourceError(f"{self.source_id}: 详情正文未匹配「1年期LPR为…%」句式（结构漂移）：{url}")
+            raise _DriftError(f"{self.source_id}: 详情正文未匹配「1年期LPR为…%」句式（结构漂移）：{url}")
         note = ""
         m5 = _LPR_5Y_RE.search(text)
         if m5:
@@ -479,10 +502,13 @@ class MacroPageSource(Source):
         return self._row(period_hint, _to_decimal(m.group(1)), url, note)
 
     def _parse_xlsx_detail(self, url):
+        body = self._get(url, as_bytes=True, allow_missing=True)
+        if body is None:
+            raise _DriftError(f"{self.source_id}: xlsx 附件 404/410（可能已被替换）：{url}")
         try:
-            frame = pd.read_excel(io.BytesIO(self._get(url, as_bytes=True)), engine="openpyxl", header=None)
+            frame = pd.read_excel(io.BytesIO(body), engine="openpyxl", header=None)
         except Exception as e:
-            raise SourceError(f"{self.source_id}: xlsx 下载/解析失败（{url}）：{e}") from e
+            raise _DriftError(f"{self.source_id}: xlsx 解析失败（{url}）：{e}") from e
         grid = [_cells(row) for row in frame.values.tolist()]
         if self.indicator == "AFMI":
             return self._parse_flow_grid(grid, url)
@@ -500,7 +526,7 @@ class MacroPageSource(Source):
                         break
                 break
         if header_i is None or value_col is None:
-            raise SourceError(f"{self.source_id}: Flow xlsx 未找到「月份/社会融资规模增量」列头（结构漂移）：{url}")
+            raise _DriftError(f"{self.source_id}: Flow xlsx 未找到「月份/社会融资规模增量」列头（结构漂移）：{url}")
         best = None
         for cells in grid[header_i + 1 :]:
             m = _CELL_PERIOD.match(cells[0]) if cells else None
@@ -508,7 +534,7 @@ class MacroPageSource(Source):
             if m and value is not None:  # 未来月预置行 B 列为空（None→""），不会覆盖 best（§3.1 坑）
                 best = (f"{m.group(1)}-{int(m.group(2)):02d}", value)
         if best is None:
-            raise SourceError(f"{self.source_id}: Flow xlsx 无非空数据行（结构漂移）：{url}")
+            raise _DriftError(f"{self.source_id}: Flow xlsx 无非空数据行（结构漂移）：{url}")
         period, value = best
         return self._row(period, value, url, "社会融资规模增量, 亿元人民币")
 
@@ -521,7 +547,7 @@ class MacroPageSource(Source):
                 month_cols = cols
                 break
         if not month_cols:
-            raise SourceError(f"{self.source_id}: Money Supply xlsx 未找到月份列头行（结构漂移）：{url}")
+            raise _DriftError(f"{self.source_id}: Money Supply xlsx 未找到月份列头行（结构漂移）：{url}")
         for cells in grid:
             if not cells or "货币和准货币" not in cells[0] or "M2" not in cells[0]:
                 continue
@@ -530,11 +556,11 @@ class MacroPageSource(Source):
                 if value is not None:
                     period = f"{m.group(1)}-{int(m.group(2)):02d}"
                     return self._row(period, value, url, "货币和准货币（M2）期末余额, 亿元人民币")
-        raise SourceError(f"{self.source_id}: Money Supply xlsx 未找到「货币和准货币（M2）」数据行（结构漂移）：{url}")
+        raise _DriftError(f"{self.source_id}: Money Supply xlsx 未找到「货币和准货币（M2）」数据行（结构漂移）：{url}")
 
     def _row(self, period, value, url, note):
         if period is None or value is None:
-            raise SourceError(f"{self.source_id}: 期别或数值解析为空（结构漂移）：{url}")
+            raise _DriftError(f"{self.source_id}: 期别或数值解析为空（结构漂移）：{url}")
         return {
             "indicator": self.indicator,
             "period": period,
@@ -557,10 +583,15 @@ class MacroPageSource(Source):
         seen_periods: set[str] = set()
         truncated = False
         matched_any = False
+        range_skipped = 0  # 命中关键词但被显式 start/end 窗口过滤的条目数（空产出合法的兜底判据）
         for page_no in range(1, self.max_pages + 1):
-            entries = self._list_entries(self._get(self._page_url(page_no)))
+            # 页码 >1 的 404/410 = 静态存档有界越界：干净终止（已采行保留）；首页 404 仍按请求失败
+            html = self._get(self._page_url(page_no), allow_missing=(page_no > 1))
+            if html is None:
+                break
+            entries = self._list_entries(html)
             if not entries and page_no > 1:
-                break  # 翻页越界/空页；首页零条目交由收口判定（零关键词命中 → 漂移告警）
+                break  # 翻页空页；首页零条目交由收口判定（零关键词命中 → 漂移告警）
             for title, url in entries:
                 if self.title_keyword not in title:
                     continue
@@ -576,21 +607,33 @@ class MacroPageSource(Source):
                         truncated = True  # 首见已存期别：其后更旧条目均已入库
                         break
                     if not self._in_range(params, period):
+                        range_skipped += 1
                         continue
-                row = self._parse_detail(url, title, period)
+                try:
+                    row = self._parse_detail(url, title, period)
+                except _DriftError as e:
+                    # 单条结构漂移（毒条）：丢弃该条继续，不毒化整轮（如 LPR 同栏带日期标题但
+                    # 正文无 LPR 句式的公告——滞留列表也只持续告警，不每月失败整任务）
+                    self._warnings.append(f"条目解析失败已跳过（{title[:40]!r}）：{e}")
+                    continue
                 if row["period"] in seen_periods or (existing is not None and row["period"] in existing):
                     truncated = True  # xlsx 期别下载后方知：已存即本轮无新增
                     break
                 if not self._in_range(params, row["period"]):
+                    range_skipped += 1
                     continue
                 rows.append(row)
                 seen_periods.add(row["period"])
             if truncated:
                 break
-        if not matched_any:
-            # 漂移即告警：页面可达（非请求异常）却零关键词命中——改版或栏目迁移，宁可告警不可静默
-            message = f"{self.source_id}: 列表页未命中标题关键词「{self.title_keyword}」或其附件"
-            raise SourceError(f"{message}（结构漂移或未发布）：{self.url}")
+        if not rows and not truncated and not range_skipped:
+            # 漂移即告警（收口聚合）：零关键词命中、或命中条目全部解析失败/无期别——宁可告警
+            # 不可静默。「已存全命中」（truncated）与「显式窗口过滤净空」（range_skipped）不算。
+            if matched_any:
+                message = f"{self.source_id}: 命中条目全部解析失败（结构漂移）"
+            else:
+                message = f"{self.source_id}: 列表页未命中标题关键词「{self.title_keyword}」或其附件"
+            raise _DriftError(f"{message}（结构漂移或未发布）：{self.url}")
         self._flush_warnings()
         return pd.DataFrame(rows, columns=MACRO_COLUMNS)
 

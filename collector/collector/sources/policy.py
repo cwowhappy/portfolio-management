@@ -30,9 +30,11 @@ UPSERT 幂等）；正文截 ``POLICY_CONTENT_MAX_CHARS``（8000 字）加「…
 已存即停**；显式 ``params['start']/['end']``（backfill 意图）优先——跳过截断翻满 max_pages
 （不做日期过滤，上游无日期参数）。supports_range=False：start/end 仅表达回补意图。
 
-异常语义：请求级失败重试 ``POLICY_RETRY_ATTEMPTS`` 次后抛 ``SourceError`` 走 selector 换源
-（不自吞）；列表页非空但零条目命中链接模式（结构漂移）→ ``SourceError``；单条解析失败
-（缺日期/正文过短/ext 乱）丢弃并记 ``last_warnings``（不改终态）。
+异常语义（fix round 1 细化）：请求级失败重试 ``POLICY_RETRY_ATTEMPTS`` 次后抛 ``SourceError``
+走 selector 换源（不自吞）；列表页非空但零条目命中链接模式（结构漂移）→ ``SourceError``；
+**单条**失败（缺日期/正文过短/详情或附件 404·410）丢弃并记 ``last_warnings``（不改终态）；
+翻页页码 >1 的 404/410 = 上游静态存档/JSON 越界——**干净终止**（已采行保留正常提交），
+首页 404 仍按请求失败显性告警。
 """
 
 import contextlib
@@ -281,8 +283,14 @@ class PolicySiteSource(Source):
             self.sleep_fn(self.interval)
         self._req_seq += 1
 
-    def _get(self, url):
-        """单次 GET → str（utf-8 优先 gbk 兜底）。请求级异常重试 attempts 次后抛 SourceError。"""
+    def _get(self, url, allow_missing=False):
+        """单次 GET → str（utf-8 优先 gbk 兜底）/None。
+
+        请求级异常重试 attempts 次后抛 SourceError（走 selector 换源）；``allow_missing`` 时
+        404/410 不重试、返回 None——供翻页页码 >1（上游静态存档/JSON 越界有界，越界即干净
+        终止、已采行保留）与详情页（条目级软失效，单条丢弃）使用；**首页**不得开
+        allow_missing（源真不可达须显性失败）。
+        """
         last_error = None
         for _attempt in range(1, self.attempts + 1):
             self._polite()
@@ -291,6 +299,8 @@ class PolicySiteSource(Source):
                     status = resp.status
                     body = resp.read()
                 if status != 200:
+                    if allow_missing and status in (404, 410):
+                        return None
                     raise OSError(f"HTTP {status}")
                 try:
                     return body.decode("utf-8")
@@ -300,9 +310,12 @@ class PolicySiteSource(Source):
                 last_error = e
         raise SourceError(f"{self.source_id}: 连续 {self.attempts} 次请求/解析失败（{url}）：{last_error}")
 
-    def _get_json(self, url):
+    def _get_json(self, url, allow_missing=False):
+        body = self._get(url, allow_missing=allow_missing)
+        if body is None:
+            return None
         try:
-            return json.loads(self._get(url))
+            return json.loads(body)
         except ValueError as e:
             raise SourceError(f"{self.source_id}: 响应非 JSON（{url}）：{e}") from e
 
@@ -341,7 +354,10 @@ class PolicySiteSource(Source):
         page = 1
         page_bound = None  # ceil(total/pageSize) 页数兜底
         while page <= self.max_pages:
-            payload = self._get_json(self._csrc_page_url(page))
+            # 页码 >1 的 404/410 = 接口越界（正常路径是空数组，防上游改为 404）：干净终止
+            payload = self._get_json(self._csrc_page_url(page), allow_missing=(page > 1))
+            if payload is None:
+                break
             data = payload.get("data") if isinstance(payload, dict) else None
             results = data.get("results") if isinstance(data, dict) else None
             if not isinstance(results, list):
@@ -447,7 +463,11 @@ class PolicySiteSource(Source):
             # 无 meta 兜底的站点：列表无日期即无处取 published_at（NOT NULL）——零请求直接丢弃
             self._warnings.append(f"{item['external_id']} 无发布日期（列表 span 缺），已丢弃")
             return None
-        html = self._get(item["url"])
+        # 详情 404/410 = 条目级软失效（附件被撤/链接腐化）：单条丢弃不失败整轮
+        html = self._get(item["url"], allow_missing=True)
+        if html is None:
+            self._warnings.append(f"{item['external_id']} 详情页 404/410，已丢弃")
+            return None
         published = None
         if _TRS_SITE_CONFIG[self.site]["meta_date"]:
             m = _META_CREATE_DATE.search(html)
@@ -484,13 +504,17 @@ class PolicySiteSource(Source):
         seen: set[str] = set()
         truncated = False
         for page_no in range(1, self.max_pages + 1):
-            entries = self._trs_entries(self._get(self._trs_page_url(page_no)))
+            # 页码 >1 的 404/410 = 静态存档有界越界：干净终止（已采行保留）；首页 404 仍按请求失败
+            html = self._get(self._trs_page_url(page_no), allow_missing=(page_no > 1))
+            if html is None:
+                break
+            entries = self._trs_entries(html)
             if not entries:
                 if page_no == 1:
                     raise SourceError(
                         f"{self.source_id}: 列表页零条目命中链接模式（结构漂移），上游可能已变更：{self.url}"
                     )
-                break  # 静态翻页越界
+                break  # 静态翻页空页
             for item in entries:
                 title = item["title"].strip()
                 if not title:

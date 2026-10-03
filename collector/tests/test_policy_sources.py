@@ -438,6 +438,62 @@ def test_trs_list_drift_source_error(mocker):
         _src("stats").fetch({})
 
 
+# ---------------------------------------------------------------- 翻页越界 404 / 详情 404（fix round 1）
+
+
+def test_trs_page2_404_clean_stop_keeps_rows(mocker):
+    """fix round 1 Important#2：页码 >1 的 404 = 静态存档越界 → 干净终止（不重试），已采行保留。"""
+    m = mocker.patch.object(
+        policy,
+        "urlopen",
+        side_effect=[_resp(_STATS_LIST), _resp(_STATS_DETAIL), _resp(b"", status=404)],
+    )
+    src = _src("stats", conn_factory=_existing_factory(["20260930_1965449"]), max_pages=3)
+    df = src.fetch({"start": "2026-08-01", "end": "2026-09-30"})  # backfill 意图跳过截断 → 翻页
+    assert "20260930_1965449" in set(df["external_id"])  # 已采行不丢、正常提交
+    assert m.call_count == 3  # 404 单次即止（不进入请求重试）
+    assert m.call_args_list[2].args[0].full_url.endswith("/tzgg/index_1.html")
+
+
+def test_trs_detail_404_dropped_with_warning(mocker):
+    """详情硬 404（附件被撤/链接腐化）→ 条目级软失效：单条丢弃 + 告警，不失败整轮。"""
+    m = mocker.patch.object(
+        policy,
+        "urlopen",
+        side_effect=[_resp(_STATS_LIST), _resp(b"", status=404), _resp(_EMPTY_PAGE)],
+    )
+    src = _src("stats")
+    df = src.fetch({})
+    assert df.empty  # 唯一保留条目 404 丢弃（黑名单条目本就不产出）
+    assert src.last_warnings and "404" in src.last_warnings[0]
+    assert m.call_count == 3  # 列表 + 详情 404（单次）+ 空翻页兜底
+
+
+def test_csrc_page2_404_clean_stop_keeps_rows(mocker):
+    """csrc 页码 >1 的 404（正常路径是空数组，防上游改为 404）→ 干净终止，已采行保留。"""
+    page1 = [
+        _csrc_item(5000 + i, f"标题{i}", dt.datetime(2026, 9, 20, 10, 0, tzinfo=_UTC8))
+        for i in range(POLICY_CSRC_PAGE_SIZE)
+    ]
+    m = mocker.patch.object(
+        policy,
+        "urlopen",
+        side_effect=[_resp(_csrc_page(page1, total=3197)), _resp(b"", status=404)],
+    )
+    df = _src("csrc").fetch({})
+    assert len(df) == POLICY_CSRC_PAGE_SIZE  # 第 1 页 20 条保留
+    assert m.call_count == 2  # 满页续翻 → 第 2 页 404 单次即止
+
+
+def test_policy_first_page_404_retries_then_source_error(mocker):
+    """首页 404 = 源不可达：仍按请求失败重试后 SourceError（不归为干净终止）。"""
+    m = mocker.patch.object(policy, "urlopen", return_value=_resp(b"", status=404))
+    src = _src("stats", attempts=2, sleep_fn=_no_sleep)
+    with pytest.raises(SourceError, match="404"):
+        src.fetch({})
+    assert m.call_count == 2
+
+
 # ---------------------------------------------------------------- 通用
 
 

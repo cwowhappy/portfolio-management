@@ -278,10 +278,12 @@ def test_ppi_headline_strips_sequence_prefix(mocker):
 
 
 def test_stats_detail_headline_missing_drift(mocker):
-    """详情表格在但 headline 行缺失（上游改版）→ SourceError 漂移即告警，不静默成功。"""
-    mocker.patch.object(macro, "urlopen", side_effect=[_resp(_zxfb_list(_CPI_ENTRY)), _resp(_PPI_DETAIL)])
+    """详情表格在但 headline 行缺失（上游改版）→ 单条跳过；整轮全毒空产出 → 收口聚合漂移 SourceError。"""
+    mocker.patch.object(
+        macro, "urlopen", side_effect=[_resp(_zxfb_list(_CPI_ENTRY)), _resp(_PPI_DETAIL), _resp(_EMPTY_PAGE)]
+    )
     src = _src("cpi")
-    with pytest.raises(SourceError, match="结构漂移"):
+    with pytest.raises(SourceError, match="全部解析失败"):
         src.fetch({})
 
 
@@ -319,11 +321,11 @@ def test_pmi_body_regex_fallback_when_table_drifted(mocker):
 
 
 def test_pmi_all_paths_failed_drift(mocker):
-    """表格与正文双路径皆空 → SourceError。"""
+    """表格与正文双路径皆空 → 单条跳过；整轮全毒空产出 → 收口聚合漂移 SourceError。"""
     empty = "<html><body><table><tr><td>无关</td></tr></table><p>其他内容</p></body></html>"
-    mocker.patch.object(macro, "urlopen", side_effect=[_resp(_zxfb_list(_PMI_ENTRY)), _resp(empty)])
+    mocker.patch.object(macro, "urlopen", side_effect=[_resp(_zxfb_list(_PMI_ENTRY)), _resp(empty), _resp(_EMPTY_PAGE)])
     src = _src("pmi")
-    with pytest.raises(SourceError, match="结构漂移"):
+    with pytest.raises(SourceError, match="全部解析失败"):
         src.fetch({})
 
 
@@ -353,15 +355,63 @@ def test_lpr_period_from_title_not_slug(mocker):
 
 
 def test_lpr_detail_value_missing_drift(mocker):
-    """详情正文无「1年期LPR为…%」句式（页面改版）→ SourceError。"""
+    """详情正文无「1年期LPR为…%」句式（页面改版）→ 单条跳过；整轮全毒空产出 → 收口聚合漂移 SourceError。"""
     mocker.patch.object(
         macro,
         "urlopen",
         side_effect=[_resp(_LPR_LIST), _resp("<html><body><p>本页面正在维护。</p></body></html>")],
     )
     src = _src("lpr")
-    with pytest.raises(SourceError, match="结构漂移"):
+    with pytest.raises(SourceError, match="全部解析失败"):
         src.fetch({})
+
+
+def test_lpr_poison_entry_skipped_and_normal_kept(mocker):
+    """fix round 1 Important#1：同栏「带日期标题但正文无 LPR 句式」的毒条单条跳过 + 告警，
+    正常条目照常产出——不抛异常不丢已采行（毒条滞留列表也只持续告警，不每月失败整任务）。"""
+    poison_list = """
+    <html><body><ul>
+    <li><a href="/zhengcehuobisi/125207/125213/125440/3876551/2026092008384254324/index.html"
+     title="2026年9月20日全国银行间同业拆借中心受权公布贷款市场报价利率">2026年9月20日LPR</a></li>
+    <li><a href="/zhengcehuobisi/125207/125213/125440/3876551/2026082010000000000001/index.html"
+     title="2026年8月20日全国银行间同业拆借中心受权公布贷款市场报价利率">2026年8月20日LPR</a></li>
+    </ul></body></html>
+    """
+    poison_detail = "<html><body><p>中国人民银行就有关事项答记者问。（同栏公告，无 LPR 句式）</p></body></html>"
+    m = mocker.patch.object(
+        macro, "urlopen", side_effect=[_resp(poison_list), _resp(poison_detail), _resp(_LPR_DETAIL)]
+    )
+    src = _src("lpr")
+    df = src.fetch({})
+    assert list(df["period"]) == ["2026-08-20"]  # 毒条（2026-09-20）跳过，正常条目照常产出
+    assert src.last_warnings and "解析失败已跳过" in src.last_warnings[0]
+    assert m.call_count == 3  # 两条详情都请求（毒条下载后方知不可解析）
+
+
+# ---------------------------------------------------------------- 翻页越界 / 首页不可达
+
+
+def test_stats_page2_404_clean_stop_keeps_rows(mocker):
+    """fix round 1 Important#2：页码 >1 的 404 = 静态存档越界 → 干净终止（不重试），已采行保留。"""
+    m = mocker.patch.object(
+        macro,
+        "urlopen",
+        side_effect=[_resp(_zxfb_list(_CPI_ENTRY)), _resp(_CPI_DETAIL), _resp(b"", status=404)],
+    )
+    src = _src("cpi")  # max_pages=4：第 2 页 404 即止
+    df = src.fetch({})
+    assert list(df["period"]) == ["2026-08"]  # 已采行不丢
+    assert m.call_count == 3  # 404 单次即停（不进入请求重试）
+    assert m.call_args_list[2].args[0].full_url.endswith("/sj/zxfb/index_1.html")
+
+
+def test_first_page_404_retries_then_source_error(mocker):
+    """首页 404 = 源不可达：仍按请求失败重试后 SourceError（不归为干净终止）。"""
+    m = mocker.patch.object(macro, "urlopen", return_value=_resp(b"", status=404))
+    src = _src("cpi", attempts=2, sleep_fn=_no_sleep)
+    with pytest.raises(SourceError, match="404"):
+        src.fetch({})
+    assert m.call_count == 2
 
 
 # ---------------------------------------------------------------- pboc_xlsx：socfin / M2
