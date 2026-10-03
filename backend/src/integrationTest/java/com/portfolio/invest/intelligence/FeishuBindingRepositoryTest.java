@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.portfolio.invest.domain.intelligence.FeishuBindingRepository;
 import com.portfolio.invest.support.PostgresTestSupport;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -76,6 +78,27 @@ class FeishuBindingRepositoryTest extends PostgresTestSupport {
         Long userId = insertUser("bind_it_del_none");
 
         assertThat(repository.deleteByUserId(userId)).isFalse();
+    }
+
+    // ── findBoundAtByUserId（P4 Task 6：设置页绑定态查询）──────────
+
+    @Test
+    @DisplayName("给定已绑定用户，when按 userId 查绑定时刻，then返回 bound_at 原值（UTC 折算无损）")
+    void givenBoundUser_whenFindBoundAtByUserId_thenReturnsBoundAt() {
+        Long userId = insertUser("bind_it_at");
+        Instant boundAt = Instant.parse("2026-10-03T08:00:00Z");
+        jdbc.update("INSERT INTO intelligence_feishu_binding(user_id, open_id, bound_at)"
+                        + " VALUES(?, 'ou-at', ?)", userId, boundAt.atOffset(ZoneOffset.UTC));
+
+        assertThat(repository.findBoundAtByUserId(userId)).contains(boundAt);
+    }
+
+    @Test
+    @DisplayName("给定未绑定用户，when按 userId 查绑定时刻，then返回 empty")
+    void givenUnboundUser_whenFindBoundAtByUserId_thenEmpty() {
+        Long userId = insertUser("bind_it_at_none");
+
+        assertThat(repository.findBoundAtByUserId(userId)).isEmpty();
     }
 
     // ── fixture 助手 ───────────────────────────────────────────────

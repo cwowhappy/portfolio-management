@@ -57,6 +57,12 @@ describe("AuthNav", () => {
     expect(screen.queryByText("管理")).toBeNull();
   });
 
+  it("已登录显示情报订阅链接指向 /settings/intelligence（P4 设置页入口）", async () => {
+    renderNav(user, 200);
+    const link = await screen.findByRole("link", { name: "情报订阅" });
+    expect(link.getAttribute("href")).toBe("/settings/intelligence");
+  });
+
   it("管理员显示管理链接", async () => {
     renderNav(admin, 200);
     await waitFor(() => expect(screen.getByText("管理")).toBeTruthy());

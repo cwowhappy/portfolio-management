@@ -198,6 +198,13 @@ export const BindingCodeViewSchema = z.object({
 });
 export type BindingCodeView = z.infer<typeof BindingCodeViewSchema>;
 
+/** 绑定状态（B3 GET /binding，P4 Task 6 设置页）：未绑定 bound=false + boundAt=null。 */
+export const BindingStatusSchema = z.object({
+  bound: z.boolean(),
+  boundAt: z.string().nullable(),
+});
+export type BindingStatus = z.infer<typeof BindingStatusSchema>;
+
 // —— 查询入参（全部可缺省；from/to 为 yyyy-MM-dd，日期/枚举非法由后端 400）——
 
 /** querystring 拼接（照 journalApi 先例）：falsy 片段剔除，全空则不带 ?。 */
@@ -395,3 +402,12 @@ export const createBindingCode = () =>
 
 /** B2 解绑（幂等，未绑定同 204）。 */
 export const unbind = () => request<void>("/api/intelligence/subscription/binding", "DELETE");
+
+/** B3 绑定状态查询：设置页据此切换「生成绑定码」/「绑定时间+解绑」两分支。 */
+export const getBindingStatus = () =>
+  request<BindingStatus>(
+    "/api/intelligence/subscription/binding",
+    "GET",
+    undefined,
+    BindingStatusSchema,
+  );

@@ -25,7 +25,8 @@ import org.junit.jupiter.api.Test;
  * 订阅用例单测（F16 + P4 绑定数据面 D8）：get 无行物化缺省视图（不落库）、get 已存行
  * 映射视图（行业/标的稳定排序）、update 全量替换语义；generateCode（6 位数字 / TTL
  * 取 invest.intelligence.binding-code-ttl-minutes / PK 冲突重生成 ≤3 / 超限抛出）、
- * unbind 委托仓库删除、findOpenId 委托仓库查询；bindByCode 核销生命周期单线程全覆盖
+ * unbind 委托仓库删除、findOpenId 委托仓库查询、getBindingStatus（P4 Task 6 设置页
+ * 绑定态：已绑定带回绑定时刻 / 未绑定 bound=false）；bindByCode 核销生命周期单线程全覆盖
  * （不存在/过期/已用 → BINDING_CODE_EXPIRED；open_id 占用 → OPEN_ID_TAKEN 且码不浪费；
  * 成功核销+upsert；同用户重绑放行；并发核销竞态（受影响 0 行）与唯一约束违例转译）。
  * 内存假仓库 + 固定时钟驱动。
@@ -182,6 +183,28 @@ class SubscriptionServiceTest {
 
         assertThat(service(propsWithTtl(10)).findOpenId(42L)).contains("ou-abc");
         assertThat(service(propsWithTtl(10)).findOpenId(7L)).as("他人不串号").isEmpty();
+    }
+
+    // ── 绑定状态查询（P4 Task 6：设置页已绑定/未绑定分支）──
+
+    @Test
+    @DisplayName("given 已绑定，when getBindingStatus，then bound=true 且带回绑定时刻")
+    void givenBound_whenGetBindingStatus_thenBoundWithBoundAt() {
+        feishuBindings.bind(42L, "ou-abc", NOW.minus(Duration.ofMinutes(30)));
+
+        var status = service(propsWithTtl(10)).getBindingStatus(42L);
+
+        assertThat(status.bound()).isTrue();
+        assertThat(status.boundAt()).isEqualTo(NOW.minus(Duration.ofMinutes(30)));
+    }
+
+    @Test
+    @DisplayName("given 未绑定，when getBindingStatus，then bound=false 且 boundAt=null")
+    void givenUnbound_whenGetBindingStatus_thenUnboundWithNullBoundAt() {
+        var status = service(propsWithTtl(10)).getBindingStatus(42L);
+
+        assertThat(status.bound()).isFalse();
+        assertThat(status.boundAt()).isNull();
     }
 
     // ── bindByCode 核销生命周期（P4 Task 5：单线程路径全覆盖，并发语义由 SQL 受影响行数承担）──
@@ -366,22 +389,33 @@ class SubscriptionServiceTest {
         }
     }
 
-    /** 内存假飞书绑定仓库：按 userId 槽位存 open_id，记录 delete/upsert 调用。 */
+    /** 内存假飞书绑定仓库：按 userId 槽位存 open_id + 绑定时刻，记录 delete/upsert 调用。 */
     private static final class FakeFeishuBindingRepository implements FeishuBindingRepository {
         record Upsert(Long userId, String openId, Instant boundAt) {}
 
-        private final java.util.Map<Long, String> storedByUser = new java.util.HashMap<>();
+        private record Row(String openId, Instant boundAt) {}
+
+        private final java.util.Map<Long, Row> storedByUser = new java.util.HashMap<>();
         private final List<Long> deletedUserIds = new ArrayList<>();
         private final List<Upsert> upserts = new ArrayList<>();
         private boolean rejectNextUpsert;
 
         void bind(Long userId, String openId) {
-            storedByUser.put(userId, openId);
+            bind(userId, openId, NOW);
+        }
+
+        void bind(Long userId, String openId, Instant boundAt) {
+            storedByUser.put(userId, new Row(openId, boundAt));
         }
 
         @Override
         public Optional<String> findOpenIdByUserId(Long userId) {
-            return Optional.ofNullable(storedByUser.get(userId));
+            return Optional.ofNullable(storedByUser.get(userId)).map(Row::openId);
+        }
+
+        @Override
+        public Optional<Instant> findBoundAtByUserId(Long userId) {
+            return Optional.ofNullable(storedByUser.get(userId)).map(Row::boundAt);
         }
 
         @Override
@@ -393,7 +427,7 @@ class SubscriptionServiceTest {
         @Override
         public Optional<Long> findUserIdByOpenId(String openId) {
             return storedByUser.entrySet().stream()
-                    .filter(entry -> entry.getValue().equals(openId))
+                    .filter(entry -> entry.getValue().openId().equals(openId))
                     .map(java.util.Map.Entry::getKey)
                     .findFirst();
         }
@@ -404,7 +438,7 @@ class SubscriptionServiceTest {
                 rejectNextUpsert = false;
                 throw new org.springframework.dao.DataIntegrityViolationException("uk_open_id");
             }
-            storedByUser.put(userId, openId);
+            storedByUser.put(userId, new Row(openId, boundAt));
             upserts.add(new Upsert(userId, openId, boundAt));
         }
     }

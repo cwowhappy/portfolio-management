@@ -41,6 +41,9 @@ export function AuthNav() {
       <Link href="/settings/skills" className={linkClass}>
         Skill 设置
       </Link>
+      <Link href="/settings/intelligence" className={linkClass}>
+        情报订阅
+      </Link>
       <span className="px-1 text-[13px] text-[color:var(--color-ink)]">{user.username}</span>
       <button
         type="button"

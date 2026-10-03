@@ -2,6 +2,7 @@ package com.portfolio.invest.web;
 
 import com.portfolio.invest.application.intelligence.SubscriptionService;
 import com.portfolio.invest.application.intelligence.SubscriptionService.BindingCodeView;
+import com.portfolio.invest.application.intelligence.SubscriptionService.BindingStatusView;
 import com.portfolio.invest.application.intelligence.SubscriptionService.SubscriptionView;
 import com.portfolio.invest.application.intelligence.SubscriptionService.UpdateSubscriptionCommand;
 import com.portfolio.invest.infrastructure.security.AuthenticatedUser;
@@ -20,8 +21,9 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * 订阅与绑定端点（/api/intelligence/subscription）：GET 取订阅（无行返回缺省视图）、
  * PUT 全量替换（幂等，整体提交语义）；P4 绑定数据面（D8）——POST 生成绑定码
- * （201 + 码与失效时刻，用户持码到飞书发码核销，核销闭环属 Task 5）、DELETE 解绑
- * （幂等 204）。校验失败走既有 MethodArgumentNotValidException → 400 分支。
+ * （201 + 码与失效时刻，用户持码到飞书发码核销，核销闭环属 Task 5）、GET /binding
+ * 绑定状态（P4 Task 6 设置页绑定态分支）、DELETE 解绑（幂等 204）。校验失败走既有
+ * MethodArgumentNotValidException → 400 分支。
  */
 @RestController
 @RequestMapping("/api/intelligence/subscription")
@@ -50,6 +52,12 @@ public class IntelligenceSubscriptionController {
     public ResponseEntity<BindingCodeView> createBindingCode(Authentication auth) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(service.generateCode(currentUserId(auth)));
+    }
+
+    /** 绑定状态（P4 Task 6 设置页绑定态）：未绑定 bound=false + boundAt=null。 */
+    @GetMapping("/binding")
+    public BindingStatusView getBindingStatus(Authentication auth) {
+        return service.getBindingStatus(currentUserId(auth));
     }
 
     /** 解绑当前用户飞书（幂等：未绑定同样 204）。 */

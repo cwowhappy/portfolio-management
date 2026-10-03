@@ -31,6 +31,14 @@ public class FeishuBindingRepositoryImpl implements FeishuBindingRepository {
     }
 
     @Override
+    public Optional<Instant> findBoundAtByUserId(Long userId) {
+        List<Instant> found = jdbc.query(
+                "SELECT bound_at FROM intelligence_feishu_binding WHERE user_id = ?",
+                (rs, i) -> rs.getTimestamp("bound_at").toInstant(), userId);
+        return found.stream().findFirst();
+    }
+
+    @Override
     public boolean deleteByUserId(Long userId) {
         return jdbc.update("DELETE FROM intelligence_feishu_binding WHERE user_id = ?",
                 userId) == 1;

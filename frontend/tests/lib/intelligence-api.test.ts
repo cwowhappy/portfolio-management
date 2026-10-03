@@ -270,4 +270,15 @@ describe("情报工作台 REST 客户端（lib/intelligenceApi）", () => {
     fetchMock.mockResolvedValue(okResponse(undefined, 204));
     await expect(api.unbind()).resolves.toBeUndefined();
   });
+
+  it("绑定状态查询：GET /subscription/binding 解析 bound/boundAt（未绑定 boundAt null）", async () => {
+    const bound = { bound: true, boundAt: "2026-10-03T08:00:00Z" };
+    fetchMock.mockResolvedValueOnce(okResponse(bound));
+    await expect(api.getBindingStatus()).resolves.toEqual(bound);
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/intelligence/subscription/binding");
+    expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe("GET");
+
+    fetchMock.mockResolvedValueOnce(okResponse({ bound: false, boundAt: null }));
+    await expect(api.getBindingStatus()).resolves.toEqual({ bound: false, boundAt: null });
+  });
 });

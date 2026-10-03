@@ -15,6 +15,13 @@ public interface FeishuBindingRepository {
     Optional<String> findOpenIdByUserId(Long userId);
 
     /**
+     * 用户绑定时刻（P4 Task 6 设置页绑定态展示「绑定时间」）；未绑定返回 empty。
+     *
+     * @return bound_at 原值（UTC 折算无损）
+     */
+    Optional<Instant> findBoundAtByUserId(Long userId);
+
+    /**
      * 解绑：删除该用户绑定行（open_id 随行释放——解绑后立即不再收定向推送）。
      *
      * @return true = 已删除；false = 本就未绑定（幂等语义）

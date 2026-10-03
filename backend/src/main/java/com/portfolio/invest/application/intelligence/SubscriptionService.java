@@ -139,6 +139,16 @@ public class SubscriptionService {
     }
 
     /**
+     * 绑定状态（GET /api/intelligence/subscription/binding，P4 Task 6 设置页绑定态）：
+     * 未绑定 bound=false 且 boundAt=null——设置页据此切换「生成绑定码」/「绑定时间+解绑」两分支。
+     */
+    public BindingStatusView getBindingStatus(Long userId) {
+        return bindingRepository.findBoundAtByUserId(userId)
+                .map(boundAt -> new BindingStatusView(true, boundAt))
+                .orElseGet(() -> new BindingStatusView(false, null));
+    }
+
+    /**
      * 绑定码核销（D8 一次性 + open_id 冲突拒绝，P4 Task 5——BindingCommandHandler 经
      * ImCommandRouter 消费，异常消息即话术基础）：
      * <ol>
@@ -196,6 +206,10 @@ public class SubscriptionService {
      * code 为 6 位数字，expiresAt 为失效时刻（TTL 缺省 10 分钟，前端倒计时消费）。
      */
     public record BindingCodeView(String code, Instant expiresAt) {
+    }
+
+    /** 绑定状态视图（GET /binding，P4 Task 6）：未绑定 bound=false + boundAt=null。 */
+    public record BindingStatusView(boolean bound, Instant boundAt) {
     }
 
     /**

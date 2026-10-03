@@ -1,16 +1,19 @@
 package com.portfolio.invest.web;
 
+import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.portfolio.invest.application.intelligence.SubscriptionService;
 import com.portfolio.invest.application.intelligence.SubscriptionService.BindingCodeView;
+import com.portfolio.invest.application.intelligence.SubscriptionService.BindingStatusView;
 import com.portfolio.invest.domain.user.User;
 import com.portfolio.invest.domain.user.UserRole;
 import com.portfolio.invest.domain.user.UserStatus;
@@ -74,8 +77,38 @@ class IntelligenceSubscriptionBindingSliceTest {
     }
 
     @Test
-    @DisplayName("未登录访问绑定双端点均 401")
+    @DisplayName("GET /binding：已绑定 200 + bound/boundAt 回执，且透传当前 userId（P4 Task 6 设置页绑定态）")
+    void givenBound_whenGetBinding_then200WithBoundView() throws Exception {
+        when(service.getBindingStatus(1L)).thenReturn(
+                new BindingStatusView(true, Instant.parse("2026-10-03T08:00:00Z")));
+
+        mvc.perform(get("/api/intelligence/subscription/binding")
+                        .with(authentication(auth())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.bound").value(true))
+                .andExpect(jsonPath("$.boundAt").value("2026-10-03T08:00:00Z"));
+
+        verify(service).getBindingStatus(1L);
+    }
+
+    @Test
+    @DisplayName("GET /binding：未绑定 200 + bound=false + boundAt=null")
+    void givenUnbound_whenGetBinding_then200BoundFalseNullBoundAt() throws Exception {
+        when(service.getBindingStatus(1L)).thenReturn(new BindingStatusView(false, null));
+
+        mvc.perform(get("/api/intelligence/subscription/binding")
+                        .with(authentication(auth())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.bound").value(false))
+                .andExpect(jsonPath("$.boundAt").value(nullValue()));
+    }
+
+    @Test
+    @DisplayName("未登录访问绑定三端点（GET 状态/POST 生成码/DELETE 解绑）均 401")
     void givenAnonymous_whenAccessBindingEndpoints_then401() throws Exception {
+        mvc.perform(get("/api/intelligence/subscription/binding"))
+                .andExpect(status().isUnauthorized());
+
         mvc.perform(post("/api/intelligence/subscription/binding-code").with(csrf()))
                 .andExpect(status().isUnauthorized());
 
