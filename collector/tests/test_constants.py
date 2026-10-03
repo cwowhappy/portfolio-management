@@ -59,6 +59,44 @@ def test_recent_open_lookback():
     assert c.RECENT_OPEN_LOOKBACK_DAYS == 15
 
 
+def test_macro_and_policy_upstream_urls():
+    """MS-22 宏观五指标+M2 备源与四部委政策列表 URL 锚定（探测报告 2026-10-02 §0 总表）。"""
+    assert c.MACRO_LIST_URL_STATS == "https://www.stats.gov.cn/sj/zxfb/"
+    assert c.MACRO_LIST_URL_LPR.endswith("/3876551/index.html")
+    assert c.MACRO_LIST_URL_SOCFIN.endswith("/2026ntjsj/shrzgm/index.html")
+    assert c.MACRO_LIST_URL_M2.endswith("/2026ntjsj/hbtjgl/index.html")
+    assert c.POLICY_CSRC_LIST_URL.startswith("https://www.csrc.gov.cn/searchList/")
+    assert c.POLICY_LIST_URL_PBOC.endswith("/goutongjiaoliu/113456/113469/index.html")
+    assert c.POLICY_LIST_URL_MOF == "https://www.mof.gov.cn/zhengwuxinxi/zhengcefabu/"
+    assert c.POLICY_LIST_URL_STATS.endswith("/xw/tjxw/tzgg/")
+    assert c.POLICY_CSRC_PAGE_SIZE == 20  # 终止判据用 len(results)，勿用 rows 回显
+    assert c.POLICY_CONTENT_MAX_CHARS == 8000 and c.POLICY_TRUNCATION_SUFFIX == "…[截断]"
+
+
+def test_policy_title_blacklist_two_scopes():
+    """黑名单两栏（§5.5 常量为权威）：通用栏含会见/出席/人事/纪检族；「信息披露」仅 stats 专属。"""
+    assert c.POLICY_TITLE_BLACKLIST_COMMON == (
+        "会见",
+        "出席",
+        "调研",
+        "走访",
+        "转发",
+        "任党委书记",
+        "任免",
+        "人事",
+        "招聘",
+        "拟聘用",
+        "公开招聘",
+        "接受纪律审查",
+        "严重违纪",
+        "被开除",
+    )
+    assert set(c.POLICY_TITLE_BLACKLIST_BY_SOURCE) == {"stats"}
+    # 「信息披露」仅 stats 专属：csrc《上市公司信息披露管理办法》为真政策，全局禁用该词（§5.5 ⚠）
+    assert "信息披露" in c.POLICY_TITLE_BLACKLIST_BY_SOURCE["stats"]
+    assert "信息披露" not in c.POLICY_TITLE_BLACKLIST_COMMON
+
+
 def test_plugins_reference_central_module():
     """plugins 不再自带这些常量定义（引用集中模块）——防回潮。"""
     import inspect

@@ -146,6 +146,71 @@ ANNOUNCEMENT_MAJOR_COLUMNS: dict[str, set[str]] = {
     "DELISTING_RISK": {"category_tbclts_szsh", "category_tszlq_szsh"},
 }
 
+# 宏观指标源（MS-22 P3 Task 2）：五先行指标 + M2 备源。URL/解析坑由探测报告实测钉住
+# （09-调研报告/2026-10-02-MS22-宏观取数页适配探测.md §1~§3），漂移时以报告复核：
+# CPI/PPI 详情双副本表格取第一个、列序固定 环比|同比|累计（第三列表头文字随期别变）；
+# PMI 表 0 末行（13 个月升序最新在末）；LPR 期别从标题取（URL slug=建页时间戳≠发布日）；
+# 社融/M2 xlsx 全年 12 个月预置空行（取末个非空 cell）。yoy 恒 None 为报告裁定。
+MACRO_HTTP_TIMEOUT = 15  # 单请求超时（秒）：统计局偶发 4.7s 慢响应（§1.1），宽于新闻/公告源
+MACRO_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"
+MACRO_PAGE_INTERVAL = 0.3  # 相邻请求（列表/详情/翻页/重试）礼貌间隔（秒）
+MACRO_RETRY_ATTEMPTS = 3  # 请求级失败重试次数，连续失败即 SourceError 走 selector 降级
+MACRO_STATS_MAX_PAGES = 4  # zxfb 列表翻页上限（每页 ~20 条 ≈ 3~4 周发布量；增量常态首页命中）
+MACRO_EXISTING_PERIODS_LIMIT = 100  # 增量截断的已存期别集合上限（月频≈8 年 / LPR 日频≈3 个月）
+MACRO_LIST_URL_STATS = "https://www.stats.gov.cn/sj/zxfb/"  # CPI/PPI/PMI 同源列表（§1.1）
+# LPR 月度公告列表（§2.1：20 条直出，slug=建页时间戳 ≠ 发布日，期别从标题取）
+MACRO_LIST_URL_LPR = "https://www.pbc.gov.cn/zhengcehuobisi/125207/125213/125440/3876551/index.html"
+# 社融主源（§3.1：页面仅挂最新一期 Flow/Stock 更新块，xlsx 文件名=上传时间戳）
+MACRO_LIST_URL_SOCFIN = "https://www.pbc.gov.cn/diaochatongjisi/116219/116319/2026ntjsj/shrzgm/index.html"
+# M2 备源（§3.2：与社融同日同批上传；跨年 backfill 属 URL 级扩展，§3.3 备案）
+MACRO_LIST_URL_M2 = "https://www.pbc.gov.cn/diaochatongjisi/116219/116319/2026ntjsj/hbtjgl/index.html"
+
+# 四部委政策源（MS-22 P3 Task 2）：pboc/mof/stats 服务端渲染两跳 + csrc JSON 单跳（§5）。
+POLICY_HTTP_TIMEOUT = 15
+POLICY_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"
+POLICY_PAGE_INTERVAL = 0.3
+POLICY_RETRY_ATTEMPTS = 3
+POLICY_TRS_MAX_PAGES = 5  # 三站静态翻页上限（增量常态首页即命中已存截断；日更低频源）
+POLICY_CSRC_MAX_PAGES = 10  # csrc JSON 翻页默认上限（冷启动 200 条≈数月；更深回补构造源时调大）
+POLICY_CSRC_PAGE_SIZE = 20  # §5.2 实测服务端遵循 _pageSize（传 20 回 20）；终止判据用 len(results) 勿用 rows 回显
+# csrc JSON 列表接口（channelid=证监会要闻；旧 HTML 列表页为 2021-12 冻结旧档勿用）
+POLICY_CSRC_LIST_URL = "https://www.csrc.gov.cn/searchList/a1a078ee0bc54721ab6b148884c784a8"
+# pboc 沟通交流›新闻（§5.1：混排领导活动即黑名单过滤对象；翻页 11040-{N}.html）
+POLICY_LIST_URL_PBOC = "https://www.pbc.gov.cn/goutongjiaoliu/113456/113469/index.html"
+# mof 政务信息›政策发布（§5.3；根路径为 JS 壳勿用，/zhengwufabu 旧路径 404）
+POLICY_LIST_URL_MOF = "https://www.mof.gov.cn/zhengwuxinxi/zhengcefabu/"
+POLICY_LIST_URL_STATS = "https://www.stats.gov.cn/xw/tjxw/tzgg/"  # 统计新闻›通知公告（§5.4 控制器裁定取 tzgg）
+POLICY_EXISTING_IDS_LIMIT = 500  # 增量截断的已存 external_id 集合上限（覆盖不足只多翻页，UPSERT 兜底）
+POLICY_CONTENT_MAX_CHARS = 8000  # 正文截断上限（§5.6：四站实测 650~5000 字，超长办法/细则截断）
+POLICY_TRUNCATION_SUFFIX = "…[截断]"  # 截断尾注（LLM 感知用）；列表层信息（标题/日期/URL）永不截断
+POLICY_MIN_CONTENT_CHARS = 200  # 正文低于此长度视为抓取失败（容器缺失兜底后的丢弃阈值）
+
+# 政策标题黑名单两栏（§5.5 实测采样提炼，Task 1 fix round 钉死——**以本常量为准**，勿照报告
+# 表格裸词回抄）：通用栏四站生效、专属栏仅对应 source 生效，标题级子串匹配，命中即丢弃 +
+# last_warnings 计数；「出席」等词仅拦标题不拦正文（防误杀政策解读文）；漏网由 LLM 兜底
+# （isPolicy=false → LOW confidence 落库，T5 契约）——黑名单是成本闸门不是正确性闸门。
+POLICY_TITLE_BLACKLIST_COMMON = (
+    "会见",
+    "出席",
+    "调研",
+    "走访",
+    "转发",  # 领导活动/转载
+    "任党委书记",
+    "任免",
+    "人事",
+    "招聘",
+    "拟聘用",
+    "公开招聘",  # 人事任命/招聘
+    "接受纪律审查",
+    "严重违纪",
+    "被开除",  # 纪检
+)
+POLICY_TITLE_BLACKLIST_BY_SOURCE = {
+    # tzgg 栏目行政事务噪声（⚠ 信息披露在 csrc 是真政策词，全局禁用）
+    "stats": ("立项公示", "立项公告", "信息披露", "薪酬", "工资总额", "成绩查询", "考务", "网站与政务新媒体检查"),
+    # pboc/csrc/mof 实测未见需专属词（领导活动已被通用栏覆盖）
+}
+
 # ---------------------------------------------------------------- 限速（对上游的礼貌间隔，秒）
 
 FINANCIAL_MIN_INTERVAL = 0.35  # fina_indicator/income（tushare 200 次/分 → 0.35s，18-19 实测钉死）
