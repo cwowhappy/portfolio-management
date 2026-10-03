@@ -99,6 +99,27 @@ UPSERT_SQL = {
           ann_type_source=EXCLUDED.ann_type_source, major=EXCLUDED.major,
           pdf_url=EXCLUDED.pdf_url, fetched_at=now()
     """,
+    # MS-22 宏观五指标任务（macro_*）同表：冲突键 (indicator, period)。发布窗口多跑
+    # 幂等——value/yoy/source_url/source_note 重跑刷新；period_type 随指标固定（键含
+    # indicator 即隐含其月/日频），保首见不更新；V3 实况本表无 fetched_at 列（无观测
+    # 时刻可刷）。
+    "intelligence_macro_series": """
+        INSERT INTO intelligence_macro_series
+          (indicator, period, period_type, value, yoy, source_url, source_note)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (indicator, period) DO UPDATE SET
+          value=EXCLUDED.value, yoy=EXCLUDED.yoy,
+          source_url=EXCLUDED.source_url, source_note=EXCLUDED.source_note
+    """,
+    # MS-22 政策四任务（policy_*）同表：冲突键 (source, external_id)。published_at 保
+    # 首见不更新（发布时刻是源站事实，非采集观测）；V3 实况本表无 fetched_at 列。
+    "intelligence_policy_raw": """
+        INSERT INTO intelligence_policy_raw
+          (source, external_id, title, url, published_at, content_text)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        ON CONFLICT (source, external_id) DO UPDATE SET
+          title=EXCLUDED.title, url=EXCLUDED.url, content_text=EXCLUDED.content_text
+    """,
 }
 
 TABLE_COLUMNS = {
@@ -161,6 +182,23 @@ TABLE_COLUMNS = {
         "major",
         "published_at",
         "pdf_url",
+    ],
+    "intelligence_macro_series": [
+        "indicator",
+        "period",
+        "period_type",
+        "value",
+        "yoy",
+        "source_url",
+        "source_note",
+    ],
+    "intelligence_policy_raw": [
+        "source",
+        "external_id",
+        "title",
+        "url",
+        "published_at",
+        "content_text",
     ],
 }
 

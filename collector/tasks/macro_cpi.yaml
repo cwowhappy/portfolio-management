@@ -1,0 +1,24 @@
+task_code: macro_cpi
+task_name: 宏观指标采集-CPI同比
+# MS-22 设计 §6/决策 #12：统计局 zxfb 列表（Task 2 MacroPageSource stats_table 形态，
+# 标题关键词「居民消费价格」定位）。发布窗口 10~13 日每日 11:00 幂等多跑（9 日发布遇
+# 周末/顺延兜底），增量=首见已存期别截断，冲突键 (indicator, period) UPSERT 幂等。
+source_ids:
+  - { source_id: cpi, type: plugin, class: cpi }
+converter: field_mapping_macro
+calc: null
+# value 用 not_null 而非 required：required 的 falsy 判定会把合法 0.0（CPI 同比持平月，
+# 裁定所列指标域 CPI 0~105 含 0）硬失败整轮；range soft 统一域 |value|<10^8（裁定：
+# 不做每指标精确域，只拦明显坏值）
+validator:
+  - { field: indicator, check: required, level: hard }
+  - { field: period, check: required, level: hard }
+  - { field: value, check: not_null, level: hard }
+  - { field: value, check: range, min: -99999999, max: 99999999, level: soft }
+target_table: intelligence_macro_series
+schedule: { type: cron, cron: "0 11 10-13 * *" }
+enabled: true
+# 宏观发布跨非交易日（统计局遇周末顺延），设计 §6：全部情报任务不门控
+trading_day_gated: false
+retry_max: 2
+retry_backoff: fixed

@@ -1,0 +1,21 @@
+task_code: macro_ppi
+task_name: 宏观指标采集-PPI同比
+# MS-22 设计 §6：与 macro_cpi 同源同表同窗口（PPI 与 CPI 同日发布），标题关键词
+# 「工业生产者出厂价格」、headline 行去「一、」序号前缀（Task 2 spec：ppi）。
+source_ids:
+  - { source_id: ppi, type: plugin, class: ppi }
+converter: field_mapping_macro
+calc: null
+# 同 macro_cpi：value not_null hard（PPI 同比可为负/0.0，required falsy 会误杀）+
+# |value|<10^8 soft 统一域
+validator:
+  - { field: indicator, check: required, level: hard }
+  - { field: period, check: required, level: hard }
+  - { field: value, check: not_null, level: hard }
+  - { field: value, check: range, min: -99999999, max: 99999999, level: soft }
+target_table: intelligence_macro_series
+schedule: { type: cron, cron: "0 11 10-13 * *" }
+enabled: true
+trading_day_gated: false
+retry_max: 2
+retry_backoff: fixed

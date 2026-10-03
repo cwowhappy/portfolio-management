@@ -17,7 +17,9 @@ from collector.config import Config
 from collector.scheduler.jobs import assemble_collector, build_registries, load_task_defs, make_trigger
 from collector.sources.announcements import ANN_COLUMNS
 from collector.sources.base import SourceError
+from collector.sources.macro import MACRO_COLUMNS
 from collector.sources.news import NEWS_COLUMNS
+from collector.sources.policy import POLICY_COLUMNS
 
 TASKS_DIR = Path(__file__).resolve().parent.parent / "tasks"
 
@@ -36,8 +38,17 @@ EXPECTED_TASKS = {
     "industry_index_close",
     "industry_valuation",
     "industry_valuation_backfill",
+    "macro_afmi",
+    "macro_cpi",
+    "macro_lpr",
+    "macro_ppi",
+    "macro_pmi",
     "news_fast",
     "news_night",
+    "policy_csrc",
+    "policy_mof",
+    "policy_pboc",
+    "policy_stats",
     "shenwan_mapping",
     "stock_financial",
     "stock_valuation_daily",
@@ -129,6 +140,155 @@ def test_announcement_tasks_yaml(code, cron):
         {"field": "title", "check": "required", "level": "hard"},
         {"field": "published_at", "check": "not_null", "level": "hard"},
     ]
+
+
+@pytest.mark.parametrize(
+    ("code", "cron", "sources"),
+    [
+        ("macro_cpi", "0 11 10-13 * *", ["cpi"]),
+        ("macro_ppi", "0 11 10-13 * *", ["ppi"]),
+        ("macro_pmi", "0 11 10-13 * *", ["pmi"]),
+        ("macro_lpr", "0 10 21-22 * *", ["lpr"]),
+        # D19 社融双源：主源 socfin（indicator=AFMI）→ 备源 m2（indicator=M2）selector failover
+        ("macro_afmi", "0 11 12-16 * *", ["socfin", "m2"]),
+    ],
+)
+def test_macro_tasks_yaml(code, cron, sources):
+    """MS-22 设计 §6：五宏观任务同表（intelligence_macro_series）、registry key 即
+    Task 2 spec 表键；发布窗口幂等多跑（CPI/PPI/PMI 10~13 日、LPR 21~22 日、社融
+    12~16 日），增量=首见已存期别截断；宏观发布跨非交易日（遇周末顺延），
+    trading_day_gated 必须 false。value 用 not_null 而非 required：required 的 falsy
+    判定会把合法 0.0（CPI 同比持平月）硬失败整轮；range soft 统一域 |value|<10^8
+    （裁定：不做每指标精确域，只拦明显坏值）。"""
+    defs = {d["task_code"]: d for d in load_task_defs(str(TASKS_DIR))}
+    d = defs[code]
+    assert d["target_table"] == "intelligence_macro_series"
+    assert [s["source_id"] for s in d["source_ids"]] == sources
+    assert all(s["type"] == "plugin" for s in d["source_ids"])
+    assert d["converter"] == "field_mapping_macro"
+    assert d["schedule"] == {"type": "cron", "cron": cron}
+    assert d["trading_day_gated"] is False
+    assert d["retry_max"] == 2
+    assert d["retry_backoff"] == "fixed"
+    assert d["calc"] is None
+    assert d["validator"] == [
+        {"field": "indicator", "check": "required", "level": "hard"},
+        {"field": "period", "check": "required", "level": "hard"},
+        {"field": "value", "check": "not_null", "level": "hard"},
+        {"field": "value", "check": "range", "min": -99999999, "max": 99999999, "level": "soft"},
+    ]
+
+
+@pytest.mark.parametrize("code", ["policy_pboc", "policy_csrc", "policy_mof", "policy_stats"])
+def test_policy_tasks_yaml(code):
+    """MS-22 设计 §6：四部委政策任务同表（intelligence_policy_raw）、各挂单源
+    （registry key=site 名，DB source 列值同名）；每日 08:40（09:10 backend 抽取批
+    之前），增量=首见已存 external_id 截断 + 冲突键 (source, external_id) UPSERT
+    幂等；政策发布跨非交易日，trading_day_gated 必须 false。"""
+    defs = {d["task_code"]: d for d in load_task_defs(str(TASKS_DIR))}
+    d = defs[code]
+    assert d["target_table"] == "intelligence_policy_raw"
+    assert [s["source_id"] for s in d["source_ids"]] == [code.removeprefix("policy_")]
+    assert all(s["type"] == "plugin" for s in d["source_ids"])
+    assert d["converter"] == "field_mapping_policy"
+    assert d["schedule"] == {"type": "cron", "cron": "40 8 * * *"}
+    assert d["trading_day_gated"] is False
+    assert d["retry_max"] == 2
+    assert d["retry_backoff"] == "fixed"
+    assert d["calc"] is None
+    # 6 列输出契约的业务键、NOT NULL 列与定位列 hard 校验（brief Step 1）
+    assert d["validator"] == [
+        {"field": "source", "check": "required", "level": "hard"},
+        {"field": "external_id", "check": "required", "level": "hard"},
+        {"field": "title", "check": "required", "level": "hard"},
+        {"field": "url", "check": "required", "level": "hard"},
+        {"field": "published_at", "check": "not_null", "level": "hard"},
+    ]
+
+
+def test_field_mapping_macro_converter_passthrough():
+    """field_mapping_macro 7 列同名映射：value（Decimal）经 numeric 强转 float、
+    yoy 恒 None 透传、source_note 可空列 None 透传；空帧（增量已存全命中的空产出）
+    → 空记录，不抛错。"""
+    from decimal import Decimal
+
+    regs = _registries()
+    converter = regs["converter"].get("field_mapping_macro")
+    raw = pd.DataFrame(
+        [
+            {
+                "indicator": "CPI",
+                "period": "2026-08",
+                "period_type": "MONTH",
+                "value": Decimal("0.8"),
+                "yoy": None,
+                "source_url": "https://www.stats.gov.cn/sj/zxfb/202609/t20260913_1959519.html",
+                "source_note": "环比涨跌幅（%）0.4",
+            },
+            {
+                # LPR 日频（period=日串、period_type=DAY）+ 5 年期入 note；负值（PPI 同比）
+                # 由同一映射透传，此处不再重复构造
+                "indicator": "LPR",
+                "period": "2026-09-20",
+                "period_type": "DAY",
+                "value": Decimal("3.0"),
+                "yoy": None,
+                "source_url": "https://www.pbc.gov.cn/zhengcehuobisi/125207/125213/125440/3876551/5139267/index.html",
+                "source_note": None,
+            },
+        ],
+        columns=MACRO_COLUMNS,
+    )
+    records = converter.convert(raw)
+    assert len(records) == 2
+    assert records[0]["indicator"] == "CPI"
+    assert records[0]["value"] == 0.8  # Decimal → float（NUMERIC(18,4) 落库）
+    assert records[0]["yoy"] is None
+    assert records[0]["source_note"] == "环比涨跌幅（%）0.4"
+    assert records[1]["period"] == "2026-09-20"
+    assert records[1]["period_type"] == "DAY"
+    assert records[1]["source_note"] is None
+    # 空帧（已存全命中）→ 空记录，不抛错
+    assert converter.convert(pd.DataFrame(columns=MACRO_COLUMNS)) == []
+
+
+def test_field_mapping_policy_converter_passthrough():
+    """field_mapping_policy 6 列同名映射：published_at 保持 datetime 对象（psycopg
+    原生适配 TIMESTAMPTZ，勿 str 强转）、url/content_text 可空列 None 透传。"""
+    regs = _registries()
+    converter = regs["converter"].get("field_mapping_policy")
+    utc8 = dt.timezone(dt.timedelta(hours=8))
+    published = dt.datetime(2026, 9, 30, 19, 46, 0, tzinfo=utc8)
+    raw = pd.DataFrame(
+        [
+            {
+                "source": "pboc",
+                "external_id": "202609301946",
+                "title": "中国人民银行 国家金融监督管理总局关于印发《系统重要性银行附加监管规定（试行）》的通知",
+                "url": "https://www.pbc.gov.cn/goutongjiaoliu/113456/113469/202609301946/index.html",
+                "published_at": published,
+                "content_text": "中国人民银行 国家金融监督管理总局……",
+            },
+            {
+                "source": "csrc",
+                "external_id": "72384921001",
+                "title": "证监会发布《证券市场程序化交易管理规定》",
+                "url": None,
+                "published_at": published,
+                "content_text": None,
+            },
+        ],
+        columns=POLICY_COLUMNS,
+    )
+    records = converter.convert(raw)
+    assert len(records) == 2
+    assert records[0]["source"] == "pboc"
+    assert records[0]["published_at"] == published  # datetime 对象未被 str() 化
+    assert records[0]["content_text"].startswith("中国人民银行")
+    assert records[1]["url"] is None  # 可空列 None 透传
+    assert records[1]["content_text"] is None
+    # 空帧（增量无新政策）→ 空记录，不抛错
+    assert converter.convert(pd.DataFrame(columns=POLICY_COLUMNS)) == []
 
 
 def test_field_mapping_announcement_converter_passthrough():

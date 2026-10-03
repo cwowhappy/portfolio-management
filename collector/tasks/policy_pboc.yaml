@@ -1,0 +1,25 @@
+task_code: policy_pboc
+task_name: 政策采集-中国人民银行
+# MS-22 设计 §6：央行沟通交流栏目（Task 2 PolicySiteSource trs_list 形态：slug=
+# external_id、翻页 11040-{N}.html、详情 #zoom 容器 + meta createDate 精确发布时刻）。
+# 每日 08:40（09:10 backend PolicyExtractionService 抽取批之前），标题黑名单两栏
+# 在源内丢弃 + LLM isPolicy 兜底（T5）；增量=首见已存 external_id 截断。
+source_ids:
+  - { source_id: pboc, type: plugin, class: pboc }
+converter: field_mapping_policy
+calc: null
+# 6 列输出契约：业务键 source/external_id、NOT NULL 列 title/published_at、定位列
+# url hard 校验（brief Step 1 裁定）
+validator:
+  - { field: source, check: required, level: hard }
+  - { field: external_id, check: required, level: hard }
+  - { field: title, check: required, level: hard }
+  - { field: url, check: required, level: hard }
+  - { field: published_at, check: not_null, level: hard }
+target_table: intelligence_policy_raw
+schedule: { type: cron, cron: "40 8 * * *" }
+enabled: true
+# 政策发布跨非交易日（部委周末发文常态），设计 §6：全部情报任务不门控
+trading_day_gated: false
+retry_max: 2
+retry_backoff: fixed

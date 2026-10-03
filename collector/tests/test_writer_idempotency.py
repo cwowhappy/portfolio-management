@@ -1,4 +1,4 @@
-"""T3 落库铁律：九张业务目标表的真实 PG 幂等 upsert（valuation_snapshot 见 test_writer.py）。
+"""T3 落库铁律：十一张业务目标表的真实 PG 幂等 upsert（valuation_snapshot 见 test_writer.py）。
 
 每张表：同主键重复 upsert → 不产生重复行、行数仍为 1、非键字段被更新为新值。
 upsert 键与各表 DDL（后端 Flyway V3/V4/V7/V13/V18、intelligence V3）对齐，见 collector/store/writer.py。
@@ -249,6 +249,101 @@ def test_intelligence_announcement_upsert_idempotent(pg_conn):
     )
     count = pg_conn.execute(
         "SELECT count(*) FROM intelligence_announcement WHERE external_id=%s", ("122236472",)
+    ).fetchone()[0]
+    assert count == 2
+
+
+def test_intelligence_macro_series_upsert_idempotent(pg_conn):
+    """冲突键 (indicator, period)（MS-22 P3，Flyway V3）：发布窗口幂等多跑——
+    value/yoy/source_url/source_note 刷新；V3 实况本表**无 fetched_at 列**（无观测
+    时刻可刷）；键含 indicator：同月不同指标互不覆盖（社融双源 AFMI/M2 各自成行）。"""
+    store = Store()
+    rec = {
+        "indicator": "CPI",
+        "period": "2026-08",
+        "period_type": "MONTH",
+        "value": 0.8,
+        "yoy": None,
+        "source_url": "https://www.stats.gov.cn/sj/zxfb/202609/t20260913_1959519.html",
+        "source_note": "环比涨跌幅（%）0.4",
+    }
+    store.upsert(pg_conn, "intelligence_macro_series", [rec])
+    # 发布窗口次日重跑：数值修正（0.8 → 0.9）应刷新
+    store.upsert(
+        pg_conn,
+        "intelligence_macro_series",
+        [{**rec, "value": 0.9, "source_note": "环比涨跌幅（%）0.5"}],
+    )
+    rows = pg_conn.execute(
+        "SELECT value, source_note FROM intelligence_macro_series WHERE indicator=%s AND period=%s",
+        ("CPI", "2026-08"),
+    ).fetchall()
+    assert len(rows) == 1
+    assert float(rows[0][0]) == 0.9
+    assert rows[0][1] == "环比涨跌幅（%）0.5"
+
+    # 键含 indicator：LPR 日频与 AFMI/M2 月度是独立行，互不覆盖
+    store.upsert(
+        pg_conn,
+        "intelligence_macro_series",
+        [
+            {**rec, "indicator": "LPR", "period": "2026-09-20", "period_type": "DAY", "value": 3.0},
+            {**rec, "indicator": "AFMI", "value": 16577.0},
+        ],
+    )
+    count = pg_conn.execute("SELECT count(*) FROM intelligence_macro_series").fetchone()[0]
+    assert count == 3  # CPI 2026-08 / LPR 2026-09-20 / AFMI 2026-08
+
+
+def test_intelligence_policy_raw_upsert_idempotent(pg_conn):
+    """冲突键 (source, external_id)（MS-22 P3，Flyway V3）：每日重跑幂等——
+    title/url/content_text 刷新；published_at 保首见不更新（发布时刻是源站事实，
+    非采集观测）；V3 实况本表**无 fetched_at 列**；业务键含 source，两部委同
+    external_id 互不覆盖。"""
+    store = Store()
+    utc8 = dt.timezone(dt.timedelta(hours=8))
+    rec = {
+        "source": "pboc",
+        "external_id": "202609301946",
+        "title": "中国人民银行 国家金融监督管理总局关于印发《系统重要性银行附加监管规定（试行）》的通知",
+        "url": "https://www.pbc.gov.cn/goutongjiaoliu/113456/113469/202609301946/index.html",
+        "published_at": dt.datetime(2026, 9, 30, 19, 46, 0, tzinfo=utc8),
+        "content_text": "中国人民银行 国家金融监督管理总局……",
+    }
+    updated_title = "（更新）中国人民银行 国家金融监督管理总局关于印发《系统重要性银行附加监管规定（试行）》的通知"
+    store.upsert(pg_conn, "intelligence_policy_raw", [rec])
+    store.upsert(
+        pg_conn,
+        "intelligence_policy_raw",
+        [
+            {
+                **rec,
+                "title": updated_title,
+                "url": None,
+                "content_text": None,
+                "published_at": dt.datetime(2026, 9, 30, 20, 0, 0, tzinfo=utc8),  # 更晚，不应覆盖
+            }
+        ],
+    )
+    rows = pg_conn.execute(
+        "SELECT title, url, content_text, published_at FROM intelligence_policy_raw WHERE source=%s AND external_id=%s",
+        ("pboc", "202609301946"),
+    ).fetchall()
+    assert len(rows) == 1
+    title, url, content_text, published_at = rows[0]
+    assert title.startswith("（更新）")  # 非键列刷新
+    assert url is None
+    assert content_text is None
+    assert published_at == dt.datetime(2026, 9, 30, 19, 46, 0, tzinfo=utc8)  # 保首见
+
+    # 业务键含 source：csrc 同 external_id 是另一条记录，不互相覆盖
+    store.upsert(
+        pg_conn,
+        "intelligence_policy_raw",
+        [{**rec, "source": "csrc", "title": "证监会侧同号文"}],
+    )
+    count = pg_conn.execute(
+        "SELECT count(*) FROM intelligence_policy_raw WHERE external_id=%s", ("202609301946",)
     ).fetchone()[0]
     assert count == 2
 

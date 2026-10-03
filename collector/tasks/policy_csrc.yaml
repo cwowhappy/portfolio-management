@@ -1,0 +1,20 @@
+task_code: policy_csrc
+task_name: 政策采集-证监会
+# MS-22 设计 §6：证监会 searchList JSON 单跳（Task 2 csrc_json 形态：列表响应直接带
+# 全文、manuscriptId 幂等、协议相对 url 补 https: 前缀、epoch ms 发布时刻双保险）。
+source_ids:
+  - { source_id: csrc, type: plugin, class: csrc }
+converter: field_mapping_policy
+calc: null
+validator:
+  - { field: source, check: required, level: hard }
+  - { field: external_id, check: required, level: hard }
+  - { field: title, check: required, level: hard }
+  - { field: url, check: required, level: hard }
+  - { field: published_at, check: not_null, level: hard }
+target_table: intelligence_policy_raw
+schedule: { type: cron, cron: "40 8 * * *" }
+enabled: true
+trading_day_gated: false
+retry_max: 2
+retry_backoff: fixed
