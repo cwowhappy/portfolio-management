@@ -29,7 +29,8 @@ import org.springframework.stereotype.Service;
 
 /**
  * 盘前简报推送（D11 P1 群推版 → D17 P4 个性化升级）：交易日 08:30（生成 08:00 之后）读
- * 当日档，逐 {@code findUserIdsWithPushEnabled} 用户分流（总开关关闭用户不在结果，仓库已滤）：
+ * 当日档，逐 {@code findUserIdsWithPushEnabled} 用户分流（受众=总开关默认开口径 #27：
+ * 无订阅行与显式开都在，仅显式关不在——零行部署全员可收，绑定未存订阅者同样可见）：
  *
  * <ul>
  *   <li><b>绑定用户单发</b>（{@code SubscriptionService.findOpenId} 命中 → sendToUser）：
@@ -139,9 +140,16 @@ public class BriefPushService {
         }
         DailyBrief brief = found.get();
         List<Long> userIds = subscriptionRepository.findUserIdsWithPushEnabled();
+        if (userIds.isEmpty()) {
+            // 受众口径=总开关默认开（#27）：空受众只剩全员显式关闭一态——留一行可观测，
+            // 零行部署（默认开）不会走到这里
+            log.info("盘前简报无推送受众（全员显式关闭推送开关），跳过（tradeDate={}，status={}）",
+                    today, brief.status());
+            return;
+        }
         boolean failed = brief.status() == BriefStatus.FAILED;
         // 附节候选池一次取全（窗口/阈值=简报选取口径），逐用户仅在内存过滤
-        List<NewsRecord> majorPool = failed || userIds.isEmpty() ? List.of() : loadMajorPool(today);
+        List<NewsRecord> majorPool = failed ? List.of() : loadMajorPool(today);
         List<Long> unbound = new ArrayList<>();
         for (Long userId : userIds) {
             try {

@@ -23,7 +23,11 @@ public interface SubscriptionRepository {
      */
     IntelligenceSubscription save(IntelligenceSubscription subscription);
 
-    /** 开启推送的全部用户 id（盘前简报群发收件人口径，P4 消费）。 */
+    /**
+     * 推送受众用户 id 全集（盘前简报收件人口径，P4 消费）。总开关默认开（#27/F16
+     * 「无行=默认 pushEnabled=true」口径，LEFT JOIN app_user）：无订阅行用户与显式开
+     * 用户都在受众，仅显式关闭用户被排除——零行部署/绑定而未存订阅的用户不因此失联。
+     */
     List<Long> findUserIdsWithPushEnabled();
 
     /** 持有该标的 ∧ push_enabled 的订阅聚合（公告定向触达反查，Task 7 消费；聚合带全量标的）。 */

@@ -119,15 +119,19 @@ class SubscriptionRepositoryTest extends PostgresTestSupport {
     }
 
     @Test
-    @DisplayName("findUserIdsWithPushEnabled：仅开启推送的订阅用户命中（关闭与无行不命中）")
-    void givenEnabledDisabledAndAbsentUsers_whenFindUserIdsWithPushEnabled_thenOnlyEnabledHit() {
+    @DisplayName("findUserIdsWithPushEnabled：无行（默认开）与显式开命中、显式关不命中（#27 总开关默认开口径）")
+    void givenEnabledDisabledAndAbsentUsers_whenFindUserIdsWithPushEnabled_thenDefaultOnAndEnabledHit() {
         Long enabled = insertUser("sub_it_en");
         Long disabled = insertUser("sub_it_dis");
-        insertUser("sub_it_absent");
-        repository.save(IntelligenceSubscription.defaults(enabled));           // 默认开
-        repository.save(IntelligenceSubscription.defaults(disabled).togglePush(false));
+        Long absent = insertUser("sub_it_absent");
+        repository.save(IntelligenceSubscription.defaults(enabled));           // 行：显式开
+        repository.save(IntelligenceSubscription.defaults(disabled).togglePush(false)); // 行：显式关
 
-        assertThat(repository.findUserIdsWithPushEnabled()).containsExactly(enabled);
+        assertThat(repository.findUserIdsWithPushEnabled())
+                .as("无行=默认开（LEFT JOIN 口径）与行开都在受众，仅显式关被排除"
+                        + "（contains 而非 exactly：共享容器可能有兄弟类/admin 残留用户，同为默认开属预期）")
+                .contains(enabled, absent)
+                .doesNotContain(disabled);
     }
 
     @Test

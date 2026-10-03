@@ -140,6 +140,20 @@ class BriefPushServiceTest {
     }
 
     @Test
+    @DisplayName("给定受众为空（全员显式关闭，默认开口径下唯一空态），when推送，then不推不留痕可观测跳过")
+    void givenEmptyAudience_whenPush_thenSkippedWithoutSendOrLog() {
+        when(briefRepository.findByDate(TODAY)).thenReturn(
+                Optional.of(archived(106L, BriefStatus.GENERATED, CONTENT_MD, null)));
+        when(subscriptionRepository.findUserIdsWithPushEnabled()).thenReturn(List.of());
+
+        service.pushBrief();
+
+        verify(pushPort, never()).sendToGroup(anyString(), anyString(), anyList());
+        verify(pushPort, never()).sendToUser(anyString(), anyString(), anyString(), anyList());
+        verify(pushLogRepository, never()).save(any());
+    }
+
+    @Test
     @DisplayName("给定GENERATED档与未绑定推送用户，when推送，then群推卡片且留痕OK全字段")
     void givenGeneratedBrief_whenPush_thenCardSentAndOkLogged() {
         when(briefRepository.findByDate(TODAY)).thenReturn(
