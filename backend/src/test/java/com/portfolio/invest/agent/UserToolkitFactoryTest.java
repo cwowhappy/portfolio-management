@@ -1,14 +1,20 @@
 package com.portfolio.invest.agent;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.portfolio.invest.domain.mcp.AuthType;
 import com.portfolio.invest.domain.mcp.McpConfigRepository;
 import com.portfolio.invest.domain.mcp.McpEndpoint;
+import com.portfolio.invest.domain.mcp.McpErrorCode;
+import com.portfolio.invest.domain.mcp.McpException;
 import com.portfolio.invest.domain.mcp.McpProvider;
+import com.portfolio.invest.domain.mcp.McpSecretCodec;
 import com.portfolio.invest.domain.mcp.McpUserConfig;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
@@ -38,6 +44,13 @@ class UserToolkitFactoryTest {
                 .build();
     }
 
+    /** 明文直读 codec（存量值原样返回；解密路径由专项用例覆盖）。 */
+    private static McpSecretCodec passthroughCodec() {
+        McpSecretCodec codec = mock(McpSecretCodec.class);
+        when(codec.decrypt(any())).thenAnswer(inv -> inv.getArgument(0));
+        return codec;
+    }
+
     /** 标准装配环境：单 provider/endpoint/config，注入给定工具定义列表。 */
     private Toolkit buildToolkitWith(List<McpSchema.Tool> mcpTools, List<String> disabledTools) {
         InvestTools investTools = mock(InvestTools.class);
@@ -56,7 +69,7 @@ class UserToolkitFactoryTest {
         when(client.listTools()).thenReturn(Mono.just(mcpTools));
         when(client.getName()).thenReturn("tushare");
 
-        return new UserToolkitFactory(investTools, repository, clientPool,
+        return new UserToolkitFactory(investTools, repository, clientPool, passthroughCodec(),
                 mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
                 mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
                 mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
@@ -124,7 +137,7 @@ class UserToolkitFactoryTest {
         when(clientPool.acquire(provider, endpoint, "token")).thenReturn(client);
         when(client.listTools()).thenReturn(Mono.just(List.of(tool("trade_cal", annotations(true)))));
 
-        Toolkit toolkit = new UserToolkitFactory(investTools, repository, clientPool,
+        Toolkit toolkit = new UserToolkitFactory(investTools, repository, clientPool, passthroughCodec(),
                 mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
                 mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
                 mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
@@ -154,7 +167,7 @@ class UserToolkitFactoryTest {
         when(clientPool.acquire(provider, endpoint, "token")).thenReturn(client);
         when(client.listTools()).thenReturn(Mono.just(List.of(tool("trade_cal", annotations(true)))));
 
-        Toolkit toolkit = new UserToolkitFactory(investTools, repository, clientPool,
+        Toolkit toolkit = new UserToolkitFactory(investTools, repository, clientPool, passthroughCodec(),
                 mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
                 mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
                 mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
@@ -185,7 +198,7 @@ class UserToolkitFactoryTest {
         when(clientPool.acquire(provider, endpoint, null)).thenReturn(client);
         when(client.listTools()).thenReturn(Mono.just(List.of(tool("trade_cal", annotations(true)))));
 
-        Toolkit toolkit = new UserToolkitFactory(investTools, repository, clientPool,
+        Toolkit toolkit = new UserToolkitFactory(investTools, repository, clientPool, passthroughCodec(),
                 mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
                 mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
                 mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
@@ -210,7 +223,7 @@ class UserToolkitFactoryTest {
         when(repository.findByUserIdAndProviderId(1L, 2L)).thenReturn(Optional.of(config));
         when(repository.findEnabledEndpointsByProviderId(2L)).thenReturn(List.of());
 
-        Toolkit toolkit = new UserToolkitFactory(investTools, repository, clientPool,
+        Toolkit toolkit = new UserToolkitFactory(investTools, repository, clientPool, passthroughCodec(),
                 mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
                 mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
                 mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
@@ -243,7 +256,7 @@ class UserToolkitFactoryTest {
         when(clientB.listTools()).thenReturn(Mono.just(List.of(tool("b_tool", annotations(true)))));
         when(clientB.getName()).thenReturn("tushare-b");
 
-        Toolkit toolkit = new UserToolkitFactory(investTools, repository, clientPool,
+        Toolkit toolkit = new UserToolkitFactory(investTools, repository, clientPool, passthroughCodec(),
                 mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
                 mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
                 mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
@@ -261,7 +274,7 @@ class UserToolkitFactoryTest {
         McpClientPool clientPool = mock(McpClientPool.class);
         when(repository.findEnabledProviders()).thenReturn(List.of());
 
-        Toolkit toolkit = new UserToolkitFactory(investTools, repository, clientPool,
+        Toolkit toolkit = new UserToolkitFactory(investTools, repository, clientPool, passthroughCodec(),
                 mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
                 mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
                 mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
@@ -272,5 +285,74 @@ class UserToolkitFactoryTest {
                 "analyze_portfolio", "suggest_allocation", "research_draft", "search_news",
                 "search_announcements", "macro_brief");
         assertThat(names).as("7 既有 + 5 新 + research_draft + search_news + search_announcements + macro_brief（inline mock 保留 @Tool 注解扫描）").hasSize(16);
+    }
+
+    @DisplayName("token 为 v1 密文 → 解密后的明文进入客户端装配")
+    @Test
+    void givenEncryptedSecret_whenBuild_thenAcquireWithDecryptedToken() {
+        InvestTools investTools = mock(InvestTools.class);
+        McpConfigRepository repository = mock(McpConfigRepository.class);
+        McpClientPool clientPool = mock(McpClientPool.class);
+        McpClientWrapper client = mock(McpClientWrapper.class);
+        McpSecretCodec codec = mock(McpSecretCodec.class);
+
+        McpProvider provider = McpProvider.reconstitute(2L, "tushare", "Tushare", AuthType.BEARER, null, "v1:Ag==", true, null, NOW);
+        McpEndpoint endpoint = McpEndpoint.reconstitute(3L, 2L, null, "Tushare 数据", "https://api.tushare.pro/mcp/", true, NOW);
+        McpUserConfig config = McpUserConfig.reconstitute(9L, 1L, 2L, true, List.of(), 1, NOW, NOW);
+
+        when(repository.findEnabledProviders()).thenReturn(List.of(provider));
+        when(repository.findByUserIdAndProviderId(1L, 2L)).thenReturn(Optional.of(config));
+        when(repository.findEnabledEndpointsByProviderId(2L)).thenReturn(List.of(endpoint));
+        when(codec.decrypt("v1:Ag==")).thenReturn("plain-token");
+        // 装配必须拿解密后的明文（而非库内密文）——acquire 以 plain-token 打桩即证
+        when(clientPool.acquire(provider, endpoint, "plain-token")).thenReturn(client);
+        when(client.listTools()).thenReturn(Mono.just(List.of(tool("trade_cal", annotations(true)))));
+        when(client.getName()).thenReturn("tushare");
+
+        Toolkit toolkit = new UserToolkitFactory(investTools, repository, clientPool, codec,
+                mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
+                mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
+                mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
+                new com.fasterxml.jackson.databind.ObjectMapper()).build(1L);
+
+        assertThat(toolkit.getTool("trade_cal")).as("密文经解密后装配成功").isNotNull();
+    }
+
+    @DisplayName("token 解密失败 → 该 provider 跳过，其余 provider 照常装配")
+    @Test
+    void givenDecryptFails_whenBuild_thenProviderSkippedAndOthersWork() {
+        InvestTools investTools = mock(InvestTools.class);
+        McpConfigRepository repository = mock(McpConfigRepository.class);
+        McpClientPool clientPool = mock(McpClientPool.class);
+        McpClientWrapper clientB = mock(McpClientWrapper.class);
+        McpSecretCodec codec = mock(McpSecretCodec.class);
+
+        McpProvider providerA = McpProvider.reconstitute(2L, "tushare", "Tushare", AuthType.BEARER, null, "v1:broken", true, null, NOW);
+        McpEndpoint endpointA = McpEndpoint.reconstitute(3L, 2L, null, "Tushare 数据", "https://api.tushare.pro/mcp/", true, NOW);
+        McpProvider providerB = McpProvider.reconstitute(5L, "miaoxiang", "妙想", AuthType.HEADER, "X-Api-Key", "plain-b", true, null, NOW);
+        McpEndpoint endpointB = McpEndpoint.reconstitute(6L, 5L, null, "妙想数据", "https://mxapi.eastmoney.com/mxds/mcp", true, NOW);
+        McpUserConfig configA = McpUserConfig.reconstitute(9L, 1L, 2L, true, List.of(), 1, NOW, NOW);
+        McpUserConfig configB = McpUserConfig.reconstitute(10L, 1L, 5L, true, List.of(), 1, NOW, NOW);
+
+        when(repository.findEnabledProviders()).thenReturn(List.of(providerA, providerB));
+        when(repository.findByUserIdAndProviderId(1L, 2L)).thenReturn(Optional.of(configA));
+        when(repository.findByUserIdAndProviderId(1L, 5L)).thenReturn(Optional.of(configB));
+        when(repository.findEnabledEndpointsByProviderId(2L)).thenReturn(List.of(endpointA));
+        when(repository.findEnabledEndpointsByProviderId(5L)).thenReturn(List.of(endpointB));
+        when(codec.decrypt("v1:broken")).thenThrow(new McpException(McpErrorCode.SECRET_DECRYPT_FAILED, "token 解密失败（密钥不匹配或载荷损坏）"));
+        when(codec.decrypt("plain-b")).thenReturn("plain-b");
+        when(clientPool.acquire(providerB, endpointB, "plain-b")).thenReturn(clientB);
+        when(clientB.listTools()).thenReturn(Mono.just(List.of(tool("mx_tool", annotations(true)))));
+        when(clientB.getName()).thenReturn("miaoxiang");
+
+        Toolkit toolkit = new UserToolkitFactory(investTools, repository, clientPool, codec,
+                mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
+                mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
+                mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
+                new com.fasterxml.jackson.databind.ObjectMapper()).build(1L);
+
+        assertThat(toolkit.getTool("mx_tool")).as("解密失败只跳过故障 provider，其余照常").isNotNull();
+        verify(clientPool, never()).acquire(org.mockito.ArgumentMatchers.eq(providerA),
+                org.mockito.ArgumentMatchers.eq(endpointA), any());
     }
 }

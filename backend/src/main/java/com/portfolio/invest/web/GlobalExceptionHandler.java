@@ -47,6 +47,9 @@ public class GlobalExceptionHandler {
             case McpErrorCode.PROVIDER_NOT_FOUND, McpErrorCode.CONFIG_NOT_FOUND -> HttpStatus.NOT_FOUND;
             case McpErrorCode.INVALID_INPUT -> HttpStatus.BAD_REQUEST;
             case McpErrorCode.CONNECTION_FAILED -> HttpStatus.BAD_GATEWAY;
+            // P1-10：密钥未配置 = 服务端配置缺失（503，同 MAIL_NOT_CONFIGURED 口径）；解密失败不该达 REST，兜底 500
+            case McpErrorCode.SECRET_KEY_MISSING -> HttpStatus.SERVICE_UNAVAILABLE;
+            case McpErrorCode.SECRET_DECRYPT_FAILED -> HttpStatus.INTERNAL_SERVER_ERROR;
             default -> HttpStatus.BAD_REQUEST;
         };
         return ResponseEntity.status(status).body(new ApiError(e.code(), e.getMessage()));

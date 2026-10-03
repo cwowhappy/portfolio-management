@@ -77,4 +77,27 @@ test.describe("管理后台用户操作", () => {
     await expect(page).toHaveURL("/", { timeout: 15_000 });
     await expect(page.getByText("问行情 · 看走势 · 读财报")).toBeVisible({ timeout: 15_000 });
   });
+
+  // P1-10：MCP 数据源 token 设置（依赖 e2e-backend.sh 注入的 MCP_SECRET_KEY 测试密钥）。
+  // 副作用提示（终审 Important 3）：本用例会把用测试密钥加密的密文写进后端所连库的 tushare 行——
+  // CI 的 DB 为临时库无影响；本地连常驻 dev 库时跑后 tushare 会因密钥不匹配被装配跳过，
+  // 恢复：psql -d invest -c "UPDATE mcp_provider SET auth_secret_enc = NULL WHERE code='tushare';"
+  test("管理员可设置 MCP 数据源 token（密文落库，不回显）", async ({ page }) => {
+    await adminLogin(page);
+    await page.goto("/admin");
+
+    const section = page.locator('section[aria-label="MCP 数据源 Token"]');
+    await expect(section).toBeVisible({ timeout: 15_000 });
+    const row = section.locator('[data-testid="mcp-provider-tushare"]');
+    await expect(row).toBeVisible();
+
+    await row.getByPlaceholder("输入新 token").fill("e2e-token-plain");
+    await row.getByRole("button", { name: "保存" }).click();
+
+    // 成功提示 + 状态点翻「已设置」+ 输入清空（界面永不回显已存值）
+    await expect(page.getByText(/token 已更新/)).toBeVisible({ timeout: 10_000 });
+    await expect(row.getByText(/已设置/)).toBeVisible();
+    await expect(row.getByPlaceholder("输入新 token")).toHaveValue("");
+    await logout(page);
+  });
 });

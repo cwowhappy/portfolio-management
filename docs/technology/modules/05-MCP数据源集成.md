@@ -10,7 +10,7 @@
 
 - **内置 provider 目录**：妙想（东方财富 mx-ds）/ Tushare / Wind 三家由 `V1__baseline.sql`（原 V10__mcp.sql）seed，用户**不可自定义 server**——`McpConfigController` 只读目录（`GET /providers`）+ 维护个人配置（`PUT/DELETE /configs`），无新增 provider 端点。
 - **用户级粒度**：用户按 provider 启用/停用，并可禁用 provider 内单个工具（`disabled_tools`）；Agent 每次对话按当前用户装配。
-- **Token 治理**：provider 的 `auth_secret_enc` 在迁移 seed 中一律 **NULL 占位**——真实 token 绝不随迁移进 git，部署时 `UPDATE mcp_provider` 填充。
+- **Token 治理**：provider 的 `auth_secret_enc` 在迁移 seed 中一律 **NULL 占位**——真实 token 绝不随迁移进 git。**P1-10（2026-10-03）后推荐管理员经 `/admin` 页「MCP 数据源 Token」设置**（`PUT /api/admin/mcp/providers/{code}/token`，AES-256-GCM 密文落库）；SQL 明文直填降为应急回退（存量明文直读兼容，warn 提示覆写）。
 
 ## 2. 架构与数据流
 
@@ -74,7 +74,7 @@ invest:
     harness: ...             # HarnessAgent workspace/state/compaction/memory（见 01-Agent实现.md）
 ```
 
-Token 读取：`UserToolkitFactory` 直接取 `provider.authSecretEnc()` 明文作 token 传给客户端与测试器——一期取舍，列名预留加密位但未实现加密（见 §7）。
+Token 读取：`UserToolkitFactory` 与连接测试经 `McpSecretCodec.decrypt(provider.authSecretEnc())` 取明文（P1-10 已交付）：`v1:` 前缀密文按 `MCP_SECRET_KEY`（base64 32B，缺失不阻断启动、调用时报 `SECRET_KEY_MISSING`）AES-256-GCM 解密，解密失败跳过该 provider；无前缀存量明文直读（warn 一次）。写入仅 admin 端点（加密后落库，无回显）。
 
 ## 4. 端点（统一前缀 `/api/mcp`，全部需登录——不在 `PublicEndpointPaths` 公开清单）
 
@@ -102,8 +102,8 @@ Token 读取：`UserToolkitFactory` 直接取 `provider.authSecretEnc()` 明文�
 
 ## 6. 已知限制
 
-- **Token 明文**：`auth_secret_enc` 存明文、代码直读（`UserToolkitFactory` 装配与连接测试两处）；加密/密管接入为后续项，列名已预留。
+- **Token 加密已交付（P1-10）**：`v1:` 前缀 AES-256-GCM 密文（admin 端点写入），存量无前缀明文直读兼容（每值一次 warn）——迁移期口径：上线后尽快经 admin 页覆写。密钥轮换机制未做（前缀已留余地）。
 - **`tool-timeout`/`pool-max-size` 声明未接线**：两个键仅在 `InvestProperties.Mcp` 声明，主代码无消费方——工具调用超时与客户端池上限实际由 AgentScope 客户端默认值决定；池目前按端点无上限缓存。
-- **Token 更新需重启**：客户端按端点缓存且不失效，部署时 UPDATE token 后已建连接仍用旧值。
+- **Token 更新需重启**：客户端按端点缓存且不失效，admin 页更换 token 后已建连接仍用旧值，重启后端生效。
 - **不可自定义 server**：设计取舍（目录 = 管理面数据，用户只做启用/禁用）；接入新 provider 需 DB 加目录 + 发版。
 - **失败静默降级**：装配期端点失败仅 `log.warn` 跳过，对话内无感知（工具就是不在清单里）。

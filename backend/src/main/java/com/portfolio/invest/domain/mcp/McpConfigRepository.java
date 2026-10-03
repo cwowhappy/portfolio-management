@@ -13,6 +13,9 @@ public interface McpConfigRepository {
     McpUserConfig save(McpUserConfig config);
     void deleteByUserIdAndProviderId(Long userId, Long providerId);
 
+    /** 管理员设置 provider token（P1-10）：authSecretEnc 由应用层加密后传入。 */
+    void updateProviderSecret(Long providerId, String authSecretEnc);
+
     // e2e 种子用（HitlE2eSeedRunner，env 门控）：按自然键幂等
     Optional<McpProvider> findProviderByCode(String code);
     void upsertSeedProvider(McpProvider provider);
