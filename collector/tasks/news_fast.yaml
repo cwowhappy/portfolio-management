@@ -1,0 +1,21 @@
+task_code: news_fast
+task_name: 财经新闻采集-日间高频
+# MS-20 设计 D1/§6：东财 7×24 快讯主源 → 新浪 zhibo 降级源（selector 顺序即降级顺序），
+# DB source 列值（eastmoney_724/sina_zhibo）≠ registry key。*/10 增量：分页至首个已存
+# external_id 截断，同表 UPSERT 幂等去重（冲突键 source+external_id）。
+source_ids:
+  - { source_id: eastmoney_fast_news, type: plugin, class: eastmoney_fast_news }
+  - { source_id: sina_zhibo_news, type: plugin, class: sina_zhibo_news }
+converter: field_mapping_news
+calc: null
+validator:
+  - { field: external_id, check: required, level: hard }
+  - { field: title, check: required, level: hard }
+  - { field: published_at, check: not_null, level: hard }
+target_table: intelligence_news_raw
+schedule: { type: cron, cron: "*/10 7-23 * * *" }
+enabled: true
+# 新闻发布跨非交易日（设计 §6：全部情报任务 trading_day_gated: false）
+trading_day_gated: false
+retry_max: 2
+retry_backoff: fixed

@@ -25,7 +25,8 @@ class UserInvestToolsTest {
     private final PortfolioApplicationService portfolio = mock(PortfolioApplicationService.class);
     private final AllocationApplicationService allocation = mock(AllocationApplicationService.class);
     private final ObjectMapper mapper = new ObjectMapper();
-    private final UserInvestTools tools = new UserInvestTools(7L, portfolio, allocation, mapper);
+    private final UserInvestTools tools = new UserInvestTools(7L, portfolio, allocation,
+            mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class), mapper);
 
     @DisplayName("analyze_portfolio：emit 饼图，摘要含总资产/集中度；userId 从构造器传导")
     @Test

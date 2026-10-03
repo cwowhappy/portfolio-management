@@ -1,0 +1,138 @@
+# 抽取质量 eval 题库（D21，Task 13）：样本自拟、语体真实感（真实财经快讯语体，数字自洽）。
+# expect 口径（与 ExtractionEvalRunner 的比对实现对齐）：
+#   stock_codes —— 全集相等断言（空数组 = 断言抽取不到任何标的）
+#   direction   —— BULLISH/BEARISH/NEUTRAL 三选一断言；null = 不断言（容忍不确定/方向不明题）
+#   importance  —— 期望档位 MAJOR/WATCH/IGNORE（80/50 阈值判档；跨档但分数落在阈值 ±10 内按容差不计错）
+#   event_type  —— 期望英文标签精确断言（大小写不敏感）；null = 不断言
+# 覆盖：重大利好（政策/业绩）、重大利空（暴雷/减持）、中性公告、多标的命中、无标的宏观消息、
+#       低重要度水闻、长摘要、方向不明。
+- id: news-001-policy-reserve-ratio-cut
+  title: 央行宣布全面降准50个基点 预计释放长期资金约1万亿元
+  summary: >-
+    中国人民银行发布公告，决定自2026年10月15日起下调金融机构存款准备金率0.5个百分点
+    （不含已执行5%存款准备金率的金融机构）。本次降准预计向金融市场释放长期资金约1万亿元，
+    每年可降低金融机构资金成本约150亿元。央行同日开展3000亿元中期借贷便利（MLF）操作，
+    中标利率维持2.00%不变。
+  expect:
+    stock_codes: []
+    direction: null
+    importance: MAJOR
+    event_type: null
+
+- id: news-002-earnings-beat-with-dividend
+  title: 贵州茅台年报：营收1741亿元同比增15.66% 净利862亿元超预期 拟10派276.24元
+  summary: >-
+    贵州茅台（600519）披露2025年年度报告：实现营业总收入1741.44亿元，同比增长15.66%；
+    归属于上市公司股东的净利润862.28亿元，同比增长15.38%，业绩超出市场预期。公司同时公告
+    2025年度利润分配预案：每10股派发现金红利276.24元（含税），合计分红约346亿元，
+    分红率进一步提升至40%。
+  expect:
+    stock_codes: ["600519"]
+    direction: BULLISH
+    importance: MAJOR
+    event_type: EARNINGS
+
+- id: news-003-audit-disclaimer-delisting-risk
+  title: "*ST左江年报被出具无法表示意见审计报告 股票面临终止上市风险"
+  summary: >-
+    *ST左江（300799）公告，公司2025年年度报告被会计师事务所出具无法表示意见的审计报告；
+    因连续两个会计年度经审计的净利润为负值且营业收入低于3亿元，公司股票自年报披露之日起
+    被继续实施退市风险警示，若下一会计年度仍不满足撤销条件，公司股票将面临终止上市。
+    此前公司及实际控制人已因涉嫌信息披露违法违规被中国证监会立案调查。
+  expect:
+    stock_codes: ["300799"]
+    direction: BEARISH
+    importance: MAJOR
+    event_type: LEGAL
+
+- id: news-004-major-holder-reduction
+  title: 宁德时代：持股5%以上股东拟减持不超过公司总股本的2%
+  summary: >-
+    宁德时代（300750）公告，持股5%以上股东计划自公告披露之日起15个交易日后的3个月内，
+    以集中竞价方式或大宗交易方式合计减持公司股份不超过公司总股本的2%，按最新收盘价计算
+    涉及市值约200亿元，减持原因披露为自身资金需求。
+  expect:
+    stock_codes: ["300750"]
+    direction: BEARISH
+    importance: WATCH
+    event_type: null
+
+- id: news-005-neutral-cash-management
+  title: 中国平安：使用不超过8亿元闲置募集资金进行现金管理
+  summary: >-
+    中国平安（601318）公告，公司将使用不超过人民币8亿元的暂时闲置募集资金进行现金管理，
+    投资于期限不超过12个月、安全性高且流动性好的保本型产品。公告称本次现金管理不会影响
+    募集资金投资项目的正常实施进度，资金将按计划分期滚动使用。
+  expect:
+    stock_codes: ["601318"]
+    direction: NEUTRAL
+    importance: IGNORE
+    event_type: OTHER
+
+- id: news-006-multi-target-pv-covenant
+  title: 光伏头部企业签署行业自律公约 隆基绿能、通威股份、TCL中环协商下调开工率至70%
+  summary: >-
+    中国光伏行业协会组织召开行业座谈会，隆基绿能（601012）、通威股份（600438）、
+    TCL中环（002129）等头部企业现场签署行业自律公约，承诺遏制低于成本价的销售行为，
+    并协商将各自主导产品的产能开工率下调至70%左右，以缓解多晶硅、硅片环节价格持续下跌
+    的压力。协会表示后续将建立产能与价格信息共享机制。
+  expect:
+    stock_codes: ["601012", "600438", "002129"]
+    direction: BULLISH
+    importance: WATCH
+    event_type: null
+
+- id: news-007-low-importance-trivia
+  title: 某头部券商研究所年度策略会在沪举行 会后组织机构投资者交流晚宴
+  summary: >-
+    某头部券商研究所年度投资策略会在上海举行，多位首席分析师出席并围绕明年宏观经济与
+    市场风格作了主题分享。会议间隙主办方组织了机构投资者交流晚宴，多家买方机构研究人员
+    在席间进行了非正式交流，未披露任何具体研究观点或盈利预测数据。
+  expect:
+    stock_codes: []
+    direction: null
+    importance: IGNORE
+    event_type: null
+
+- id: news-008-long-summary-monthly-sales
+  title: 比亚迪10月产销快报：新能源车销量50.3万辆同比增38.6% 1-10月累计423.4万辆
+  summary: >-
+    比亚迪（002594）发布2026年10月产销快报：当月新能源汽车产量52.1万辆，同比增长37.4%；
+    销量50.3万辆，同比增长38.6%，其中纯电动乘用车21.2万辆，插电式混合动力乘用车29.1万辆，
+    商用车0.4万辆。海外销售新能源乘用车合计3.1万辆，环比增长4.2%，继续刷新单月海外销量
+    纪录。1-10月累计新能源汽车销量423.4万辆，同比增长36.5%，已完成年度销量目标510万辆的
+    83.0%。公司同日披露拟以不超过50亿元自有资金回购公司A股股份，用于实施员工持股计划，
+    回购价格上限为董事会决议前30个交易日均价的150%。
+  expect:
+    stock_codes: ["002594"]
+    direction: BULLISH
+    importance: WATCH
+    # 产销快报的 event_type 无唯一正解（真跑中模型在 EARNINGS/SALES 间摆动，两者均成立）——
+    # 标签仅 exemplar 词表非受控枚举，event_type 只在标签无歧义处断言（如年报→EARNINGS）
+    event_type: null
+
+- id: news-009-ambiguous-direction-placement
+  title: 中芯国际拟定增募资不超80亿元投向12英寸晶圆代工产能扩建
+  summary: >-
+    中芯国际（688981）披露向特定对象发行A股股票预案，拟募集资金总额不超过80亿元，
+    扣除发行费用后将全部用于12英寸晶圆代工产能扩建项目。公告提示本次发行完成后公司
+    净资产规模将大幅增加，短期内每股收益可能被摊薄；同时表示项目达产后将有效缓解
+    先进制程产能瓶颈，提升在手订单交付能力。
+  expect:
+    stock_codes: ["688981"]
+    direction: null
+    importance: WATCH
+    event_type: null
+
+- id: news-010-macro-fed-hold
+  title: 美联储维持联邦基金利率4.25%-4.50%不变 点阵图显示年内或再降息一次
+  summary: >-
+    美联储结束为期两天的议息会议，宣布将联邦基金利率目标区间维持在4.25%-4.50%不变，
+    为连续第三次按兵不动。更新的点阵图显示多数官员预计年内仍将降息一次，主席鲍威尔在
+    新闻发布会上表示"通胀回落进程仍在轨道上，但进一步降息的节奏与路径将依赖后续数据"。
+    决议公布后美股三大股指窄幅震荡，美元指数小幅走低。
+  expect:
+    stock_codes: []
+    direction: null
+    importance: WATCH
+    event_type: MACRO

@@ -1,0 +1,114 @@
+# 政策事件抽取质量 eval 题库（MS-22 Task 8）：样本自拟、语体真实感（政策标题 + 正文段落，
+# 含具体政策工具与力度语——降准基点/再贷款利率定向下调/杠杆监管比例/稳健基调表述）。
+# kind: policy（缺省 news——新闻题见 news-001.yaml、公告题见 announcement-001.yaml），
+# 主输入 content_text（政策正文段，提示词层截前 6000 字符）。
+# expect 口径（与 ExtractionEvalRunner 的政策比对实现对齐）：
+#   policy_direction —— EASING/TIGHTENING/NEUTRAL 三选一断言；null = 不断言（容忍不确定）
+#   strength        —— HIGH/MEDIUM/LOW 三选一断言；null = 不断言
+#   confidence      —— HIGH/LOW 二选一断言；null = 不断言
+#   affected_areas  —— 期望集 ⊆ 实际集（部分命中，允许多；缺失 = 不断言）
+#   is_policy       —— 与抽取 isPolicy 一致断言（false = 非政策兜底行：PolicyExtractor 哨兵置换
+#                      direction=NEUTRAL/strength=LOW/confidence=LOW/summary=固定文案落库而非丢弃，
+#                      期望哨兵枚举值即守护该转换链）
+# 覆盖：宽松（全面降准 HIGH / 定向再贷款降息 LOW——三档力度取二）、收紧（杠杆监管新规
+#       TIGHTENING/HIGH）、中性（货政报告既不宽松也不收紧表述 MEDIUM）、非政策类
+#       （领导调研活动 → isPolicy=false 哨兵转换）。affected_areas 为 LLM 自由短语
+#       （实际产出如「银行体系流动性」），仅在措辞与提示词示例短语强对齐时断言（资本市场），
+#       其余题不断言该维度（SKIP）留报告人工抽阅。
+- id: policy-001-reserve-ratio-cut-easing-high
+  kind: policy
+  title: 中国人民银行决定下调金融机构存款准备金率0.5个百分点
+  content_text: |-
+    中国人民银行公告〔2026〕第12号
+
+    为保持银行体系流动性合理充裕，加大对实体经济的支持力度，中国人民银行决定，自2026年
+    10月15日起，下调金融机构存款准备金率0.5个百分点（不含已执行5%存款准备金率的金融
+    机构）。本次为全面降准，涉及全部重量级存款类金融机构，预计向金融市场释放长期资金
+    约1万亿元，每年可降低金融机构资金成本约150亿元。
+
+    中国人民银行将坚持支持性的货币政策立场，加大货币政策调控强度，保持流动性合理充裕，
+    促进货币信贷平稳增长，着力为实体经济创造良好的货币金融环境。
+  expect:
+    policy_direction: EASING
+    strength: HIGH
+    confidence: HIGH
+    is_policy: true
+
+- id: policy-002-targeted-relending-rate-cut-low
+  kind: policy
+  title: 中国人民银行决定下调支农支小再贷款利率0.25个百分点
+  content_text: |-
+    为进一步加大对乡村振兴和小微企业的金融支持力度，中国人民银行决定，自2026年11月1日起，
+    下调支农再贷款、支小再贷款利率各0.25个百分点，调整后3个月、6个月、1年期支农再贷款
+    利率分别为1.25%、1.45%、1.65%，支小再贷款利率同步执行。
+
+    本次调整为结构性货币政策工具的定向安排，仅涉及支农支小再贷款利率，其他政策利率
+    保持不变。金融机构运用再贷款资金发放的涉农、小微企业贷款，须严格落实利率传导要求，
+    切实降低相关市场主体综合融资成本。
+  expect:
+    policy_direction: EASING
+    strength: LOW
+    confidence: HIGH
+    is_policy: true
+
+- id: policy-003-margin-requirement-tightening
+  kind: policy
+  title: 中国证监会关于调整融资融券保证金最低比例的通知
+  content_text: |-
+    中国证监会公告〔2026〕15号
+
+    为防范两融业务风险、抑制市场过度杠杆，现就融资融券保证金最低比例调整事项通知如下：
+
+    一、自2026年11月1日起，投资者融资买入证券时，融资保证金最低比例由80%上调至100%，
+    适用于全部证券公司的全部融资合约。
+
+    二、证券公司应当加强客户适当性管理，严格审核客户信用账户资质，不得为不符合要求的
+    投资者新开融资融券信用账户。
+
+    三、各证券公司应于本通知发布之日起30日内完成风控系统参数调整，中国证监会及其派出
+    机构将对执行情况开展现场检查。
+  expect:
+    policy_direction: TIGHTENING
+    strength: HIGH
+    confidence: HIGH
+    affected_areas: ["资本市场"]
+    is_policy: true
+
+- id: policy-004-policy-report-neutral-stance
+  kind: policy
+  title: 中国人民银行发布2026年第三季度中国货币政策执行报告
+  content_text: |-
+    中国人民银行今日发布《2026年第三季度中国货币政策执行报告》。报告指出，第三季度以来
+    货币信贷保持平稳增长，社会融资规模、货币供应量同经济增长和价格水平预期目标基本匹配。
+
+    报告重申，下一阶段将保持稳健的货币政策，保持政策的连续性、稳定性、可持续性，
+    既不搞「大水漫灌」式的全面宽松，也不搞政策的骤然收紧，综合运用公开市场操作、
+    中期借贷便利等工具保持银行体系流动性合理充裕，引导市场利率围绕政策利率平稳运行，
+    使社会融资规模、货币供应量增长与经济增长和价格水平预期目标相匹配。同时，把握好
+    利率、汇率的内外均衡，加强政策协调，推动经济运行在合理区间。
+
+    报告同时设专栏讨论了存款利率市场化改革进展与商业银行净息差运行情况。
+  expect:
+    policy_direction: NEUTRAL
+    strength: MEDIUM
+    confidence: HIGH
+    is_policy: true
+
+- id: policy-005-governor-inspection-non-policy
+  kind: policy
+  title: 中国人民银行行长在江苏调研金融支持科技创新工作并召开座谈会
+  content_text: |-
+    10月20日至21日，中国人民银行行长率调研组赴江苏南京、苏州两地，深入科技园区、
+    高新技术企业调研金融支持科技创新情况，并主持召开金融机构座谈会。
+
+    行长实地考察了园区内半导体、生物医药领域多家企业的研发生产情况，与企业负责人和
+    一线科研人员深入交流，了解科技型企业融资需求与金融服务堵点。座谈会上，部分银行业
+    金融机构负责同志汇报了科技金融业务开展情况，行长认真听取发言并就完善科技金融
+    服务体系与大家深入讨论。
+
+    中国人民银行有关司局负责同志、江苏省有关方面负责同志陪同调研并参加座谈会。
+  expect:
+    policy_direction: NEUTRAL
+    strength: LOW
+    confidence: LOW
+    is_policy: false

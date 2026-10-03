@@ -1,0 +1,24 @@
+task_code: macro_afmi
+task_name: 宏观指标采集-社融增量(双源)
+# MS-22 设计 §6/D19：社融主源 socfin（调查统计司 pboc_xlsx，indicator=AFMI）→
+# M2 备源 m2（indicator=M2，**不冒充 AFMI**——月度粒度每期仅一口径落库）。selector
+# 顺序即降级顺序：主源请求级失败自动落备源、恢复自动回主；社融 12 日发布，
+# 12~16 日窗口幂等多跑。降级留痕由 backend MacroHealthService 巡检判定（D19 拆分）。
+source_ids:
+  - { source_id: socfin, type: plugin, class: socfin }
+  - { source_id: m2, type: plugin, class: m2 }
+converter: field_mapping_macro
+calc: null
+# 同族 validator：value not_null hard + |value|<10^8 soft（社融增量月千亿量级、M2 余额
+# ~3e6 亿元，均远小于上界）
+validator:
+  - { field: indicator, check: required, level: hard }
+  - { field: period, check: required, level: hard }
+  - { field: value, check: not_null, level: hard }
+  - { field: value, check: range, min: -99999999, max: 99999999, level: soft }
+target_table: intelligence_macro_series
+schedule: { type: cron, cron: "0 11 12-16 * *" }
+enabled: true
+trading_day_gated: false
+retry_max: 2
+retry_backoff: fixed

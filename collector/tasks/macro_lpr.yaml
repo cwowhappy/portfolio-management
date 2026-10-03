@@ -1,0 +1,21 @@
+task_code: macro_lpr
+task_name: 宏观指标采集-LPR报价利率
+# MS-22 设计 §6：央行 3876551 栏目（Task 2 pboc_text 形态），**日频**期别（period=
+# YYYY-MM-DD、period_type=DAY）从公告标题取（slug 为建页时间戳 ≠ 发布日，探测报告
+# §2 坑）；20 日发布遇节假日顺延至下一工作日，21~22 日窗口兜顺延。
+source_ids:
+  - { source_id: lpr, type: plugin, class: lpr }
+converter: field_mapping_macro
+calc: null
+# 同族 validator：value not_null hard + |value|<10^8 soft（LPR 3% 量级）
+validator:
+  - { field: indicator, check: required, level: hard }
+  - { field: period, check: required, level: hard }
+  - { field: value, check: not_null, level: hard }
+  - { field: value, check: range, min: -99999999, max: 99999999, level: soft }
+target_table: intelligence_macro_series
+schedule: { type: cron, cron: "0 10 21-22 * *" }
+enabled: true
+trading_day_gated: false
+retry_max: 2
+retry_backoff: fixed

@@ -13,7 +13,7 @@ import FalsifierPanel from "@/components/research/FalsifierPanel";
 import ReviewPanel from "@/components/research/ReviewPanel";
 import StageProgress from "@/components/research/StageProgress";
 import StrategyPanel from "@/components/research/StrategyPanel";
-import { archiveProject, getLinkedNotes, getLinkedWiki, getProject, patchProject } from "@/lib/researchApi";
+import { archiveProject, getLinkedNotes, getLinkedWiki, getProject, patchProject, setIntelligenceAlert } from "@/lib/researchApi";
 import { JOURNAL_ENTRY_TYPE_LABELS } from "@/lib/journalApi";
 import {
   MANUAL_STATE_LABELS,
@@ -44,6 +44,7 @@ function ProjectDetail({ projectId }: { projectId: number }) {
   // 项目信息编辑
   const [titleDraft, setTitleDraft] = useState("");
   const [stageDraft, setStageDraft] = useState<ResearchStage>("NEW_ANALYSIS");
+  const [alertDraft, setAlertDraft] = useState(true);
   const [markStage, setMarkStage] = useState<ResearchStage>("NEW_ANALYSIS");
   const [actionError, setActionError] = useState<string | null>(null);
   const [acting, setActing] = useState(false);
@@ -76,6 +77,7 @@ function ProjectDetail({ projectId }: { projectId: number }) {
     if (detail) {
       setTitleDraft(detail.project.title);
       setStageDraft(detail.project.currentStage);
+      setAlertDraft(detail.project.intelligenceAlertEnabled);
     }
   }
 
@@ -102,6 +104,13 @@ function ProjectDetail({ projectId }: { projectId: number }) {
   const changeStage = () =>
     void runAction(async () => {
       setDetail(await patchProject(projectId, { currentStage: stageDraft }));
+    });
+
+  // 情报提醒开关（M16-F11 回收）：保存产物直接回填 detail.project（不整页重载）
+  const saveAlert = () =>
+    void runAction(async () => {
+      const updated = await setIntelligenceAlert(projectId, alertDraft);
+      setDetail((d) => (d ? { ...d, project: updated } : d));
     });
 
   const manualMark = (state: ManualState) =>
@@ -184,6 +193,25 @@ function ProjectDetail({ projectId }: { projectId: number }) {
             onClick={changeStage}
           >
             切换阶段
+          </button>
+          {/* 情报提醒开关（M16-F11 回收，D13 默认开）：关即从持仓情报挂接消失 */}
+          <label className="flex items-center gap-2 pb-1.5 text-sm text-[color:var(--color-ink-dim)]" htmlFor="intelligence-alert">
+            <input
+              id="intelligence-alert" aria-label="情报提醒"
+              type="checkbox"
+              className="size-4 accent-[color:var(--color-accent)]"
+              checked={alertDraft}
+              disabled={acting}
+              onChange={(e) => setAlertDraft(e.target.checked)}
+            />
+            情报提醒
+          </label>
+          <button
+            type="button" className={btnGhost}
+            disabled={acting || alertDraft === project.intelligenceAlertEnabled}
+            onClick={saveAlert}
+          >
+            保存开关
           </button>
           {project.status === "ACTIVE" && (
             <button

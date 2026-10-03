@@ -72,6 +72,7 @@ class ResearchProjectRepositoryImplTest {
         assertThat(found.title()).isEqualTo("茅台新分析");
         assertThat(found.currentStage()).isEqualTo(ResearchStage.NEW_ANALYSIS);
         assertThat(found.status()).isEqualTo(ProjectStatus.ACTIVE);
+        assertThat(found.intelligenceAlertEnabled()).isTrue(); // V3 列默认 TRUE（决策 #26）
         assertThat(found.version()).isEqualTo(0L);
         assertThat(found.createdAt()).isEqualTo(saved.createdAt());
         assertThat(found.updatedAt()).isEqualTo(saved.updatedAt());
@@ -83,6 +84,16 @@ class ResearchProjectRepositoryImplTest {
         assertThat(reloaded.currentStage()).isEqualTo(ResearchStage.STRATEGY);
         assertThat(reloaded.status()).isEqualTo(ProjectStatus.ARCHIVED);
         assertThat(reloaded.version()).isEqualTo(1L);
+
+        // 情报提醒开关往返（M16-F11）：wither 关闭回存、重载为 FALSE、再开恢复
+        ResearchProject disabled = repository.save(reloaded.withIntelligenceAlert(false));
+        assertThat(disabled.intelligenceAlertEnabled()).isFalse();
+        assertThat(repository.findById(saved.id()).orElseThrow().intelligenceAlertEnabled()).isFalse();
+        Boolean columnValue = jdbcTemplate.queryForObject(
+                "SELECT intelligence_alert_enabled FROM research_project WHERE id = ?",
+                Boolean.class, saved.id());
+        assertThat(columnValue).isFalse(); // 列级落库（持仓情报挂接 SQL 消费口径）
+        assertThat(repository.save(disabled.withIntelligenceAlert(true)).intelligenceAlertEnabled()).isTrue();
     }
 
     @DisplayName("按用户与状态查询：updatedAt 倒序、状态过滤、用户隔离")

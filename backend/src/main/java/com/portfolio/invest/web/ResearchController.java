@@ -6,6 +6,7 @@ import com.portfolio.invest.application.research.ResearchApplicationService.Crea
 import com.portfolio.invest.application.research.ResearchApplicationService.PreviewCheckCommand;
 import com.portfolio.invest.application.research.ResearchApplicationService.SaveEntryPlanCommand;
 import com.portfolio.invest.application.research.ResearchApplicationService.SaveFalsifierItem;
+import com.portfolio.invest.application.research.ResearchApplicationService.SetIntelligenceAlertCommand;
 import com.portfolio.invest.application.research.ResearchApplicationService.SubmitCheckCommand;
 import com.portfolio.invest.application.research.ResearchApplicationService.SubmitFeedbackCommand;
 import com.portfolio.invest.application.research.ResearchApplicationService.SubmitFalsifierReviewCommand;
@@ -81,6 +82,13 @@ public class ResearchController {
     @PostMapping("/projects/{projectId}/archive")
     public ProjectView archiveProject(Authentication auth, @PathVariable Long projectId) {
         return service.archiveProject(currentUserId(auth), projectId);
+    }
+
+    /** 情报提醒开关（M16-F11 回收）：body {enabled}；非本人/不存在 → 404；enabled 缺失 → 400。 */
+    @PutMapping("/projects/{projectId}/intelligence-alert")
+    public ProjectView setIntelligenceAlert(Authentication auth, @PathVariable Long projectId,
+                                            @Valid @RequestBody SetIntelligenceAlertCommand cmd) {
+        return service.setIntelligenceAlert(currentUserId(auth), projectId, cmd);
     }
 
     @GetMapping("/projects/{projectId}/strategy")

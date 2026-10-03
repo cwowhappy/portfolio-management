@@ -83,6 +83,7 @@ class ResearchControllerIntegrationTest extends PostgresTestSupport {
                 .andExpect(jsonPath("$.title").value("茅台扩产研究"))
                 .andExpect(jsonPath("$.currentStage").value("NEW_ANALYSIS"))
                 .andExpect(jsonPath("$.status").value("ACTIVE"))
+                .andExpect(jsonPath("$.intelligenceAlertEnabled").value(true)) // 决策 #26 默认开
                 .andReturn();
         long projectId = ((Number) JsonPath.read(created.getResponse().getContentAsString(), "$.id")).longValue();
 
@@ -236,6 +237,61 @@ class ResearchControllerIntegrationTest extends PostgresTestSupport {
                 .andExpect(jsonPath("$[0].id").value((int) projectId));
     }
 
+    @DisplayName("情报提醒开关端点（M16-F11）：PUT 落库回读 + enabled 缺失/null 400 + 列表视图携带开关位")
+    @Test
+    void givenProject_whenPutIntelligenceAlert_thenPersistedReflectedAndValidated() throws Exception {
+        register("res_alert_a", "abc12345");
+        approve("res_alert_a");
+        MockHttpSession session = login("res_alert_a", "abc12345");
+        MvcResult created = mockMvc.perform(post("/api/research/projects").session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"stockCode\":\"600519\",\"stockName\":\"贵州茅台\",\"title\":\"开关验证\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.intelligenceAlertEnabled").value(true))
+                .andReturn();
+        long projectId = ((Number) JsonPath.read(created.getResponse().getContentAsString(), "$.id")).longValue();
+
+        // PUT 关 → 200 且视图回读 FALSE；详情/列表同位携带
+        mockMvc.perform(put("/api/research/projects/{id}/intelligence-alert", projectId).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"enabled\":false}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value((int) projectId))
+                .andExpect(jsonPath("$.intelligenceAlertEnabled").value(false));
+        mockMvc.perform(get("/api/research/projects/{id}", projectId).session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.project.intelligenceAlertEnabled").value(false));
+        mockMvc.perform(get("/api/research/projects").session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].intelligenceAlertEnabled").value(false));
+        Boolean column = jdbcTemplate.queryForObject(
+                "SELECT intelligence_alert_enabled FROM research_project WHERE id = ?",
+                Boolean.class, projectId);
+        org.assertj.core.api.Assertions.assertThat(column).isFalse(); // 列级落库（持仓挂接 SQL 口径）
+
+        // PUT 开 → 恢复 TRUE
+        mockMvc.perform(put("/api/research/projects/{id}/intelligence-alert", projectId).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"enabled\":true}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.intelligenceAlertEnabled").value(true));
+
+        // 校验 400：enabled 缺失 / 显式 null（@NotNull wire 校验 → INVALID_REQUEST），不落库
+        mockMvc.perform(put("/api/research/projects/{id}/intelligence-alert", projectId).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+        mockMvc.perform(put("/api/research/projects/{id}/intelligence-alert", projectId).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"enabled\":null}"))
+                .andExpect(status().isBadRequest());
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                        "SELECT intelligence_alert_enabled FROM research_project WHERE id = ?",
+                        Boolean.class, projectId))
+                .isTrue();
+    }
+
     @DisplayName("非本人项目全端点 404 隔离（不泄漏存在性）；未登录 401")
     @Test
     void givenOthersProject_whenAccessAnyEndpoint_then404ForAll() throws Exception {
@@ -268,6 +324,12 @@ class ResearchControllerIntegrationTest extends PostgresTestSupport {
                 .andExpect(jsonPath("$.code").value("NOT_FOUND"));
         mockMvc.perform(post("/api/research/projects/{id}/archive", projectId).session(intruder))
                 .andExpect(status().isNotFound());
+        // M16-F11 情报提醒开关端点同口径隔离
+        mockMvc.perform(put("/api/research/projects/{id}/intelligence-alert", projectId).session(intruder)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"enabled\":false}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("NOT_FOUND"));
         mockMvc.perform(get("/api/research/projects/{id}/strategy", projectId).session(intruder))
                 .andExpect(status().isNotFound());
         mockMvc.perform(put("/api/research/projects/{id}/strategy", projectId).session(intruder)

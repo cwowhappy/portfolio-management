@@ -37,6 +37,7 @@ class InvestToolsResearchDraftTest {
                 mock(ScreeningApplicationService.class),
                 mock(FinancialQueryService.class),
                 mock(IndustryApplicationService.class),
+                mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
                 mapper);
     }
 

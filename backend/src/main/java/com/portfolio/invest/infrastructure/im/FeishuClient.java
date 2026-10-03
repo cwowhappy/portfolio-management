@@ -1,5 +1,6 @@
 package com.portfolio.invest.infrastructure.im;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.portfolio.invest.config.InvestProperties;
@@ -58,18 +59,45 @@ public class FeishuClient {
             return false;
         }
         try {
-            String content = mapper.writeValueAsString(Map.of(
-                    "config", Map.of("wide_screen_mode", true),
-                    "header", Map.of("title", Map.of("tag", "plain_text", "content", title),
-                            "template", template),
-                    "elements", List.of(Map.of("tag", "div",
-                            "text", Map.of("tag", "lark_md", "content", String.join("\n", bodyLines))))));
             return postMessage("/open-apis/im/v1/messages?receive_id_type=chat_id",
-                    Map.of("receive_id", chatId, "msg_type", "interactive", "content", content), title);
+                    Map.of("receive_id", chatId, "msg_type", "interactive",
+                            "content", buildCardJson(title, template, bodyLines)), title);
         } catch (Exception e) {
             log.warn("飞书卡片构造失败（title={}）：{}", title, e.getMessage());
             return false;
         }
+    }
+
+    /**
+     * 单发卡片（intelligence D10/P4 订阅单发）：receive_id_type=open_id，门禁仅
+     * appId/appSecret + openId——**不要求群 chatId 配置**（未建群也可用单聊推送）。
+     */
+    public boolean sendCardByOpenId(String openId, String title, String template, List<String> bodyLines) {
+        InvestProperties.Im im = props.getIm();
+        if (im.getAppId() == null || im.getAppId().isBlank() || im.getAppSecret() == null
+                || im.getAppSecret().isBlank() || openId == null || openId.isBlank()) {
+            log.warn("飞书未配置（appId/appSecret/openId 缺失），跳过单发：{}", title);
+            return false;
+        }
+        try {
+            return postMessage("/open-apis/im/v1/messages?receive_id_type=open_id",
+                    Map.of("receive_id", openId, "msg_type", "interactive",
+                            "content", buildCardJson(title, template, bodyLines)), title);
+        } catch (Exception e) {
+            log.warn("飞书卡片构造失败（title={}）：{}", title, e.getMessage());
+            return false;
+        }
+    }
+
+    /** 交互卡片 JSON（config/header/单 div 正文）：群推与单发共用同一 schema。 */
+    private String buildCardJson(String title, String template, List<String> bodyLines)
+            throws JsonProcessingException {
+        return mapper.writeValueAsString(Map.of(
+                "config", Map.of("wide_screen_mode", true),
+                "header", Map.of("title", Map.of("tag", "plain_text", "content", title),
+                        "template", template),
+                "elements", List.of(Map.of("tag", "div",
+                        "text", Map.of("tag", "lark_md", "content", String.join("\n", bodyLines))))));
     }
 
     /** P2 对话回复：reply 到指定消息，纯文本。 */

@@ -1,0 +1,20 @@
+task_code: policy_stats
+task_name: 政策采集-国家统计局
+# MS-22 设计 §6：统计局通知公告栏目 tzgg（Task 2 trs_list 形态，§5.4 控制器裁定与
+# zxfb 数据发布栏目分开；详情 .txt-content 容器、开头内联 style 块剔除）。
+source_ids:
+  - { source_id: stats, type: plugin, class: stats }
+converter: field_mapping_policy
+calc: null
+validator:
+  - { field: source, check: required, level: hard }
+  - { field: external_id, check: required, level: hard }
+  - { field: title, check: required, level: hard }
+  - { field: url, check: required, level: hard }
+  - { field: published_at, check: not_null, level: hard }
+target_table: intelligence_policy_raw
+schedule: { type: cron, cron: "40 8 * * *" }
+enabled: true
+trading_day_gated: false
+retry_max: 2
+retry_backoff: fixed

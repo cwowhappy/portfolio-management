@@ -83,6 +83,14 @@ invest:
     from: ${MAIL_FROM:}
     test-fixed-code: ${MAIL_TEST_FIXED_CODE:}
     test-mode: ${MAIL_TEST_MODE:false}
+  intelligence:
+    major-threshold: 80        # 决策 #21：MAJOR 分档线（简报选取消费）
+    watch-threshold: 50
+    extract-batch-size: 15     # D6：抽取批容量
+    daily-token-guardrail: 2000000   # D16：当日 input token 护栏，超限停批+告警一次
+    brief-max-items: 25        # 决策 #21/#22：简报选取总量上限（截断）
+    brief-min-items: 15        # 简报选取补足下限（各节 WATCH 候选池补足至该总量）
+    binding-code-ttl-minutes: 10  # D8：设置页绑定码 TTL（6 位数字、一次性）
   market:
     connect-timeout: 3s
     read-timeout: 5s

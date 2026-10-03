@@ -38,12 +38,12 @@ const tableSpec = {
 };
 
 describe("ChartToolRenderers", () => {
-  it("注册 4 既有 + 5 MS-12 + research_draft 具名渲染器（无 agentId，05 §4.1）", () => {
+  it("注册 4 既有 + 5 MS-12 + research_draft + search_news + search_announcements + macro_brief 具名渲染器（无 agentId，05 §4.1）", () => {
     render(<ChartToolRenderers />);
     expect(renderToolConfigs.map((c) => c.name)).toEqual(
       ["get_kline", "get_valuation", "get_market_overview", "get_financials",
         "screen_stocks", "analyze_financials", "analyze_industry", "suggest_allocation", "analyze_portfolio",
-        "research_draft"]);
+        "research_draft", "search_news", "search_announcements", "macro_brief"]);
     expect(renderToolConfigs.every((c) => "parameters" in c)).toBe(true);
   });
 
@@ -118,5 +118,266 @@ describe("ChartToolRenderers", () => {
     cleanup();
     const { container } = render(rd.render({ status: "inProgress", name: "research_draft" }) as React.ReactElement);
     expect(container.querySelector(".tool-card.running")).toBeTruthy();
+  });
+
+  // ===== search_news（MS-20 Task 12）：列表卡——标题链接/方向徽标/重要度/摘要/关键数字/时间 =====
+  const newsResult = JSON.stringify({
+    items: [
+      {
+        title: "茅台三季报预增",
+        summary: "AI 摘要：净利润同比 +25%",
+        direction: "BULLISH",
+        importance: 72,
+        keyNumbers: ["Q3 净利润同比 +25.3%"],
+        stockCodes: ["600519"],
+        url: "https://x/1",
+        publishedAt: "2026-09-28T13:00:00Z",
+      },
+      {
+        title: "白酒板块承压",
+        summary: "AI 摘要：需求走弱",
+        direction: "BEARISH",
+        importance: 40,
+        keyNumbers: [],
+        stockCodes: [],
+        url: null,
+        publishedAt: "2026-09-27T13:00:00Z",
+      },
+    ],
+    total: 27,
+  });
+
+  it("search_news complete → 列表卡：标题链接/无 url 退化纯文本/方向中文徽标/重要度/关键数字/total", () => {
+    render(<ChartToolRenderers />);
+    const sn = renderToolConfigs.find((c) => c.name === "search_news")!;
+    const { getByText, getByRole } = render(sn.render({ status: "complete", result: newsResult }) as React.ReactElement);
+    // 标题：有 url 为链接、无 url 退化纯文本
+    expect(getByRole("link", { name: "茅台三季报预增" }).getAttribute("href")).toBe("https://x/1");
+    expect(getByText("白酒板块承压")).toBeTruthy();
+    // 方向中文映射：BULLISH=利好 / BEARISH=利空
+    expect(getByText("利好")).toBeTruthy();
+    expect(getByText("利空")).toBeTruthy();
+    // 重要度 + total + 摘要行
+    expect(getByText("重要度 72")).toBeTruthy();
+    expect(getByText("共 27 条")).toBeTruthy();
+    expect(getByText("AI 摘要：净利润同比 +25%")).toBeTruthy();
+    expect(getByText("600519")).toBeTruthy();
+    // 关键数字行（时间/标的码同区渲染；空数组条目 null 安全不渲染）
+    expect(getByText("Q3 净利润同比 +25.3%")).toBeTruthy();
+  });
+
+  it("search_news 空结果 → message 行（90 天话术），无条目列表", () => {
+    render(<ChartToolRenderers />);
+    const sn = renderToolConfigs.find((c) => c.name === "search_news")!;
+    const { getByText, container } = render(
+      sn.render({ status: "complete", result: '{"items":[],"message":"该条件下暂无情报（新闻仅保留 90 天内）"}' }) as React.ReactElement,
+    );
+    expect(getByText("该条件下暂无情报（新闻仅保留 90 天内）")).toBeTruthy();
+    expect(container.querySelector("ul")).toBeNull(); // 空信封无条目列表
+  });
+
+  it("search_news 错误 result → 降级折叠卡；inProgress → 骨架", () => {
+    render(<ChartToolRenderers />);
+    const sn = renderToolConfigs.find((c) => c.name === "search_news")!;
+    const { container } = render(
+      sn.render({ status: "complete", result: '{"error":"工具执行失败","hint":"请稍后重试"}' }) as React.ReactElement,
+    );
+    expect(container.querySelector("details.tool-card")).toBeTruthy();
+    cleanup();
+    const running = render(sn.render({ status: "inProgress" }) as React.ReactElement);
+    expect(running.container.querySelector(".tool-card.running")).toBeTruthy();
+  });
+
+  // ===== search_announcements（MS-21 P2 Task 8）：公告列表卡——标题链接/类型徽标兜底链/
+  // 六字段要点行/scope 回显 =====
+  const announcementResult = JSON.stringify({
+    items: [
+      {
+        title: "贵州茅台 2026 年半年度报告",
+        stockCode: "600519",
+        stockName: "贵州茅台",
+        annTypes: ["PERIODIC_REPORT"],
+        annTypeSource: "半年报",
+        metrics: {
+          revenueYi: 128.56,
+          netProfitYi: 31.2,
+          netProfitYoyPct: 25.3,
+          deductedProfitYi: null,
+          grossMarginPct: 91.5,
+          dividendDesc: "每10股派2元",
+          undisclosed: [],
+        },
+        pdfUrl: "https://x/1.pdf",
+        publishedAt: "2026-09-28T13:00:00Z",
+      },
+      {
+        title: "平安银行回购进展",
+        stockCode: "000001",
+        stockName: "平安银行",
+        annTypes: [],
+        annTypeSource: "回购公告",
+        metrics: null,
+        pdfUrl: null,
+        publishedAt: "2026-09-27T13:00:00Z",
+      },
+    ],
+    total: 17,
+  });
+
+  it("search_announcements complete → 列表卡：标题链接/类型徽标兜底链/六字段要点行/scope 回显/total", () => {
+    render(<ChartToolRenderers />);
+    const sa = renderToolConfigs.find((c) => c.name === "search_announcements")!;
+    const { getByText, getByRole } = render(
+      sa.render({ status: "complete", result: announcementResult, parameters: { scope: "holdings" } }) as React.ReactElement,
+    );
+    // 标题：有 pdfUrl 为链接、无 pdfUrl 退化纯文本
+    expect(getByRole("link", { name: "贵州茅台 2026 年半年度报告" }).getAttribute("href")).toBe("https://x/1.pdf");
+    expect(getByText("平安银行回购进展")).toBeTruthy();
+    // 类型徽标：annTypes 中文；空数组退化 annTypeSource 兜底
+    expect(getByText("定期报告")).toBeTruthy();
+    expect(getByText("回购公告")).toBeTruthy();
+    // 六字段要点行（metrics 非空字段才出、null 字段不渲染；同比/毛利率带符号与推送卡片同款；整行精确匹配避免祖先元素多命中）
+    expect(getByText("营收 128.56 亿 · 归母净利 31.2 亿 · 净利同比 +25.3% · 毛利率 +91.5% · 分红 每10股派2元")).toBeTruthy();
+    // 标的名/码行 + scope 回显 + total
+    expect(getByText("贵州茅台 600519")).toBeTruthy();
+    expect(getByText("持仓范围")).toBeTruthy();
+    expect(getByText("共 17 条")).toBeTruthy();
+  });
+
+  it("search_announcements 空结果 → message 行（scope 引导语），无条目列表；all 不回显 scope", () => {
+    render(<ChartToolRenderers />);
+    const sa = renderToolConfigs.find((c) => c.name === "search_announcements")!;
+    const { getByText, container } = render(
+      sa.render({
+        status: "complete",
+        result: '{"items":[],"message":"未设置订阅标的——可先到「情报订阅」添加关注股票后再检索"}',
+        parameters: { scope: "subscription" },
+      }) as React.ReactElement,
+    );
+    expect(getByText("未设置订阅标的——可先到「情报订阅」添加关注股票后再检索")).toBeTruthy();
+    expect(container.querySelector("ul")).toBeNull(); // 空信封无条目列表
+    expect(getByText("订阅范围")).toBeTruthy(); // scope=subscription 回显
+    cleanup();
+    const all = render(
+      sa.render({ status: "complete", result: announcementResult, parameters: { scope: "all" } }) as React.ReactElement,
+    );
+    expect(all.queryByText("订阅范围")).toBeNull(); // all 不回显 scope 徽标
+  });
+
+  it("search_announcements 错误 result → 降级折叠卡；inProgress → 骨架", () => {
+    render(<ChartToolRenderers />);
+    const sa = renderToolConfigs.find((c) => c.name === "search_announcements")!;
+    const { container } = render(
+      sa.render({ status: "complete", result: '{"error":"工具执行失败","hint":"请稍后重试"}' }) as React.ReactElement,
+    );
+    expect(container.querySelector("details.tool-card")).toBeTruthy();
+    cleanup();
+    const running = render(sa.render({ status: "inProgress" }) as React.ReactElement);
+    expect(running.container.querySelector(".tool-card.running")).toBeTruthy();
+  });
+
+  // ===== macro_brief（MS-22 Task 6）：宏观简报卡——指标表 + 政策列表两段 =====
+  const macroBriefResult = JSON.stringify({
+    indicators: [
+      {
+        indicator: "CPI",
+        value: 0.6,
+        yoy: 0.6,
+        period: "2026-09",
+        periodType: "MONTH",
+        series: [
+          { period: "2026-09", value: 0.6 },
+          { period: "2026-08", value: 0.5 },
+          { period: "2026-07", value: 0.4 },
+        ],
+      },
+      {
+        indicator: "TY1Y",
+        value: 1.45,
+        period: "2026-09-30",
+        periodType: "DAY",
+        note: "国债收益率仅最新点、无历史序列",
+      },
+    ],
+    policies: [
+      {
+        title: "央行降准",
+        direction: "EASING",
+        strength: "HIGH",
+        areas: ["房地产", "基建"],
+        summary: "降准 0.5 个百分点",
+        confidence: "HIGH",
+        isPolicy: true,
+        url: "https://x/p1",
+        publishedAt: "2026-09-28T09:30:00Z",
+      },
+      {
+        title: "领导活动新闻",
+        direction: "NEUTRAL",
+        strength: "LOW",
+        areas: [],
+        summary: "非政策类动态（过滤兜底）",
+        confidence: "LOW",
+        isPolicy: false,
+        url: "https://x/p2",
+        publishedAt: "2026-09-27T09:30:00Z",
+      },
+    ],
+    total: 12,
+    missing: [{ indicator: "PMI", missing: true }],
+    generatedAt: "2026-10-03T02:15:00Z",
+  });
+
+  it("macro_brief complete → 指标表（值/期别/近5期迷你串）+ TY note + 缺失行 + 政策列表（方向徽标/力度/领域/链接/非政策标记）", () => {
+    render(<ChartToolRenderers />);
+    const mb = renderToolConfigs.find((c) => c.name === "macro_brief")!;
+    const { getByText, getByRole } = render(
+      mb.render({ status: "complete", result: macroBriefResult }) as React.ReactElement,
+    );
+    // 指标表：indicator/value/period/近5期迷你串（最新在前 → 值降序串）
+    expect(getByText("CPI")).toBeTruthy();
+    expect(getByText("0.6")).toBeTruthy();
+    expect(getByText("2026-09")).toBeTruthy();
+    expect(getByText("0.6→0.5→0.4")).toBeTruthy();
+    // TY 无历史：note 直接展示（勿当数据缺失）
+    expect(getByText("国债收益率仅最新点、无历史序列")).toBeTruthy();
+    expect(getByText("TY1Y")).toBeTruthy();
+    // 缺失行渲染：指标码 + 「数据缺失」单元（不编造值）
+    expect(getByText("PMI")).toBeTruthy();
+    expect(getByText("数据缺失")).toBeTruthy();
+    // 政策列表：标题链接 + 方向徽标（EASING=宽松）+ 力度 + 影响领域 + 摘要 + 非政策标记 + total
+    expect(getByRole("link", { name: "央行降准" }).getAttribute("href")).toBe("https://x/p1");
+    expect(getByText("宽松")).toBeTruthy();
+    expect(getByText("强")).toBeTruthy();
+    expect(getByText("房地产 / 基建")).toBeTruthy();
+    expect(getByText("降准 0.5 个百分点")).toBeTruthy();
+    expect(getByText("非政策类")).toBeTruthy();
+    expect(getByText("共 12 条")).toBeTruthy();
+  });
+
+  it("macro_brief 空政策 → note 行且无政策列表；错误 → 降级折叠卡；inProgress → 骨架", () => {
+    render(<ChartToolRenderers />);
+    const mb = renderToolConfigs.find((c) => c.name === "macro_brief")!;
+    const empty = render(
+      mb.render({
+        status: "complete",
+        result: JSON.stringify({
+          indicators: [{ indicator: "CPI", value: 0.6, period: "2026-09", periodType: "MONTH", series: [] }],
+          policies: [],
+          note: "该窗口内暂无政策事件（可调大 policyDays 或稍后再试）",
+          missing: [],
+          generatedAt: "2026-10-03T02:15:00Z",
+        }),
+      }) as React.ReactElement,
+    );
+    expect(empty.getByText("该窗口内暂无政策事件（可调大 policyDays 或稍后再试）")).toBeTruthy();
+    cleanup();
+    const error = render(
+      mb.render({ status: "complete", result: '{"error":"工具执行失败","hint":"请稍后重试"}' }) as React.ReactElement,
+    );
+    expect(error.container.querySelector("details.tool-card")).toBeTruthy();
+    cleanup();
+    const running = render(mb.render({ status: "inProgress" }) as React.ReactElement);
+    expect(running.container.querySelector(".tool-card.running")).toBeTruthy();
   });
 });

@@ -25,6 +25,7 @@ import {
   saveEntryPlan,
   saveFalsifiers,
   saveStrategyDraft,
+  setIntelligenceAlert,
   submitCheck,
   updateReview,
 } from "@/lib/researchApi";
@@ -41,6 +42,7 @@ const projectJson = {
   title: "茅台重启研究",
   currentStage: "NEW_ANALYSIS",
   status: "ACTIVE",
+  intelligenceAlertEnabled: true,
   createdAt: "2026-09-28T08:00:00Z",
   updatedAt: "2026-09-28T08:00:00Z",
 };
@@ -184,6 +186,19 @@ describe("researchApi", () => {
     expect(url).toBe("/api/research/projects/7/archive");
     expect(init.method).toBe("POST");
     expect(init.body).toBeUndefined();
+  });
+
+  it("setIntelligenceAlert PUT /intelligence-alert 携 {enabled} 并解析开关位（M16-F11）", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true, status: 200, json: async () => ({ ...projectJson, intelligenceAlertEnabled: false }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const view = await setIntelligenceAlert(7, false);
+    expect(view.intelligenceAlertEnabled).toBe(false);
+    const [url, init] = fetchMockCall();
+    expect(url).toBe("/api/research/projects/7/intelligence-alert");
+    expect(init.method).toBe("PUT");
+    expect(JSON.parse(init.body as string)).toEqual({ enabled: false });
   });
 
   it("策略四端点：GET 查询 / PUT 暂存六字段 / finalize / revise 均 POST", async () => {

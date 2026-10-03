@@ -32,3 +32,28 @@ export const IndustryParamsSchema = z.object({
 });
 export const PortfolioParamsSchema = z.object({});
 export const AllocationParamsSchema = z.object({});
+// ===== MS-20（P1 财经新闻采集与AI结构化）：search_news 与后端 @ToolParam 对齐 =====
+export const SearchNewsParamsSchema = z.object({
+  q: z.string().optional().describe("关键词，按标题近似匹配"),
+  stock: z.string().optional().describe("标的代码，如 600519"),
+  industry: z.string().optional().describe("申万一级行业码，如 801140"),
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("起始日期 yyyy-MM-dd（含）"),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("结束日期 yyyy-MM-dd（含）"),
+  minImportance: z.number().optional().describe("重要度下限 0..100"),
+  limit: z.number().optional().describe("返回条数，默认 10，最大 20"),
+});
+// ===== MS-21（P2 公告与财报要点采集）：search_announcements 与后端 @ToolParam 对齐 =====
+export const SearchAnnouncementsParamsSchema = z.object({
+  stock: z.string().optional().describe("标的代码，如 600519"),
+  type: z.string().optional().describe("公告类型枚举名，如 BUYBACK"),
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("起始日期 yyyy-MM-dd（含）"),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("结束日期 yyyy-MM-dd（含）"),
+  q: z.string().optional().describe("关键词，按标题近似匹配"),
+  scope: z.enum(["all", "subscription", "holdings"]).optional().describe("检索范围，缺省 all"),
+  limit: z.number().optional().describe("返回条数，默认 10，最大 20"),
+});
+// ===== MS-22（P3 Task 6）：macro_brief 与后端 @ToolParam 对齐 =====
+export const MacroBriefParamsSchema = z.object({
+  indicators: z.string().optional().describe("指标码逗号分隔：CPI/PPI/PMI/LPR/AFMI + TY1Y/TY10Y，缺省全部"),
+  policyDays: z.number().optional().describe("政策事件回看天数，默认 30，最大 90"),
+});

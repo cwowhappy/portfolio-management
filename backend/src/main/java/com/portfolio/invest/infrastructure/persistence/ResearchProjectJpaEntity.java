@@ -45,6 +45,10 @@ public class ResearchProjectJpaEntity {
     @Column(nullable = false, length = 16)
     private ProjectStatus status;
 
+    /** 情报提醒开关（M16-F11 回收，V3 加列；默认 TRUE——D13/决策 #26）。 */
+    @Column(name = "intelligence_alert_enabled", nullable = false)
+    private boolean intelligenceAlertEnabled;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -67,6 +71,7 @@ public class ResearchProjectJpaEntity {
         entity.title = p.title();
         entity.currentStage = p.currentStage();
         entity.status = p.status();
+        entity.intelligenceAlertEnabled = p.intelligenceAlertEnabled();
         entity.createdAt = p.createdAt();
         entity.updatedAt = p.updatedAt();
         entity.version = p.version();
@@ -75,6 +80,6 @@ public class ResearchProjectJpaEntity {
 
     public ResearchProject toDomain() {
         return ResearchProject.reconstitute(id, userId, stockCode, stockName, industryCode, title,
-                currentStage, status, version, createdAt, updatedAt);
+                currentStage, status, intelligenceAlertEnabled, version, createdAt, updatedAt);
     }
 }

@@ -25,4 +25,24 @@ class InvestSystemPromptTest {
                 .contains("analyze_industry")
                 .contains("私有").contains("MCP");
     }
+
+    @DisplayName("工具规范第 12 条：search_news 情报检索触发时机与引用口径（MS-20）")
+    @Test
+    void whenPromptText_thenContainsSearchNewsGuidance() {
+        assertThat(InvestSystemPrompt.TEXT)
+                .contains("search_news")
+                .contains("利好利空")
+                .contains("引用条目");
+    }
+
+    @DisplayName("工具规范第 14 条：macro_brief 触发时机、期别引用与「市场含义」事实边界（MS-22）")
+    @Test
+    void whenPromptText_thenContainsMacroBriefGuidance() {
+        assertThat(InvestSystemPrompt.TEXT)
+                .contains("macro_brief")
+                .contains("宏观环境")
+                .contains("数据截止期别")
+                .contains("市场含义")
+                .contains("事实必须来自工具结果");
+    }
 }

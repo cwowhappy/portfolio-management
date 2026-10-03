@@ -76,6 +76,50 @@ UPSERT_SQL = {
           tracking_index_code=EXCLUDED.tracking_index_code, tracking_index_name=EXCLUDED.tracking_index_name,
           category=EXCLUDED.category, updated_at=now()
     """,
+    # MS-20 新闻双任务（news_fast/news_night）同表：冲突键 (source, external_id)。
+    # published_at 保首见不更新（发布时刻是源站事实）；fetched_at 是采集观测时刻，刷新 now()。
+    "intelligence_news_raw": """
+        INSERT INTO intelligence_news_raw
+          (source, external_id, title, summary, published_at, url, stock_tags)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (source, external_id) DO UPDATE SET
+          title=EXCLUDED.title, summary=EXCLUDED.summary,
+          url=EXCLUDED.url, stock_tags=EXCLUDED.stock_tags, fetched_at=now()
+    """,
+    # MS-21 公告双任务（announcement_night/announcement_morning）同表：冲突键
+    # (source, external_id)。published_at 保首见不更新（披露时刻是源站事实）；
+    # fetched_at 是采集观测时刻，刷新 now()；major 是栏目映射预判，主备源口径差异
+    # （码链 vs 中文栏目关键词）导致的翻转随重跑刷新。
+    "intelligence_announcement": """
+        INSERT INTO intelligence_announcement
+          (source, external_id, stock_code, stock_name, title, ann_type_source, major, published_at, pdf_url)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (source, external_id) DO UPDATE SET
+          stock_name=EXCLUDED.stock_name, title=EXCLUDED.title,
+          ann_type_source=EXCLUDED.ann_type_source, major=EXCLUDED.major,
+          pdf_url=EXCLUDED.pdf_url, fetched_at=now()
+    """,
+    # MS-22 宏观五指标任务（macro_*）同表：冲突键 (indicator, period)。发布窗口多跑
+    # 幂等——value/yoy/source_url/source_note 重跑刷新；period_type 随指标固定（键含
+    # indicator 即隐含其月/日频），保首见不更新；V3 实况本表无 fetched_at 列（无观测
+    # 时刻可刷）。
+    "intelligence_macro_series": """
+        INSERT INTO intelligence_macro_series
+          (indicator, period, period_type, value, yoy, source_url, source_note)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (indicator, period) DO UPDATE SET
+          value=EXCLUDED.value, yoy=EXCLUDED.yoy,
+          source_url=EXCLUDED.source_url, source_note=EXCLUDED.source_note
+    """,
+    # MS-22 政策四任务（policy_*）同表：冲突键 (source, external_id)。published_at 保
+    # 首见不更新（发布时刻是源站事实，非采集观测）；V3 实况本表无 fetched_at 列。
+    "intelligence_policy_raw": """
+        INSERT INTO intelligence_policy_raw
+          (source, external_id, title, url, published_at, content_text)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        ON CONFLICT (source, external_id) DO UPDATE SET
+          title=EXCLUDED.title, url=EXCLUDED.url, content_text=EXCLUDED.content_text
+    """,
 }
 
 TABLE_COLUMNS = {
@@ -118,6 +162,43 @@ TABLE_COLUMNS = {
         "tracking_index_code",
         "tracking_index_name",
         "category",
+    ],
+    "intelligence_news_raw": [
+        "source",
+        "external_id",
+        "title",
+        "summary",
+        "published_at",
+        "url",
+        "stock_tags",
+    ],
+    "intelligence_announcement": [
+        "source",
+        "external_id",
+        "stock_code",
+        "stock_name",
+        "title",
+        "ann_type_source",
+        "major",
+        "published_at",
+        "pdf_url",
+    ],
+    "intelligence_macro_series": [
+        "indicator",
+        "period",
+        "period_type",
+        "value",
+        "yoy",
+        "source_url",
+        "source_note",
+    ],
+    "intelligence_policy_raw": [
+        "source",
+        "external_id",
+        "title",
+        "url",
+        "published_at",
+        "content_text",
     ],
 }
 
