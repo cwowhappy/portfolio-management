@@ -106,3 +106,19 @@
 2. 全量 `make test`（一次跑全，不允许 `| tail` 吞退出码）—— lessons：收口以全量为准。
 3. 文档同步检查：README 端点表、模块文档 03-接口设计、AGENTS.md（仅当有流程/配置变化）。
 4. 提交：按域分 commit（fix(analytics)/fix(agent,mcp)/fix(auth,conversation,portfolio)/fix(frontend)）。
+
+## 执行记录（2026-10-04 当日完成）
+
+**执行结果：第一批 9 项全部落地，全量 `make test` 三端 EXIT=0（后端 BUILD SUCCESSFUL 含 JaCoCo 门槛 / 前端 129 文件全过 + lint 零 error / collector 460 用例 94.71% 覆盖）。**
+
+主代理收口时补的跨代理咬合点（并行代理间的契约接缝）：
+1. **UserToolkitFactory 生产接线**：BE-B 给构造函数加了 `Duration toolTimeout` 但主装配未供给 Duration bean，所有 @SpringBootTest 上下文加载失败（BE-C 在测试里加了 ConditionalOnMissingBean 兜底才发现）。主代理在 `AgentConfig` 补 `mcpToolTimeout` bean（+ import）——教训：**改构造签名必须 grep 全部调用点（含 @Bean 方法）**。
+2. **会话契约前端对齐**：BE-C 的 GET/PUT 新包装（{updatedAt, messages} / 200 {updatedAt}）与 FE-A 并行开发未咬合。主代理改 `lib/conversations.ts`（MessagesViewSchema/SaveResultSchema + If-Match 透传）、ThreadArea（flushPersist 带 If-Match、409→GET+union+重试）、RuntimeProvider（opts 扩展）及 4 处测试夹具（mockConversationsApi 增加服务端 updatedAt 状态机与 If-Match 校验）。
+3. **文档/契约同步**：模块文档 03（会话 wrapper+If-Match、reset-code 中性化、登录 429）、README 端点表、McpAdminTokenController 过时注释、e2e conversation.spec 的 204→200。
+
+遗留（不阻塞，记入审查报告第二批）：
+- BE-C 两个集成测试里的 `@ConditionalOnMissingBean(Duration.class)` 兜底 bean 已自动退出（主装配已供给），可择机删除。
+- reset-code 可找回分支存在时序侧信道（发信耗时差异），低危，未处理。
+- FE-A 报告的 `tsc --noEmit` 存量类型噪声（未触碰文件）不在本批范围。
+
+TDD 符合性：四个代理均按红→绿执行并保留证据（BE-A 9 用例先红 5、BE-B 编译红→91 用例绿、BE-C 编译红+断言红→绿、FE-A 先红后绿 176 用例）；主代理契约对齐段也先跑红（conversations.test 5 failed）再转绿（88 用例）。
