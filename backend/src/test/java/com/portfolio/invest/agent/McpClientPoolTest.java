@@ -6,10 +6,12 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.portfolio.invest.application.mcp.McpTokenRotatedEvent;
 import com.portfolio.invest.config.InvestProperties;
 import com.portfolio.invest.domain.mcp.AuthType;
 import com.portfolio.invest.domain.mcp.McpEndpoint;
@@ -32,11 +34,13 @@ class McpClientPoolTest {
 
     private static final Instant NOW = Instant.parse("2026-09-07T08:00:00Z");
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(5);
+    private static final Duration TOOL_TIMEOUT = Duration.ofSeconds(30);
 
-    /** 两步 mock 打桩嵌套配置（invest.mcp.connectTimeout=5s），避免 deep stubs。 */
+    /** 两步 mock 打桩嵌套配置（invest.mcp.connectTimeout=5s / toolTimeout=30s），避免 deep stubs。 */
     private static McpClientPool newPool() {
         InvestProperties.Mcp mcp = mock(InvestProperties.Mcp.class);
         when(mcp.getConnectTimeout()).thenReturn(CONNECT_TIMEOUT);
+        when(mcp.getToolTimeout()).thenReturn(TOOL_TIMEOUT);
         InvestProperties props = mock(InvestProperties.class);
         when(props.getMcp()).thenReturn(mcp);
         return new McpClientPool(props);
@@ -165,6 +169,107 @@ class McpClientPoolTest {
             assertThat(pool.acquire(provider, endpoint, "tok")).isSameAs(wrapper);
             mocked.verify(() -> McpClientBuilder.create("tushare"), times(2));
             verify(builder, times(2)).buildSync();
+        }
+    }
+
+    @DisplayName("token 轮换事件：该 provider 全部 endpoint 的旧 wrapper 被 close，再次 acquire 用新 token 重建")
+    @Test
+    void givenTokenRotatedEvent_whenAcquire_thenOldClosedAndRebuiltWithNewToken() {
+        McpProvider provider = provider(AuthType.BEARER, null);
+        McpEndpoint endpointA = endpoint(3L);
+        McpEndpoint endpointB = endpoint(4L);
+        try (MockedStatic<McpClientBuilder> mocked = mockStatic(McpClientBuilder.class)) {
+            McpClientBuilder builder = chainedBuilder();
+            McpClientWrapper wrapperA = client();
+            McpClientWrapper wrapperB = client();
+            McpClientWrapper wrapperANew = client();
+            when(builder.buildSync()).thenReturn(wrapperA, wrapperB, wrapperANew);
+            mocked.when(() -> McpClientBuilder.create("tushare")).thenReturn(builder);
+
+            McpClientPool pool = newPool();
+            pool.acquire(provider, endpointA, "old-token");
+            pool.acquire(provider, endpointB, "old-token");
+
+            pool.onTokenRotated(new McpTokenRotatedEvent(2L));
+
+            // 该 provider 两个 endpoint 的缓存客户端均被驱逐并关闭
+            verify(wrapperA).close();
+            verify(wrapperB).close();
+            // 下一次 acquire 重建：新 token 进入鉴权头，且拿到全新 wrapper
+            McpClientWrapper rebuilt = pool.acquire(provider, endpointA, "new-token");
+            assertThat(rebuilt).isSameAs(wrapperANew).isNotSameAs(wrapperA);
+            verify(builder).header("Authorization", "Bearer new-token");
+            mocked.verify(() -> McpClientBuilder.create("tushare"), times(3));
+        }
+    }
+
+    @DisplayName("token 轮换事件：其他 provider 的缓存客户端不受影响")
+    @Test
+    void givenTokenRotatedEventForOtherProvider_whenEvent_thenThisProviderClientsUntouched() {
+        McpProvider providerA = provider(AuthType.BEARER, null); // id=2
+        McpProvider providerB = McpProvider.reconstitute(5L, "wind", "Wind", AuthType.BEARER, null, "t", true, null, NOW);
+        try (MockedStatic<McpClientBuilder> mocked = mockStatic(McpClientBuilder.class)) {
+            McpClientBuilder builder = chainedBuilder();
+            McpClientWrapper wrapperA = client();
+            McpClientWrapper wrapperB = client();
+            when(builder.buildSync()).thenReturn(wrapperA, wrapperB);
+            mocked.when(() -> McpClientBuilder.create("tushare")).thenReturn(builder);
+            mocked.when(() -> McpClientBuilder.create("wind")).thenReturn(builder);
+
+            McpClientPool pool = newPool();
+            pool.acquire(providerA, endpoint(3L), "tok");
+            pool.acquire(providerB, endpoint(6L), "tok");
+
+            pool.onTokenRotated(new McpTokenRotatedEvent(5L));
+
+            verify(wrapperA, never()).close();
+            verify(wrapperB).close();
+            // providerA 的缓存仍在：acquire 复用不重建
+            assertThat(pool.acquire(providerA, endpoint(3L), "tok")).isSameAs(wrapperA);
+        }
+    }
+
+    @DisplayName("池销毁：@PreDestroy 关闭全部 wrapper，销毁后 acquire 重新构建")
+    @Test
+    void givenPreDestroy_whenShutdown_thenAllClientsClosed() {
+        McpProvider provider = provider(AuthType.BEARER, null);
+        try (MockedStatic<McpClientBuilder> mocked = mockStatic(McpClientBuilder.class)) {
+            McpClientBuilder builder = chainedBuilder();
+            McpClientWrapper first = client();
+            McpClientWrapper second = client();
+            when(builder.buildSync()).thenReturn(first, second);
+            mocked.when(() -> McpClientBuilder.create("tushare")).thenReturn(builder);
+
+            McpClientPool pool = newPool();
+            pool.acquire(provider, endpoint(3L), "tok");
+            pool.acquire(provider, endpoint(4L), "tok");
+
+            pool.shutdown();
+
+            verify(first).close();
+            verify(second).close();
+            // 全量驱逐后再次 acquire 视为冷启动：重新构建而非复用已关闭实例
+            assertThat(pool.acquire(provider, endpoint(3L), "tok")).isNotSameAs(first);
+            mocked.verify(() -> McpClientBuilder.create("tushare"), times(3));
+        }
+    }
+
+    @DisplayName("initialize 阻塞带 toolTimeout 兜底（transport 超时之外的挂死防线）")
+    @Test
+    @SuppressWarnings("unchecked")
+    void givenBuild_whenInitialize_thenBlockedWithToolTimeout() {
+        McpProvider provider = provider(AuthType.BEARER, null);
+        try (MockedStatic<McpClientBuilder> mocked = mockStatic(McpClientBuilder.class)) {
+            McpClientBuilder builder = chainedBuilder();
+            McpClientWrapper wrapper = mock(McpClientWrapper.class);
+            Mono<Void> initialize = mock(Mono.class);
+            when(wrapper.initialize()).thenReturn(initialize);
+            when(builder.buildSync()).thenReturn(wrapper);
+            mocked.when(() -> McpClientBuilder.create("tushare")).thenReturn(builder);
+
+            newPool().acquire(provider, endpoint(3L), "tok");
+
+            verify(initialize).block(TOOL_TIMEOUT);
         }
     }
 }

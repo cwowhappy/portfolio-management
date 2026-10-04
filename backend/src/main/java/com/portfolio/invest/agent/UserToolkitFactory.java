@@ -9,6 +9,7 @@ import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 import io.agentscope.core.tool.mcp.McpTool;
 import io.modelcontextprotocol.spec.McpSchema;
+import java.time.Duration;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
@@ -28,12 +29,15 @@ public class UserToolkitFactory {
     private final AllocationApplicationService allocationService;
     private final IntelligenceQueryService intelligenceQueryService;
     private final ObjectMapper mapper;
+    /** listTools 阻塞超时上限（invest.mcp.toolTimeout，B3 接线：挂死端点在限期内抛超时而非永久阻塞）。 */
+    private final Duration toolTimeout;
 
     public UserToolkitFactory(InvestTools investTools, McpConfigRepository repository, McpClientPool clientPool,
                               McpSecretCodec secretCodec,
                               PortfolioApplicationService portfolioService,
                               AllocationApplicationService allocationService,
-                              IntelligenceQueryService intelligenceQueryService, ObjectMapper mapper) {
+                              IntelligenceQueryService intelligenceQueryService, ObjectMapper mapper,
+                              Duration toolTimeout) {
         this.investTools = investTools;
         this.repository = repository;
         this.clientPool = clientPool;
@@ -42,6 +46,7 @@ public class UserToolkitFactory {
         this.allocationService = allocationService;
         this.intelligenceQueryService = intelligenceQueryService;
         this.mapper = mapper;
+        this.toolTimeout = toolTimeout;
     }
 
     public Toolkit build(Long userId) {
@@ -66,7 +71,7 @@ public class UserToolkitFactory {
             for (McpEndpoint endpoint : repository.findEnabledEndpointsByProviderId(provider.id())) {
                 try {
                     McpClientWrapper client = clientPool.acquire(provider, endpoint, token);
-                    for (McpSchema.Tool t : client.listTools().block()) {
+                    for (McpSchema.Tool t : client.listTools().block(toolTimeout)) {
                         String name = t.name();
                         if (config.disabledTools().contains(name) || names.contains(name)) continue;
                         names.add(name);

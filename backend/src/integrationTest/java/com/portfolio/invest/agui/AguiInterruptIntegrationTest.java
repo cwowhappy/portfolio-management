@@ -13,6 +13,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.portfolio.invest.agent.InvestTools;
 import com.portfolio.invest.agent.McpClientPool;
 import com.portfolio.invest.agent.UserToolkitFactory;
+import com.portfolio.invest.config.InvestProperties;
 import com.portfolio.invest.domain.mcp.McpConfigRepository;
 import com.portfolio.invest.domain.user.UserRepository;
 import com.portfolio.invest.support.PostgresTestSupport;
@@ -125,9 +126,10 @@ class AguiInterruptIntegrationTest extends PostgresTestSupport {
                 com.portfolio.invest.application.portfolio.PortfolioApplicationService portfolioService,
                 com.portfolio.invest.application.allocation.AllocationApplicationService allocationService,
                 com.portfolio.invest.application.intelligence.IntelligenceQueryService intelligenceQueryService,
-                ObjectMapper objectMapper) {
+                ObjectMapper objectMapper, InvestProperties investProperties) {
             return new UserToolkitFactory(investTools, mcpConfigRepository, mcpClientPool, secretCodec,
-                    portfolioService, allocationService, intelligenceQueryService, objectMapper) {
+                    portfolioService, allocationService, intelligenceQueryService, objectMapper,
+                    investProperties.getMcp().getToolTimeout()) {
                 @Override
                 public Toolkit build(Long userId) {
                     Toolkit toolkit = super.build(userId);

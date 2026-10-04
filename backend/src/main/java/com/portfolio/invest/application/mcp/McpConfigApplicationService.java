@@ -15,6 +15,7 @@ import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,20 +29,24 @@ public class McpConfigApplicationService {
     private final McpConfigRepository repository;
     private final McpServerTester tester;
     private final McpSecretCodec codec;
+    private final ApplicationEventPublisher publisher;
     private final Clock clock;
 
     /** 主构造器（@Autowired：存在测试专用重载构造器时需显式指定注入入口）。 */
     @Autowired
-    public McpConfigApplicationService(McpConfigRepository repository, McpServerTester tester, McpSecretCodec codec) {
+    public McpConfigApplicationService(McpConfigRepository repository, McpServerTester tester,
+                                       McpSecretCodec codec, ApplicationEventPublisher publisher) {
         // A3：application 层禁止直调 System 时钟，连接测试耗时经注入时钟测量
-        this(repository, tester, codec, Clock.systemUTC());
+        this(repository, tester, codec, publisher, Clock.systemUTC());
     }
 
     /** 测试注入：自定义时钟（耗时测量可确定性）。 */
-    McpConfigApplicationService(McpConfigRepository repository, McpServerTester tester, McpSecretCodec codec, Clock clock) {
+    McpConfigApplicationService(McpConfigRepository repository, McpServerTester tester, McpSecretCodec codec,
+                                ApplicationEventPublisher publisher, Clock clock) {
         this.repository = repository;
         this.tester = tester;
         this.codec = codec;
+        this.publisher = publisher;
         this.clock = clock;
     }
 
@@ -120,7 +125,9 @@ public class McpConfigApplicationService {
 
     /**
      * 管理员设置 provider token（P1-10，D1）：明文仅在本次调用内经过，加密后落库；
-     * 审计日志只记 provider code，不含明文/密文（NFR-1）。
+     * 审计日志只记 provider code，不含明文/密文（NFR-1）。落库成功后发布
+     * {@link McpTokenRotatedEvent}，McpClientPool 驱逐该 provider 全部缓存客户端——
+     * 凭证轮换即时生效，无需重启（B3）。
      */
     @Transactional
     public void setProviderToken(String providerCode, String token) {
@@ -134,6 +141,7 @@ public class McpConfigApplicationService {
                 .orElseThrow(() -> new McpException(McpErrorCode.PROVIDER_NOT_FOUND, "数据源不存在"));
         repository.updateProviderSecret(provider.id(), codec.encrypt(token));
         log.info("MCP provider {} token 已由管理员更新（密文落库）", providerCode);
+        publisher.publishEvent(new McpTokenRotatedEvent(provider.id()));
     }
 
     private McpProvider requireProvider(Long providerId) {

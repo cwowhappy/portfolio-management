@@ -2,6 +2,7 @@ package com.portfolio.invest.agent;
 
 import com.portfolio.invest.config.InvestProperties;
 import io.agentscope.core.model.GenerateOptions;
+import java.time.Duration;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ModelCreationContext;
 import io.agentscope.core.model.ModelRegistry;
@@ -34,6 +35,12 @@ public class AgentConfig {
                                         .temperature(0.3)
                                         .build())
                         .build());
+    }
+
+    /** MCP listTools 阻塞超时上限（UserToolkitFactory 构造注入；源 invest.mcp.toolTimeout）。 */
+    @Bean
+    public Duration mcpToolTimeout(InvestProperties props) {
+        return props.getMcp().getToolTimeout();
     }
 
     @Bean
