@@ -57,7 +57,7 @@ describe("ChatPage", () => {
   it("健康检查成功：Key 已配置且行情源可用 → llmReady=true", async () => {
     fetchHealthMock.mockResolvedValue({
       status: "up",
-      llm: { provider: "deepseek", model: "deepseek-chat", baseUrl: "https://x", keyConfigured: true },
+      llm: { provider: "deepseek", model: "deepseek-chat", keyConfigured: true },
       market: { ok: true },
     });
     renderPage();
@@ -70,7 +70,7 @@ describe("ChatPage", () => {
   it("Key 未配置 → llmReady=false", async () => {
     fetchHealthMock.mockResolvedValue({
       status: "degraded",
-      llm: { provider: "deepseek", model: "deepseek-chat", baseUrl: "https://x", keyConfigured: false },
+      llm: { provider: "deepseek", model: "deepseek-chat", keyConfigured: false },
       market: { ok: true },
     });
     renderPage();

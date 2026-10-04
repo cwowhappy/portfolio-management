@@ -182,7 +182,8 @@ describe("ThreadArea 流中断与错误场景", () => {
         const method = init?.method ?? "GET";
         if (url === "/api/conversations" && method === "GET")
           return json([{ id: "t1", title: "会话", updatedAt: 2 }]);
-        if (url === "/api/conversations/t1/messages" && method === "GET") return json([]);
+        if (url === "/api/conversations/t1/messages" && method === "GET")
+          return json({ updatedAt: "2026-10-04T00:00:00.000Z", messages: [] });
         if (url === "/api/conversations/t1/messages" && method === "PUT")
           return new Response(JSON.stringify({ message: "写入失败" }), {
             status: 500,

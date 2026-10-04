@@ -18,6 +18,7 @@ import {
 import {
   createConversation,
   deleteConversation,
+  errorStatus,
   listConversations,
   newThreadId,
   saveMessages,
@@ -80,17 +81,29 @@ export function historyToAgentMessages(msgs: ChatMessage[]): Message[] {
  * 注意（有意为之）：仅持久化 user/assistant 的纯文本，丢弃 toolCalls 与 reasoning。
  * 依据 ADR-0004 前端只保留精简历史以控制体积；代价是跨会话重灌后多轮上下文不含工具调用轨迹。
  * 若后续需要更强的多轮工具上下文，可扩展 ChatMessage 存 toolCalls 并在 historyToAgentMessages 回放。
+ *
+ * union 语义（B6 并发写）：输出 = 服务端 existing ∪ 本地 messages（按消息 id 去重）。
+ * flushPersist 以本地快照整体 PUT 前会带上服务端既有记录做并集——多标签页并发写时，
+ * 其他窗口落库的消息不在本窗口快照里，不合并会把它们从服务端抹掉（互删）。
+ * 共有 id 以服务端记录为准（保留其 createdAt 与原文），本地新增消息无 createdAt 时取 Date.now()。
  */
 export function agentMessagesToHistory(
   messages: Message[],
   existing: ChatMessage[] = [],
 ): ChatMessage[] {
-  const prevCreatedAt = new Map(existing.map((m) => [m.id, m.createdAt]));
   const out: ChatMessage[] = [];
+  const seen = new Set<string>();
+  // 服务端既有记录原样保留在前：PUT 整体替换时不会丢失其他窗口写入的消息
+  for (const m of existing) {
+    seen.add(m.id);
+    out.push(m);
+  }
+  const prevCreatedAt = new Map(existing.map((m) => [m.id, m.createdAt]));
   for (const m of messages) {
     if (m.role !== "user" && m.role !== "assistant") continue;
     const content = typeof m.content === "string" ? m.content.trim() : "";
-    if (!content) continue;
+    if (!content || seen.has(m.id)) continue;
+    seen.add(m.id);
     out.push({
       id: m.id,
       role: m.role,
@@ -191,7 +204,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   );
 
   const persistMessages = useCallback(
-    async (threadId: string, msgs: ChatMessage[], opts?: { keepalive?: boolean }) => {
+    async (threadId: string, msgs: ChatMessage[], opts?: { keepalive?: boolean; ifMatch?: string }) => {
       try {
         await saveMessages(threadId, msgs, opts);
         // 乐观更新：本地改 updatedAt/title 并按 updatedAt 降序重排（与后端列表口径一致），
@@ -209,8 +222,10 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
           await refresh();
         }
       } catch (e) {
-        // 失败只记日志，不打断聊天
         console.error("[RuntimeProvider] 保存会话失败", threadId, e);
+        // 409（乐观锁并发冲突）向上抛给 flushPersist 做 GET+union 重试；
+        // 其余错误维持「只记日志，不打断聊天」
+        if (errorStatus(e) === 409) throw e;
       }
     },
     [refresh],

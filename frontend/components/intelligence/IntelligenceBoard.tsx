@@ -38,7 +38,11 @@ export default function IntelligenceBoard() {
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") setQ(keyword.trim());
+            if (e.key === "Enter") {
+              // 中文 IME 组合中 Enter 用于选定候选词，不得触发检索
+              if (e.nativeEvent.isComposing) return;
+              setQ(keyword.trim());
+            }
           }}
         />
       </div>

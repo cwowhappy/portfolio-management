@@ -59,25 +59,44 @@ describe("会话客户端（lib/conversations）", () => {
   });
 
   describe("saveMessages", () => {
-    it("发送 PUT /messages，body 仅含 id/role/content/createdAt", async () => {
+    it("发送 PUT /messages，body 仅含 id/role/content/createdAt，返回服务端 updatedAt", async () => {
       const api = installConversationsApi();
-      await saveMessages("t1", [msg("user", "你好", "u1"), msg("assistant", "答复", "a1")]);
+      const result = await saveMessages("t1", [msg("user", "你好", "u1"), msg("assistant", "答复", "a1")]);
       expect(api.lastPutBody()).toEqual([
         { id: "u1", role: "user", content: "你好", createdAt: 1_700_000_000_000 },
         { id: "a1", role: "assistant", content: "答复", createdAt: 1_700_000_000_000 },
       ]);
       const putCall = api.fetchMock.mock.calls.find(([, init]) => init?.method === "PUT");
       expect(String(putCall?.[0])).toBe("/api/conversations/t1/messages");
+      // B6 契约：PUT 200 返回 {updatedAt}
+      expect(result.updatedAt).toBe("2026-10-04T00:00:01.000Z");
+    });
+
+    it("携带 ifMatch 时发送 If-Match 请求头（乐观校验）", async () => {
+      const api = installConversationsApi({ messages: { t1: [] } });
+      await saveMessages("t1", [msg("user", "你好", "u1")], {
+        ifMatch: "2026-10-04T00:00:00.000Z",
+      });
+      const putCall = api.fetchMock.mock.calls.find(([, init]) => init?.method === "PUT");
+      expect(new Headers(putCall?.[1]?.headers).get("If-Match")).toBe("2026-10-04T00:00:00.000Z");
+    });
+
+    it("If-Match 与服务端 updatedAt 不一致时 409，错误携带状态码", async () => {
+      installConversationsApi({ messages: { t1: [] } });
+      await expect(
+        saveMessages("t1", [msg("user", "你好", "u1")], { ifMatch: "stale-value" }),
+      ).rejects.toMatchObject({ status: 409 });
     });
   });
 
   describe("loadMessages", () => {
-    it("zod 校验通过并返回消息", async () => {
+    it("zod 校验通过并返回 {updatedAt, messages} 包装（B6 契约）", async () => {
       installConversationsApi({
         messages: { t1: [msg("user", "历史问题", "m1")] },
       });
-      const msgs = await loadMessages("t1");
-      expect(msgs).toEqual([msg("user", "历史问题", "m1")]);
+      const view = await loadMessages("t1");
+      expect(view.messages).toEqual([msg("user", "历史问题", "m1")]);
+      expect(view.updatedAt).toBe("2026-10-04T00:00:00.000Z");
     });
 
     it("响应字段不合法时抛出异常", async () => {

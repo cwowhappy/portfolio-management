@@ -178,6 +178,20 @@ describe("AdminBoard", () => {
       expect(api.resetPassword).not.toHaveBeenCalled();
     });
 
+    it("IME 组合中 Enter 不提交（isComposing 守卫），组合结束后正常 Enter 提交", async () => {
+      await openDialog();
+      fireEvent.change(screen.getByLabelText("新密码"), { target: { value: "Passw0rd123" } });
+      const confirm = screen.getByLabelText("确认新密码");
+      fireEvent.change(confirm, { target: { value: "Passw0rd123" } });
+      // IME 组合态 Enter 只应选定候选词：不提交、不阻止默认行为
+      const notPrevented = fireEvent.keyDown(confirm, { key: "Enter", isComposing: true });
+      expect(notPrevented).toBe(true);
+      expect(api.resetPassword).not.toHaveBeenCalled();
+      // 组合结束后正常 Enter 恢复提交
+      fireEvent.keyDown(confirm, { key: "Enter", isComposing: false });
+      await vi.waitFor(() => expect(api.resetPassword).toHaveBeenCalledWith(3, "Passw0rd123"));
+    });
+
     it("提交成功：调用 resetPassword 并关闭弹窗", async () => {
       await openDialog();
       fireEvent.change(screen.getByLabelText("新密码"), { target: { value: "Passw0rd123" } });
@@ -222,6 +236,19 @@ describe("AdminBoard", () => {
       fireEvent.click(screen.getByRole("button", { name: "确认绑定" }));
       expect(await screen.findByText("请输入正确的邮箱")).toBeTruthy();
       expect(api.setEmail).not.toHaveBeenCalled();
+    });
+
+    it("IME 组合中 Enter 不提交（isComposing 守卫），组合结束后正常 Enter 提交", async () => {
+      await openDialog();
+      const email = screen.getByLabelText("邮箱");
+      fireEvent.change(email, { target: { value: "alice@example.com" } });
+      // IME 组合态 Enter 只应选定候选词：不提交、不阻止默认行为
+      const notPrevented = fireEvent.keyDown(email, { key: "Enter", isComposing: true });
+      expect(notPrevented).toBe(true);
+      expect(api.setEmail).not.toHaveBeenCalled();
+      // 组合结束后正常 Enter 恢复提交
+      fireEvent.keyDown(email, { key: "Enter", isComposing: false });
+      await vi.waitFor(() => expect(api.setEmail).toHaveBeenCalledWith(3, "alice@example.com"));
     });
 
     it("提交成功：调用 setEmail 并关闭弹窗", async () => {

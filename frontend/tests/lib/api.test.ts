@@ -9,13 +9,12 @@ function okResponse(data: unknown, status = 200): Response {
   } as unknown as Response;
 }
 
-// 符合 zod schema 的最小合法响应
+// 符合 zod schema 的最小合法响应（B8 字段收敛：llm 只含 provider/model/keyConfigured）
 const validHealth = {
   status: "up",
   llm: {
     provider: "deepseek",
     model: "deepseek-chat",
-    baseUrl: "https://api.deepseek.com",
     keyConfigured: true,
   },
   market: { ok: true, latencyMs: 42 },
@@ -69,6 +68,17 @@ describe("行情 REST 客户端（lib/api）", () => {
 
   it("成功时解析并返回 JSON", async () => {
     fetchMock.mockResolvedValue(okResponse(validHealth));
+    await expect(api.fetchHealth()).resolves.toEqual(validHealth);
+  });
+
+  it("llm 不含 baseUrl（B8 字段收敛）；旧后端多带 baseUrl 也能解析（未知字段剥离）", async () => {
+    expect(validHealth.llm).not.toHaveProperty("baseUrl");
+    fetchMock.mockResolvedValue(
+      okResponse({
+        ...validHealth,
+        llm: { ...validHealth.llm, baseUrl: "https://api.deepseek.com" },
+      }),
+    );
     await expect(api.fetchHealth()).resolves.toEqual(validHealth);
   });
 

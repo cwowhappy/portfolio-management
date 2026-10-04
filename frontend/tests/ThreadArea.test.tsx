@@ -158,7 +158,6 @@ describe("ThreadArea", () => {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
-    const noContent = () => new Response(null, { status: 204 });
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
@@ -169,7 +168,8 @@ describe("ThreadArea", () => {
         if (url === "/api/conversations" && method === "POST")
           return json({ id: "x", title: "新会话", updatedAt: 3 });
         if (url === "/api/conversations/t1/messages" && method === "GET") return hydrateGate;
-        if (url === "/api/conversations/t1/messages" && method === "PUT") return noContent();
+        if (url === "/api/conversations/t1/messages" && method === "PUT")
+          return json({ updatedAt: "2026-10-04T00:00:01.000Z" });
         return json({ message: "not found" });
       }),
     );
@@ -181,7 +181,7 @@ describe("ThreadArea", () => {
     expect(mocks.agent.addMessage).not.toHaveBeenCalled();
     expect(mocks.runAgent).not.toHaveBeenCalled();
     // 放行回灌（空历史）→ 闸门开启
-    resolveHydrate(json([]));
+    resolveHydrate(json({ updatedAt: "2026-10-04T00:00:00.000Z", messages: [] }));
     await waitFor(() => expect(mocks.agent.setMessages).toHaveBeenCalled());
     // 回灌完成后同一消息可正常发送
     fireEvent.click(screen.getByText(/贵州茅台/));
@@ -324,6 +324,50 @@ describe("ThreadArea", () => {
     });
   });
 
+  it("PUT 遇 409：GET 服务端消息后按 id 合并重试一次，最终落库为并集", async () => {
+    // B6 并发写：服务端已有其他窗口写入的 s1；本窗口防抖 PUT 首次撞 409（乐观校验冲突），
+    // flushPersist 须重新 GET 并与之 union 后重试，而不是用本地快照整体覆盖（互删）。
+    api = installConversationsApi({
+      list: [{ id: "t1", title: "会话", updatedAt: 2 }],
+      messages: { t1: [{ id: "s1", role: "user", content: "其他窗口消息", createdAt: 9 }] },
+      putConflictTimes: 1,
+    });
+    mocks.agent.messages = [agentMessage({ id: "u1", role: "user", content: "本地消息" })];
+    renderThread();
+    await waitFor(() => {
+      expect(api.state.messages.get("t1")?.map((m) => m.id)).toEqual(["s1", "u1"]);
+    });
+    // 服务端消息保留原 createdAt；重试成功后共有消息不重复
+    expect(api.state.messages.get("t1")).toEqual([
+      { id: "s1", role: "user", content: "其他窗口消息", createdAt: 9 },
+      expect.objectContaining({ id: "u1", role: "user", content: "本地消息" }),
+    ]);
+    // 恰好两次 PUT：首次 409 + 合并后重试一次成功，不无限重试
+    const putCalls = api.fetchMock.mock.calls.filter(([, init]) => init?.method === "PUT");
+    expect(putCalls).toHaveLength(2);
+  });
+
+  it("重试仍 409：显示「请刷新确认」横幅，本地消息不丢，且不再重试", async () => {
+    api = installConversationsApi({
+      list: [{ id: "t1", title: "会话", updatedAt: 2 }],
+      messages: { t1: [] },
+      putConflictTimes: 2,
+    });
+    mocks.agent.messages = [agentMessage({ id: "u1", role: "user", content: "本地草稿" })];
+    renderThread();
+    // 用户可见横幅提示（本地草稿消息仍渲染、不被清除）
+    expect(await screen.findByText("会话在其他窗口被修改，请刷新确认")).toBeTruthy();
+    expect(screen.getByText("本地草稿")).toBeTruthy();
+    // 仅重试一次：两次 409 后停止，不会第三次 PUT
+    await waitFor(() => {
+      const putCalls = api.fetchMock.mock.calls.filter(([, init]) => init?.method === "PUT");
+      expect(putCalls).toHaveLength(2);
+    });
+    await new Promise((r) => setTimeout(r, 500));
+    const putCalls = api.fetchMock.mock.calls.filter(([, init]) => init?.method === "PUT");
+    expect(putCalls).toHaveLength(2);
+  });
+
   it("持久化前先快照消息，避免 await 期间切线程串写", async () => {
     // 自定义 mock：第一次 GET /messages（历史回灌）立即返回空；第二次（持久化的 loadMessages）挂起，
     // 以此模拟 await 窗口内 agent.messages 被切线程替换的竞态。
@@ -338,7 +382,6 @@ describe("ThreadArea", () => {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
-    const noContent = () => new Response(null, { status: 204 });
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
@@ -350,12 +393,12 @@ describe("ThreadArea", () => {
           return json({ id: "x", title: "新会话", updatedAt: 3 });
         if (url === "/api/conversations/t1/messages" && method === "GET") {
           getCount += 1;
-          if (getCount === 1) return json([]); // 历史回灌立即返回
+          if (getCount === 1) return json({ updatedAt: "2026-10-04T00:00:00.000Z", messages: [] }); // 历史回灌立即返回
           return gate; // 持久化的 loadMessages 挂起
         }
         if (url === "/api/conversations/t1/messages" && method === "PUT") {
           putBodies.push(JSON.parse(String(init?.body)) as Array<{ content: string }>);
-          return noContent();
+          return json({ updatedAt: "2026-10-04T00:00:01.000Z" });
         }
         return json({ message: "not found" });
       }),
@@ -368,7 +411,7 @@ describe("ThreadArea", () => {
     await waitFor(() => expect(getCount).toBe(2));
     // 模拟切线程 + 历史回灌把 agent.messages 替换成新线程消息
     mocks.agent.messages = [agentMessage({ id: "u2", role: "user", content: "新线程消息" })];
-    resolveGate(json([])); // 放行持久化的 loadMessages
+    resolveGate(json({ updatedAt: "2026-10-04T00:00:00.000Z", messages: [] })); // 放行持久化的 loadMessages
     await waitFor(() => expect(putBodies.length).toBeGreaterThan(0));
     // PUT body 必须使用 await 前快照（旧线程消息），而非被替换后的新线程消息
     const firstPut = putBodies[0];
@@ -384,7 +427,6 @@ describe("ThreadArea", () => {
     const gate = new Promise<Response>((res) => { resolveGate = res; });
     const json = (body: unknown) =>
       new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
-    const noContent = () => new Response(null, { status: 204 });
     const putBodies: Record<string, Array<Array<{ content: string }>>> = { t1: [], t2: [] };
     vi.stubGlobal(
       "fetch",
@@ -397,7 +439,10 @@ describe("ThreadArea", () => {
             { id: "t2", title: "会话2", updatedAt: 1 },
           ]);
         if (url === "/api/conversations/t1/messages" && method === "GET")
-          return json([{ id: "a1", role: "user", content: "旧线程消息", createdAt: 1 }]);
+          return json({
+            updatedAt: "2026-10-04T00:00:00.000Z",
+            messages: [{ id: "a1", role: "user", content: "旧线程消息", createdAt: 1 }],
+          });
         if (url === "/api/conversations/t2/messages" && method === "GET") {
           t2GetCount += 1;
           return gate; // 慢回灌：历史请求挂起（模拟 >400ms 或失败）
@@ -405,7 +450,7 @@ describe("ThreadArea", () => {
         const putMatch = url.match(/^\/api\/conversations\/([^/]+)\/messages$/);
         if (putMatch && method === "PUT") {
           putBodies[putMatch[1]].push(JSON.parse(String(init?.body)) as Array<{ content: string }>);
-          return noContent();
+          return json({ updatedAt: "2026-10-04T00:00:01.000Z" });
         }
         return json({ message: "not found" });
       }),
@@ -425,7 +470,7 @@ describe("ThreadArea", () => {
     // 若存在跨线程串写，400ms 防抖会把旧线程快照绑定到 t2 并额外发起 GET；这里给它足够时间触发
     await new Promise((r) => setTimeout(r, 550));
     // 放行 t2 慢回灌
-    resolveGate(json([]));
+    resolveGate(json({ updatedAt: "2026-10-04T00:00:00.000Z", messages: [] }));
     // 等放行后的微任务 / 可能的 PUT 完成
     await new Promise((r) => setTimeout(r, 150));
     // 双保险断言：(1) 只应有一次 t2 历史回灌 GET；(2) 不得向 t2 写入任何旧线程消息
@@ -782,6 +827,28 @@ describe("ThreadArea", () => {
       fireEvent.change(ta, { target: { value: "换行问题" } });
       fireEvent.keyDown(ta, { key: "Enter", shiftKey: true });
       expect(mocks.agent.addMessage).not.toHaveBeenCalled();
+    });
+
+    it("IME 组合中 Enter 不发送也不阻止默认行为（isComposing 守卫）", async () => {
+      renderThread();
+      await waitFor(() => expect(screen.getByPlaceholderText(composerPlaceholder)).toBeTruthy());
+      const ta = screen.getByPlaceholderText(composerPlaceholder);
+      fireEvent.change(ta, { target: { value: "拼音候选中" } });
+      // IME 组合态的 Enter 用于选定候选词：不得提交、不得 preventDefault（否则候选词上屏被吞）
+      const composingNotPrevented = fireEvent.keyDown(ta, {
+        key: "Enter",
+        isComposing: true,
+      });
+      expect(composingNotPrevented).toBe(true);
+      expect(mocks.agent.addMessage).not.toHaveBeenCalled();
+      expect(mocks.runAgent).not.toHaveBeenCalled();
+      // 组合结束后正常 Enter 恢复发送
+      fireEvent.keyDown(ta, { key: "Enter", isComposing: false });
+      expect(mocks.agent.addMessage).toHaveBeenCalledWith({
+        id: expect.any(String),
+        role: "user",
+        content: "拼音候选中",
+      });
     });
 
     it("运行中显示停止按钮并中止运行", async () => {

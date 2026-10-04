@@ -78,10 +78,11 @@ export const MarketOverviewSchema = z.object({
 
 export const HealthSchema = z.object({
   status: z.enum(["up", "degraded"]),
+  // B8 字段收敛：llm 只暴露 provider/model/keyConfigured（keyConfigured 替代 baseUrl，
+  // 是否已配置比目标地址更该被前端感知；旧响应多带的 baseUrl 会被 zod 剥离）
   llm: z.object({
     provider: z.string(),
     model: z.string(),
-    baseUrl: z.string(),
     keyConfigured: z.boolean(),
   }),
   market: z.object({
