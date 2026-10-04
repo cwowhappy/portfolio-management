@@ -1027,6 +1027,40 @@ class PortfolioApplicationServiceTest {
                         });
     }
 
+    @DisplayName("编辑交易日期晚于今日被拒绝")
+    @Test
+    void givenFutureTradeDate_whenEditTrade_thenRejectInvalidInput() {
+        assertThatThrownBy(() -> service.editTrade(1L, 5L, 11L, new EditTradeCommand(
+                LocalDate.now().plusDays(1), new BigDecimal("110"),
+                new BigDecimal("100"), BigDecimal.ZERO, 1L)))
+                .isInstanceOfSatisfying(PortfolioException.class,
+                        e -> {
+                            assertThat(e.code()).isEqualTo(PortfolioErrorCode.INVALID_INPUT);
+                            assertThat(e.getMessage()).contains("日期不能晚于今日");
+                        });
+    }
+
+    @DisplayName("编辑交易日期为今日或历史时正常进入重放")
+    @Test
+    void givenTodayOrPastTradeDate_whenEditTrade_thenAccepted() {
+        when(repo.findPositionByIdAndPortfolioId(5L, 10L)).thenReturn(Optional.of(positionWithId(5)));
+        when(repo.findTradeById(11L)).thenReturn(Optional.of(
+                new Trade(11L, 5L, TradeType.BUY, LocalDate.now().minusDays(3),
+                        new BigDecimal("100"), new BigDecimal("100"), new BigDecimal("0"), Instant.now())));
+        when(repo.saveTrade(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(repo.findTradesByPositionId(5L)).thenReturn(List.of(
+                new Trade(11L, 5L, TradeType.BUY, LocalDate.now().minusDays(3),
+                        new BigDecimal("110"), new BigDecimal("100"), new BigDecimal("0"), Instant.now())));
+        when(repo.findDividendsByPositionId(5L)).thenReturn(List.of());
+        when(repo.savePosition(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        // 今日日期：校验放行，走正常 replay
+        var todayView = service.editTrade(1L, 5L, 11L, new EditTradeCommand(
+                LocalDate.now(), new BigDecimal("110"),
+                new BigDecimal("100"), BigDecimal.ZERO, 1L));
+        assertThat(todayView.quantity()).isEqualByComparingTo("100");
+    }
+
     @DisplayName("现金流水日期晚于今日被拒绝")
     @Test
     void givenFutureTxDate_whenAddCashTransaction_thenRejectInvalidInput() {
