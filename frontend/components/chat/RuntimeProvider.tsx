@@ -52,7 +52,7 @@ interface ChatRuntimeContextValue {
   persistMessages: (
     threadId: string,
     msgs: ChatMessage[],
-    opts?: { keepalive?: boolean },
+    opts?: { keepalive?: boolean; ifMatch?: string },
   ) => Promise<void>;
   setRunning: (running: boolean) => void;
 }
