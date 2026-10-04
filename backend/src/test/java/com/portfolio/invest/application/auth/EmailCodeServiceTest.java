@@ -136,48 +136,85 @@ class EmailCodeServiceTest {
         verify(mailSender).send(eq(EMAIL), anyString(), org.mockito.ArgumentMatchers.contains("123456"));
     }
 
-    // ---- issueResetCode / findResettableUser ----
+    // ---- issueResetCode / findResettableUser（B5：中性化防账号枚举） ----
 
     @DisplayName("找回：按用户名或邮箱均可定位")
     @Test
     void whenFindResettableByUsernameOrEmail_thenSameUser() {
         when(userRepository.findByUsername("alice")).thenReturn(Optional.of(approvedUser("alice")));
         when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(approvedUser("alice")));
-        assertThat(service.findResettableUser("alice").username()).isEqualTo("alice");
-        assertThat(service.findResettableUser(EMAIL).username()).isEqualTo("alice");
+        assertThat(service.findResettableUser("alice")).hasValueSatisfying(u -> assertThat(u.username()).isEqualTo("alice"));
+        assertThat(service.findResettableUser(EMAIL)).hasValueSatisfying(u -> assertThat(u.username()).isEqualTo("alice"));
     }
 
-    @DisplayName("找回：账号不存在明确报错")
+    @DisplayName("找回：不存在/管理员/未绑邮箱/停用一律定位为空（不区分原因）")
     @Test
-    void givenUnknownIdentifier_whenFindResettable_thenNotFound() {
+    void givenNonResettableUser_whenFindResettable_thenEmpty() {
         when(userRepository.findByUsername("ghost")).thenReturn(Optional.empty());
-        assertThatThrownBy(() -> service.findResettableUser("ghost"))
-                .isInstanceOf(UserException.class).hasMessageContaining("账号不存在");
-    }
+        assertThat(service.findResettableUser("ghost")).isEmpty();
 
-    @DisplayName("找回：ADMIN 拒绝")
-    @Test
-    void givenAdmin_whenFindResettable_thenForbidden() {
         User admin = User.reconstitute(1L, "root", "hash", UserRole.ADMIN, UserStatus.APPROVED, true,
                 "root@x.com", true, NOW, NOW);
         when(userRepository.findByUsername("root")).thenReturn(Optional.of(admin));
-        assertThatThrownBy(() -> service.findResettableUser("root"))
-                .isInstanceOf(UserException.class).hasMessageContaining("管理员");
-    }
-
-    @DisplayName("找回：停用与未绑邮箱均拒绝")
-    @Test
-    void givenDisabledOrNoEmail_whenFindResettable_thenForbidden() {
-        User disabled = approvedUser("alice").disable();
-        when(userRepository.findByUsername("alice")).thenReturn(Optional.of(disabled));
-        assertThatThrownBy(() -> service.findResettableUser("alice"))
-                .isInstanceOf(UserException.class).hasMessageContaining("状态不支持");
+        assertThat(service.findResettableUser("root")).isEmpty();
 
         User noEmail = User.reconstitute(2L, "old", "hash", UserRole.USER, UserStatus.APPROVED, true,
                 null, false, NOW, NOW);
         when(userRepository.findByUsername("old")).thenReturn(Optional.of(noEmail));
-        assertThatThrownBy(() -> service.findResettableUser("old"))
-                .isInstanceOf(UserException.class).hasMessageContaining("未绑定邮箱");
+        assertThat(service.findResettableUser("old")).isEmpty();
+
+        User disabled = approvedUser("alice").disable();
+        when(userRepository.findByUsername("alice")).thenReturn(Optional.of(disabled));
+        assertThat(service.findResettableUser("alice")).isEmpty();
+    }
+
+    @DisplayName("找回：空白标识定位为空")
+    @Test
+    void givenBlankIdentifier_whenFindResettable_thenEmpty() {
+        assertThat(service.findResettableUser(null)).isEmpty();
+        assertThat(service.findResettableUser("  ")).isEmpty();
+    }
+
+    @DisplayName("找回：四分支响应逐字节一致且均不发信（防枚举）")
+    @Test
+    void givenNonResettableBranch_whenIssueResetCode_thenIdenticalNeutralResponseAndNoMail() {
+        User admin = User.reconstitute(1L, "root", "hash", UserRole.ADMIN, UserStatus.APPROVED, true,
+                "root@x.com", true, NOW, NOW);
+        User noEmail = User.reconstitute(2L, "old", "hash", UserRole.USER, UserStatus.APPROVED, true,
+                null, false, NOW, NOW);
+        User disabled = approvedUser("alice").disable();
+        when(userRepository.findByUsername("root")).thenReturn(Optional.of(admin));
+        when(userRepository.findByUsername("old")).thenReturn(Optional.of(noEmail));
+        when(userRepository.findByUsername("alice")).thenReturn(Optional.of(disabled));
+
+        String byNotFound = service.issueResetCode("ghost");
+        String byAdmin = service.issueResetCode("root");
+        String byNoEmail = service.issueResetCode("old");
+        String byDisabled = service.issueResetCode("alice");
+
+        assertThat(byNotFound).isEqualTo(EmailCodeService.RESET_NEUTRAL_MESSAGE);
+        assertThat(byAdmin).isEqualTo(byNotFound);
+        assertThat(byNoEmail).isEqualTo(byNotFound);
+        assertThat(byDisabled).isEqualTo(byNotFound); // 四分支响应体逐字节一致
+        verify(mailSender, never()).send(anyString(), anyString(), anyString()); // 均不发信
+        verify(codeRepository, never()).save(any()); // 不落码
+    }
+
+    @DisplayName("找回：仅可找回账号真实发信，响应与四分支完全一致")
+    @Test
+    void givenResettableUser_whenIssueResetCode_thenSendMailAndSameNeutralResponse() {
+        when(userRepository.findByUsername("alice")).thenReturn(Optional.of(approvedUser("alice")));
+        String response = service.issueResetCode("alice");
+        verify(mailSender).send(eq(EMAIL), eq("九和密码重置验证码"), org.mockito.ArgumentMatchers.contains("验证码"));
+        assertThat(response).isEqualTo(EmailCodeService.RESET_NEUTRAL_MESSAGE); // 与不可找回分支逐字节一致
+    }
+
+    @DisplayName("找回：按邮箱定位可找回账号同样发信")
+    @Test
+    void givenResettableEmail_whenIssueResetCode_thenSendMail() {
+        when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(approvedUser("alice")));
+        service.issueResetCode(EMAIL);
+        verify(mailSender).send(eq(EMAIL), anyString(), anyString());
     }
 
     // ---- verify ----

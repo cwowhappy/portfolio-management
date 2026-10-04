@@ -76,31 +76,37 @@ public class EmailCodeService {
                 "您正在注册九和投资账号，验证码 %s，5 分钟内有效。若非本人操作请忽略本邮件。");
     }
 
-    /** FR-B2：找回发码——定位可找回账号后向其已验证邮箱发码。 */
-    public void issueResetCode(String identifier) {
-        User user = findResettableUser(identifier);
-        issueCode(normalize(user.email()), VerificationPurpose.RESET, "九和密码重置验证码",
-                "您正在重置九和投资账号密码，验证码 %s，5 分钟内有效。若非本人操作请忽略本邮件。");
+    /** B5 中性响应文案：可找回与否对外逐字节一致，防账号存在性/状态枚举。 */
+    public static final String RESET_NEUTRAL_MESSAGE = "如果该账号可以找回密码，验证码已发送至绑定邮箱";
+
+    /** FR-B2：找回发码——仅真正可找回的账号真实发信；可找回与否响应完全一致（B5 防枚举）。 */
+    public String issueResetCode(String identifier) {
+        findResettableUser(identifier).ifPresent(user -> issueCode(
+                normalize(user.email()), VerificationPurpose.RESET, "九和密码重置验证码",
+                "您正在重置九和投资账号密码，验证码 %s，5 分钟内有效。若非本人操作请忽略本邮件。"));
+        return RESET_NEUTRAL_MESSAGE;
     }
 
-    /** FR-B2 定位规则：用户名或邮箱皆可；仅 USER、APPROVED 且启用、已绑邮箱。明确报错（决策 #5）。 */
-    public User findResettableUser(String identifier) {
+    /**
+     * FR-B2 定位规则：用户名或邮箱皆可；仅 USER、APPROVED 且启用、已绑邮箱可找回。
+     * 任何不可找回情形（不存在/管理员/未绑邮箱/停用/空白标识）一律返回 empty、不区分原因（B5 防枚举）。
+     */
+    public Optional<User> findResettableUser(String identifier) {
         String id = identifier == null ? "" : identifier.trim();
         if (id.isEmpty()) {
-            throw new UserException(UserErrorCode.USER_NOT_FOUND, "账号不存在");
+            return Optional.empty();
         }
-        User user = (id.contains("@") ? userRepository.findByEmail(normalize(id)) : userRepository.findByUsername(id))
-                .orElseThrow(() -> new UserException(UserErrorCode.USER_NOT_FOUND, "账号不存在"));
-        if (user.role() == UserRole.ADMIN) {
-            throw new UserException(UserErrorCode.FORBIDDEN, "管理员账号不支持邮件找回");
+        Optional<User> found = id.contains("@")
+                ? userRepository.findByEmail(normalize(id))
+                : userRepository.findByUsername(id);
+        if (found.isEmpty()) {
+            return Optional.empty();
         }
-        if (user.email() == null) {
-            throw new UserException(UserErrorCode.FORBIDDEN, "该账号未绑定邮箱，请联系管理员重置密码");
+        User user = found.get();
+        if (user.role() == UserRole.ADMIN || user.email() == null || !user.canLogin()) {
+            return Optional.empty();
         }
-        if (!user.canLogin()) {
-            throw new UserException(UserErrorCode.FORBIDDEN, "账号当前状态不支持找回密码");
-        }
-        return user;
+        return Optional.of(user);
     }
 
     /** 消费型验码：成功即 markUsed（用后即焚）；失败 attemptFailed 计数（5 次作废）。 */

@@ -159,7 +159,7 @@ class AuthApplicationServiceTest {
     void givenValidResetRequest_whenResetPassword_thenSaveNewHashAndRevokeTokens() {
         User user = User.reconstitute(1L, "alice", "$2a$old", UserRole.USER, UserStatus.APPROVED, true,
                 EMAIL, true, NOW.minusSeconds(3600), NOW.minusSeconds(3600));
-        when(emailCodeService.findResettableUser("alice")).thenReturn(user);
+        when(emailCodeService.findResettableUser("alice")).thenReturn(Optional.of(user));
         when(encoder.encode("new12345")).thenReturn("$2a$new");
         when(repo.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
@@ -175,13 +175,29 @@ class AuthApplicationServiceTest {
     void givenWrongResetCode_whenResetPassword_thenRejectWithoutSaving() {
         User user = User.reconstitute(1L, "alice", "$2a$old", UserRole.USER, UserStatus.APPROVED, true,
                 EMAIL, true, NOW.minusSeconds(3600), NOW.minusSeconds(3600));
-        when(emailCodeService.findResettableUser("alice")).thenReturn(user);
+        when(emailCodeService.findResettableUser("alice")).thenReturn(Optional.of(user));
         doThrow(new UserException(UserErrorCode.CODE_INVALID, "验证码错误或已失效"))
                 .when(emailCodeService).verify(EMAIL, VerificationPurpose.RESET, "000000");
 
         assertThatThrownBy(() -> service.resetPassword("alice", "000000", "new12345"))
                 .isInstanceOf(UserException.class)
                 .satisfies(e -> assertThat(((UserException) e).getCode()).isEqualTo(UserErrorCode.CODE_INVALID));
+        verify(repo, never()).save(any());
+        verify(tokenStore, never()).removeUserTokens(any());
+    }
+
+    @DisplayName("重置密码：不可找回标识按错码处理（CODE_INVALID，不枚举账号状态）")
+    @Test
+    void givenNonResettableIdentifier_whenResetPassword_thenCodeInvalidLikeWrongCode() {
+        when(emailCodeService.findResettableUser("ghost")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.resetPassword("ghost", "123456", "new12345"))
+                .isInstanceOf(UserException.class)
+                .satisfies(e -> {
+                    assertThat(((UserException) e).getCode()).isEqualTo(UserErrorCode.CODE_INVALID);
+                    assertThat(e.getMessage()).isEqualTo("验证码错误或已失效"); // 与错码文案逐字节一致
+                });
+        verify(emailCodeService, never()).verify(anyString(), any(), anyString());
         verify(repo, never()).save(any());
         verify(tokenStore, never()).removeUserTokens(any());
     }
