@@ -87,6 +87,13 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(status).body(new ApiError(e.getCode(), e.getMessage()));
     }
 
+    /** B6 会话乐观校验冲突：并发写同一会话且 updated_at 不匹配 → 409，前端 GET 合并后重试一次。 */
+    @ExceptionHandler(com.portfolio.invest.domain.conversation.ConversationConflictException.class)
+    public ResponseEntity<ApiError> conversationConflict(
+            com.portfolio.invest.domain.conversation.ConversationConflictException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(new ApiError("CONFLICT", e.getMessage()));
+    }
+
     @ExceptionHandler(com.portfolio.invest.domain.portfolio.PortfolioException.class)
     public ResponseEntity<ApiError> portfolio(com.portfolio.invest.domain.portfolio.PortfolioException e) {
         HttpStatus status = switch (e.code()) {

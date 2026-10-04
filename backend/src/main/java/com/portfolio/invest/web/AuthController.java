@@ -7,6 +7,7 @@ import com.portfolio.invest.application.auth.UserView;
 import com.portfolio.invest.domain.user.User;
 import com.portfolio.invest.domain.user.UserStatus;
 import com.portfolio.invest.infrastructure.security.AuthenticatedUser;
+import com.portfolio.invest.infrastructure.security.LoginRateLimiter;
 import com.portfolio.invest.web.dto.LoginRequest;
 import com.portfolio.invest.web.dto.PasswordResetRequest;
 import com.portfolio.invest.web.dto.RegisterCodeRequest;
@@ -16,6 +17,8 @@ import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.OptionalLong;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -40,14 +43,17 @@ public class AuthController {
     private final EmailCodeService emailCodeService;
     private final AuthenticationManager authenticationManager;
     private final RememberMeServices rememberMeServices;
+    private final LoginRateLimiter loginRateLimiter;
 
     public AuthController(AuthApplicationService auth, EmailCodeService emailCodeService,
                           AuthenticationManager authenticationManager,
-                          RememberMeServices rememberMeServices) {
+                          RememberMeServices rememberMeServices,
+                          LoginRateLimiter loginRateLimiter) {
         this.auth = auth;
         this.emailCodeService = emailCodeService;
         this.authenticationManager = authenticationManager;
         this.rememberMeServices = rememberMeServices;
+        this.loginRateLimiter = loginRateLimiter;
     }
 
     @PostMapping("/register")
@@ -63,8 +69,7 @@ public class AuthController {
 
     @PostMapping("/reset-code")
     public ResponseEntity<Map<String, String>> resetCode(@Valid @RequestBody ResetCodeRequest req) {
-        emailCodeService.issueResetCode(req.identifier());
-        return ResponseEntity.ok(Map.of("message", "验证码已发送"));
+        return ResponseEntity.ok(Map.of("message", emailCodeService.issueResetCode(req.identifier())));
     }
 
     @PostMapping("/reset-password")
@@ -76,6 +81,17 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<?> login(@Valid @RequestBody LoginRequest req,
                                    HttpServletRequest request, HttpServletResponse response) {
+        // B4：bcrypt 在线爆破防护——认证前先查限流；锁定期内密码正确也拒绝（429 + Retry-After），不触发 authenticate
+        OptionalLong blocked = loginRateLimiter.blockedForSeconds(req.username());
+        if (blocked.isPresent()) {
+            long retryAfterSeconds = blocked.getAsLong();
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("code", "TOO_MANY_ATTEMPTS");
+            body.put("message", "尝试次数过多，请 " + ((retryAfterSeconds + 59) / 60) + " 分钟后再试");
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                    .header(HttpHeaders.RETRY_AFTER, String.valueOf(retryAfterSeconds))
+                    .body(body);
+        }
         try {
             Authentication authn = authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(req.username(), req.password()));
@@ -89,6 +105,7 @@ public class AuthController {
             if (!user.enabled()) {
                 return error(HttpStatus.FORBIDDEN, "ACCOUNT_DISABLED", "账号已被停用");
             }
+            loginRateLimiter.onSuccess(req.username()); // 成功登录清零失败计数
             SecurityContextHolder.getContext().setAuthentication(authn);
             var session = request.getSession(true);
             // 会话固定防护：登录成功立即轮换 session id，再写入认证上下文
@@ -103,6 +120,7 @@ public class AuthController {
             }
             return ResponseEntity.ok(UserView.from(user));
         } catch (BadCredentialsException e) {
+            loginRateLimiter.onFailure(req.username()); // 密码错误计入限流窗口
             return error(HttpStatus.UNAUTHORIZED, "BAD_CREDENTIALS", "用户名或密码错误");
         }
     }

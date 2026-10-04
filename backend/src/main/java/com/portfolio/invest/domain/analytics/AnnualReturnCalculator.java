@@ -14,10 +14,8 @@ public final class AnnualReturnCalculator {
     private AnnualReturnCalculator() {}
 
     public static java.util.SortedMap<Integer, BigDecimal> yearlyTwr(NavSeries series, List<ExternalFlow> flows) {
-        Map<LocalDate, BigDecimal> byDay = new TreeMap<>();
-        for (ExternalFlow f : flows) {
-            byDay.merge(f.date(), f.amount(), BigDecimal::add);
-        }
+        // 流日期归一到「≥ flowDate 的首个 tradeDate」，与 NavReconstructor 计入规则对齐
+        Map<LocalDate, BigDecimal> byDay = FlowDates.normalize(series, flows);
         TreeSet<Integer> years = new TreeSet<>();
         series.points().forEach(p -> years.add(p.tradeDate().getYear()));
         java.util.SortedMap<Integer, BigDecimal> out = new TreeMap<>();

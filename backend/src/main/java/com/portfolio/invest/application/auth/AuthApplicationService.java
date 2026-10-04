@@ -69,7 +69,9 @@ public class AuthApplicationService {
     @Transactional
     public void resetPassword(String identifier, String code, String newPassword) {
         PasswordPolicy.validate(newPassword);
-        User user = emailCodeService.findResettableUser(identifier);
+        // B5：不可找回标识按错码处理（CODE_INVALID），与「验证码错误」不可区分，防账号枚举
+        User user = emailCodeService.findResettableUser(identifier)
+                .orElseThrow(() -> new UserException(UserErrorCode.CODE_INVALID, "验证码错误或已失效"));
         emailCodeService.verify(user.email(), VerificationPurpose.RESET, code);
         userRepository.save(user.withPassword(passwordEncoder.encode(newPassword)));
         // 密码已换：旧「记住我」令牌立即失效（同 UserAdminApplicationService.resetPassword 口径）

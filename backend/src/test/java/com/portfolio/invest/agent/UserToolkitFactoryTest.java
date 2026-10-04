@@ -30,6 +30,8 @@ import reactor.core.publisher.Mono;
 class UserToolkitFactoryTest {
 
     private static final Instant NOW = Instant.parse("2026-09-07T08:00:00Z");
+    /** 装配 listTools 阻塞超时（invest.mcp.toolTimeout，B3 接线断言用）。 */
+    private static final java.time.Duration TOOL_TIMEOUT = java.time.Duration.ofSeconds(30);
 
     /** ToolAnnotations 规范字段序：title, readOnlyHint, destructiveHint, idempotentHint, openWorldHint, returnDirect。 */
     private static McpSchema.ToolAnnotations annotations(Boolean readOnlyHint) {
@@ -73,7 +75,7 @@ class UserToolkitFactoryTest {
                 mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
                 mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
                 mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
-                new com.fasterxml.jackson.databind.ObjectMapper()).build(1L);
+                new com.fasterxml.jackson.databind.ObjectMapper(), TOOL_TIMEOUT).build(1L);
     }
 
     @DisplayName("readOnlyHint=true 的 MCP 工具装配为只读（不触发审批）")
@@ -141,7 +143,7 @@ class UserToolkitFactoryTest {
                 mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
                 mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
                 mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
-                new com.fasterxml.jackson.databind.ObjectMapper()).build(1L);
+                new com.fasterxml.jackson.databind.ObjectMapper(), TOOL_TIMEOUT).build(1L);
 
         assertThat(toolkit.getTool("trade_cal")).as("配置缺失 → MCP 工具不注册").isNull();
         assertThat(toolkit.getTool("search_stock")).as("内置工具不受影响").isNotNull();
@@ -171,7 +173,7 @@ class UserToolkitFactoryTest {
                 mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
                 mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
                 mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
-                new com.fasterxml.jackson.databind.ObjectMapper()).build(1L);
+                new com.fasterxml.jackson.databind.ObjectMapper(), TOOL_TIMEOUT).build(1L);
 
         assertThat(toolkit.getTool("trade_cal")).as("配置停用 → MCP 工具不注册").isNull();
         assertThat(toolkit.getTool("search_stock")).as("内置工具不受影响").isNotNull();
@@ -202,7 +204,7 @@ class UserToolkitFactoryTest {
                 mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
                 mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
                 mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
-                new com.fasterxml.jackson.databind.ObjectMapper()).build(1L);
+                new com.fasterxml.jackson.databind.ObjectMapper(), TOOL_TIMEOUT).build(1L);
 
         assertThat(toolkit.getTool("trade_cal")).as("密钥缺失 → MCP 工具不注册").isNull();
         assertThat(toolkit.getTool("search_stock")).as("内置工具不受影响").isNotNull();
@@ -227,7 +229,7 @@ class UserToolkitFactoryTest {
                 mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
                 mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
                 mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
-                new com.fasterxml.jackson.databind.ObjectMapper()).build(1L);
+                new com.fasterxml.jackson.databind.ObjectMapper(), TOOL_TIMEOUT).build(1L);
 
         assertThat(toolkit.getTool("search_stock")).as("内置工具不受影响").isNotNull();
         verifyNoInteractions(clientPool);
@@ -260,7 +262,7 @@ class UserToolkitFactoryTest {
                 mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
                 mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
                 mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
-                new com.fasterxml.jackson.databind.ObjectMapper()).build(1L);
+                new com.fasterxml.jackson.databind.ObjectMapper(), TOOL_TIMEOUT).build(1L);
 
         assertThat(toolkit.getTool("b_tool")).as("正常端点 B 的工具照常注册（单点失败不拖垮装配）").isNotNull();
         assertThat(toolkit.getTool("search_stock")).as("内置工具不受影响").isNotNull();
@@ -278,7 +280,7 @@ class UserToolkitFactoryTest {
                 mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
                 mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
                 mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
-                new com.fasterxml.jackson.databind.ObjectMapper()).build(1L);
+                new com.fasterxml.jackson.databind.ObjectMapper(), TOOL_TIMEOUT).build(1L);
 
         var names = toolkit.getToolNames();
         assertThat(names).contains("screen_stocks", "analyze_financials", "analyze_industry",
@@ -313,7 +315,7 @@ class UserToolkitFactoryTest {
                 mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
                 mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
                 mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
-                new com.fasterxml.jackson.databind.ObjectMapper()).build(1L);
+                new com.fasterxml.jackson.databind.ObjectMapper(), TOOL_TIMEOUT).build(1L);
 
         assertThat(toolkit.getTool("trade_cal")).as("密文经解密后装配成功").isNotNull();
     }
@@ -349,10 +351,79 @@ class UserToolkitFactoryTest {
                 mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
                 mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
                 mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
-                new com.fasterxml.jackson.databind.ObjectMapper()).build(1L);
+                new com.fasterxml.jackson.databind.ObjectMapper(), TOOL_TIMEOUT).build(1L);
 
         assertThat(toolkit.getTool("mx_tool")).as("解密失败只跳过故障 provider，其余照常").isNotNull();
         verify(clientPool, never()).acquire(org.mockito.ArgumentMatchers.eq(providerA),
                 org.mockito.ArgumentMatchers.eq(endpointA), any());
+    }
+
+    @DisplayName("listTools 阻塞带 toolTimeout 上限（B3：死配置接线为真实生效）")
+    @Test
+    @SuppressWarnings("unchecked")
+    void givenBuild_whenListTools_thenBlockedWithConfiguredTimeout() {
+        InvestTools investTools = mock(InvestTools.class);
+        McpConfigRepository repository = mock(McpConfigRepository.class);
+        McpClientPool clientPool = mock(McpClientPool.class);
+        McpClientWrapper client = mock(McpClientWrapper.class);
+        Mono<List<McpSchema.Tool>> listTools = mock(Mono.class);
+
+        McpProvider provider = McpProvider.reconstitute(2L, "tushare", "Tushare", AuthType.BEARER, null, "token", true, null, NOW);
+        McpEndpoint endpoint = McpEndpoint.reconstitute(3L, 2L, null, "Tushare 数据", "https://api.tushare.pro/mcp/", true, NOW);
+        McpUserConfig config = McpUserConfig.reconstitute(9L, 1L, 2L, true, List.of(), 1, NOW, NOW);
+
+        when(repository.findEnabledProviders()).thenReturn(List.of(provider));
+        when(repository.findByUserIdAndProviderId(1L, 2L)).thenReturn(Optional.of(config));
+        when(repository.findEnabledEndpointsByProviderId(2L)).thenReturn(List.of(endpoint));
+        when(clientPool.acquire(provider, endpoint, "token")).thenReturn(client);
+        when(client.listTools()).thenReturn(listTools);
+        when(listTools.block(TOOL_TIMEOUT)).thenReturn(List.of());
+        when(client.getName()).thenReturn("tushare");
+
+        new UserToolkitFactory(investTools, repository, clientPool, passthroughCodec(),
+                mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
+                mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
+                mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
+                new com.fasterxml.jackson.databind.ObjectMapper(), TOOL_TIMEOUT).build(1L);
+
+        verify(listTools).block(TOOL_TIMEOUT);
+    }
+
+    @DisplayName("listTools 超过 toolTimeout：端点被跳过（超时异常而非永久阻塞），其余端点照常")
+    @Test
+    void givenListToolsTimesOut_whenBuild_thenEndpointSkippedAndElapsedBounded() {
+        InvestTools investTools = mock(InvestTools.class);
+        McpConfigRepository repository = mock(McpConfigRepository.class);
+        McpClientPool clientPool = mock(McpClientPool.class);
+        McpClientWrapper clientA = mock(McpClientWrapper.class);
+        McpClientWrapper clientB = mock(McpClientWrapper.class);
+
+        McpProvider provider = McpProvider.reconstitute(2L, "tushare", "Tushare", AuthType.BEARER, null, "token", true, null, NOW);
+        McpEndpoint endpointA = McpEndpoint.reconstitute(3L, 2L, null, "A", "https://a.tushare.pro/mcp/", true, NOW);
+        McpEndpoint endpointB = McpEndpoint.reconstitute(4L, 2L, null, "B", "https://b.tushare.pro/mcp/", true, NOW);
+        McpUserConfig config = McpUserConfig.reconstitute(9L, 1L, 2L, true, List.of(), 1, NOW, NOW);
+
+        when(repository.findEnabledProviders()).thenReturn(List.of(provider));
+        when(repository.findByUserIdAndProviderId(1L, 2L)).thenReturn(Optional.of(config));
+        when(repository.findEnabledEndpointsByProviderId(2L)).thenReturn(List.of(endpointA, endpointB));
+        when(clientPool.acquire(provider, endpointA, "token")).thenReturn(clientA);
+        when(clientPool.acquire(provider, endpointB, "token")).thenReturn(clientB);
+        // A 端点永久无响应：block(Duration) 到点必抛 IllegalStateException（真实 reactor 语义）
+        when(clientA.listTools()).thenReturn(Mono.never());
+        when(clientB.listTools()).thenReturn(Mono.just(List.of(tool("b_tool", annotations(true)))));
+        when(clientB.getName()).thenReturn("tushare-b");
+
+        long start = System.nanoTime();
+        Toolkit toolkit = new UserToolkitFactory(investTools, repository, clientPool, passthroughCodec(),
+                mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
+                mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
+                mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
+                new com.fasterxml.jackson.databind.ObjectMapper(), java.time.Duration.ofMillis(100)).build(1L);
+        long elapsedMs = java.time.Duration.ofNanos(System.nanoTime() - start).toMillis();
+
+        assertThat(toolkit.getTool("b_tool")).as("超时端点被跳过，正常端点照常注册").isNotNull();
+        assertThat(elapsedMs)
+                .as("listTools 挂死端点须在 toolTimeout 内抛超时而非永久阻塞")
+                .isLessThan(10_000);
     }
 }

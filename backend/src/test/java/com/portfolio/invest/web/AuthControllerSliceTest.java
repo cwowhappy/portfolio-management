@@ -22,11 +22,13 @@ import com.portfolio.invest.domain.user.UserRepository;
 import com.portfolio.invest.domain.user.UserRole;
 import com.portfolio.invest.domain.user.UserStatus;
 import com.portfolio.invest.infrastructure.security.AuthenticatedUser;
+import com.portfolio.invest.infrastructure.security.LoginRateLimiter;
 import com.portfolio.invest.infrastructure.security.SecurityConfig;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletResponse;
 import java.time.Instant;
 import java.util.Optional;
+import java.util.OptionalLong;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -63,6 +65,8 @@ class AuthControllerSliceTest {
     private AuthenticationManager authenticationManager;
     @MockitoBean
     private RememberMeServices rememberMeServices;
+    @MockitoBean
+    private LoginRateLimiter loginRateLimiter;
 
     // SecurityConfig 装配所需依赖（切片内无真实实现）
     @MockitoBean
@@ -161,6 +165,66 @@ class AuthControllerSliceTest {
                 .andExpect(jsonPath("$.code").value("ACCOUNT_DISABLED"));
     }
 
+    @DisplayName("连续5次密码错误后第6次登录429+Retry-After，且不再触发认证")
+    @Test
+    void givenFiveFailures_whenLoginAgain_then429WithRetryAfter() throws Exception {
+        when(authenticationManager.authenticate(any()))
+                .thenThrow(new BadCredentialsException("bad credentials"));
+        // 前 5 次请求放行（各自计一次失败），第 6 次起限流器判定锁定
+        when(loginRateLimiter.blockedForSeconds("u"))
+                .thenReturn(OptionalLong.empty(), OptionalLong.empty(), OptionalLong.empty(),
+                        OptionalLong.empty(), OptionalLong.empty(), OptionalLong.of(300L));
+
+        for (int i = 0; i < 5; i++) {
+            mvc.perform(post("/api/auth/login")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"username\":\"u\",\"password\":\"wrong\"}"))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.code").value("BAD_CREDENTIALS"));
+        }
+        org.mockito.Mockito.verify(loginRateLimiter, org.mockito.Mockito.times(5)).onFailure("u");
+
+        // 第 6 次即使密码正确（认证可成功）也被 429 拦截，authenticate 不得再被调用
+        mvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"u\",\"password\":\"p\"}"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().string("Retry-After", "300"))
+                .andExpect(jsonPath("$.code").value("TOO_MANY_ATTEMPTS"))
+                .andExpect(jsonPath("$.message").value("尝试次数过多，请 5 分钟后再试"));
+        org.mockito.Mockito.verify(authenticationManager, org.mockito.Mockito.times(5)).authenticate(any());
+        org.mockito.Mockito.verify(loginRateLimiter, org.mockito.Mockito.never()).onSuccess(org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @DisplayName("锁定的username不影响其他用户登录")
+    @Test
+    void givenLockedUsername_whenOtherUsernameLogin_thenSucceeds() throws Exception {
+        when(loginRateLimiter.blockedForSeconds("u")).thenReturn(OptionalLong.of(300L));
+        when(loginRateLimiter.blockedForSeconds("v")).thenReturn(OptionalLong.empty());
+        givenAuthenticationSucceeds(user(UserStatus.APPROVED, true));
+
+        mvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"v\",\"password\":\"p\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.username").value("u"));
+        org.mockito.Mockito.verify(loginRateLimiter).onSuccess("v");
+    }
+
+    @DisplayName("登录成功清零限流计数")
+    @Test
+    void givenSuccessfulLogin_whenLogin_thenResetCounter() throws Exception {
+        when(loginRateLimiter.blockedForSeconds("u")).thenReturn(OptionalLong.empty());
+        givenAuthenticationSucceeds(user(UserStatus.APPROVED, true));
+
+        mvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"u\",\"password\":\"p\"}"))
+                .andExpect(status().isOk());
+        org.mockito.Mockito.verify(loginRateLimiter).onSuccess("u");
+        org.mockito.Mockito.verify(loginRateLimiter, org.mockito.Mockito.never()).onFailure(org.mockito.ArgumentMatchers.anyString());
+    }
+
     @DisplayName("密码错误返回401")
     @Test
     void givenWrongPassword_whenLogin_thenReturn401() throws Exception {
@@ -211,6 +275,20 @@ class AuthControllerSliceTest {
                         new UsernamePasswordAuthenticationToken("anonymous", null, java.util.List.of()))))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
+    }
+
+    @DisplayName("找回密码发码返回中性文案（B5 防枚举，具体分支由服务层保证）")
+    @Test
+    void givenResetCodeRequest_whenResetCode_thenNeutralMessage() throws Exception {
+        when(emailCodeService.issueResetCode("ghost"))
+                .thenReturn(com.portfolio.invest.application.auth.EmailCodeService.RESET_NEUTRAL_MESSAGE);
+
+        mvc.perform(post("/api/auth/reset-code")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"identifier\":\"ghost\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message")
+                        .value(com.portfolio.invest.application.auth.EmailCodeService.RESET_NEUTRAL_MESSAGE));
     }
 
     @DisplayName("注册成功返回201")

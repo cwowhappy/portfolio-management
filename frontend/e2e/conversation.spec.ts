@@ -42,7 +42,8 @@ test.describe("会话持久化", () => {
     const put = await page.request.put(`/api/conversations/${convId}/messages`, {
       data: [{ id: "e2e-msg-1", role: "user", content: msgText, createdAt: Date.now() }],
     });
-    expect(put.status()).toBe(204);
+    // B6：PUT 契约改为 200 {updatedAt}（原 204）
+    expect(put.status()).toBe(200);
 
     // 刷新：会话仍在侧边栏，标题 = 首条消息前 24 字
     await page.reload();

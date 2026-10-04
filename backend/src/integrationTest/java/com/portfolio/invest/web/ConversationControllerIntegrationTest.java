@@ -38,6 +38,16 @@ class ConversationControllerIntegrationTest extends PostgresTestSupport {
         RecordingMailSender recordingMailSender() {
             return new RecordingMailSender();
         }
+
+        /**
+         * 过渡期测试脚手架：UserToolkitFactory 的 Duration toolTimeout 依赖（BE-B 接线中）在
+         * 主装配供给前由测试侧兜底；@ConditionalOnMissingBean 保证主装配一旦提供即自动退出。
+         */
+        @Bean
+        @org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean(java.time.Duration.class)
+        java.time.Duration mcpToolTimeoutFallback() {
+            return java.time.Duration.ofSeconds(30);
+        }
     }
 
     @Autowired MockMvc mockMvc;
@@ -68,18 +78,20 @@ class ConversationControllerIntegrationTest extends PostgresTestSupport {
                 .andExpect(jsonPath("$.id").value(convA))
                 .andExpect(jsonPath("$.title").value("新会话"));
 
-        // A 保存消息 → 204，并生成标题
+        // A 保存消息 → 200（暴露新 updatedAt），并生成标题
         mockMvc.perform(put("/api/conversations/{id}/messages", convA).session(sessionA)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("[{\"id\":\"m-1\",\"role\":\"user\",\"content\":\"你好\",\"createdAt\":1700000000000}]"))
-                .andExpect(status().isNoContent());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.updatedAt").exists()); // B6：PUT 响应暴露新 updatedAt
 
         // A 读回消息
         mockMvc.perform(get("/api/conversations/{id}/messages", convA).session(sessionA))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].id").value("m-1"))
-                .andExpect(jsonPath("$[0].role").value("user"))
-                .andExpect(jsonPath("$[0].content").value("你好"));
+                .andExpect(jsonPath("$.updatedAt").exists()) // B6：消息响应携带 updatedAt（If-Match 基准）
+                .andExpect(jsonPath("$.messages[0].id").value("m-1"))
+                .andExpect(jsonPath("$.messages[0].role").value("user"))
+                .andExpect(jsonPath("$.messages[0].content").value("你好"));
 
         // A 列表（按 updatedAt 倒序）包含该会话
         mockMvc.perform(get("/api/conversations").session(sessionA))
@@ -117,6 +129,68 @@ class ConversationControllerIntegrationTest extends PostgresTestSupport {
                 .andExpect(jsonPath("$.length()").value(0));
     }
 
+    @DisplayName("乐观校验：过期If-Match→409且服务端消息不变，当前If-Match→200且updatedAt前进")
+    @Test
+    void givenConcurrentWrites_whenSaveMessagesWithIfMatch_thenConflictKeepsServerState() throws Exception {
+        register("conv_eve", "abc12345");
+        approve("conv_eve");
+        MockHttpSession session = login("conv_eve", "abc12345");
+        String convId = UUID.randomUUID().toString();
+        mockMvc.perform(post("/api/conversations").session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"id\":\"" + convId + "\"}"))
+                .andExpect(status().isCreated());
+
+        // 基线：无 If-Match 写入 m-1（向后兼容放行），拿到服务端 updatedAt v1
+        mockMvc.perform(put("/api/conversations/{id}/messages", convId).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("[{\"id\":\"m-1\",\"role\":\"user\",\"content\":\"服务端基线\",\"createdAt\":1700000000000}]"))
+                .andExpect(status().isOk());
+        MvcResult get1 = mockMvc.perform(get("/api/conversations/{id}/messages", convId).session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.messages[0].id").value("m-1"))
+                .andReturn();
+        String v1 = com.jayway.jsonpath.JsonPath.read(get1.getResponse().getContentAsString(), "$.updatedAt");
+
+        // 模拟另一窗口先写：携带 v1 的 PUT 成功（m-2），updatedAt 前进
+        mockMvc.perform(put("/api/conversations/{id}/messages", convId).session(session)
+                        .header("If-Match", v1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("[{\"id\":\"m-1\",\"role\":\"user\",\"content\":\"服务端基线\",\"createdAt\":1700000000000},"
+                                + "{\"id\":\"m-2\",\"role\":\"assistant\",\"content\":\"另一窗口回复\",\"createdAt\":1700000001000}]"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.updatedAt").exists());
+
+        // 窗口 A 仍持旧值 v1：过期 If-Match → 409 CONFLICT，且服务端消息一字未变（无删除发生）
+        mockMvc.perform(put("/api/conversations/{id}/messages", convId).session(session)
+                        .header("If-Match", v1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("[{\"id\":\"m-1\",\"role\":\"user\",\"content\":\"服务端基线\",\"createdAt\":1700000000000},"
+                                + "{\"id\":\"m-x\",\"role\":\"user\",\"content\":\"旧窗口的整段替换\",\"createdAt\":1700000002000}]"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CONFLICT"));
+        MvcResult afterConflict = mockMvc.perform(get("/api/conversations/{id}/messages", convId).session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.messages.length()").value(2))
+                .andExpect(jsonPath("$.messages[1].id").value("m-2"))
+                .andReturn();
+        String v2 = com.jayway.jsonpath.JsonPath.read(afterConflict.getResponse().getContentAsString(), "$.updatedAt");
+
+        // 窗口 A 重新 GET 拿到 v2 后重试 → 200（与前端 409→GET 合并→重试一次的流程一致）
+        mockMvc.perform(put("/api/conversations/{id}/messages", convId).session(session)
+                        .header("If-Match", v2)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("[{\"id\":\"m-1\",\"role\":\"user\",\"content\":\"服务端基线\",\"createdAt\":1700000000000},"
+                                + "{\"id\":\"m-2\",\"role\":\"assistant\",\"content\":\"另一窗口回复\",\"createdAt\":1700000001000},"
+                                + "{\"id\":\"m-3\",\"role\":\"user\",\"content\":\"旧窗口合并重试\",\"createdAt\":1700000002000}]"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.updatedAt").exists());
+        mockMvc.perform(get("/api/conversations/{id}/messages", convId).session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.messages.length()").value(3))
+                .andExpect(jsonPath("$.messages[2].id").value("m-3"));
+    }
+
     @DisplayName("他人占用id创建返回404且不改写归属")
     @Test
     void givenConversationIdOccupiedByOtherUser_whenCreate_thenNotFoundAndOwnershipKept() throws Exception {
@@ -137,7 +211,7 @@ class ConversationControllerIntegrationTest extends PostgresTestSupport {
         mockMvc.perform(put("/api/conversations/{id}/messages", sharedId).session(sessionA)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("[{\"id\":\"m-1\",\"role\":\"user\",\"content\":\"A的私聊\",\"createdAt\":1700000000000}]"))
-                .andExpect(status().isNoContent());
+                .andExpect(status().isOk());
 
         // B 用同一 id POST → 404（不泄露存在性），不得被 merge 改写归属
         mockMvc.perform(post("/api/conversations").session(sessionB)
@@ -153,7 +227,7 @@ class ConversationControllerIntegrationTest extends PostgresTestSupport {
                 .andExpect(jsonPath("$[0].title").value("A的私聊"));
         mockMvc.perform(get("/api/conversations/{id}/messages", sharedId).session(sessionA))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].content").value("A的私聊"));
+                .andExpect(jsonPath("$.messages[0].content").value("A的私聊"));
 
         // B 的列表为空（会话未被接管）
         mockMvc.perform(get("/api/conversations").session(sessionB))

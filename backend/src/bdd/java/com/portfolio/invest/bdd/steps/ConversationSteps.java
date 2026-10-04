@@ -79,7 +79,8 @@ public class ConversationSteps {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("[{\"id\":\"m-1\",\"role\":\"user\",\"content\":\"" + content
                                 + "\",\"createdAt\":1700000000000}]"))
-                .andExpect(status().isNoContent());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.updatedAt").exists()); // B6：PUT 响应暴露 updatedAt
     }
 
     @那么("该用户可以读回消息 {string}")
@@ -87,9 +88,10 @@ public class ConversationSteps {
         mockMvc.perform(get("/api/conversations/{id}/messages", ctx.getConversationId())
                         .session(ctx.getUserSession()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].id").value("m-1"))
-                .andExpect(jsonPath("$[0].role").value("user"))
-                .andExpect(jsonPath("$[0].content").value(content));
+                .andExpect(jsonPath("$.updatedAt").exists()) // B6：消息响应携带乐观校验基准
+                .andExpect(jsonPath("$.messages[0].id").value("m-1"))
+                .andExpect(jsonPath("$.messages[0].role").value("user"))
+                .andExpect(jsonPath("$.messages[0].content").value(content));
     }
 
     @那么("会话标题应变为 {string}")

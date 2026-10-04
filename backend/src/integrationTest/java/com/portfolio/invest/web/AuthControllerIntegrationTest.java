@@ -3,6 +3,7 @@ package com.portfolio.invest.web;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -44,6 +45,16 @@ class AuthControllerIntegrationTest extends PostgresTestSupport {
         @Primary
         RecordingMailSender recordingMailSender() {
             return new RecordingMailSender();
+        }
+
+        /**
+         * 过渡期测试脚手架：UserToolkitFactory 的 Duration toolTimeout 依赖（BE-B 接线中）在
+         * 主装配供给前由测试侧兜底；@ConditionalOnMissingBean 保证主装配一旦提供即自动退出。
+         */
+        @Bean
+        @org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean(java.time.Duration.class)
+        java.time.Duration mcpToolTimeoutFallback() {
+            return java.time.Duration.ofSeconds(30);
         }
     }
 
@@ -146,6 +157,38 @@ class AuthControllerIntegrationTest extends PostgresTestSupport {
                 .andExpect(jsonPath("$.username").value("auth_bob"));
     }
 
+    @DisplayName("连续5次密码错误→第6次即使密码正确也429+Retry-After，其他用户不受影响")
+    @Test
+    void givenRepeatedLoginFailures_whenLocked_then429EvenWithCorrectPasswordAndOtherUserUnaffected() throws Exception {
+        register("rate_alice", "abc12345");
+        approve("rate_alice");
+        register("rate_bob", "abc12345");
+        approve("rate_bob");
+
+        // 同一 username 连续 5 次密码错误 → 401（行为不变）
+        for (int i = 0; i < 5; i++) {
+            mockMvc.perform(post("/api/auth/login")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"username\":\"rate_alice\",\"password\":\"wrongpass\"}"))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.code").value("BAD_CREDENTIALS"));
+        }
+
+        // 第 6 次携带正确密码 → 429 + Retry-After（锁定期内密码正确也拒绝）
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"rate_alice\",\"password\":\"abc12345\"}"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().string("Retry-After", org.hamcrest.Matchers.notNullValue()))
+                .andExpect(jsonPath("$.code").value("TOO_MANY_ATTEMPTS"));
+
+        // 不同 username 互不影响：bob 正常登录
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"rate_bob\",\"password\":\"abc12345\"}"))
+                .andExpect(status().isOk());
+    }
+
     @DisplayName("错误密码返回401")
     @Test
     void givenRegisteredUser_whenLoginWithWrongPassword_thenUnauthorized() throws Exception {
@@ -226,12 +269,13 @@ class AuthControllerIntegrationTest extends PostgresTestSupport {
         register("reset_flow", "abc12345");
         approve("reset_flow");
 
-        // 1) 找回发码 200 + 邮件发往已验证邮箱
+        // 1) 找回发码 200 + 中性文案 + 邮件发往已验证邮箱
         mockMvc.perform(post("/api/auth/reset-code")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"identifier\":\"reset_flow\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.message").value("验证码已发送"));
+                .andExpect(jsonPath("$.message")
+                        .value(com.portfolio.invest.application.auth.EmailCodeService.RESET_NEUTRAL_MESSAGE));
         var resetMail = mailStub.sent.get(mailStub.sent.size() - 1);
         assertThat(resetMail.to()).isEqualTo("reset_flow@test.local");
         String firstCode = TestCodes.extractSixDigits(resetMail.text());
@@ -274,27 +318,52 @@ class AuthControllerIntegrationTest extends PostgresTestSupport {
                 .andExpect(jsonPath("$.code").value("CODE_INVALID"));
     }
 
-    @DisplayName("reset-code 账号不存在 404")
+    @DisplayName("reset-code 四分支（不存在/管理员/未绑邮箱/停用）响应一致且均不发信")
     @Test
-    void givenUnknownIdentifier_whenResetCode_thenNotFound() throws Exception {
+    void givenNonResettableIdentifiers_whenResetCode_thenIdenticalNeutralResponseAndNoMail() throws Exception {
+        // 管理员（绑邮箱）与未绑邮箱普通用户直落库
+        seedAdmin("reset_admin2", "admin12345", "reset_admin2@test.local");
+        userRepository.save(User.reconstitute(null, "reset_noemail", passwordEncoder.encode("abc12345"),
+                UserRole.USER, UserStatus.APPROVED, true, null, false, Instant.now(), Instant.now()));
+        // 停用用户：注册审核后停用（注册流程已发信，清空后只看 reset-code 是否发信）
+        register("reset_disabled", "abc12345");
+        approve("reset_disabled");
+        var disabled = userRepository.findByUsername("reset_disabled").orElseThrow();
+        userRepository.save(disabled.disable());
+        mailStub.sent.clear();
+
+        String neutral = com.portfolio.invest.application.auth.EmailCodeService.RESET_NEUTRAL_MESSAGE;
         mockMvc.perform(post("/api/auth/reset-code")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"identifier\":\"no_such_reset_user\"}"))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.code").value("USER_NOT_FOUND"));
-    }
-
-    @DisplayName("reset-code ADMIN 403")
-    @Test
-    void givenAdminAccount_whenResetCode_thenForbidden() throws Exception {
-        seedAdmin("reset_admin", "admin12345", "reset_admin@test.local");
-
-        // 绑了邮箱的管理员仍拒绝：角色检查先于邮箱，管理员只能走后台改密
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value(neutral));
         mockMvc.perform(post("/api/auth/reset-code")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"identifier\":\"reset_admin\"}"))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+                        .content("{\"identifier\":\"reset_admin2\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value(neutral));
+        mockMvc.perform(post("/api/auth/reset-code")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"identifier\":\"reset_noemail\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value(neutral));
+        mockMvc.perform(post("/api/auth/reset-code")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"identifier\":\"reset_disabled\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value(neutral));
+        assertThat(mailStub.sent).isEmpty(); // 四分支均不发信
+    }
+
+    @DisplayName("reset-password 不可找回标识按错码处理（400 CODE_INVALID，不枚举）")
+    @Test
+    void givenUnknownIdentifier_whenResetPassword_thenCodeInvalid() throws Exception {
+        mockMvc.perform(post("/api/auth/reset-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"identifier\":\"no_such_user\",\"code\":\"123456\",\"newPassword\":\"newpass99\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("CODE_INVALID"));
     }
 
     @DisplayName("重置后 remember-me 吊销")

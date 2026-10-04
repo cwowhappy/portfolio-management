@@ -192,6 +192,9 @@ public class PortfolioApplicationService {
 
     @Transactional
     public PositionView editTrade(Long userId, Long positionId, Long tradeId, EditTradeCommand cmd) {
+        if (cmd.tradeDate().isAfter(LocalDate.now())) {
+            throw new PortfolioException(PortfolioErrorCode.INVALID_INPUT, "日期不能晚于今日");
+        }
         Portfolio p = getOrCreatePortfolio(userId);
         var position = requirePosition(p.id(), positionId);
         Long targetGroupId = cmd.groupId();

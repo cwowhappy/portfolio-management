@@ -83,7 +83,11 @@ function ResetPasswordDialog({
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !busy) void submit();
+            if (e.key === "Enter") {
+              // 中文 IME 组合中 Enter 用于选定候选词，不得提交
+              if (e.nativeEvent.isComposing) return;
+              if (!busy) void submit();
+            }
           }}
           className="mt-2 w-full rounded-md border border-[color:var(--color-line)] bg-[color:var(--color-panel)] px-3 py-2 text-[13px] text-[color:var(--color-ink)] focus:outline-none focus:border-[color:var(--color-up)]"
           placeholder="再次输入新密码"
@@ -156,7 +160,11 @@ function BindEmailDialog({
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !busy) void submit();
+            if (e.key === "Enter") {
+              // 中文 IME 组合中 Enter 用于选定候选词，不得提交
+              if (e.nativeEvent.isComposing) return;
+              if (!busy) void submit();
+            }
           }}
           className="mt-4 w-full rounded-md border border-[color:var(--color-line)] bg-[color:var(--color-panel)] px-3 py-2 text-[13px] text-[color:var(--color-ink)] focus:outline-none focus:border-[color:var(--color-up)]"
           placeholder="邮箱"

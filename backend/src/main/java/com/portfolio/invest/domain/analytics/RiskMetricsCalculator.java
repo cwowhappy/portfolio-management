@@ -8,7 +8,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.SortedMap;
-import java.util.TreeMap;
 
 /** 风险指标（MS-13 F07/F08）：TWR 净值指数、最大回撤；夏普/Calmar 见同类后续方法，spec 02-设计规格 §2.1/§2.2。 */
 public final class RiskMetricsCalculator {
@@ -23,10 +22,8 @@ public final class RiskMetricsCalculator {
         if (series.points().isEmpty()) {
             return out;
         }
-        Map<LocalDate, BigDecimal> byDay = new TreeMap<>();
-        for (ExternalFlow f : flows) {
-            byDay.merge(f.date(), f.amount(), BigDecimal::add);
-        }
+        // 流日期归一到「≥ flowDate 的首个 tradeDate」，与 NavReconstructor 计入规则对齐
+        Map<LocalDate, BigDecimal> byDay = FlowDates.normalize(series, flows);
         BigDecimal idx = BigDecimal.ONE;
         out.add(new DatedIndex(series.points().get(0).tradeDate(), BigDecimal.ONE));
         for (int i = 1; i < series.points().size(); i++) {

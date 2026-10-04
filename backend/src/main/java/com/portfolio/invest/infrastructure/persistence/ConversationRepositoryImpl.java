@@ -3,6 +3,7 @@ package com.portfolio.invest.infrastructure.persistence;
 import com.portfolio.invest.domain.conversation.ChatMessage;
 import com.portfolio.invest.domain.conversation.Conversation;
 import com.portfolio.invest.domain.conversation.ConversationRepository;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.stereotype.Repository;
@@ -58,5 +59,11 @@ public class ConversationRepositoryImpl implements ConversationRepository {
         messageJpa.deleteByConversationId(conversationId);
         messageJpa.saveAll(messages.stream()
                 .map(m -> ChatMessageJpaEntity.fromDomain(conversationId, m)).toList());
+    }
+
+    @Override
+    public boolean updateIfUnchanged(String id, Long userId, Instant expectedUpdatedAt,
+                                     String title, Instant newUpdatedAt) {
+        return conversationJpa.updateMetadataIfUnchanged(id, userId, expectedUpdatedAt, title, newUpdatedAt) > 0;
     }
 }

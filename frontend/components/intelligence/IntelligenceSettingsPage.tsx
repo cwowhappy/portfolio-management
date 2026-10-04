@@ -237,7 +237,11 @@ export default function IntelligenceSettingsPage() {
               value={stockQuery}
               onChange={(e) => setStockQuery(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter") onStockSearch();
+                if (e.key === "Enter") {
+                  // 中文 IME 组合中 Enter 用于选定候选词，不得触发搜索
+                  if (e.nativeEvent.isComposing) return;
+                  onStockSearch();
+                }
               }}
             />
             <button type="button" onClick={importFromPortfolio} className={buttonClass}>

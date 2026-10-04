@@ -16,7 +16,7 @@ import {
   historyToAgentMessages,
   useChatRuntime,
 } from "./RuntimeProvider";
-import { loadMessages, newThreadId } from "@/lib/conversations";
+import { loadMessages, newThreadId, errorStatus } from "@/lib/conversations";
 import InterruptApprovalCard from "./InterruptApprovalCard";
 import ToolCallCard from "./ToolCallCard";
 import { ChartToolRenderers } from "./toolRenderers";
@@ -329,6 +329,8 @@ function Composer({
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
+              // 中文 IME 组合中 Enter 用于选定候选词，不得发送（Shift+Enter 换行不受影响）
+              if (e.nativeEvent.isComposing) return;
               e.preventDefault();
               submit();
             }
@@ -490,7 +492,7 @@ export default function ThreadArea({ llmReady, onUnauthorized }: {
     const threadId = currentThreadId;
     (async () => {
       try {
-        const history = await loadMessages(threadId);
+        const { messages: history } = await loadMessages(threadId);
         if (cancelled) return;
         if (agent.isRunning) agent.abortRun(); // 切换线程时停止旧流，避免跨线程串写
         agent.setMessages(historyToAgentMessages(history));
@@ -509,12 +511,31 @@ export default function ThreadArea({ llmReady, onUnauthorized }: {
   // 执行一次持久化。msgs 是调用点快照：若等待 loadMessages 期间发生切线程 + 历史回灌
   // setMessages，agent.messages 会变成新线程的，若不快照会把新线程消息写进旧线程记录。
   // keepalive 用于卸载场景：让 PUT 在页面销毁后仍能完成。
+  // B6 并发写：首次 PUT 携带 If-Match（GET 到的服务端 updatedAt）做乐观校验；
+  // 撞 409（其他窗口先写）→ 重新 GET 服务端消息，与本地快照按 id 做 union 后带新 If-Match
+  // 重试一次（agentMessagesToHistory 的 union 语义保证不互删）；重试仍 409 则提示用户刷新
+  // 确认——本地草稿消息保持不动，刷新后以服务端为准人工合并。
   const flushPersist = useCallback(
     (threadId: string, msgs: Message[], keepalive = false) => {
       (async () => {
         try {
-          const saved = agentMessagesToHistory(msgs, await loadMessages(threadId));
-          if (saved.length > 0) await persistMessages(threadId, saved, { keepalive });
+          const view = await loadMessages(threadId);
+          const saved = agentMessagesToHistory(msgs, view.messages);
+          if (saved.length === 0) return;
+          try {
+            await persistMessages(threadId, saved, { keepalive, ifMatch: view.updatedAt });
+            return;
+          } catch (e) {
+            if (errorStatus(e) !== 409) throw e;
+          }
+          const refreshed = await loadMessages(threadId);
+          const merged = agentMessagesToHistory(msgs, refreshed.messages);
+          try {
+            await persistMessages(threadId, merged, { keepalive, ifMatch: refreshed.updatedAt });
+          } catch (retryErr) {
+            if (errorStatus(retryErr) !== 409) throw retryErr;
+            setSendError("会话在其他窗口被修改，请刷新确认");
+          }
         } catch (e) {
           console.error("[ThreadArea] 持久化会话失败", threadId, e);
         }

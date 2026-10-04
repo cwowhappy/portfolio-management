@@ -28,7 +28,7 @@ public class McpAdminTokenController {
         this.service = service;
     }
 
-    /** 设置/更换 provider token；token 轮换后需重启后端生效（McpClientPool 缓存，非目标）。 */
+    /** 设置/更换 provider token；token 轮换经 McpTokenRotatedEvent 即时驱逐池内客户端，无需重启（B3）。 */
     @PutMapping("/api/admin/mcp/providers/{code}/token")
     public ResponseEntity<Void> setToken(@PathVariable String code, @Valid @RequestBody SetTokenRequest body,
                                          Authentication auth) {

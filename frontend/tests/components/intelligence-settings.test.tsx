@@ -153,6 +153,19 @@ describe("IntelligenceSettingsPage", () => {
     expect(screen.queryByText("600519 贵州茅台")).toBeNull();
   });
 
+  it("IME 组合中 Enter 不触发标的搜索（isComposing 守卫）", async () => {
+    render(<IntelligenceSettingsPage />);
+    const input = await screen.findByLabelText("标的搜索");
+    fireEvent.change(input, { target: { value: "宁德" } });
+    // IME 组合态 Enter 只应选定候选词：不发起搜索
+    const notPrevented = fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+    expect(notPrevented).toBe(true);
+    expect(market.searchStocks).not.toHaveBeenCalled();
+    // 组合结束后正常 Enter 恢复搜索
+    fireEvent.keyDown(input, { key: "Enter", isComposing: false });
+    await waitFor(() => expect(market.searchStocks).toHaveBeenCalledWith("宁德"));
+  });
+
   it("从持仓导入：批量加入标签并按 code 去重（已有标的不重复）", async () => {
     portfolio.fetchPositions.mockResolvedValue([
       { stockCode: "000001", stockName: "平安银行" },

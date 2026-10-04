@@ -63,6 +63,36 @@ class RiskMetricsCalculatorTest {
                 .isCloseTo(new BigDecimal("1.16875"), within(new BigDecimal("0.000001")));
     }
 
+    @DisplayName("周六转入已含在周一 NAV：twrIndex 末值=1（本金不产生收益跳变，非 2）")
+    @Test
+    void givenSaturdayDepositReflectedInMondayNav_whenTwrIndex_thenNoPrincipalJump() {
+        var pts = new java.util.ArrayList<DailyPoint>();
+        pts.add(new DailyPoint(LocalDate.of(2026, 1, 2), null, null, new BigDecimal("100000")));  // 周五
+        pts.add(new DailyPoint(LocalDate.of(2026, 1, 5), null, null, new BigDecimal("200000")));  // 周一（含周六转入）
+        pts.add(new DailyPoint(LocalDate.of(2026, 1, 6), null, null, new BigDecimal("200000")));  // 周二持平
+        var idx = RiskMetricsCalculator.twrIndex(new NavSeries(pts),
+                List.of(new ExternalFlow(LocalDate.of(2026, 1, 3), new BigDecimal("100000"))));   // 周六
+        assertThat(idx.get(idx.size() - 1).index())
+                .isCloseTo(BigDecimal.ONE, within(new BigDecimal("0.000001")));
+    }
+
+    @DisplayName("已知答案：周六转入 10 万 + 周末市值跌 5 万 → 本金跳变不再掩盖真实回撤，MDD=50%（非 0）")
+    @Test
+    void givenSaturdayDepositMaskingWeekendLoss_whenTwrIndexAndMdd_thenRealDrawdown() {
+        var pts = new java.util.ArrayList<DailyPoint>();
+        pts.add(new DailyPoint(LocalDate.of(2026, 1, 2), null, null, new BigDecimal("100000")));  // 周五
+        pts.add(new DailyPoint(LocalDate.of(2026, 1, 5), null, null, new BigDecimal("150000")));  // 周一：含转入 10 万、市值 −5 万
+        pts.add(new DailyPoint(LocalDate.of(2026, 1, 6), null, null, new BigDecimal("150000")));  // 周二持平
+        var idx = RiskMetricsCalculator.twrIndex(new NavSeries(pts),
+                List.of(new ExternalFlow(LocalDate.of(2026, 1, 3), new BigDecimal("100000"))));   // 周六
+        // 真实 R_周一=(150000−100000)/100000−1=−50%，周二持平 → 指数 1→0.5→0.5
+        var mdd = RiskMetricsCalculator.maxDrawdown(idx);
+        assertThat(mdd.mdd()).isCloseTo(new BigDecimal("0.5"), within(new BigDecimal("0.000001")));
+        assertThat(mdd.troughDate()).isEqualTo(LocalDate.of(2026, 1, 5));
+        assertThat(mdd.recoveryDate()).isNull();
+        assertThat(mdd.currentDrawdown()).isCloseTo(new BigDecimal("0.5"), within(new BigDecimal("0.000001")));
+    }
+
     @DisplayName("已知答案：3 日收益 1%/2%/3%，rf 恒 3.65%（日 0.01%）→ 夏普手算对拍")
     @Test
     void givenThreeReturnsAndConstantRf_whenSharpe_thenMatchesHandCalc() {

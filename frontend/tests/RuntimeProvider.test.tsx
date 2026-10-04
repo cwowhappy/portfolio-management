@@ -61,6 +61,56 @@ describe("agentMessagesToHistory", () => {
   });
 });
 
+// B6 并发写（多标签页）：union 语义——输出 = 服务端 existing ∪ 本地 msgs，
+// 防止本窗口 PUT 整体覆盖时把其他窗口刚落库的消息抹掉（互删）。
+describe("agentMessagesToHistory union（并发写防互删）", () => {
+  const serverMsg = (id: string, createdAt: number): ChatMessage => ({
+    id,
+    role: "user",
+    content: `服务端${id}`,
+    createdAt,
+  });
+
+  it("服务端 {1,2} + 本地 {2,3} → {1,2,3}（服务端在前，按 id 去重）", () => {
+    const local: Message[] = [
+      { id: "2", role: "user", content: "本地2" },
+      { id: "3", role: "assistant", content: "本地3" },
+    ];
+    const out = agentMessagesToHistory(local, [serverMsg("1", 100), serverMsg("2", 200)]);
+    expect(out.map((m) => m.id)).toEqual(["1", "2", "3"]);
+  });
+
+  it("共有消息保留服务端原文与 createdAt（本地快照不作覆盖）", () => {
+    const local: Message[] = [{ id: "2", role: "user", content: "本地旧副本" }];
+    const out = agentMessagesToHistory(local, [serverMsg("2", 200)]);
+    expect(out).toEqual([{ id: "2", role: "user", content: "服务端2", createdAt: 200 }]);
+  });
+
+  it("本地新消息在 existing 中没有 createdAt 时取 Date.now()", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_700_000_000_000);
+    try {
+      const out = agentMessagesToHistory([{ id: "n1", role: "user", content: "新消息" }], []);
+      expect(out).toEqual([
+        { id: "n1", role: "user", content: "新消息", createdAt: 1_700_000_000_000 },
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("空集边界：双空 → 空；仅服务端 → 原样保留；本地全被过滤时服务端仍在", () => {
+    expect(agentMessagesToHistory([], [])).toEqual([]);
+    const serverOnly = [serverMsg("1", 100)];
+    expect(agentMessagesToHistory([], serverOnly)).toEqual(serverOnly);
+    const out = agentMessagesToHistory(
+      [{ id: "r1", role: "reasoning", content: "思考" }],
+      serverOnly,
+    );
+    expect(out).toEqual(serverOnly);
+  });
+});
+
 // ———— Provider ————
 
 function Probe() {

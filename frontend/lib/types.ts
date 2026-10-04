@@ -85,7 +85,7 @@ export interface NewsItem {
 
 export interface Health {
   status: "up" | "degraded";
-  llm: { provider: string; model: string; baseUrl: string; keyConfigured: boolean };
+  llm: { provider: string; model: string; keyConfigured: boolean };
   market: { ok: boolean; latencyMs?: number; message?: string };
 }
 

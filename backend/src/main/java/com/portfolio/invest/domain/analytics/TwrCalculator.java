@@ -6,7 +6,6 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
-import java.util.TreeMap;
 
 /** TWR：日频子周期几何链接 Π(1+R_t)−1，R_t=(V_t−F_t)/V_{t−1}−1（现金流日初到账），spec 02-设计规格 §2.3。 */
 public final class TwrCalculator {
@@ -19,10 +18,8 @@ public final class TwrCalculator {
         if (series.points().size() < 2) {
             return BigDecimal.ZERO.setScale(10, RoundingMode.HALF_UP);
         }
-        Map<LocalDate, BigDecimal> byDay = new TreeMap<>();
-        for (ExternalFlow f : flows) {
-            byDay.merge(f.date(), f.amount(), BigDecimal::add);
-        }
+        // 流日期归一到「≥ flowDate 的首个 tradeDate」，与 NavReconstructor 计入规则对齐
+        Map<LocalDate, BigDecimal> byDay = FlowDates.normalize(series, flows);
         BigDecimal growth = BigDecimal.ONE;
         for (int i = 1; i < series.points().size(); i++) {
             DailyPoint prev = series.points().get(i - 1);

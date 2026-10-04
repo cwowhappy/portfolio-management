@@ -6,6 +6,8 @@ import com.portfolio.invest.domain.market.MarketDataException;
 import com.portfolio.invest.application.market.MarketDataService;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.core.env.Environment;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -20,6 +22,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/agent")
 public class HealthController {
+
+    private static final Logger log = LoggerFactory.getLogger(HealthController.class);
 
     /** 探活缓存键：应用级共享缓存（ApplicationCache 端口），带前缀防键冲突。 */
     private static final String PROBE_CACHE_KEY = "health:market-probe";
@@ -62,9 +66,9 @@ public class HealthController {
     private Map<String, Object> llm() {
         String apiKey = env.getProperty("DEEPSEEK_API_KEY");
         Map<String, Object> llm = new LinkedHashMap<>();
+        // B8：只暴露 provider/model/keyConfigured——baseUrl 属内网部署细节，不外泄
         llm.put("provider", props.getLlm().getProvider());
         llm.put("model", props.getLlm().getModel());
-        llm.put("baseUrl", props.getLlm().getBaseUrl());
         llm.put("keyConfigured", apiKey != null && !apiKey.isBlank());
         return llm;
     }
@@ -86,8 +90,10 @@ public class HealthController {
             marketStatus.put("ok", true);
             marketStatus.put("latencyMs", latency);
         } catch (MarketDataException e) {
+            // B8：异常详情（可能含内网网关/上游 URL）只落服务端日志，响应固定中性文案
+            log.warn("行情源探活失败：{}", e.getMessage());
             marketStatus.put("ok", false);
-            marketStatus.put("message", e.getMessage());
+            marketStatus.put("message", "行情源探活失败");
         }
         return marketStatus;
     }

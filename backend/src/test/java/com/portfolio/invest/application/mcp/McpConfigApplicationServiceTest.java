@@ -32,13 +32,15 @@ class McpConfigApplicationServiceTest {
     private final McpConfigRepository repo = mock(McpConfigRepository.class);
     private final McpServerTester tester = mock(McpServerTester.class);
     private final McpSecretCodec codec = mock(McpSecretCodec.class);
+    private final org.springframework.context.ApplicationEventPublisher publisher =
+            mock(org.springframework.context.ApplicationEventPublisher.class);
     private McpConfigApplicationService service;
 
     @BeforeEach
     void setUp() {
         // 默认明文直读 codec（存量值原样返回），密文路径由专项用例覆写
         when(codec.decrypt(any())).thenAnswer(inv -> inv.getArgument(0));
-        service = new McpConfigApplicationService(repo, tester, codec);
+        service = new McpConfigApplicationService(repo, tester, codec, publisher);
     }
 
     private static McpProvider provider() {
@@ -122,6 +124,41 @@ class McpConfigApplicationServiceTest {
         service.setProviderToken("wind", "new-token");
 
         verify(repo).updateProviderSecret(3L, "v1:ENCRYPTED");
+    }
+
+    @DisplayName("管理员设置 token：密文落库成功后发布 McpTokenRotatedEvent（凭证轮换即时生效，无需重启）")
+    @Test
+    void givenSetToken_whenPersisted_thenPublishesRotationEvent() {
+        when(repo.findProviderByCode("wind")).thenReturn(Optional.of(provider()));
+        when(codec.encrypt("new-token")).thenReturn("v1:ENCRYPTED");
+
+        service.setProviderToken("wind", "new-token");
+
+        verify(publisher).publishEvent(org.mockito.ArgumentMatchers.<Object>argThat(event ->
+                event instanceof McpTokenRotatedEvent rotated && rotated.providerId().equals(3L)));
+    }
+
+    @DisplayName("管理员设置 token：provider 不存在不发布轮换事件")
+    @Test
+    void givenSetToken_whenProviderMissing_thenNoEventPublished() {
+        when(repo.findProviderByCode("nope")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.setProviderToken("nope", "t"))
+                .isInstanceOfSatisfying(McpException.class,
+                        e -> assertThat(e.code()).isEqualTo(McpErrorCode.PROVIDER_NOT_FOUND));
+        verify(publisher, never()).publishEvent(any());
+    }
+
+    @DisplayName("管理员设置 token：加密失败（未落库）不发布轮换事件")
+    @Test
+    void givenSetToken_whenEncryptFails_thenNoEventPublished() {
+        when(repo.findProviderByCode("wind")).thenReturn(Optional.of(provider()));
+        when(codec.encrypt("t")).thenThrow(new McpException(McpErrorCode.SECRET_KEY_MISSING, "MCP_SECRET_KEY 未配置"));
+
+        assertThatThrownBy(() -> service.setProviderToken("wind", "t"))
+                .isInstanceOfSatisfying(McpException.class,
+                        e -> assertThat(e.code()).isEqualTo(McpErrorCode.SECRET_KEY_MISSING));
+        verify(publisher, never()).publishEvent(any());
     }
 
     @DisplayName("管理员设置 token：provider 不存在抛 PROVIDER_NOT_FOUND")

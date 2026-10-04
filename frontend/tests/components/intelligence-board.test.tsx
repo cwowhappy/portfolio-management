@@ -185,6 +185,21 @@ describe("IntelligenceBoard", () => {
     );
   });
 
+  it("IME 组合中 Enter 不触发关键词检索（isComposing 守卫）", async () => {
+    render(<IntelligenceBoard />);
+    const input = await screen.findByLabelText("关键词检索");
+    fireEvent.change(input, { target: { value: "增持" } });
+    // IME 组合态 Enter 只应选定候选词：不更新 q、不触发新请求
+    const notPrevented = fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+    expect(notPrevented).toBe(true);
+    expect(api.fetchNews).toHaveBeenCalledTimes(1); // 仅挂载那一次
+    // 组合结束后正常 Enter 恢复检索
+    fireEvent.keyDown(input, { key: "Enter", isComposing: false });
+    await waitFor(() =>
+      expect(api.fetchNews).toHaveBeenLastCalledWith(expect.objectContaining({ q: "增持" })),
+    );
+  });
+
   it("四 tab 切换：各 tab 挂载拉取并渲染各自区块", async () => {
     api.fetchNews.mockResolvedValue(newsPage([news({ title: "新闻A" })]));
     api.fetchAnnouncements.mockResolvedValue(annPage([ann({ title: "公告B" })]));
