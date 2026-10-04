@@ -34,4 +34,28 @@ class AnnualReturnCalculatorTest {
                 List.of(new ExternalFlow(LocalDate.of(2026, 6, 1), new BigDecimal("500"))));
         assertThat(byYear.get(2026)).isCloseTo(new BigDecimal("0.16875"), within(new BigDecimal("0.000001")));
     }
+
+    @DisplayName("元旦（非交易日）流入归一到下一交易日扣除：2026 首段不因此虚高")
+    @Test
+    void givenHolidayFlowBeforeFirstTradingDay_whenYearlyTwr_thenDeductedOnNextTradeDate() {
+        List<DailyPoint> pts = List.of(
+                new DailyPoint(LocalDate.of(2025, 12, 30), null, null, new BigDecimal("100000")),
+                new DailyPoint(LocalDate.of(2025, 12, 31), null, null, new BigDecimal("100000")),
+                new DailyPoint(LocalDate.of(2026, 1, 5), null, null, new BigDecimal("110000")));
+        var byYear = AnnualReturnCalculator.yearlyTwr(new NavSeries(pts),
+                List.of(new ExternalFlow(LocalDate.of(2026, 1, 1), new BigDecimal("10000"))));
+        assertThat(byYear.get(2025)).isCloseTo(BigDecimal.ZERO, within(new BigDecimal("0.000001")));
+        assertThat(byYear.get(2026)).isCloseTo(BigDecimal.ZERO, within(new BigDecimal("0.000001")));
+    }
+
+    @DisplayName("早于首次 NAV 日的流水归一到首日：作为期初本金一部分，不计为收益")
+    @Test
+    void givenFlowBeforeFirstNavDate_whenYearlyTwr_thenTreatedAsInitialCapital() {
+        List<DailyPoint> pts = List.of(
+                new DailyPoint(LocalDate.of(2025, 12, 31), null, null, new BigDecimal("100000")),
+                new DailyPoint(LocalDate.of(2026, 1, 5), null, null, new BigDecimal("100000")));
+        var byYear = AnnualReturnCalculator.yearlyTwr(new NavSeries(pts),
+                List.of(new ExternalFlow(LocalDate.of(2025, 12, 28), new BigDecimal("100000"))));
+        assertThat(byYear.get(2026)).isCloseTo(BigDecimal.ZERO, within(new BigDecimal("0.000001")));
+    }
 }

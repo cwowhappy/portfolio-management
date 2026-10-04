@@ -44,6 +44,51 @@ class TwrCalculatorTest {
         assertThat(r).isCloseTo(new BigDecimal("0.21"), within(new BigDecimal("0.000001")));
     }
 
+    @DisplayName("周六转入 10 万已含在周一 NAV：归一到周一扣除，无涨跌 cumulative≈0（而非 +100%）")
+    @Test
+    void givenSaturdayDepositReflectedInMondayNav_whenCumulative_thenNoPrincipalJump() {
+        List<DailyPoint> pts = List.of(
+                new DailyPoint(LocalDate.of(2026, 1, 2), null, null, new BigDecimal("100000")),  // 周五
+                new DailyPoint(LocalDate.of(2026, 1, 5), null, null, new BigDecimal("200000")),  // 周一（含周六转入）
+                new DailyPoint(LocalDate.of(2026, 1, 6), null, null, new BigDecimal("200000"))); // 周二持平
+        BigDecimal r = TwrCalculator.cumulative(new NavSeries(pts),
+                List.of(new ExternalFlow(LocalDate.of(2026, 1, 3), new BigDecimal("100000")))); // 周六
+        assertThat(r).isCloseTo(BigDecimal.ZERO, within(new BigDecimal("0.000001")));
+    }
+
+    @DisplayName("法定节假日流入归一到下一交易日扣除：F=1 万在 01-06（休市），R=(110000−10000)/100000−1=0")
+    @Test
+    void givenHolidayFlowBetweenNavDays_whenCumulative_thenDeductedOnNextTradeDate() {
+        List<DailyPoint> pts = List.of(
+                new DailyPoint(LocalDate.of(2026, 1, 5), null, null, new BigDecimal("100000")),
+                new DailyPoint(LocalDate.of(2026, 1, 7), null, null, new BigDecimal("110000")));
+        BigDecimal r = TwrCalculator.cumulative(new NavSeries(pts),
+                List.of(new ExternalFlow(LocalDate.of(2026, 1, 6), new BigDecimal("10000"))));
+        assertThat(r).isCloseTo(BigDecimal.ZERO, within(new BigDecimal("0.000001")));
+    }
+
+    @DisplayName("晚于末次 NAV 日的流水尚未反映在任何 NAV → 不影响本序列（R=110000/100000−1=10%）")
+    @Test
+    void givenFlowAfterLastNavDate_whenCumulative_thenIgnored() {
+        List<DailyPoint> pts = List.of(
+                new DailyPoint(LocalDate.of(2026, 1, 5), null, null, new BigDecimal("100000")),
+                new DailyPoint(LocalDate.of(2026, 1, 6), null, null, new BigDecimal("110000")));
+        BigDecimal r = TwrCalculator.cumulative(new NavSeries(pts),
+                List.of(new ExternalFlow(LocalDate.of(2026, 1, 7), new BigDecimal("10000"))));
+        assertThat(r).isCloseTo(new BigDecimal("0.1"), within(new BigDecimal("0.000001")));
+    }
+
+    @DisplayName("早于首次 NAV 日的流水归一到首日：作为期初本金一部分，不计为收益")
+    @Test
+    void givenFlowBeforeFirstNavDate_whenCumulative_thenTreatedAsInitialCapital() {
+        List<DailyPoint> pts = List.of(
+                new DailyPoint(LocalDate.of(2026, 1, 5), null, null, new BigDecimal("100000")),
+                new DailyPoint(LocalDate.of(2026, 1, 6), null, null, new BigDecimal("100000")));
+        BigDecimal r = TwrCalculator.cumulative(new NavSeries(pts),
+                List.of(new ExternalFlow(LocalDate.of(2026, 1, 3), new BigDecimal("100000"))));
+        assertThat(r).isCloseTo(BigDecimal.ZERO, within(new BigDecimal("0.000001")));
+    }
+
     @DisplayName("单点序列与年化退化为 0")
     @Test
     void givenSinglePoint_whenCumulative_thenZero() {
