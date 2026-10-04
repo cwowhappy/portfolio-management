@@ -73,8 +73,11 @@ class NewsExtractionIntegrationTest extends PostgresTestSupport {
         Long ok1 = insertRaw("i-ok1", "茅台三季度业绩超预期");
         Long pending = insertRawWithStatus("i-pending", "占位待抽取的公告类新闻", "PENDING");
         Long bad = insertRaw("i-bad", "完全无法结构化的碎片消息");
-        // 26h 前：严格落在前一个上海自然日，countExtractedByDate（当日口径）不被旧留痕干扰
-        OffsetDateTime doneExtractedAt = OffsetDateTime.now(CST).minusHours(26);
+        // 26h 前：严格落在前一个上海自然日，countExtractedByDate（当日口径）不被旧留痕干扰。
+        // truncatedTo(MICROS)：对齐 PG timestamptz 存储精度——darwin 时钟仅微秒（本地恒绿），
+        // linux 真纳秒会被 PG 舍入 44ns（CI 恒红），显式对齐后断言保持全等且双平台成立（CI 债 Item 2）
+        OffsetDateTime doneExtractedAt = OffsetDateTime.now(CST).minusHours(26)
+                .truncatedTo(java.time.temporal.ChronoUnit.MICROS);
         Long done = insertRawWithSuccess("i-done", "早已抽取完成的旧新闻", doneExtractedAt);
         Long ok3 = insertRaw("i-ok3", "宁德时代海外扩产落地");
         stubPortByTitle();
