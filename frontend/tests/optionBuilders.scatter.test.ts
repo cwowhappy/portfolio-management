@@ -53,7 +53,7 @@ describe("buildScatterOption", () => {
 
   it("tooltip formatter 出名称/市值或轮次", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const fmt = opt.tooltip?.formatter as any;
+    const fmt = (opt.tooltip as { formatter?: unknown } | undefined)?.formatter as any;
     expect(fmt({ data: { name: "中芯国际", marketCapYi: 5000 } })).toBe("中芯国际｜市值 5000 亿");
     expect(fmt({ data: { name: "示例光子科技", round: "D轮" } })).toBe("示例光子科技｜轮次 D轮");
   });

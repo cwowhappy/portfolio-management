@@ -56,7 +56,7 @@ describe("buildGraphOption", () => {
     expect(series[0].data[0].id).toBe("1");
     expect(series[0].data[0].stockCode).toBe("002460");
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const fmt = opt.tooltip?.formatter as any;
+    const fmt = (opt.tooltip as { formatter?: unknown } | undefined)?.formatter as any;
     expect(fmt({ data: { name: "赣锋锂业", sub: "锂矿·上游" } })).toBe("赣锋锂业｜锂矿·上游");
     expect(fmt({ data: { name: "宁德时代" } })).toBe("宁德时代");
   });

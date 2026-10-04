@@ -18,7 +18,7 @@ A 股投研对话助手（证券投资与分析系统）。AI Agent Web 服务�
 |---|---|
 | `make dev` | 同时启动后端(:8080) + 前端(:3000)；本地需先 `docker compose up -d db` |
 | `make dev-backend` / `make dev-frontend` | 单独启动一端 |
-| `make test` | 后端 + 前端 + collector 全量测试（ArchUnit 架构测试 + Testcontainers 集成测试 + vitest + pytest） |
+| `make test` | 后端 + 前端 + collector 全量测试（ArchUnit 架构测试 + Testcontainers 集成测试 + tsc 类型检查 + vitest + pytest） |
 | `make test-backend` / `make test-frontend` / `make collect-test` | 单独跑一端 |
 | `make test-backend-unit` / `make test-backend-integration` / `make test-backend-bdd` | 后端分层跑：单元+切片 / 集成（Testcontainers 真实 PG）/ BDD（Cucumber） |
 | `make test-backend-mutation` | PIT 变异测试（核心域三类，纯手动诊断，不挂 check、无门槛），报告在 `backend/build/reports/pitest` |
@@ -91,7 +91,7 @@ infrastructure ──→ {domain, application, config}
 - **Jackson 2 而非 Jackson 3**：`spring-boot-starter-webmvc` 已排除 `starter-jackson` 改引 `spring-boot-jackson2`，因为 AgentScope AG-UI 模型基于 Jackson 2 注解。
 - **Testcontainers 禁用 Ryuk**（`TESTCONTAINERS_RYUK_DISABLED=true`）：兼容 Colima 等本地 Docker socket 无法挂载的场景，由 JUnit 扩展启停容器。
 - **同源 Cookie 会话，无 CORS**：后端 `same-site: lax`，前端同源反代透传 cookie，这是关闭 CSRF 的安全前提（ADR-0007）。
-- 前端 lint 已启用：`pnpm lint`（eslint flat config，含 react-hooks/no-explicit-any/组件禁直接 fetch 等规则），纳入 `make test` 与 CI。
+- 前端静态检查已启用：`pnpm lint`（eslint flat config，含 react-hooks/no-explicit-any/组件禁直接 fetch 等规则）+ `pnpm typecheck`（tsc --noEmit，类型层面的契约裂缝只有它/e2e fresh build 能拦），双双纳入 `make test` 与 CI。
 
 ## 参考文档
 
