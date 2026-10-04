@@ -77,7 +77,7 @@
 1. ✅ `make collect-test` 全绿：ruff check 通过、65 文件 format 通过、import-linter 1 kept / 0 broken、pytest 148 passed / 4.75s、总覆盖率 95.56%（≥80% 门槛通过）。
 2. ✅ T3 落实率 6/6；总覆盖率 95.56% ≥ 90%；registry 覆盖率 sources 86% / validators 91% / calc、converters 100%——sources 86% 未达计划中「≥90%」的目标值，未覆盖行为 tushare `pro_api` 惰性构造闭包（`sources/registry.py:22-25`，执行即触真实外部 API），经评估接受（总覆盖率与装配链路目标均达成）。
 3. ✅ 缺口 #1–#8 全部闭环。
-4. ⏳ CI collector job 待分支推送后验证（本地与 CI 同命令、同 PG service 形态，风险低）。
+4. ✅ CI collector job 已验证（PR #9 合并后 CI 全绿；main 现四项 required checks 含 collector job——2026-10-04 补记）。
 
 ### 遗留与边界
 
