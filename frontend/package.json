@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
     "build": "next build",
     "start": "next start",
     "test": "vitest run --coverage",

@@ -65,7 +65,7 @@ eval-extraction:
 	cd backend && ./gradlew evalExtraction --console=plain$(if $(EVAL_DEEPSEEK_MODEL_FROM_SHELL), -PevalDeepseekModel=$(EVAL_DEEPSEEK_MODEL_FROM_SHELL),)$(if $(EVAL_DEEPSEEK_BASE_URL_FROM_SHELL), -PevalDeepseekBaseUrl=$(EVAL_DEEPSEEK_BASE_URL_FROM_SHELL),)$(if $(EVAL_ARGS), -PevalArgs=$(EVAL_ARGS),)
 
 test-frontend:
-	cd frontend && pnpm lint && pnpm test
+	cd frontend && pnpm lint && pnpm typecheck && pnpm test
 
 test-e2e:
 	cd frontend && CI=true pnpm test:e2e

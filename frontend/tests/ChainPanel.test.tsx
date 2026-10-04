@@ -105,7 +105,7 @@ describe("ChainPanel", () => {
     fireEvent.change(screen.getByTestId("member-company-1-0"), { target: { value: "9" } });
     expect((screen.getByTestId("member-name-1-0") as HTMLInputElement).value).toBe("示例康源生物");
 
-    fireEvent.click(screen.getByRole("button", { name: "保存", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
     await waitFor(() => expect(saveChainMock).toHaveBeenCalledTimes(1));
     const cmd = saveChainMock.mock.calls[0][0];
     expect(cmd.id).toBeUndefined();
@@ -128,7 +128,7 @@ describe("ChainPanel", () => {
     render(<ChainPanel industryCode="801730" industryName="电力设备" />);
 
     fireEvent.click(await screen.findByTestId("chain-add"));
-    fireEvent.click(screen.getByRole("button", { name: "保存", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
     expect(await screen.findByText("链名必填")).toBeTruthy();
     expect(saveChainMock).not.toHaveBeenCalled();
   });
