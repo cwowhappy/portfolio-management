@@ -122,7 +122,7 @@ class _PolicyListParser(HTMLParser):
         self._href: str | None = None
         self._title_attr = ""
         self._buf: list[str] = []
-        self._pending = -1  # 最近一个未定日期的条目下标（数据节点日期归它）
+        self._undated_idx = -1  # 最近一个未定日期的条目下标（数据节点日期归它）；不叫 _pending——撞 html.parser 基类内部缓冲名（CPython 3.12 feed 即崩，3.13 已改名）
 
     def handle_starttag(self, tag, attrs):
         if tag == "a":
@@ -136,17 +136,17 @@ class _PolicyListParser(HTMLParser):
             self.entries.append(
                 {"href": self._href, "title_attr": self._title_attr, "text": "".join(self._buf).strip(), "date": ""}
             )
-            self._pending = len(self.entries) - 1
+            self._undated_idx = len(self.entries) - 1
             self._href = None
 
     def handle_data(self, data):
         if self._href is not None:
             self._buf.append(data)
-        elif self._pending >= 0 and not self.entries[self._pending]["date"]:
+        elif self._undated_idx >= 0 and not self.entries[self._undated_idx]["date"]:
             m = _LIST_DATE.search(data)
             if m:
-                self.entries[self._pending]["date"] = m.group(1)
-                self._pending = -1
+                self.entries[self._undated_idx]["date"] = m.group(1)
+                self._undated_idx = -1
 
 
 class _ContentTextParser(HTMLParser):
