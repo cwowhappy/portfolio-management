@@ -49,6 +49,9 @@ class HealthControllerTest {
         assertThat(llm.get("provider")).isEqualTo("deepseek");
         assertThat(llm.get("model")).isEqualTo("deepseek-v4-flash");
         assertThat(llm.get("keyConfigured")).isEqualTo(true);
+        // B8 字段收敛：只暴露 provider/model/keyConfigured，内网 baseUrl 不外泄
+        assertThat(llm.keySet().stream().map(Object::toString).toList())
+                .containsExactlyInAnyOrder("provider", "model", "keyConfigured");
         // liveness 不得包含行情探活，且零外呼
         assertThat(body).doesNotContainKey("market");
         verifyNoInteractions(market);
@@ -100,9 +103,9 @@ class HealthControllerTest {
         assertThat(m.get("ok")).isEqualTo(true);
     }
 
-    @DisplayName("status在行情探活失败时标记不可用并附消息")
+    @DisplayName("status在行情探活失败时标记不可用，响应固定文案且不回显异常message（内网细节只落服务端日志）")
     @Test
-    void givenMarketProbeFails_whenGetStatus_thenMarketUnavailableWithMessage() {
+    void givenMarketProbeFails_whenGetStatus_thenMarketUnavailableWithFixedMessage() {
         when(env.getProperty("DEEPSEEK_API_KEY")).thenReturn("sk-xxx");
         when(market.probeQuoteLatencyMs())
                 .thenThrow(new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "行情源挂了"));
@@ -110,7 +113,8 @@ class HealthControllerTest {
         assertThat(body.get("status")).isEqualTo("degraded");
         Map<?, ?> m = (Map<?, ?>) body.get("market");
         assertThat(m.get("ok")).isEqualTo(false);
-        assertThat(m.get("message")).isEqualTo("行情源挂了");
+        assertThat(m.get("message")).isEqualTo("行情源探活失败");
+        assertThat((String) m.get("message")).doesNotContain("行情源挂了");
     }
 
     @DisplayName("status连续调用时探活结果命中缓存只外呼一次")
