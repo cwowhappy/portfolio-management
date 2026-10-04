@@ -122,7 +122,9 @@ class _PolicyListParser(HTMLParser):
         self._href: str | None = None
         self._title_attr = ""
         self._buf: list[str] = []
-        self._undated_idx = -1  # 最近一个未定日期的条目下标（数据节点日期归它）；不叫 _pending——撞 html.parser 基类内部缓冲名（CPython 3.12 feed 即崩，3.13 已改名）
+        # 最近一个未定日期的条目下标（数据节点日期归它）。不叫 _pending——撞 html.parser
+        # 基类内部缓冲名（CPython 3.12 feed 即崩，3.13 已改名；CI 债 Item 1 教训）
+        self._undated_idx = -1
 
     def handle_starttag(self, tag, attrs):
         if tag == "a":
