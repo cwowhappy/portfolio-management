@@ -211,6 +211,13 @@ configurations {
 
 tasks.withType(Test).configureEach {
     useJUnitPlatform()
+    // CI 诊断（CI 债治理 2026-10-04）：Gradle 默认失败输出只给异常类名+行号（CI 上
+    // NewsExtractionIntegrationTest 断言 diff 不可见，诊断卡壳）——失败事件全量输出
+    // 断言 message 与堆栈
+    testLogging {
+        events "failed"
+        exceptionFormat "full"
+    }
     // Colima 等本地 Docker 运行时的 socket 无法挂载进 Ryuk 资源回收容器，
     // 禁用 Ryuk（容器由静态基座 + shutdown hook 负责启停），保证 Testcontainers 全环境可用
     environment 'TESTCONTAINERS_RYUK_DISABLED', 'true'
