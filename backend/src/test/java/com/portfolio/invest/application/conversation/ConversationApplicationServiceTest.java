@@ -116,6 +116,23 @@ class ConversationApplicationServiceTest {
                 .isInstanceOf(ConversationException.class).hasMessageContaining("不存在");
     }
 
+    @DisplayName("读取消息视图携带会话updatedAt")
+    @Test
+    void givenOwnedConversation_whenMessages_thenViewCarriesUpdatedAt() {
+        Conversation conv = Conversation.create("t-1", 1L, Instant.parse("2026-08-21T00:00:00Z"));
+        when(repo.findByIdAndUserId("t-1", 1L)).thenReturn(Optional.of(conv));
+        when(repo.findMessages("t-1")).thenReturn(List.of(
+                com.portfolio.invest.domain.conversation.ChatMessage.create(
+                        null, "m-1", com.portfolio.invest.domain.conversation.ChatMessageRole.USER, "hi", null,
+                        1700000000000L)));
+
+        var view = service.messages(1L, "t-1");
+
+        assertThat(view.updatedAt()).isEqualTo(Instant.parse("2026-08-21T00:00:00Z"));
+        assertThat(view.messages()).hasSize(1);
+        assertThat(view.messages().get(0).id()).isEqualTo("m-1");
+    }
+
     @DisplayName("保存消息并生成标题")
     @Test
     void givenOwnedConversation_whenSaveMessages_thenGenerateTitle() {
@@ -124,17 +141,51 @@ class ConversationApplicationServiceTest {
         when(repo.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         service.saveMessages(1L, "t-1", List.of(
-                new ChatMessageWire("m-1", "user", "帮我看看茅台最近走势怎么样", 1700000000000L)));
+                new ChatMessageWire("m-1", "user", "帮我看看茅台最近走势怎么样", 1700000000000L)), null);
 
         verify(repo).save(argThat(c -> c.title().equals("帮我看看茅台最近走势怎么样"))); // 前 24 字
         verify(repo).replaceMessages(eq("t-1"), any());
+        verify(repo, never()).updateIfUnchanged(anyString(), any(), any(), anyString(), any()); // 无 If-Match 不走条件更新
+    }
+
+    @DisplayName("携带当前If-Match保存消息：条件更新成功、updatedAt前进、不触发merge")
+    @Test
+    void givenCurrentIfMatch_whenSaveMessages_thenConditionalUpdateAndAdvance() {
+        Conversation conv = owned("t-1");
+        when(repo.findByIdAndUserId("t-1", 1L)).thenReturn(Optional.of(conv));
+        Instant current = conv.updatedAt();
+        when(repo.updateIfUnchanged(eq("t-1"), eq(1L), eq(current), anyString(), any())).thenReturn(true);
+
+        var result = service.saveMessages(1L, "t-1", List.of(
+                new ChatMessageWire("m-1", "user", "hi", 1700000000000L)), current);
+
+        verify(repo, never()).save(any()); // 条件更新路径不整实体 merge
+        verify(repo).updateIfUnchanged(eq("t-1"), eq(1L), eq(current), anyString(), any());
+        verify(repo).replaceMessages(eq("t-1"), any());
+        assertThat(result.updatedAt()).isAfter(current); // PUT 响应暴露新 updatedAt
+    }
+
+    @DisplayName("携带过期If-Match保存消息：抛冲突且零替换零删除")
+    @Test
+    void givenStaleIfMatch_whenSaveMessages_thenThrowConflictAndNoReplace() {
+        Conversation conv = owned("t-1");
+        when(repo.findByIdAndUserId("t-1", 1L)).thenReturn(Optional.of(conv));
+        Instant stale = Instant.parse("2026-08-20T00:00:00Z");
+        when(repo.updateIfUnchanged(eq("t-1"), eq(1L), eq(stale), anyString(), any())).thenReturn(false);
+
+        assertThatThrownBy(() -> service.saveMessages(1L, "t-1", List.of(
+                new ChatMessageWire("m-1", "user", "hi", 1700000000000L)), stale))
+                .isInstanceOf(com.portfolio.invest.domain.conversation.ConversationConflictException.class)
+                .hasMessageContaining("已被其他窗口修改");
+        verify(repo, never()).replaceMessages(anyString(), any()); // 冲突时不得发生任何删除/替换
+        verify(repo, never()).save(any());
     }
 
     @DisplayName("非本人会话禁止保存")
     @Test
     void givenOthersConversation_whenSaveMessages_thenReject() {
         when(repo.findByIdAndUserId("t-1", 2L)).thenReturn(Optional.empty());
-        assertThatThrownBy(() -> service.saveMessages(2L, "t-1", List.of()))
+        assertThatThrownBy(() -> service.saveMessages(2L, "t-1", List.of(), null))
                 .isInstanceOf(ConversationException.class).hasMessageContaining("不存在");
         verify(repo, never()).replaceMessages(anyString(), any());
     }
@@ -144,7 +195,7 @@ class ConversationApplicationServiceTest {
     void givenInvalidRoleMessage_whenSaveMessages_thenReject() {
         when(repo.findByIdAndUserId("t-1", 1L)).thenReturn(Optional.of(owned("t-1")));
         assertThatThrownBy(() -> service.saveMessages(1L, "t-1", List.of(
-                new ChatMessageWire("m-1", "system", "hi", 1700000000000L))))
+                new ChatMessageWire("m-1", "system", "hi", 1700000000000L)), null))
                 .isInstanceOf(ConversationException.class)
                 .satisfies(e -> assertThat(((ConversationException) e).getCode()).isEqualTo(ConversationErrorCode.INVALID_MESSAGE));
         verify(repo, never()).replaceMessages(anyString(), any());
@@ -155,10 +206,10 @@ class ConversationApplicationServiceTest {
     void givenBlankOrOversizedMessageId_whenSaveMessages_thenReject() {
         when(repo.findByIdAndUserId("t-1", 1L)).thenReturn(Optional.of(owned("t-1")));
         assertThatThrownBy(() -> service.saveMessages(1L, "t-1", List.of(
-                new ChatMessageWire(null, "user", "hi", 1700000000000L))))
+                new ChatMessageWire(null, "user", "hi", 1700000000000L)), null))
                 .isInstanceOf(ConversationException.class).hasMessageContaining("id");
         assertThatThrownBy(() -> service.saveMessages(1L, "t-1", List.of(
-                new ChatMessageWire("m".repeat(65), "user", "hi", 1700000000000L))))
+                new ChatMessageWire("m".repeat(65), "user", "hi", 1700000000000L)), null))
                 .isInstanceOf(ConversationException.class).hasMessageContaining("id");
         verify(repo, never()).replaceMessages(anyString(), any());
     }
@@ -168,10 +219,10 @@ class ConversationApplicationServiceTest {
     void givenBlankOrOversizedContent_whenSaveMessages_thenReject() {
         when(repo.findByIdAndUserId("t-1", 1L)).thenReturn(Optional.of(owned("t-1")));
         assertThatThrownBy(() -> service.saveMessages(1L, "t-1", List.of(
-                new ChatMessageWire("m-1", "user", "", 1700000000000L))))
+                new ChatMessageWire("m-1", "user", "", 1700000000000L)), null))
                 .isInstanceOf(ConversationException.class).hasMessageContaining("不能为空");
         assertThatThrownBy(() -> service.saveMessages(1L, "t-1", List.of(
-                new ChatMessageWire("m-1", "user", "x".repeat(100 * 1024 + 1), 1700000000000L))))
+                new ChatMessageWire("m-1", "user", "x".repeat(100 * 1024 + 1), 1700000000000L)), null))
                 .isInstanceOf(ConversationException.class).hasMessageContaining("超长");
         verify(repo, never()).replaceMessages(anyString(), any());
     }
@@ -183,7 +234,7 @@ class ConversationApplicationServiceTest {
         var wires = java.util.stream.IntStream.range(0, 501)
                 .mapToObj(i -> new ChatMessageWire("m-" + i, "user", "hi", 1700000000000L))
                 .toList();
-        assertThatThrownBy(() -> service.saveMessages(1L, "t-1", wires))
+        assertThatThrownBy(() -> service.saveMessages(1L, "t-1", wires, null))
                 .isInstanceOf(ConversationException.class)
                 .satisfies(e -> assertThat(((ConversationException) e).getCode()).isEqualTo(ConversationErrorCode.INVALID_MESSAGE));
         verify(repo, never()).replaceMessages(anyString(), any());

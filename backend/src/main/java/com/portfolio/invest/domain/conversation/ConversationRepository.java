@@ -1,5 +1,6 @@
 package com.portfolio.invest.domain.conversation;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -13,4 +14,9 @@ public interface ConversationRepository {
     void delete(String id);
     List<ChatMessage> findMessages(String conversationId);
     void replaceMessages(String conversationId, List<ChatMessage> messages);
+    /**
+     * 乐观校验更新元数据（B6）：仅当 updated_at 仍等于 expectedUpdatedAt 时更新 title/updatedAt。
+     * 返回 true 表示命中更新；false 表示期间已被他人改动（并发写冲突），调用方须放弃后续消息替换。
+     */
+    boolean updateIfUnchanged(String id, Long userId, Instant expectedUpdatedAt, String title, Instant newUpdatedAt);
 }

@@ -1,6 +1,7 @@
 package com.portfolio.invest.application.conversation;
 
 import com.portfolio.invest.domain.conversation.Conversation;
+import com.portfolio.invest.domain.conversation.ConversationConflictException;
 import com.portfolio.invest.domain.conversation.ConversationErrorCode;
 import com.portfolio.invest.domain.conversation.ConversationException;
 import com.portfolio.invest.domain.conversation.ConversationRepository;
@@ -41,13 +42,21 @@ public class ConversationApplicationService {
         return ConversationView.from(repository.save(Conversation.create(id, userId, Instant.now())));
     }
 
-    public List<ChatMessageWire> messages(Long userId, String conversationId) {
-        requireOwned(userId, conversationId);
-        return repository.findMessages(conversationId).stream().map(ChatMessageWire::from).toList();
+    public ConversationMessagesView messages(Long userId, String conversationId) {
+        Conversation conv = requireOwned(userId, conversationId);
+        return new ConversationMessagesView(conv.updatedAt(),
+                repository.findMessages(conversationId).stream().map(ChatMessageWire::from).toList());
     }
 
+    /**
+     * 保存消息（B6 乐观校验）：expectedUpdatedAt 为客户端 GET 得到的 updated_at（If-Match）。
+     * 携带时先条件更新会话元数据——影响行数=0 抛 {@link ConversationConflictException}，
+     * 此时不得进入 replaceMessages（其为 delete+saveAll 全替换，冲突时必须零删除）；
+     * 未携带（null）保持旧行为整体保存，向后兼容。
+     */
     @Transactional
-    public void saveMessages(Long userId, String conversationId, List<ChatMessageWire> wires) {
+    public ConversationSaveResult saveMessages(Long userId, String conversationId,
+                                               List<ChatMessageWire> wires, Instant expectedUpdatedAt) {
         Conversation conv = requireOwned(userId, conversationId);
         if (wires.size() > MAX_MESSAGES_PER_REQUEST) {
             throw new ConversationException(ConversationErrorCode.INVALID_MESSAGE, "单次最多保存500条消息");
@@ -57,8 +66,19 @@ public class ConversationApplicationService {
                 .findFirst().map(ChatMessageWire::content).orElse(null);
         // toDomain 内做逐条边界校验（role 白名单/id/content 长度），先校验再落库
         var messages = wires.stream().map(ChatMessageWire::toDomain).toList();
-        repository.save(conv.renameIfDefault(firstUser).touch(Instant.now()));
+        Instant now = Instant.now();
+        Conversation renamed = conv.renameIfDefault(firstUser).touch(now);
+        if (expectedUpdatedAt == null) {
+            repository.save(renamed);
+        } else {
+            boolean updated = repository.updateIfUnchanged(
+                    conversationId, userId, expectedUpdatedAt, renamed.title(), now);
+            if (!updated) {
+                throw new ConversationConflictException("会话已被其他窗口修改，请刷新后重试");
+            }
+        }
         repository.replaceMessages(conversationId, messages);
+        return new ConversationSaveResult(now);
     }
 
     @Transactional
