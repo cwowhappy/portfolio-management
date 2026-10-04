@@ -13,7 +13,7 @@ EVAL_DEEPSEEK_BASE_URL_FROM_SHELL := $(DEEPSEEK_BASE_URL)
 -include .env
 export
 
-.PHONY: dev dev-backend dev-frontend test test-backend test-backend-unit test-backend-integration test-backend-bdd test-backend-mutation test-backend-mutation-descartes eval-agent eval-extraction test-frontend test-e2e build up down smoke
+.PHONY: dev dev-backend dev-frontend test check-links test-backend test-backend-unit test-backend-integration test-backend-bdd test-backend-mutation test-backend-mutation-descartes eval-agent eval-extraction test-frontend test-e2e build up down smoke
 
 ## 本地开发：同时启动后端(8080)与前端(3000)
 dev:
@@ -26,8 +26,12 @@ dev-frontend:
 	# 显式固定前端端口：.env 的 PORT 是后端 server.port，经 export 泄漏给 next dev 会抢占后端端口
 	cd frontend && pnpm install && PORT=3000 pnpm dev
 
-## 测试
-test: test-backend test-frontend collect-test
+## 测试（链接门禁先跑，快速失败）
+test: check-links test-backend test-frontend collect-test
+
+## 文档链接门禁：全仓 markdown 相对链接断链即失败（CI link-gate job 同款）
+check-links:
+	python3 scripts/check-links.py
 
 test-backend:
 	cd backend && ./gradlew check --console=plain

@@ -6,6 +6,14 @@ on:
   pull_request:
 
 jobs:
+  link-gate:
+    name: Docs link gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check markdown links
+        run: python3 scripts/check-links.py
+
   backend:
     name: Backend tests
     runs-on: ubuntu-latest

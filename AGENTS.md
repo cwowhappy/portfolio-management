@@ -18,7 +18,8 @@ A 股投研对话助手（证券投资与分析系统）。AI Agent Web 服务�
 |---|---|
 | `make dev` | 同时启动后端(:8080) + 前端(:3000)；本地需先 `docker compose up -d db` |
 | `make dev-backend` / `make dev-frontend` | 单独启动一端 |
-| `make test` | 后端 + 前端 + collector 全量测试（ArchUnit 架构测试 + Testcontainers 集成测试 + tsc 类型检查 + vitest + pytest） |
+| `make test` | 后端 + 前端 + collector 全量测试（ArchUnit 架构测试 + Testcontainers 集成测试 + tsc 类型检查 + vitest + pytest）+ 文档链接门禁 |
+| `make check-links` | 文档链接门禁：全仓 markdown 相对链接断链即失败（`scripts/check-links.py`，挂 `make test` 与 CI） |
 | `make test-backend` / `make test-frontend` / `make collect-test` | 单独跑一端 |
 | `make test-backend-unit` / `make test-backend-integration` / `make test-backend-bdd` | 后端分层跑：单元+切片 / 集成（Testcontainers 真实 PG）/ BDD（Cucumber） |
 | `make test-backend-mutation` | PIT 变异测试（核心域三类，纯手动诊断，不挂 check、无门槛），报告在 `backend/build/reports/pitest` |
@@ -98,7 +99,7 @@ infrastructure ──→ {domain, application, config}
 - `README.md`：功能全览 + API 端点表 + 环境变量表 + 目录结构
 - `docs/technology/conventions/`（01 后端 DDD 分包 / 02 后端 / 03 前端 / 04 采集服务，改代码前必读对应规范）
 - `docs/technology/modules/`（模块技术文档，通用机制篇 01–08 + 业务域篇 09–13）：[01 Agent 实现](docs/technology/modules/01-Agent实现.md) / [02 行情数据服务](docs/technology/modules/02-行情数据服务.md) / [03 接口设计](docs/technology/modules/03-接口设计.md) / [04 工程与运维](docs/technology/modules/04-工程与运维.md) / [05 MCP数据源集成](docs/technology/modules/05-MCP数据源集成.md) / [06 Skill系统](docs/technology/modules/06-Skill系统.md) / [07 HITL人工审批](docs/technology/modules/07-HITL人工审批.md) / [08 聊天图表双通道](docs/technology/modules/08-聊天图表双通道.md) / [09 估值域](docs/technology/modules/09-估值域.md) / [10 筛选域](docs/technology/modules/10-筛选域.md) / [11 持仓域](docs/technology/modules/11-持仓域.md) / [12 资产配置域](docs/technology/modules/12-资产配置域.md) / [13 投研日志域](docs/technology/modules/13-投研日志域.md)
-- `docs/technology/decisions/`（0001–0011）：Agent 框架、AG-UI 协议、行情源、会话模型、用户认证、后端分层、MCP 工具权限审批、服务端会话状态等架构决策
+- `docs/technology/decisions/`（0001–0013）：Agent 框架、AG-UI 协议、行情源、会话模型、用户认证、后端分层、MCP 工具权限审批、服务端会话状态等架构决策
 - `features/<feature>/`（特性需求/设计/计划，索引与「特性↔里程碑↔模块」映射见 `features/README.md`）
 - `docs/technology/`（技术文档）、`docs/function/`（产品功能）
 - `docs/roadmap/2026-08-27-产品落地计划.md`：里程碑级落地计划与进度跟踪（MS-00~MS-15 + 平台增强 MS-16~19）
