@@ -183,7 +183,7 @@ Expected: 全绿（既有 15 spec + MS-09 新增，无新 flaky）。
 ### Task 4: 文档同步清单（9 项）
 
 **Files:**
-- Modify: `docs/plans/2026-08-27-产品落地计划.md`、`docs/function/modules/10-行业研究中心.md`、`docs/function/00-功能模块概览.md`、`docs/technology/modules/09-估值域.md`、`docs/technology/architecture/05-数据类型与来源.md`、`features/README.md`
+- Modify: `docs/roadmap/2026-08-27-产品落地计划.md`、`docs/function/modules/10-行业研究中心.md`、`docs/function/00-功能模块概览.md`、`docs/technology/modules/09-估值域.md`、`docs/technology/architecture/05-数据类型与来源.md`、`features/README.md`
 - Create: `docs/technology/modules/15-行业研究域.md`（若 P2 Task 10 未建规范登记则此处一并）
 - Create: `features/industry-listed-research/08-复盘总结/复盘总结.md`（草稿，交付后回填终稿）
 
@@ -194,7 +194,7 @@ Expected: 全绿（既有 15 spec + MS-09 新增，无新 flaky）。
 
 1. `docs/function/modules/10-行业研究中心.md`：F03/F04/F05 置 ✅ + 口径注记（F03 营收=最新报告期累计、`income` 采集；F04 5y 分位 + 当前成分回溯口径 + 重算任务；F05 阈值 ±1pp/±10% 且/或规则 + 中位数聚合）；
 2. `docs/function/00-功能模块概览.md`：M10 进度 2/12 → 5/12，看板与总点数同步（90 → 93/115）；
-3. `docs/plans/2026-08-27-产品落地计划.md`：MS-09 置 ✅（含交付说明：V15、重算任务、回填行数/耗时引用实跑记录、e2e 情况）+ 基线表 90→93 + 变更记录行 + 风险表「历史估值分位数据不足」MS-09 侧闭环（改 ✅ 或删除 MS-09 引用、仅留 MS-02 侧）；
+3. `docs/roadmap/2026-08-27-产品落地计划.md`：MS-09 置 ✅（含交付说明：V15、重算任务、回填行数/耗时引用实跑记录、e2e 情况）+ 基线表 90→93 + 变更记录行 + 风险表「历史估值分位数据不足」MS-09 侧闭环（改 ✅ 或删除 MS-09 引用、仅留 MS-02 侧）；
 4. `features/README.md`：索引行 `MS-09（进行中）` → `MS-09（已交付 <日期>，PR #N）`；
 5. `features/industry-listed-research/08-复盘总结/复盘总结.md`：按 MS-08 复盘体例（交付结果/经验/不足/优化建议/计划偏差清单），引用 09-调研报告 两篇与实跑数据；
 6. `docs/technology/modules/15-行业研究域.md`（新建，照 09-估值域/10-筛选域体例）：域定位、两表两端点、WindowedPercentile/Prosperity、已知限制（分位全历史窗口无日期参数、景气仅当前档无历史序列）；

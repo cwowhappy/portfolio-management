@@ -8,7 +8,8 @@
 |------|------|------|
 | [function/](function/) | 产品功能（M01–M14 + 进度看板），供产品/设计/测试/新人 | [README](function/README.md) |
 | [technology/](technology/) | 技术文档（架构 / 模块 01–13 / 规范 / 决策 0001–0011 / 储备） | [README](technology/README.md) |
-| [plans/](plans/) | 跨模块/版本级计划（产品落地计划） | 见下 |
+| [roadmap/](roadmap/) | 产品功能规划与进度跟踪（里程碑落地计划、产品功能规划） | [README](roadmap/README.md) |
+| [research/](research/) | 跨特性调研报告（调研与规划分离：规划入 roadmap/） | [README](research/README.md) |
 | [deployment/](deployment/) | 发布方案与发布计划（v1 首次发布） | [v1/发布计划.md](deployment/v1/发布计划.md) |
 | [reviews/](reviews/) | 代码审查一次性报告（留档）与经验沉淀 lessons | 见下 |
 | [archive/](archive/) | 历史归档（记录当时决策，不再随代码维护） | [README](archive/README.md) |
@@ -18,13 +19,28 @@
 - 想看**系统有什么功能、做到哪了** → [function/00-功能模块概览.md](function/00-功能模块概览.md)
 - 想看**技术怎么实现、为什么这么选** → [technology/](technology/)
 - 想看**某个特性的需求/设计/计划** → [features/](../features/)
-- 想看**里程碑级落地进度** → [plans/2026-08-27-产品落地计划.md](plans/2026-08-27-产品落地计划.md)
+- 想看**里程碑级落地进度** → [roadmap/2026-08-27-产品落地计划.md](roadmap/2026-08-27-产品落地计划.md)
+- 想看**行业调研、资源盘点** → [research/](research/)
 
-## plans/ 目录
+## roadmap/ 目录
+
+> 定位：**产品功能规划与进度跟踪**——里程碑落地计划、产品功能规划入本目录。
+> 原则：**调研与规划分离**——调研类文档入 [research/](research/)（特性级调研在 `features/<特性>/09-调研报告/`）；工程实施计划入 [features/plans/](../features/plans/)。
 
 | 文档 | 说明 |
 |------|------|
-| [2026-08-27-产品落地计划.md](plans/2026-08-27-产品落地计划.md) | 里程碑级（MS-00~MS-15 + 平台增强 MS-16~19）落地计划与进度跟踪（**跨模块权威**） |
+| [2026-08-27-产品落地计划.md](roadmap/2026-08-27-产品落地计划.md) | 里程碑级（MS-00~MS-15 + 平台增强 MS-16~19）落地计划与进度跟踪（**跨模块权威**） |
+| [2026-09-28-阶段二产品功能规划.md](roadmap/2026-09-28-阶段二产品功能规划.md) | 阶段二（MS-20~27，情报 + 投资 SOP）产品功能规划 |
+| [2026-10-04-投研Agent功能迭代方向规划.md](roadmap/2026-10-04-投研Agent功能迭代方向规划.md) | v1 后迭代方向：D1–D8 八个方向 + P0–P3 路线图（依据 [research/ 趋势调研](research/2026-10-04-投研Agent发展趋势调研.md)，MS-28 及以后立项输入） |
+
+## research/ 目录
+
+> 原则：**调研与规划分离**——调研类文档（行业趋势、资源盘点、数据源探测）入本目录；由其产出的功能迭代/落地安排入 [roadmap/](roadmap/)。特性级过程调研仍在 `features/<特性>/09-调研报告/`。索引见 [research/README.md](research/README.md)。
+
+| 文档 | 说明 |
+|------|------|
+| [2026-10-04-投研Agent发展趋势调研.md](research/2026-10-04-投研Agent发展趋势调研.md) | 2025–2026 金融投研 Agent 七大趋势（T1–T7）+ 本项目现状差距对照（24 项来源） |
+| [2026-10-04-国内金融MCP资源盘点.md](research/2026-10-04-国内金融MCP资源盘点.md) | 国内商业（13 项）/开源（20+ 实现）金融 MCP 盘点 + 本项目对接优先级建议 |
 
 ## reviews/ 目录
 

@@ -606,7 +606,7 @@ schedule: { type: cron, cron: "*/10 7-23 * * *" }
 **Files:**
 - Create: `backend/src/bdd/java/.../bdd/steps/IntelligenceNewsSteps.java` + `backend/src/bdd/resources/features/intelligence/news-search.feature`（中文场景：「当用户询问"最近有什么关于茅台的重大新闻"时 Agent 调用 search_news 并返回结构化结果」——AG-UI 运行时 stub 端口照既有 agent BDD 先例）
 - Modify: `smoke/`（新增网络探测段：出站可达 np-listapi.eastmoney.com / zhibo.sina.com.cn / www.cninfo.com.cn——决策 #17）+ Makefile smoke 目标
-- Modify: `docs/technology/conventions/01-后端DDD分包规范.md`（domain/application 子包清单 + intelligence）、`AGENTS.md`（迁移描述 V3、web 控制器数）、`docs/function/modules/15-智能情报.md`（创建模块文档，F01~F05 置 ✅ + 交付说明）、`docs/function/00-功能模块概览.md`（M15 行 5/18）、`docs/plans/2026-08-27-产品落地计划.md` 与 `docs/plans/2026-09-28-阶段二产品功能规划.md`（MS-20 状态 + 功能点勾选）、`features/README.md` 索引行状态
+- Modify: `docs/technology/conventions/01-后端DDD分包规范.md`（domain/application 子包清单 + intelligence）、`AGENTS.md`（迁移描述 V3、web 控制器数）、`docs/function/modules/15-智能情报.md`（创建模块文档，F01~F05 置 ✅ + 交付说明）、`docs/function/00-功能模块概览.md`（M15 行 5/18）、`docs/roadmap/2026-08-27-产品落地计划.md` 与 `docs/roadmap/2026-09-28-阶段二产品功能规划.md`（MS-20 状态 + 功能点勾选）、`features/README.md` 索引行状态
 
 - [x] **Step 1~3: BDD 红绿 + smoke 探测段编写与本地跑通**
 - [x] **Step 4: 全量回归** — Run: `make test && make smoke`，Expected: 三端全绿 + smoke 过（含新探测段）

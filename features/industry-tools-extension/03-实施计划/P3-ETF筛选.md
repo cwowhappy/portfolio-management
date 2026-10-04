@@ -196,7 +196,7 @@ def test_etf_basic_maps_columns(mocker):
 
 **Files:**
 - Modify: `frontend/e2e/screener.spec.ts`（追加基金 tab 用例——空库门控范式：无 etf_basic 数据时 skip 或空态断言）
-- Modify: `docs/plans/2026-08-27-产品落地计划.md`（MS-14 状态 ⏳→✅ 3/4 注记 + 变更记录行）
+- Modify: `docs/roadmap/2026-08-27-产品落地计划.md`（MS-14 状态 ⏳→✅ 3/4 注记 + 变更记录行）
 - Modify: `docs/function/modules/08-持仓组合管理.md` / `09-价值投资筛选器.md` / `10-行业研究中心.md`（F12/F06/F12 ⏳→✅ + 交付说明）
 - Modify: `docs/function/00-功能模块概览.md` + `01-产品概览.md`（计数 105→108）
 - Modify: `docs/technology/conventions/01-后端DDD分包规范.md`（说明性更新：screening 扩 ETF、industry 扩 watch，无新包）
