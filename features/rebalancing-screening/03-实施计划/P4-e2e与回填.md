@@ -184,7 +184,7 @@ git add -A && git commit -m "fix(ms08): 全量回归修复"   # 仅当有修复�
 ### Task 4: 文档回填与里程碑收尾
 
 **Files（设计规格 §七清单全量）:**
-- Modify: `docs/plans/2026-08-27-产品落地计划.md`
+- Modify: `docs/roadmap/2026-08-27-产品落地计划.md`
 - Modify: `docs/function/modules/07-资产组合配置.md`、`docs/function/modules/09-价值投资筛选器.md`
 - Modify: `docs/function/00-功能模块概览.md`
 - Modify: `features/README.md`（索引行状态改已交付 + PR 号）

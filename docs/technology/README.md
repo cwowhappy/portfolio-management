@@ -2,7 +2,7 @@
 
 > 本目录从**技术实现**视角组织「九和 · 价值投资与资产配置系统」的全部技术文档，按五大板块划分：
 > **系统架构设计 → 技术模块设计 → 技术规范 → 技术决策 → 技术储备与规划**。
-> 产品功能视角见 [docs/function/](../function/)；实施计划见 [docs/plans/](../plans/) 与 [features/plans/](../../features/plans/)。
+> 产品功能视角见 [docs/function/](../function/)；实施计划见 [docs/roadmap/](../roadmap/) 与 [features/plans/](../../features/plans/)。
 
 ## 目录结构
 

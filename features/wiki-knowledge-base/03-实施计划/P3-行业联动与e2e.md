@@ -332,7 +332,7 @@ git commit -m "test(wiki): e2e 四链路（预置/笔记渲染/规则/行业联�
 **Files:**
 - Modify: `docs/function/modules/13-投资知识库.md`
 - Modify: `docs/function/00-功能模块概览.md`
-- Modify: `docs/plans/2026-08-27-产品落地计划.md`
+- Modify: `docs/roadmap/2026-08-27-产品落地计划.md`
 - Modify: `features/README.md`
 
 **Interfaces:**
@@ -366,7 +366,7 @@ git commit -m "test(wiki): e2e 四链路（预置/笔记渲染/规则/行业联�
 - [ ] **Step 5: 提交**
 
 ```bash
-git add docs/function/modules/13-投资知识库.md docs/function/00-功能模块概览.md docs/plans/2026-08-27-产品落地计划.md features/README.md
+git add docs/function/modules/13-投资知识库.md docs/function/00-功能模块概览.md docs/roadmap/2026-08-27-产品落地计划.md features/README.md
 git commit -m "docs(wiki): MS-11 交付文档同步（模块/概览/落地计划/索引）"
 ```
 
