@@ -143,12 +143,12 @@ class JournalApplicationServiceTest {
                         LocalDate.of(2026, 9, 30), Instant.now(), Instant.now())));
         when(portfolioRepo.findPortfolioByUserId(1L)).thenReturn(Optional.of(portfolio()));
         when(portfolioRepo.findPositionsByPortfolioId(1L)).thenReturn(List.of(pos()));
-        when(portfolioRepo.findTradesByPositionId(100L)).thenReturn(List.of(
+        when(portfolioRepo.findTradesByPortfolioIdInRange(1L, null, null)).thenReturn(List.of(
                 new Trade(10L, 100L, TradeType.BUY, LocalDate.of(2026, 8, 1),
                         new BigDecimal("1500"), new BigDecimal("100"), new BigDecimal("5"), Instant.now()),
                 new Trade(11L, 100L, TradeType.SELL, LocalDate.of(2026, 8, 20),
                         new BigDecimal("1600"), new BigDecimal("50"), new BigDecimal("5"), Instant.now())));
-        when(portfolioRepo.findDividendsByPositionId(100L)).thenReturn(List.of(
+        when(portfolioRepo.findDividendsByPortfolioIdInRange(1L, null, null)).thenReturn(List.of(
                 new Dividend(20L, 100L, DividendType.CASH, LocalDate.of(2026, 8, 15),
                         new BigDecimal("1.5"), null, Instant.now())));
 
@@ -178,12 +178,18 @@ class JournalApplicationServiceTest {
         LocalDate from = LocalDate.of(2026, 8, 1);
         LocalDate to = LocalDate.of(2026, 8, 31);
         when(repo.findByUserIdInDateRange(1L, from, to)).thenReturn(List.of(entry(1L)));
-        when(portfolioRepo.findPortfolioByUserId(1L)).thenReturn(Optional.empty());
+        when(portfolioRepo.findPortfolioByUserId(1L)).thenReturn(Optional.of(portfolio()));
+        when(portfolioRepo.findPositionsByPortfolioId(1L)).thenReturn(List.of(pos()));
+        when(portfolioRepo.findTradesByPortfolioIdInRange(1L, from, to)).thenReturn(List.of(buyTrade()));
+        when(portfolioRepo.findDividendsByPortfolioIdInRange(1L, from, to)).thenReturn(List.of());
 
         var events = service.timeline(1L, from, to);
 
-        assertThat(events).hasSize(1);
+        assertThat(events).hasSize(2);
         verify(repo).findByUserIdInDateRange(1L, from, to);
+        // 交易/分红同样区间下推：一次批量拉取，不再逐持仓全量载入后内存过滤
+        verify(portfolioRepo).findTradesByPortfolioIdInRange(1L, from, to);
+        verify(portfolioRepo).findDividendsByPortfolioIdInRange(1L, from, to);
     }
 
     @DisplayName("删除记录")

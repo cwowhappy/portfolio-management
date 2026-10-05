@@ -1,5 +1,6 @@
 package com.portfolio.invest.domain.portfolio;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
@@ -27,11 +28,19 @@ public interface PortfolioRepository {
 
     // Trade
     List<Trade> findTradesByPositionId(Long positionId);
+    /** 组合级批量：全组合（跨持仓跨分组）流水一次取回，消除逐持仓 N+1。 */
+    List<Trade> findTradesByPortfolioId(Long portfolioId);
+    /** 组合级区间批量：日期条件下推（两端含边界，from/to 可空），消除无界载入后内存过滤。 */
+    List<Trade> findTradesByPortfolioIdInRange(Long portfolioId, LocalDate from, LocalDate to);
     Optional<Trade> findTradeById(Long id);
     Trade saveTrade(Trade trade);
 
     // Dividend
     List<Dividend> findDividendsByPositionId(Long positionId);
+    /** 组合级批量：全组合（跨持仓跨分组）分红一次取回，消除逐持仓 N+1。 */
+    List<Dividend> findDividendsByPortfolioId(Long portfolioId);
+    /** 组合级区间批量：除息日条件下推（两端含边界，from/to 可空），消除无界载入后内存过滤。 */
+    List<Dividend> findDividendsByPortfolioIdInRange(Long portfolioId, LocalDate from, LocalDate to);
     Dividend saveDividend(Dividend dividend);
 
     // CashTransaction

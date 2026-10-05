@@ -459,9 +459,21 @@ public class AnalyticsApplicationService {
         List<DatedAmount> investorFlows = new ArrayList<>();
         List<TradeStatsCalculator.BuyLot> buys = new ArrayList<>();
         List<TradeStatsCalculator.SellLot> sells = new ArrayList<>();
-        // 持仓流水按对象引用逐个重放（positionId 可能为 null 的 create 产物不能作分组键）
+        // 全组合流水各一次批量取回，按 positionId 分发到各持仓重放（消除逐持仓 N+1）；
+        // positionId 可能为 null 的 create 产物不能作 groupingBy 键——HashMap 显式分组容忍 null 键
+        Map<Long, List<Trade>> tradesByPositionId = new HashMap<>();
+        for (Trade t : portfolioRepository.findTradesByPortfolioId(portfolioId)) {
+            tradesByPositionId.computeIfAbsent(t.positionId(), k -> new ArrayList<>()).add(t);
+        }
+        Map<Long, List<Dividend>> dividendsByPositionId = new HashMap<>();
+        for (Dividend d : portfolioRepository.findDividendsByPortfolioId(portfolioId)) {
+            dividendsByPositionId.computeIfAbsent(d.positionId(), k -> new ArrayList<>()).add(d);
+        }
         for (Position pos : positions) {
-            replayPosition(pos, stockEvents, cashEvents, buys, sells);
+            replayPosition(pos,
+                    tradesByPositionId.getOrDefault(pos.id(), List.of()),
+                    dividendsByPositionId.getOrDefault(pos.id(), List.of()),
+                    stockEvents, cashEvents, buys, sells);
         }
         // 分组现金流水：转入/转出同时是外部现金流（TWR 剔除）与投资者现金流（XIRR 出资 −/回收 +）
         for (HoldingGroup group : groups) {
@@ -479,15 +491,17 @@ public class AnalyticsApplicationService {
         return Optional.of(new Replay(stockEvents, cashEvents, externalFlows, investorFlows, buys, sells));
     }
 
-    /** 单持仓重放：真实 Position 聚合走 applyBuy/applySell/apply*，realizedPnl 取前后差值（单一事实源）。 */
-    private void replayPosition(Position pos, List<StockEvent> stockEvents, List<CashEvent> cashEvents,
+    /** 单持仓重放：真实 Position 聚合走 applyBuy/applySell/apply*，realizedPnl 取前后差值（单一事实源）。
+     * 流水由调用方批量预取后按 positionId 分发传入，本方法不再查库。 */
+    private void replayPosition(Position pos, List<Trade> trades, List<Dividend> dividends,
+            List<StockEvent> stockEvents, List<CashEvent> cashEvents,
             List<TradeStatsCalculator.BuyLot> buys, List<TradeStatsCalculator.SellLot> sells) {
         List<TimedEvent> flow = new ArrayList<>();
-        for (Trade t : portfolioRepository.findTradesByPositionId(pos.id())) {
+        for (Trade t : trades) {
             flow.add(new TimedEvent(t.tradeDate(), t.type() == TradeType.BUY ? RANK_BUY : RANK_SELL,
                     t.createdAt(), t.id(), t, null));
         }
-        for (Dividend d : portfolioRepository.findDividendsByPositionId(pos.id())) {
+        for (Dividend d : dividends) {
             flow.add(new TimedEvent(d.exDate(), RANK_DIVIDEND, d.createdAt(), d.id(), null, d));
         }
         flow.sort(EVENT_ORDER);

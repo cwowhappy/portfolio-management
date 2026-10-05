@@ -137,4 +137,98 @@ class PortfolioRepositoryImplTest {
         assertThat(txs).hasSize(1);
         assertThat(txs.get(0).type()).isEqualTo(CashTransactionType.DEPOSIT);
     }
+
+    private void seedTrade(Long positionId, LocalDate tradeDate) {
+        repository.saveTrade(new Trade(null, positionId, TradeType.BUY,
+                tradeDate, new BigDecimal("10"), new BigDecimal("100"), BigDecimal.ZERO, Instant.now()));
+    }
+
+    private void seedCashDividend(Long positionId, LocalDate exDate) {
+        repository.saveDividend(new Dividend(null, positionId, DividendType.CASH,
+                exDate, new BigDecimal("1.5"), null, Instant.now()));
+    }
+
+    @DisplayName("组合级批量流水：跨持仓跨分组全量返回，且只含本组合")
+    @Test
+    void givenPositionsAcrossGroups_whenFindFlowsByPortfolioId_thenAllFlowsOfThatPortfolioOnly() {
+        Portfolio p = savePortfolio(42L);
+        HoldingGroup g1 = repository.saveGroup(HoldingGroup.create(p.id(), "华泰", GroupType.ACCOUNT, Instant.now()));
+        HoldingGroup g2 = repository.saveGroup(HoldingGroup.create(p.id(), "东财", GroupType.ACCOUNT, Instant.now()));
+        Position posA = repository.savePosition(Position.create(p.id(), g1.id(), "600519", "贵州茅台", Instant.now()));
+        Position posB = repository.savePosition(Position.create(p.id(), g2.id(), "000858", "五粮液", Instant.now()));
+        // 他人组合的流水：不应混入本组合的批量结果
+        Portfolio other = savePortfolio(43L);
+        HoldingGroup otherGroup = repository.saveGroup(HoldingGroup.create(other.id(), "国君", GroupType.ACCOUNT, Instant.now()));
+        Position otherPos = repository.savePosition(
+                Position.create(other.id(), otherGroup.id(), "600036", "招商银行", Instant.now()));
+        seedTrade(otherPos.id(), LocalDate.of(2026, 8, 1));
+
+        seedTrade(posA.id(), LocalDate.of(2026, 8, 1));
+        seedTrade(posB.id(), LocalDate.of(2026, 8, 2));
+        seedCashDividend(posA.id(), LocalDate.of(2026, 8, 3));
+
+        assertThat(repository.findTradesByPortfolioId(p.id()))
+                .extracting(Trade::positionId)
+                .containsExactlyInAnyOrder(posA.id(), posB.id());
+        assertThat(repository.findDividendsByPortfolioId(p.id()))
+                .extracting(Dividend::positionId)
+                .containsExactly(posA.id());
+    }
+
+    @DisplayName("组合级交易区间下推：两端含边界，from/to 可空四分支")
+    @Test
+    void givenTradesAroundBounds_whenFindTradesByPortfolioIdInRange_thenBoundsInclusiveFourBranches() {
+        Portfolio p = savePortfolio(42L);
+        HoldingGroup g = repository.saveGroup(HoldingGroup.create(p.id(), "华泰", GroupType.ACCOUNT, Instant.now()));
+        Position posA = repository.savePosition(Position.create(p.id(), g.id(), "600519", "贵州茅台", Instant.now()));
+        Position posB = repository.savePosition(Position.create(p.id(), g.id(), "000858", "五粮液", Instant.now()));
+        LocalDate before = LocalDate.of(2026, 8, 1);
+        LocalDate from = LocalDate.of(2026, 8, 10);
+        LocalDate mid = LocalDate.of(2026, 8, 20);
+        LocalDate to = LocalDate.of(2026, 8, 31);
+        LocalDate after = LocalDate.of(2026, 9, 5);
+        // 两持仓交错落流水：区间下推须跨持仓生效
+        seedTrade(posA.id(), before);
+        seedTrade(posB.id(), from);
+        seedTrade(posA.id(), mid);
+        seedTrade(posB.id(), to);
+        seedTrade(posA.id(), after);
+
+        assertThat(repository.findTradesByPortfolioIdInRange(p.id(), from, to))
+                .extracting(Trade::tradeDate).containsExactlyInAnyOrder(from, mid, to);
+        assertThat(repository.findTradesByPortfolioIdInRange(p.id(), from, null))
+                .extracting(Trade::tradeDate).containsExactlyInAnyOrder(from, mid, to, after);
+        assertThat(repository.findTradesByPortfolioIdInRange(p.id(), null, to))
+                .extracting(Trade::tradeDate).containsExactlyInAnyOrder(before, from, mid, to);
+        assertThat(repository.findTradesByPortfolioIdInRange(p.id(), null, null))
+                .extracting(Trade::tradeDate).containsExactlyInAnyOrder(before, from, mid, to, after);
+    }
+
+    @DisplayName("组合级分红区间下推：两端含边界，from/to 可空四分支")
+    @Test
+    void givenDividendsAroundBounds_whenFindDividendsByPortfolioIdInRange_thenBoundsInclusiveFourBranches() {
+        Portfolio p = savePortfolio(42L);
+        HoldingGroup g = repository.saveGroup(HoldingGroup.create(p.id(), "华泰", GroupType.ACCOUNT, Instant.now()));
+        Position posA = repository.savePosition(Position.create(p.id(), g.id(), "600519", "贵州茅台", Instant.now()));
+        Position posB = repository.savePosition(Position.create(p.id(), g.id(), "000858", "五粮液", Instant.now()));
+        LocalDate before = LocalDate.of(2026, 8, 1);
+        LocalDate from = LocalDate.of(2026, 8, 10);
+        LocalDate mid = LocalDate.of(2026, 8, 20);
+        LocalDate to = LocalDate.of(2026, 8, 31);
+        LocalDate after = LocalDate.of(2026, 9, 5);
+        seedCashDividend(posA.id(), before);
+        seedCashDividend(posB.id(), from);
+        seedCashDividend(posA.id(), mid);
+        seedCashDividend(posB.id(), to);
+        seedCashDividend(posA.id(), after);
+
+        assertThat(repository.findDividendsByPortfolioIdInRange(p.id(), from, to))
+                .extracting(Dividend::exDate).containsExactlyInAnyOrder(from, mid, to);
+        assertThat(repository.findDividendsByPortfolioIdInRange(p.id(), from, null))
+                .extracting(Dividend::exDate).containsExactlyInAnyOrder(from, mid, to, after);
+        assertThat(repository.findDividendsByPortfolioIdInRange(p.id(), null, to))
+                .extracting(Dividend::exDate).containsExactlyInAnyOrder(before, from, mid, to);
+        assertThat(repository.findDividendsByPortfolioIdInRange(p.id(), null, null))
+                .extracting(Dividend::exDate).containsExactlyInAnyOrder(before, from, mid, to, after);
+    }
 }
