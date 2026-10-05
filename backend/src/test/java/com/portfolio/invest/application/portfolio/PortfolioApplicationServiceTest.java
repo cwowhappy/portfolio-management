@@ -134,7 +134,7 @@ class PortfolioApplicationServiceTest {
     @Test
     void givenNoExistingPosition_whenBuy_thenCreateNewPosition() {
         when(repo.findPositionByPortfolioIdAndGroupIdAndStockCode(10L, 1L, "600519")).thenReturn(Optional.empty());
-        when(repo.findGroupByIdAndPortfolioId(1L, 10L))
+        when(repo.lockGroupByIdAndPortfolioId(1L, 10L))
                 .thenReturn(Optional.of(HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now())));
         stubGroupCash("200000");
         when(repo.savePosition(any())).thenAnswer(inv -> {
@@ -155,6 +155,9 @@ class PortfolioApplicationServiceTest {
         assertThat(view.quantity()).isEqualByComparingTo("100");
         assertThat(view.avgCost()).isEqualByComparingTo("1500.05");
 
+        // 现金写路径必须走组行锁端口（P2-B3：锁先于现金读算，消除 TOCTOU）
+        verify(repo).lockGroupByIdAndPortfolioId(1L, 10L);
+
         ArgumentCaptor<Trade> captor = ArgumentCaptor.forClass(Trade.class);
         verify(repo).saveTrade(captor.capture());
         assertThat(captor.getValue().positionId()).isEqualTo(99L);
@@ -163,7 +166,7 @@ class PortfolioApplicationServiceTest {
     @DisplayName("现金不足买入被拒且不落任何写入（issue #45：买入校验分组现金）")
     @Test
     void givenNoCash_whenBuy_thenRejectWithInsufficientCash() {
-        when(repo.findGroupByIdAndPortfolioId(1L, 10L))
+        when(repo.lockGroupByIdAndPortfolioId(1L, 10L))
                 .thenReturn(Optional.of(HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now())));
         when(repo.findPositionByPortfolioIdAndGroupIdAndStockCode(10L, 1L, "600519")).thenReturn(Optional.empty());
         // 分组无转入流水（Mockito 集合默认空）→ 现金 0 < 1500×100+5
@@ -183,7 +186,7 @@ class PortfolioApplicationServiceTest {
     @Test
     void givenExactSufficientCash_whenBuy_thenSucceed() {
         when(repo.findPositionByPortfolioIdAndGroupIdAndStockCode(10L, 1L, "600519")).thenReturn(Optional.empty());
-        when(repo.findGroupByIdAndPortfolioId(1L, 10L))
+        when(repo.lockGroupByIdAndPortfolioId(1L, 10L))
                 .thenReturn(Optional.of(HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now())));
         stubGroupCash("150005"); // 恰好 = 1500×100+5
         when(repo.savePosition(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -494,7 +497,7 @@ class PortfolioApplicationServiceTest {
     @DisplayName("买入已有持仓累加")
     @Test
     void givenExistingPosition_whenBuy_thenAccumulateQuantity() {
-        when(repo.findGroupByIdAndPortfolioId(1L, 10L))
+        when(repo.lockGroupByIdAndPortfolioId(1L, 10L))
                 .thenReturn(Optional.of(HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now())));
         stubGroupCash("200000");
         when(repo.findPositionByPortfolioIdAndGroupIdAndStockCode(10L, 1L, "600519"))
@@ -531,7 +534,9 @@ class PortfolioApplicationServiceTest {
     @DisplayName("现金转入保存并查询")
     @Test
     void givenDepositCommand_whenAddCashTransaction_thenSaveAndQuery() {
-        when(repo.findGroupByIdAndPortfolioId(1L, 10L))
+        when(repo.lockGroupByIdAndPortfolioId(1L, 10L))
+                .thenReturn(Optional.of(HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now())));
+        when(repo.findGroupByIdAndPortfolioId(1L, 10L)) // 末尾 cashTransactions 读路径走非锁 find
                 .thenReturn(Optional.of(HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now())));
         when(repo.saveCashTransaction(any())).thenAnswer(inv -> inv.getArgument(0));
         when(repo.findCashTransactionsByGroupId(1L)).thenReturn(List.of(
@@ -543,13 +548,15 @@ class PortfolioApplicationServiceTest {
 
         assertThat(view.type()).isEqualTo(CashTransactionType.DEPOSIT);
         assertThat(view.amount()).isEqualByComparingTo("10000");
+        // 现金写路径必须走组行锁端口（P2-B3：同组现金写串行化）
+        verify(repo).lockGroupByIdAndPortfolioId(1L, 10L);
         assertThat(service.cashTransactions(1L, 1L)).hasSize(1);
     }
 
     @DisplayName("现金转出保存")
     @Test
     void givenWithdrawCommand_whenAddCashTransaction_thenSaveWithdraw() {
-        when(repo.findGroupByIdAndPortfolioId(1L, 10L))
+        when(repo.lockGroupByIdAndPortfolioId(1L, 10L))
                 .thenReturn(Optional.of(HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now())));
         when(repo.saveCashTransaction(any())).thenAnswer(inv -> inv.getArgument(0));
 
@@ -937,7 +944,7 @@ class PortfolioApplicationServiceTest {
         assertThat(service.positions(1L, null)).isEmpty();
 
         // buy 仍能按 组合+分组+代码 命中已清仓行，重新买入（FR-A4：交易历史保留、可再开仓）
-        when(repo.findGroupByIdAndPortfolioId(1L, 10L))
+        when(repo.lockGroupByIdAndPortfolioId(1L, 10L))
                 .thenReturn(Optional.of(HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now())));
         stubGroupCash("200000"); // 已清仓行净现金流 +2000 亦计入分组现金，转入覆盖后买入
         when(repo.findPositionByPortfolioIdAndGroupIdAndStockCode(10L, 1L, "600519"))

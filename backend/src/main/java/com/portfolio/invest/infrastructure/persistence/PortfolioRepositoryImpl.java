@@ -59,6 +59,11 @@ public class PortfolioRepositoryImpl implements PortfolioRepository {
     }
 
     @Override
+    public Optional<HoldingGroup> lockGroupByIdAndPortfolioId(Long id, Long portfolioId) {
+        return groupJpa.findByIdAndPortfolioIdForUpdate(id, portfolioId).map(HoldingGroupJpaEntity::toDomain);
+    }
+
+    @Override
     public HoldingGroup saveGroup(HoldingGroup group) {
         return groupJpa.save(HoldingGroupJpaEntity.fromDomain(group)).toDomain();
     }

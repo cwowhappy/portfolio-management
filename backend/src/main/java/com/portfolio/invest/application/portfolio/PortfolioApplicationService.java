@@ -113,7 +113,7 @@ public class PortfolioApplicationService {
             throw new PortfolioException(PortfolioErrorCode.INVALID_INPUT, "日期不能晚于今日");
         }
         Portfolio p = getOrCreatePortfolio(userId);
-        requireGroup(p.id(), cmd.groupId());
+        requireGroupForUpdate(p.id(), cmd.groupId());
         CashTransaction tx = repository.saveCashTransaction(new CashTransaction(
                 null, cmd.groupId(), cmd.type(), cmd.amount(), cmd.txDate(), cmd.note(), Instant.now()));
         return CashTransactionView.from(tx);
@@ -144,13 +144,25 @@ public class PortfolioApplicationService {
                 .orElseThrow(() -> new PortfolioException(PortfolioErrorCode.NOT_FOUND, "分组不存在"));
     }
 
+    /**
+     * 现金写路径（buy/现金转出）专用：组行悲观锁版归属校验——锁必须先于现金读算，
+     * 同组并发写串行化；锁不到与 {@link #requireGroup} 一致走 NOT_FOUND。
+     * PG READ_COMMITTED 下锁后重读即见前序已提交写入，无需重试。
+     */
+    private HoldingGroup requireGroupForUpdate(Long portfolioId, Long groupId) {
+        return repository.lockGroupByIdAndPortfolioId(groupId, portfolioId)
+                .orElseThrow(() -> new PortfolioException(PortfolioErrorCode.NOT_FOUND, "分组不存在"));
+    }
+
     @Transactional
     public PositionView buy(Long userId, BuyCommand cmd) {
         if (cmd.tradeDate().isAfter(LocalDate.now())) {
             throw new PortfolioException(PortfolioErrorCode.INVALID_INPUT, "日期不能晚于今日");
         }
         Portfolio p = getOrCreatePortfolio(userId);
-        requireGroup(p.id(), cmd.groupId());
+        // 组行锁先于现金读算（P2-B3）：同组并发 buy/现金转出串行化，后到者重读见前序已提交写入，
+        // 消除「两事务同读一份现金快照、双双通过校验」的 TOCTOU 双透支。
+        requireGroupForUpdate(p.id(), cmd.groupId());
         // 买入校验分组现金（issue #45）：账户现金 = 转入−转出+卖出+分红−买入（01-需求规格「现金独立记账」），
         // 不足则拒——防止负现金形态流入 analytics 使总资产/TWR 失真（负现金=账本不完整）。
         var groupPositions = repository.findPositionsByGroupId(cmd.groupId());

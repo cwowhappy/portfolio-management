@@ -23,14 +23,25 @@ import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabas
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 // @DataJpaTest 切片 + 真实 PG：@ServiceConnection 复用 testFixtures 的 JVM 单例容器，整个测试进程只起一个 Postgres。
 // Boot 4 的 @DataJpaTest 不含 Flyway 自动配置（schema 由 Flyway 管），需 @ImportAutoConfiguration 显式引入；
@@ -50,6 +61,9 @@ class PortfolioRepositoryImplTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private PlatformTransactionManager transactionManager;
 
     /** portfolio.user_id 外键引用 app_user(id)，需先植入带指定 id 的用户行。 */
     @BeforeEach
@@ -230,5 +244,75 @@ class PortfolioRepositoryImplTest {
                 .extracting(Dividend::exDate).containsExactlyInAnyOrder(before, from, mid, to);
         assertThat(repository.findDividendsByPortfolioIdInRange(p.id(), null, null))
                 .extracting(Dividend::exDate).containsExactlyInAnyOrder(before, from, mid, to, after);
+    }
+
+    /**
+     * MS-28 P2-B3 组行悲观锁：T1 取锁未提交期间，T2 对同一组行 lock 必须（阻塞在
+     * SELECT ... FOR UPDATE 上）拿不到；T1 提交后 T2 立即获锁并读到该行。
+     * 断言形态选型：不用 SQL 文本断言（脆弱、不证行为），用 CountDownLatch 控制
+     * T1 持锁窗口 + T2 future.get(500ms) 超时证明阻塞——T1 持锁期间 T2 不可能完成，方向性确定。
+     */
+    @DisplayName("组行悲观锁：第二个事务阻塞直至第一个提交")
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED) // 关闭测试托管事务：种子须为提交态，并发事务才可见
+    void whenLockSameGroupInTwoTransactions_thenSecondBlocksUntilFirstCommits() throws Exception {
+        // NOT_SUPPORTED 下本用例（含 @BeforeEach 的 42/43/44）均为即时提交，收尾须手动清理共享容器
+        jdbcTemplate.update(
+                "INSERT INTO app_user(id, username, password_hash, role, status) VALUES (?, ?, ?, ?, ?)",
+                45L, "portfolio-t4-45", "h", "USER", "PENDING");
+        Long portfolioId = null;
+        try {
+            TransactionTemplate tx = new TransactionTemplate(transactionManager);
+            // 种子放同一提交态事务（@Modifying insertPortfolioIfAbsent 需写事务；提交后并发事务才可见）
+            final HoldingGroup g = tx.execute(status -> {
+                repository.insertPortfolioIfAbsent(45L);
+                Portfolio p = repository.findPortfolioByUserId(45L).orElseThrow();
+                return repository.saveGroup(HoldingGroup.create(p.id(), "锁组", GroupType.ACCOUNT, Instant.now()));
+            });
+            portfolioId = g.portfolioId();
+
+            CountDownLatch locked = new CountDownLatch(1);
+            CountDownLatch release = new CountDownLatch(1);
+            CountDownLatch secondStarted = new CountDownLatch(1);
+            ExecutorService pool = Executors.newFixedThreadPool(2);
+            try {
+                // T1：取组行锁后持锁等待，release 被唤起才返回（返回即提交、释放锁）
+                Future<?> first = pool.submit(() -> tx.executeWithoutResult(s -> {
+                    assertThat(repository.lockGroupByIdAndPortfolioId(g.id(), g.portfolioId())).isPresent();
+                    locked.countDown();
+                    try {
+                        release.await(10, TimeUnit.SECONDS);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                }));
+                assertThat(locked.await(10, TimeUnit.SECONDS)).as("T1 应先取得组行锁").isTrue();
+
+                // T2：已起跑但 500ms 内必须仍被挡在 T1 的行锁上（T1 未提交）
+                Future<?> second = pool.submit(() -> {
+                    secondStarted.countDown();
+                    tx.executeWithoutResult(s ->
+                            assertThat(repository.lockGroupByIdAndPortfolioId(g.id(), g.portfolioId())).isPresent());
+                });
+                assertThat(secondStarted.await(10, TimeUnit.SECONDS)).isTrue();
+                assertThatThrownBy(() -> second.get(500, TimeUnit.MILLISECONDS))
+                        .as("T1 持锁未提交，T2 的 FOR UPDATE 应阻塞")
+                        .isInstanceOf(TimeoutException.class);
+
+                release.countDown();
+                first.get(10, TimeUnit.SECONDS);   // T1 提交、释放行锁
+                second.get(10, TimeUnit.SECONDS);  // T2 获锁并读到已提交的组行
+            } finally {
+                release.countDown();
+                pool.shutdownNow();
+            }
+        } finally {
+            // 手动清理（本用例数据不走事务回滚）：子表 holding_group → portfolio → app_user
+            if (portfolioId != null) {
+                jdbcTemplate.update("DELETE FROM holding_group WHERE portfolio_id = ?", portfolioId);
+                jdbcTemplate.update("DELETE FROM portfolio WHERE id = ?", portfolioId);
+            }
+            jdbcTemplate.update("DELETE FROM app_user WHERE id IN (42, 43, 44, 45)");
+        }
     }
 }

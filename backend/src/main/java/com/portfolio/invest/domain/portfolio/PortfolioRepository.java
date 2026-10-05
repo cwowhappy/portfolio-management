@@ -15,6 +15,8 @@ public interface PortfolioRepository {
     // HoldingGroup
     List<HoldingGroup> findGroupsByPortfolioId(Long portfolioId);
     Optional<HoldingGroup> findGroupByIdAndPortfolioId(Long id, Long portfolioId);
+    /** 组行悲观锁（SELECT ... FOR UPDATE）：现金写路径（buy/现金转出）先锁组行再读算现金，消除 TOCTOU；锁不到与 find 语义一致返回空。 */
+    Optional<HoldingGroup> lockGroupByIdAndPortfolioId(Long id, Long portfolioId);
     HoldingGroup saveGroup(HoldingGroup group);
     void deleteGroup(Long id);
 
