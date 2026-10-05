@@ -40,6 +40,6 @@ describe("IndustryBar", () => {
     // 单系列不出 legend
     expect(option.legend).toBeUndefined();
     // 备注说明仍渲染
-    expect(screen.getByText("个股按申万行业，ETF 排除")).toBeTruthy();
+    expect(screen.getByText("个股按申万行业，ETF 排除；无申万映射个股计入未映射")).toBeTruthy();
   });
 });

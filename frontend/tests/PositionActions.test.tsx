@@ -1,7 +1,8 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { cleanup, render, screen, fireEvent } from "@testing-library/react";
 import PositionActions from "@/components/portfolio/PositionActions";
-import { addCashDividend, addStockDividend, deletePosition, editTrade, sell } from "@/lib/portfolioApi";
+import { addCashDividend, addStockDividend, deletePosition, fetchDeleteImpact, editTrade, sell } from "@/lib/portfolioApi";
+import { DeleteImpactSchema } from "@/lib/schemas";
 
 vi.mock("@/lib/portfolioApi", () => ({
   sell: vi.fn().mockResolvedValue({}),
@@ -12,6 +13,7 @@ vi.mock("@/lib/portfolioApi", () => ({
   fetchTrades: vi.fn().mockResolvedValue([
     { id: 11, type: "BUY", tradeDate: "2026-08-27", price: 100, quantity: 100, fee: 0 },
   ]),
+  fetchDeleteImpact: vi.fn().mockResolvedValue({ tradeCount: 3, dividendCount: 1, realizedPnl: 2000 }),
 }));
 
 const position = {
@@ -72,13 +74,48 @@ describe("PositionActions", () => {
     expect(vi.mocked(editTrade)).toHaveBeenCalledWith(5, 11, expect.objectContaining({ price: 110 }));
   });
 
-  it("删除持仓调用 deletePosition", async () => {
-    vi.stubGlobal("confirm", vi.fn(() => true));
+  it("点删除先拉预检，弹窗渲染数字与警示，取消不删除", async () => {
     const onChanged = vi.fn();
     render(<PositionActions position={position} onChanged={onChanged} />);
     fireEvent.click(screen.getByRole("button", { name: "删除" }));
+    await vi.waitFor(() => expect(vi.mocked(fetchDeleteImpact)).toHaveBeenCalledWith(5));
+    expect(await screen.findByText(/将永久删除 3 笔交易、1 笔分红/)).toBeTruthy();
+    expect(screen.getByText(/历史不可恢复/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    expect(vi.mocked(deletePosition)).not.toHaveBeenCalled();
+    expect(onChanged).not.toHaveBeenCalled();
+  });
+
+  it("弹窗确认后调用 deletePosition", async () => {
+    const onChanged = vi.fn();
+    render(<PositionActions position={position} onChanged={onChanged} />);
+    fireEvent.click(screen.getByRole("button", { name: "删除" }));
+    fireEvent.click(await screen.findByRole("button", { name: "确认删除" }));
     await vi.waitFor(() => expect(onChanged).toHaveBeenCalled());
     expect(vi.mocked(deletePosition)).toHaveBeenCalledWith(5);
+  });
+
+  it("预检失败降级为通用确认文案且不阻塞删除", async () => {
+    vi.mocked(fetchDeleteImpact).mockRejectedValueOnce(new Error("网络错误"));
+    const onChanged = vi.fn();
+    render(<PositionActions position={position} onChanged={onChanged} />);
+    fireEvent.click(screen.getByRole("button", { name: "删除" }));
+    expect(await screen.findByText(/确定删除 贵州茅台 持仓及其交易\/分红记录/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
+    await vi.waitFor(() => expect(onChanged).toHaveBeenCalled());
+    expect(vi.mocked(deletePosition)).toHaveBeenCalledWith(5);
+  });
+
+  it("DeleteImpactSchema 解析合法契约数字", () => {
+    expect(DeleteImpactSchema.parse({ tradeCount: 3, dividendCount: 1, realizedPnl: 2000 })).toEqual({
+      tradeCount: 3, dividendCount: 1, realizedPnl: 2000,
+    });
+  });
+
+  it("DeleteImpactSchema 缺字段拒绝", () => {
+    expect(DeleteImpactSchema.safeParse({ tradeCount: 3, dividendCount: 1 }).success).toBe(false);
+    expect(DeleteImpactSchema.safeParse({}).success).toBe(false);
+    expect(DeleteImpactSchema.safeParse({ tradeCount: 3, dividendCount: 1, realizedPnl: "2000" }).success).toBe(false);
   });
 
   it("卖出失败时显示错误且不触发 onChanged", async () => {
@@ -101,21 +138,12 @@ describe("PositionActions", () => {
     expect(await screen.findByText("卖出失败")).toBeTruthy();
   });
 
-  it("confirm 取消时不触发删除", () => {
-    vi.stubGlobal("confirm", vi.fn(() => false));
-    const onChanged = vi.fn();
-    render(<PositionActions position={position} onChanged={onChanged} />);
-    fireEvent.click(screen.getByRole("button", { name: "删除" }));
-    expect(vi.mocked(deletePosition)).not.toHaveBeenCalled();
-    expect(onChanged).not.toHaveBeenCalled();
-  });
-
   it("删除失败时显示错误", async () => {
-    vi.stubGlobal("confirm", vi.fn(() => true));
     vi.mocked(deletePosition).mockRejectedValueOnce(new Error("存在关联交易"));
     const onChanged = vi.fn();
     render(<PositionActions position={position} onChanged={onChanged} />);
     fireEvent.click(screen.getByRole("button", { name: "删除" }));
+    fireEvent.click(await screen.findByRole("button", { name: "确认删除" }));
     expect(await screen.findByText("存在关联交易")).toBeTruthy();
     expect(onChanged).not.toHaveBeenCalled();
   });

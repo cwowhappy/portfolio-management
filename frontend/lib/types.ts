@@ -224,6 +224,8 @@ export interface IndustrySlice { industryName: string; marketValue: number; rati
 export interface IndustryDistribution { slices: IndustrySlice[]; }
 export interface ConcentrationHolding { stockCode: string; stockName: string; marketValue: number; ratio: number; }
 export interface Concentration { holdings: ConcentrationHolding[]; top5Ratio: number; }
+// 删除影响预检（GET /api/portfolio/positions/{id}/delete-impact）
+export interface DeleteImpact { tradeCount: number; dividendCount: number; realizedPnl: number; }
 
 // CSV 批量导入结果（rowErrors 空=全部成功）
 export interface ImportRowError { row: number; reason: string; }
