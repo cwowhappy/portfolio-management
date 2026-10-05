@@ -59,7 +59,8 @@ class InvestToolsTest {
         mapper.registerModule(new JavaTimeModule());
         mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
         tools = new InvestTools(market, valuationService, screening, financialQuery, industry,
-                mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class), mapper);
+                mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class), mapper,
+                new com.portfolio.invest.config.InvestProperties());
     }
 
     private static Quote quote(String code, Double pe, Double pb) {

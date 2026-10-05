@@ -429,9 +429,13 @@ public class InvestProperties {
                 + "市场有风险，投资决策请独立判断或咨询持牌专业机构。";
         /** payload 单条字节上限（MS-29 B8，UTF-8 字节口径）：PUT 时超限单条降级置 null，防滥用。 */
         private int payloadMaxBytes = 65536;
+        /** research_draft 入参 draftJson 字节上限（MS-29 B9-②，UTF-8 字节口径）：超限返回友好错误，防超大草稿打满上下文。 */
+        private int draftJsonMaxBytes = 32768;
 
         public int getPayloadMaxBytes() { return payloadMaxBytes; }
         public void setPayloadMaxBytes(int payloadMaxBytes) { this.payloadMaxBytes = payloadMaxBytes; }
+        public int getDraftJsonMaxBytes() { return draftJsonMaxBytes; }
+        public void setDraftJsonMaxBytes(int draftJsonMaxBytes) { this.draftJsonMaxBytes = draftJsonMaxBytes; }
 
         public ToleranceSettings getTolerance() { return tolerance; }
         public void setTolerance(ToleranceSettings tolerance) { this.tolerance = tolerance; }

@@ -50,7 +50,8 @@ class SearchNewsToolTest {
                 mock(FinancialQueryService.class),
                 mock(IndustryApplicationService.class),
                 intelligenceQuery,
-                mapper);
+                mapper,
+                new com.portfolio.invest.config.InvestProperties());
     }
 
     private static IntelligenceQueryService.NewsItemView item(String title, Direction direction,

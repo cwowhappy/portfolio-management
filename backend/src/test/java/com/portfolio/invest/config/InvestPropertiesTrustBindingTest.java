@@ -140,4 +140,23 @@ class InvestPropertiesTrustBindingTest {
 
         assertThat(props.getTrust().getPayloadMaxBytes()).isEqualTo(12345);
     }
+
+    @DisplayName("未配置时：draft-json-max-bytes 代码默认值生效（32768，MS-29 B9-②）")
+    @Test
+    void givenNoDraftJsonConfig_whenBind_thenDefaultMaxBytesApplies() {
+        InvestProperties props = new Binder(new MapConfigurationPropertySource(Map.of()))
+                .bindOrCreate("invest", InvestProperties.class);
+
+        assertThat(props.getTrust().getDraftJsonMaxBytes()).isEqualTo(32768);
+    }
+
+    @DisplayName("invest.trust.draft-json-max-bytes 松命名绑定覆盖（distinct 值区分绑定成功与静默回退默认）")
+    @Test
+    void givenDraftJsonMaxBytesConfig_whenBind_thenValueBound() {
+        InvestProperties props = new Binder(new MapConfigurationPropertySource(Map.of(
+                "invest.trust.draft-json-max-bytes", "2048")))
+                .bindOrCreate("invest", InvestProperties.class);
+
+        assertThat(props.getTrust().getDraftJsonMaxBytes()).isEqualTo(2048);
+    }
 }
