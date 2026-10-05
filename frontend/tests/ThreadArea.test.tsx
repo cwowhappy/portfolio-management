@@ -1012,6 +1012,97 @@ describe("ThreadArea", () => {
     expect(badges[0].parentElement?.textContent).toContain("1708 亿");
   });
 
+  // ———— MS-29 F3：低置信横幅 + disclaimer 接线（TrustMessageAdvisories 同消息级订阅，正文与反馈条之间）————
+
+  it("F3：payload 携带 confidence/advice → 横幅与 disclaimer 落在正文与反馈条之间（并存不互斥）", async () => {
+    mocks.agent.messages = [
+      agentMessage({ id: "ta-f3-u", role: "user", content: "看看" }),
+      agentMessage({ id: "ta-f3-a1", role: "assistant", content: "现价1520.33元，可考虑加仓。" }),
+    ];
+    renderThread();
+    await waitFor(() => expect(screen.getByText(/现价/)).toBeTruthy());
+    // 落地前：零渲染（无 confidence/advice 键）
+    expect(screen.queryByTestId("confidence-banner")).toBeNull();
+    expect(screen.queryByTestId("disclaimer-note")).toBeNull();
+    act(() => {
+      lastTrustSubscriber().onCustomEvent({
+        event: {
+          name: TRUST_ANCHORS_EVENT,
+          value: {
+            messageId: "ta-f3-a1",
+            payload: {
+              v: 1,
+              anchors: [
+                {
+                  snippet: "1520.33元",
+                  occ: 1,
+                  state: "verified",
+                  tool: "get_quote",
+                  args: { symbol: "600519.SH" },
+                  asOf: "2026-10-05 14:59:32",
+                  asOfKind: "data",
+                  raw: "1520.33",
+                },
+              ],
+              stats: { verified: 1, sourced: 0, unverified: 0 },
+              advice: {
+                flag: true,
+                by: "lexicon",
+                text: "以上内容由 AI 生成，仅供参考，不构成任何投资建议。",
+              },
+              confidence: { signals: ["unverified_ratio:0.4", "tool_failures:1"] },
+            },
+          },
+        },
+        messages: [],
+      });
+    });
+    const banner = await screen.findByTestId("confidence-banner");
+    const note = screen.getByTestId("disclaimer-note");
+    expect(screen.getAllByTestId("confidence-signal").map((li) => li.textContent)).toEqual([
+      "40% 数字未溯源",
+      "工具调用失败",
+    ]);
+    expect(screen.getByTestId("confidence-suggestion").textContent).toBe(
+      "建议重问最新价或查看东方财富行情页",
+    );
+    expect(screen.getByText("以上内容由 AI 生成，仅供参考，不构成任何投资建议。")).toBeTruthy();
+    // 落位链：正文段落 → 横幅 → disclaimer → 反馈条（设计规格 §5.3：插 MarkdownView 与 FeedbackBar 之间）
+    const para = screen.getByText(/现价/);
+    const up = screen.getByRole("button", { name: "回答有帮助" });
+    expect(para.compareDocumentPosition(banner) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(banner.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(note.compareDocumentPosition(up) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("F3：payload 无 confidence/advice 键 → 横幅与 disclaimer 零渲染（角标对照组正常）", async () => {
+    mocks.agent.messages = [
+      agentMessage({ id: "ta-f3-a2", role: "assistant", content: "现价1520.33元。" }),
+    ];
+    renderThread();
+    await waitFor(() => expect(screen.getByText(/现价/)).toBeTruthy());
+    act(() => {
+      lastTrustSubscriber().onCustomEvent({
+        event: {
+          name: TRUST_ANCHORS_EVENT,
+          value: {
+            messageId: "ta-f3-a2",
+            payload: {
+              v: 1,
+              anchors: [{ snippet: "1520.33元", occ: 1, state: "verified" }],
+              stats: { verified: 1, sourced: 0, unverified: 0 },
+            },
+          },
+        },
+        messages: [],
+      });
+    });
+    // anchors 正常落地（对照组：同 payload 无 confidence/advice 不影响角标）
+    expect(await screen.findAllByTestId("trust-anchor-badge")).toHaveLength(1);
+    expect(screen.queryByTestId("confidence-banner")).toBeNull();
+    expect(screen.queryByTestId("disclaimer-note")).toBeNull();
+  });
+
   describe("Composer", () => {
     it("输入文本后点击发送", async () => {
       renderThread();

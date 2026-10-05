@@ -22,6 +22,7 @@ import InterruptApprovalCard from "./InterruptApprovalCard";
 import ToolCallCard from "./ToolCallCard";
 import { ChartToolRenderers } from "./toolRenderers";
 import { TrustMessageContent } from "@/components/shared/TrustMarkdownView";
+import { TrustMessageAdvisories } from "@/components/shared/TrustAdvisories";
 
 // 模块级常量：避免每次渲染新建数组触发潜在的重订阅
 const AGENT_UPDATES = [UseAgentUpdate.OnMessagesChanged, UseAgentUpdate.OnRunStatusChanged];
@@ -241,6 +242,9 @@ const AssistantMessage = memo(function AssistantMessage({
             引用稳定契约），有锚渲染角标、无锚走原 MarkdownView；store 事件不触发本 memo 组件
             重渲染（比较器无需 trust 项，F1 契约建议形态）。 */}
         {content && <TrustMessageContent messageId={message.id} content={content} />}
+        {/* MS-29 F3：低置信横幅 + disclaimer——TrustMessageAdvisories 与 F2 同消息级独立订阅，
+            插在正文与反馈条之间；两组件并存不互斥，payload 无 confidence/advice 键零渲染。 */}
+        <TrustMessageAdvisories messageId={message.id} />
         <FeedbackBar messageId={message.id} />
       </div>
     </div>
