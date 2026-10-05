@@ -174,11 +174,11 @@ export default function PositionActions({ position, onChanged }: { position: Pos
         <button className="rounded-md border border-[color:var(--color-line)] px-3 py-1.5" onClick={onEditClick} disabled={busy}>
           编辑
         </button>
-        <button className="rounded-md bg-[color:var(--color-down)] px-3 py-1.5 text-white" onClick={onDelete} disabled={busy}>
+        <button className="rounded-md bg-[color:var(--color-up)] px-3 py-1.5 text-white" onClick={onDelete} disabled={busy}>
           删除
         </button>
       </div>
-      {error && <div className="text-xs text-[color:var(--color-down)]">{error}</div>}
+      {error && <div className="text-xs text-[color:var(--color-up)]">{error}</div>}
 
       {confirmOpen && (
         <div data-testid="delete-confirm-dialog"
@@ -194,12 +194,12 @@ export default function PositionActions({ position, onChanged }: { position: Pos
                 <div className="text-sm">
                   {`将永久删除 ${confirmImpact.tradeCount} 笔交易、${confirmImpact.dividendCount} 笔分红，已实现盈亏 ${confirmImpact.realizedPnl.toFixed(2)}。`}
                 </div>
-                <div className="text-xs text-[color:var(--color-down)]">历史不可恢复，请确认后再删除。</div>
+                <div className="text-xs text-[color:var(--color-up)]">历史不可恢复，请确认后再删除。</div>
               </>
             )}
             <div className="flex gap-2">
               <button type="button" onClick={onConfirmDelete} disabled={busy || confirmImpact === undefined}
-                className="rounded-md bg-[color:var(--color-down)] px-4 py-1.5 text-sm text-white disabled:opacity-50">
+                className="rounded-md bg-[color:var(--color-up)] px-4 py-1.5 text-sm text-white disabled:opacity-50">
                 确认删除
               </button>
               <button type="button" disabled={busy}

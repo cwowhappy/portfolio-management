@@ -37,7 +37,7 @@ export default function SkillSettingsPage() {
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-4">
       <h1 className="text-xl font-semibold">Skill 设置</h1>
-      {error && <div className="text-[color:var(--color-down)] text-sm">{error}</div>}
+      {error && <div className="text-[color:var(--color-up)] text-sm">{error}</div>}
       {Object.entries(groups).map(([category, items]) => (
         <div key={category} className="space-y-2">
           <h2 className="text-sm font-medium text-[color:var(--color-ink-dim)]">{category}</h2>

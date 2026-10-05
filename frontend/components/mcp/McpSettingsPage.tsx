@@ -80,7 +80,7 @@ export default function McpSettingsPage() {
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-4">
       <h1 className="text-xl font-semibold">MCP 数据源设置</h1>
-      {error && <div className="text-[color:var(--color-down)] text-sm">{error}</div>}
+      {error && <div className="text-[color:var(--color-up)] text-sm">{error}</div>}
       {providers.map((item) => {
         const cfg = configOf(item.id);
         const toolList = tools[item.id] ?? [];
@@ -106,7 +106,7 @@ export default function McpSettingsPage() {
                       className="border rounded px-3 py-1 text-sm">保存</button>
               {cfg && (
                 <button onClick={() => onDelete(item.id)} disabled={pending !== null}
-                        className="border rounded px-3 py-1 text-sm text-[color:var(--color-down)]">删除</button>
+                        className="border rounded px-3 py-1 text-sm text-[color:var(--color-up)]">删除</button>
               )}
             </div>
             {testResult[item.id] && <div className="text-xs text-[color:var(--color-ink-faint)]">{testResult[item.id]}</div>}
