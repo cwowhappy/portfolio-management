@@ -54,11 +54,15 @@ WHERE t.task_code = ANY(%s) AND NOT EXISTS (
 # C1 depends_on 前置检查：join 形态照 LIST_RUNS_SQL（task_code 在 collector_task，
 # run 状态在 collector_task_run，经 task_id FK 关联）；success/partial 口径照
 # never_succeeded 先例——partial 也已落数据，视为上游已就绪。
+# 「当日」钉死上海时区而非会话时区：day 来自宿主本地（run_date→dt.date.today()），
+# 会话与宿主时区不一致时（如 UTC 会话）00:00–07:59 的任务族会差一天——news_night
+# cron 00:00–06:00 在部署环境会被 ::date 静默误判到昨日，上游已成功却判未就绪。
 SUCCEEDED_ON_SQL = """
 SELECT DISTINCT t.task_code
 FROM collector_task_run r
 JOIN collector_task t ON t.id = r.task_id
-WHERE t.task_code = ANY(%s) AND r.status IN ('success', 'partial') AND r.started_at::date = %s
+WHERE t.task_code = ANY(%s) AND r.status IN ('success', 'partial')
+  AND (r.started_at AT TIME ZONE 'Asia/Shanghai')::date = %s
 """
 
 # C2 悬挂 running reaper：进程在 start_run（事务1）落行后、finish_run（事务3）回填前被 kill
@@ -162,7 +166,7 @@ class RunRepository:
             return {r[0] for r in cur.fetchall()}
 
     def succeeded_on(self, task_codes, day) -> set:
-        """day 当日（started_at::date）已有 success/partial run 的任务集合，供 depends_on 前置检查。"""
+        """day 当日（上海时区自然日）已有 success/partial run 的任务集合，供 depends_on 前置检查。"""
         if not task_codes:
             return set()
         with self.conn.cursor() as cur:

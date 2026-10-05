@@ -352,7 +352,8 @@ MAIL_ENV = {
 
 
 def test_mail_alerter_sends_mime_with_both_recipients():
-    """SMTP_SSL + login + sendmail：收件人按逗号拆两个，正文含 task 与 error，Subject 带类型定位。"""
+    """SMTP_SSL + login + sendmail：收件人按逗号拆两个，正文含 task 与 error，Subject 带类型定位。
+    构造参数必须带 timeout=10：send 会被 runner 在持 advisory lock 块内同步调用，无超时挂起会拖死任务锁。"""
     import email
 
     with patch("collector.scheduler.alerts.smtplib.SMTP_SSL") as smtp_ssl:
@@ -361,7 +362,7 @@ def test_mail_alerter_sends_mime_with_both_recipients():
             {"type": "task_run", "task": "stock_daily", "status": "failed", "error": "全源熔断"}
         )
     assert ok is True
-    smtp_ssl.assert_called_once_with("smtp.x", 465)
+    smtp_ssl.assert_called_once_with("smtp.x", 465, timeout=10)
     smtp.login.assert_called_once_with("u", "p")
     (sender, tos, body), _ = smtp.sendmail.call_args
     assert sender == "a@x"
@@ -562,6 +563,8 @@ def test_reaper_once_alerts_when_stale_rows_reaped():
     payload = alerter.send.call_args[0][0]
     assert payload["type"] == "reaper"
     assert payload["reaped"] == 3
+    # message 让飞书 task_run 卡片有文案（type=reaper 落兜底渲染，无 message 卡片全空）
+    assert payload["message"] == "reaper: 清理悬挂 running 3 行"
 
 
 def test_reaper_once_silent_when_nothing_reaped():
@@ -617,5 +620,5 @@ def test_main_wires_startup_reaper_before_scheduler():
     age = dt.datetime.now(dt.UTC) - cutoff
     assert dt.timedelta(hours=23) < age < dt.timedelta(hours=25)  # cutoff 一天
     assert order == ["alert", "scheduler"]  # reaper 告警先于调度器构建（alerter 就绪后、start 前）
-    assert alerter.send.call_args[0][0] == {"type": "reaper", "reaped": 2}
+    assert alerter.send.call_args[0][0] == {"type": "reaper", "reaped": 2, "message": "reaper: 清理悬挂 running 2 行"}
     sched.start.assert_called_once()

@@ -175,7 +175,9 @@ def reap_stale_running_once(database_url, alerter, cutoff):
         return 0
     logger.warning("启动 reaper：清理 %d 条悬挂 running run（进程被 kill?）", reaped)
     if alerter is not None:
-        alerter.send({"type": "reaper", "reaped": reaped})
+        # message 兜底文案：type=reaper 落飞书 _task_run_card 渲染（无 message 卡片全空），
+        # 同时让 DedupAlerter 签名（error/message 前 120 字符）带上语义。
+        alerter.send({"type": "reaper", "reaped": reaped, "message": f"reaper: 清理悬挂 running {reaped} 行"})
     return reaped
 
 

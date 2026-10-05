@@ -201,7 +201,9 @@ class MailAlerter:
             msg["Subject"] = f"[collector] {event.get('type', '')} {event.get('task', '')}".strip()
             msg["From"] = self.from_addr
             msg["To"] = ", ".join(self.to_addrs)
-            with smtplib.SMTP_SSL(self.host, self.port) as smtp:
+            # timeout=10：send 会被 runner 在持 advisory lock 的块内同步调用，无超时的 SMTP
+            # 挂起会拖死任务锁（照 WebhookAlerter timeout 先例）；超时异常仍走下方吞错返回 False。
+            with smtplib.SMTP_SSL(self.host, self.port, timeout=10) as smtp:
                 smtp.login(self.username, self.password)
                 smtp.sendmail(self.from_addr, self.to_addrs, msg.as_string())
             return True

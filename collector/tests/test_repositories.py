@@ -330,13 +330,15 @@ def _seed_upstream_tasks(pg_conn, codes):
     pg_conn.commit()
 
 
-def _insert_run(pg_conn, task_code, status, day, hour=16):
-    """直插 run 行（绕过 record——须显式控制 started_at 日期）。naive datetime 与
-    ::date 回读同走 session 时区，写入/比较口径一致，不受容器时区影响。"""
+def _insert_run(pg_conn, task_code, status, day, hour=16, minute=0):
+    """直插 run 行（绕过 record——须显式控制 started_at 日期）。datetime 钉死上海墙钟
+    （UTC+8，与 SUCCEEDED_ON_SQL 的 AT TIME ZONE 'Asia/Shanghai' 同口径），day 即上海
+    自然日——不受测试库会话时区影响（CI postgres service 为 UTC）。"""
+    shanghai = dt.timezone(dt.timedelta(hours=8))
     pg_conn.execute(
         "INSERT INTO collector_task_run (task_id, mode, status, started_at)"
         " SELECT id, 'incremental', %s, %s FROM collector_task WHERE task_code=%s",
-        (status, dt.datetime.combine(day, dt.time(hour, 0)), task_code),
+        (status, dt.datetime.combine(day, dt.time(hour, minute)).replace(tzinfo=shanghai), task_code),
     )
     pg_conn.commit()
 
@@ -345,7 +347,7 @@ def test_succeeded_on_includes_success_and_partial_of_the_day(pg_conn):
     from collector.repositories.runs import RunRepository
 
     _seed_upstream_tasks(pg_conn, ["etf_close", "tracking_index_close"])
-    # 服务器口径的「当日」：与 started_at::date 的 session 时区换算一致，测试不随时区漂移
+    # current_date 仅取一个「近邻日期」；插入与查询两侧都以上海墙钟钉死，会话时区不漂移
     today = pg_conn.execute("SELECT current_date").fetchone()[0]
     _insert_run(pg_conn, "etf_close", "success", today, hour=15)
     _insert_run(pg_conn, "tracking_index_close", "partial", today, hour=15)
@@ -371,6 +373,20 @@ def test_succeeded_on_empty_codes_returns_empty_set(pg_conn):
     from collector.repositories.runs import RunRepository
 
     assert RunRepository(pg_conn).succeeded_on([], dt.date.today()) == set()
+
+
+def test_succeeded_on_pinned_to_shanghai_natural_day_across_midnight(pg_conn):
+    """「当日」钉死上海自然日而非会话时区（对抗态）：上海 15 日 00:05（UTC 视角 14 日
+    16:05）属 15 日、上海 14 日 23:59（UTC 视角 14 日 15:59）不属。固定历史日期构造
+    （SQL 不涉 now()，无时钟竞态）；UTC 会话（CI postgres service）下旧 ::date 口径
+    会把 00:05 的 run 误判到昨日——news_night cron 00:00–06:00 任务族将静默差一天。"""
+    from collector.repositories.runs import RunRepository
+
+    _seed_upstream_tasks(pg_conn, ["night_owl", "prev_day"])
+    _insert_run(pg_conn, "night_owl", "success", dt.date(2026, 1, 15), hour=0, minute=5)
+    _insert_run(pg_conn, "prev_day", "success", dt.date(2026, 1, 14), hour=23, minute=59)
+    got = RunRepository(pg_conn).succeeded_on(["night_owl", "prev_day"], dt.date(2026, 1, 15))
+    assert got == {"night_owl"}
 
 
 # ---------------------------------------------------------------- C2 悬挂 running reaper（真实 PG）
