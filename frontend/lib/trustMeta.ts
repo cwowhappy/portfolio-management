@@ -124,6 +124,11 @@ export interface TrustStore {
    * F2（差异渲染）/F4（快照）只读消费。
    */
   correctionLedger(messageId: string): TrustCorrectionLedger;
+  /**
+   * F4 只读快照导出：payloads 表的**副本** Map——外方改动不影响内部状态（防外泄写）；
+   * 持久化携带（agentMessagesToHistory）在此一次性取数，避免逐消息 get。
+   */
+  snapshot(): ReadonlyMap<string, TrustPayload>;
   /** 订阅任何变更（useSyncExternalStore 入口）；返回退订函数。 */
   subscribe(listener: () => void): () => void;
 }
@@ -169,6 +174,7 @@ export function createTrustStore(): TrustStore {
       }
       return ledger;
     },
+    snapshot: () => new Map(payloads),
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);

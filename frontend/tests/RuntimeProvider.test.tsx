@@ -8,6 +8,14 @@ import {
   RuntimeProvider,
   useChatRuntime,
 } from "@/components/chat/RuntimeProvider";
+import {
+  createTrustStore,
+  handleTrustCustomEvent,
+  trustStore,
+  TRUST_ANCHORS_EVENT,
+  TRUST_CORRECTION_EVENT,
+  type TrustPayload,
+} from "@/lib/trustMeta";
 import type { ChatMessage } from "@/lib/types";
 import { installConversationsApi } from "@/tests/mockConversationsApi";
 
@@ -108,6 +116,118 @@ describe("agentMessagesToHistory union（并发写防互删）", () => {
       serverOnly,
     );
     expect(out).toEqual(serverOnly);
+  });
+});
+
+// MS-29 F4：信任锚定随会话持久化——assistant 消息自 trustStore 按 id 取 payload（JSON 文本）
+// 携带进 ChatMessage，user 恒不带；union 同 id 冲突时 payload 非空优先、双侧非空取本地。
+describe("agentMessagesToHistory 信任 payload 携带（F4）", () => {
+  /** 最小合法 payload v1（占位形态即合法 TrustPayload）。 */
+  function tp(verified = 1): TrustPayload {
+    return { v: 1, anchors: [], stats: { verified, sourced: 0, unverified: 0 } };
+  }
+
+  /** 按表建独立 store（不碰单例，测试间零污染）。 */
+  function storeWith(entries: Record<string, TrustPayload>) {
+    const store = createTrustStore();
+    for (const [id, p] of Object.entries(entries)) store.applyAnchors(id, p);
+    return store;
+  }
+
+  it("assistant 消息携带 payload（JSON 文本）；user 消息不带（键不存在）", () => {
+    const out = agentMessagesToHistory(
+      [
+        { id: "u1", role: "user", content: "问" },
+        { id: "a1", role: "assistant", content: "答" },
+      ],
+      [],
+      storeWith({ a1: tp() }),
+    );
+    expect(out[0].payload).toBeUndefined();
+    expect(Object.prototype.hasOwnProperty.call(out[0], "payload")).toBe(false);
+    // 序列化产物是合法 JSON 文本，语义等价 store 内 payload（jsonb 回灌语义等价口径）
+    expect(JSON.parse(out[1].payload!)).toEqual(tp());
+  });
+
+  describe("union 三态（同 id 冲突时 payload 取非空侧；双空→空）", () => {
+    const localMsg: Message[] = [{ id: "a1", role: "assistant", content: "本地答" }];
+    const serverMsgWith = (payload?: string): ChatMessage[] => [
+      { id: "a1", role: "assistant", content: "服务端答", createdAt: 1, ...(payload !== undefined ? { payload } : {}) },
+    ];
+
+    it("双空：两侧都无 payload → 不带", () => {
+      const out = agentMessagesToHistory(localMsg, serverMsgWith(), storeWith({}));
+      expect(out[0].payload).toBeUndefined();
+    });
+
+    it("本地非空 / 远端空：取本地（覆盖携带）；content 仍保留服务端原文", () => {
+      const out = agentMessagesToHistory(localMsg, serverMsgWith(), storeWith({ a1: tp() }));
+      expect(out[0].payload).toBe(JSON.stringify(tp()));
+      expect(out[0].content).toBe("服务端答");
+      expect(out[0].createdAt).toBe(1);
+    });
+
+    it("远端非空 / 本地空：保留 GET 侧 payload（回灌消息重 PUT 场景）", () => {
+      const remote = JSON.stringify(tp(7));
+      const out = agentMessagesToHistory(localMsg, serverMsgWith(remote), storeWith({}));
+      expect(out[0].payload).toBe(remote);
+    });
+
+    it("双侧非空：取本地（最新回合事件先于远端 GET 快照，本地即最新）", () => {
+      const out = agentMessagesToHistory(
+        localMsg,
+        serverMsgWith(JSON.stringify(tp(7))),
+        storeWith({ a1: tp(9) }),
+      );
+      expect(JSON.parse(out[0].payload!)).toEqual(tp(9));
+    });
+  });
+
+  it("correction 后 content 与 payload 一致携带：替换后的文本 + 后端终态 anchors", () => {
+    const store = createTrustStore();
+    let messages: Message[] = [
+      { id: "u1", role: "user", content: "茅台市值多少" },
+      { id: "a1", role: "assistant", content: "茅台市值约 1741 亿。" },
+    ];
+    // correction 先到：原位替换写回 messages（sanctioned AgentStateMutation 路径）
+    const mutation = handleTrustCustomEvent(
+      {
+        name: TRUST_CORRECTION_EVENT,
+        value: { messageId: "a1", snippet: "1741 亿", occ: 1, replacement: "1708 亿", note: "已按工具返回值修正" },
+      },
+      messages,
+      store,
+    );
+    messages = mutation?.messages ?? messages;
+    // anchors 后到：后端终态锚定（锚 snippet 对替换后文本）
+    const terminal = {
+      v: 1,
+      anchors: [{ snippet: "1708 亿", occ: 1, state: "verified", tool: "fetchStockQuote", asOf: "2026-10-01", asOfKind: "data" }],
+      stats: { verified: 1, sourced: 0, unverified: 0 },
+      correction: { notes: ["已按工具返回值修正"] },
+    } as unknown as TrustPayload;
+    handleTrustCustomEvent(
+      { name: TRUST_ANCHORS_EVENT, value: { messageId: "a1", payload: terminal } },
+      messages,
+      store,
+    );
+    const out = agentMessagesToHistory(messages, [], store);
+    const a = out.find((m) => m.id === "a1")!;
+    expect(a.content).toContain("1708 亿");
+    expect(a.content).not.toContain("1741 亿");
+    // 携带的 payload 与替换后文本一致：锚 snippet 命中替换后数字、注记并入
+    const carried = JSON.parse(a.payload!) as TrustPayload;
+    expect(carried.anchors[0].snippet).toBe("1708 亿");
+    expect(carried.correction?.notes).toContain("已按工具返回值修正");
+  });
+
+  it("缺省 trust 参数取页面级单例 trustStore（ThreadArea flushPersist 接线形态）", () => {
+    // 单例无法重置：unique id 隔离本用例，不与其他用例互相污染
+    trustStore.applyAnchors("f4-singleton-a1", tp());
+    const out = agentMessagesToHistory([
+      { id: "f4-singleton-a1", role: "assistant", content: "答" },
+    ]);
+    expect(JSON.parse(out[0].payload!)).toEqual(tp());
   });
 });
 

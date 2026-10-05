@@ -87,6 +87,27 @@ describe("会话客户端（lib/conversations）", () => {
         saveMessages("t1", [msg("user", "你好", "u1")], { ifMatch: "stale-value" }),
       ).rejects.toMatchObject({ status: 409 });
     });
+
+    // MS-29 F4：payload 仅在 assistant 携带非空 JSON 文本时入 PUT body；
+    // user（恒不带）与 null/缺省（B8 降级回带形态）均省略键。
+    it("PUT body 携带 assistant payload；user 与 null/缺省省略 payload 键（F4）", async () => {
+      const api = installConversationsApi();
+      await saveMessages("t1", [
+        msg("user", "你好", "u1"),
+        { ...msg("assistant", "答复", "a1"), payload: '{"v":1}' },
+        { ...msg("assistant", "降级回带", "a2"), payload: null },
+      ]);
+      const body = api.lastPutBody()!;
+      expect(body[0]).toEqual({
+        id: "u1",
+        role: "user",
+        content: "你好",
+        createdAt: 1_700_000_000_000,
+      });
+      expect(Object.prototype.hasOwnProperty.call(body[0], "payload")).toBe(false);
+      expect(body[1].payload).toBe('{"v":1}');
+      expect(Object.prototype.hasOwnProperty.call(body[2], "payload")).toBe(false);
+    });
   });
 
   describe("loadMessages", () => {
@@ -105,6 +126,23 @@ describe("会话客户端（lib/conversations）", () => {
         { id: "m1", role: "system", content: "非法", createdAt: 1 },
       ] as never);
       await expect(loadMessages("t1")).rejects.toThrow();
+    });
+
+    // MS-29 F4 zod 往返：B8 契约三形态——assistant JSON 文本 / user 回带 null / 旧记录缺键
+    it("zod 往返：assistant payload JSON 文本 / user payload null（B8 回带）/ 缺省键（F4）", async () => {
+      installConversationsApi({
+        messages: {
+          t1: [
+            { id: "u1", role: "user", content: "问", createdAt: 1, payload: null },
+            { id: "a1", role: "assistant", content: "答", createdAt: 2, payload: '{"v":1}' },
+            { id: "a2", role: "assistant", content: "答二", createdAt: 3 },
+          ],
+        },
+      });
+      const view = await loadMessages("t1");
+      expect(view.messages[0].payload).toBeNull();
+      expect(view.messages[1].payload).toBe('{"v":1}');
+      expect(view.messages[2].payload).toBeUndefined();
     });
   });
 

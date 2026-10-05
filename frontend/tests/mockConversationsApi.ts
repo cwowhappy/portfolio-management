@@ -11,6 +11,8 @@ export interface MockMsg {
   role: "user" | "assistant";
   content: string;
   createdAt: number;
+  /** MS-29 F4：信任 payload（TrustPayload v1 JSON 文本）；GET 回带 user 消息为 null（B8 Jackson ALWAYS 形态） */
+  payload?: string | null;
 }
 
 export interface InstallOptions {

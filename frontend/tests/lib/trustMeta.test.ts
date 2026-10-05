@@ -211,6 +211,21 @@ describe("TrustStore", () => {
     store.applyCorrection("m1", "n");
     expect(listener).toHaveBeenCalledTimes(1);
   });
+
+  // MS-29 F4：snapshot 只读快照导出（agentMessagesToHistory 携带取数入口）
+  it("snapshot：内容与 get 一致；返回副本，外方改动不影响 store（防外泄写）", () => {
+    const store = createTrustStore();
+    store.applyAnchors("m1", anchorsValue("m1").payload);
+    store.applyCorrection("m2", "note-1");
+    const snap = store.snapshot();
+    expect(snap.size).toBe(2);
+    expect(snap.get("m1")).toBe(store.get("m1"));
+    expect(snap.get("m2")?.correction).toEqual({ notes: ["note-1"] });
+    // 副本隔离：清空快照不改内部表
+    (snap as Map<string, TrustPayload>).clear();
+    expect(store.get("m1")?.stats.verified).toBe(1);
+    expect(store.snapshot().size).toBe(2);
+  });
 });
 
 describe("replaceSnippetInMessages（原位替换 + 修正台账）", () => {

@@ -5,6 +5,12 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   createdAt: number;
+  /**
+   * MS-29 F4：信任锚定 payload（TrustPayload v1 的 JSON 文本）。assistant 自 trustStore 携带；
+   * user 恒不带（undefined）；GET 回带 user 消息为 null（B8 Jackson ALWAYS 序列化形态）。
+   * PUT 序列化仅携带非空字符串（null/undefined/空串省略键，后端口径等价 null）。
+   */
+  payload?: string | null;
 }
 
 // —— 行情数据 ——
