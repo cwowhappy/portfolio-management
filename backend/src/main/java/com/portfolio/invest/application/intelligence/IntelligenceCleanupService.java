@@ -2,6 +2,7 @@ package com.portfolio.invest.application.intelligence;
 
 import com.portfolio.invest.domain.intelligence.BindingCodeRepository;
 import com.portfolio.invest.domain.intelligence.NewsRepository;
+import com.portfolio.invest.domain.user.VerificationCodeRepository;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -13,7 +14,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 /**
- * 情报数据滚动清理：每日 04:07 两步清扫——collector 夜间低频采集在 0/2/4/6 点整点跑
+ * 情报数据滚动清理：每日 04:07 三步清扫——collector 夜间低频采集在 0/2/4/6 点整点跑
  * （tasks/news_night.yaml），错开至 07 分避免与批量写入撞车，也不落整点半点限流时段——
  *
  * <ul>
@@ -21,10 +22,13 @@ import org.springframework.stereotype.Service;
  *       FK ON DELETE CASCADE 级联（业务时间轴口径，TIMESTAMPTZ 直接传 Instant 无时区
  *       歧义）；</li>
  *   <li>绑定码过期清扫：{@code expires_at} 早于 now-1d 的码扫除（DDL D8「过期由清理
- *       任务扫除」；TTL 本身 10 分钟，1d 缓冲让在途核销不受清扫竞态影响）。</li>
+ *       任务扫除」；TTL 本身 10 分钟，1d 缓冲让在途核销不受清扫竞态影响）；</li>
+ *   <li>验证码 90 天滚动（B11）：{@code created_at} 早于 now-90d 的码删除（严格小于，
+ *       恰在 cutoff 的行保留）。TTL 分钟级、核销/防重读即时生效，90 天窗口仅为注册/
+ *       找回密码流水的最低审计追溯期，与新闻保留同口径。</li>
  * </ul>
  *
- * <p>两步各自 try/catch 隔离：一步失败（记 ERROR）不挡另一步；调度入口再顶层吞异常
+ * <p>三步各自 try/catch 隔离：一步失败（记 ERROR）不挡另两步；调度入口再顶层吞异常
  * 护调度线程（照 PrincipleAlertService / BriefPushService 先例，尽力而为不炸线程）。
  */
 @Service
@@ -41,22 +45,29 @@ public class IntelligenceCleanupService {
     /** 绑定码过期缓冲：TTL（10 分钟）之外再留 1 天才扫，避开在途核销竞态。 */
     private static final Duration BINDING_CODE_GRACE = Duration.ofDays(1);
 
+    /** 验证码保留窗口：90 天滚动（最低审计追溯期，与新闻保留同口径）。 */
+    private static final Duration CODE_RETENTION = Duration.ofDays(90);
+
     private final NewsRepository newsRepository;
     private final BindingCodeRepository bindingCodeRepository;
+    private final VerificationCodeRepository codeRepository;
     private final Clock clock;
 
     /** 主构造器（@Autowired：存在测试专用重载构造器时需显式指定注入入口）。 */
     @Autowired
     public IntelligenceCleanupService(NewsRepository newsRepository,
-                                      BindingCodeRepository bindingCodeRepository) {
-        this(newsRepository, bindingCodeRepository, Clock.system(ZONE));
+                                      BindingCodeRepository bindingCodeRepository,
+                                      VerificationCodeRepository codeRepository) {
+        this(newsRepository, bindingCodeRepository, codeRepository, Clock.system(ZONE));
     }
 
     /** 测试构造器：注入时钟。 */
     IntelligenceCleanupService(NewsRepository newsRepository,
-                               BindingCodeRepository bindingCodeRepository, Clock clock) {
+                               BindingCodeRepository bindingCodeRepository,
+                               VerificationCodeRepository codeRepository, Clock clock) {
         this.newsRepository = newsRepository;
         this.bindingCodeRepository = bindingCodeRepository;
+        this.codeRepository = codeRepository;
         this.clock = clock;
     }
 
@@ -69,20 +80,26 @@ public class IntelligenceCleanupService {
         }
     }
 
-    /** 清理入口（集成测试/运维也可直调）：新闻 90 天滚动 + 绑定码过期清扫，两步互不阻断。 */
+    /** 清理入口（集成测试/运维也可直调）：新闻 90 天滚动 + 绑定码过期清扫 + 验证码 90 天滚动，三步互不阻断。 */
     public void cleanupNow() {
         Instant now = Instant.now(clock);
         try {
             long deletedNews = newsRepository.deleteRawBefore(now.minus(NEWS_RETENTION));
             log.info("情报新闻滚动清理完成：cutoff={}，删除 {} 行", now.minus(NEWS_RETENTION), deletedNews);
-        } catch (Exception e) { // 一步失败不挡另一步
+        } catch (Exception e) { // 一步失败不挡另两步
             log.error("情报新闻滚动清理失败", e);
         }
         try {
             int deletedCodes = bindingCodeRepository.deleteExpiredBefore(now.minus(BINDING_CODE_GRACE));
             log.info("过期绑定码清扫完成：cutoff={}，删除 {} 行", now.minus(BINDING_CODE_GRACE), deletedCodes);
-        } catch (Exception e) { // 一步失败不挡另一步
+        } catch (Exception e) { // 一步失败不挡另两步
             log.error("过期绑定码清扫失败", e);
+        }
+        try {
+            int deletedVerificationCodes = codeRepository.deleteCreatedBefore(now.minus(CODE_RETENTION));
+            log.info("过期验证码滚动清理完成：cutoff={}，删除 {} 行", now.minus(CODE_RETENTION), deletedVerificationCodes);
+        } catch (Exception e) { // 一步失败不挡另两步
+            log.error("过期验证码滚动清理失败", e);
         }
     }
 }

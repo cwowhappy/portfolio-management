@@ -6,6 +6,7 @@ import com.portfolio.invest.domain.user.VerificationCode;
 import com.portfolio.invest.domain.user.VerificationCodeRepository;
 import com.portfolio.invest.domain.user.VerificationPurpose;
 import com.portfolio.invest.support.ConcurrencyTestSupport;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -100,6 +101,24 @@ class VerificationCodeRepositoryImplTest extends ConcurrencyTestSupport {
         assertThat(readUsedAt(id)).as("胜者置位时刻落库").isEqualTo(NOW);
     }
 
+    @DisplayName("deleteCreatedBefore 只删 cutoff 之前行并返回删除数（恰在 cutoff 保留，< 严格）")
+    @Test
+    void givenCodesBeforeAtAndAfterCutoff_whenDeleteCreatedBefore_thenOnlyOlderDeletedWithCount() {
+        repo.save(VerificationCode.reconstitute(null, "vc-it-old@test.local", VerificationPurpose.REGISTER,
+                "h-old", 0, null, NOW.plusSeconds(600), NOW.minus(Duration.ofDays(91))));
+        repo.save(VerificationCode.reconstitute(null, "vc-it-edge@test.local", VerificationPurpose.REGISTER,
+                "h-edge", 0, null, NOW.plusSeconds(600), NOW));
+        repo.save(VerificationCode.reconstitute(null, "vc-it-new@test.local", VerificationPurpose.REGISTER,
+                "h-new", 0, null, NOW.plusSeconds(600), NOW.plus(Duration.ofDays(1))));
+
+        int deleted = repo.deleteCreatedBefore(NOW);
+
+        assertThat(deleted).as("仅 cutoff 前一行被删，返回删除数").isEqualTo(1);
+        assertThat(countByEmail("vc-it-old@test.local")).as("91 天前的码应删除").isZero();
+        assertThat(countByEmail("vc-it-edge@test.local")).as("恰在 cutoff 的行保留（< 严格语义）").isEqualTo(1);
+        assertThat(countByEmail("vc-it-new@test.local")).as("cutoff 之后的行保留").isEqualTo(1);
+    }
+
     // ── fixture 助手 ───────────────────────────────────────────────
 
     /** 照 RegistrationConcurrencyIntegrationTest 先例经 repo.save 落提交态码行（返回生成 id）。 */
@@ -113,5 +132,11 @@ class VerificationCodeRepositoryImplTest extends ConcurrencyTestSupport {
         java.sql.Timestamp ts = jdbcTemplate.queryForObject(
                 "SELECT used_at FROM verification_code WHERE id = ?", java.sql.Timestamp.class, id);
         return ts == null ? null : ts.toInstant();
+    }
+
+    /** 按邮箱计行（删除/保留断言）。 */
+    private int countByEmail(String email) {
+        return jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM verification_code WHERE email = ?", Integer.class, email);
     }
 }

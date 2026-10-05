@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verify;
 
 import com.portfolio.invest.domain.intelligence.BindingCodeRepository;
 import com.portfolio.invest.domain.intelligence.NewsRepository;
+import com.portfolio.invest.domain.user.VerificationCodeRepository;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -18,8 +19,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * 情报数据滚动清理切片：90 天/1 天两个 cutoff 口径（clock 注入算死）、新闻一步失败
- * 不挡绑定码一步、两步全炸时调度入口顶层吞异常不炸调度线程。
+ * 情报数据滚动清理切片：新闻 90 天/绑定码 1 天/验证码 90 天三个 cutoff 口径（clock 注入
+ * 算死）、任一步失败不挡其余两步、三步全炸时调度入口顶层吞异常不炸调度线程。
  */
 class IntelligenceCleanupServiceTest {
 
@@ -29,20 +30,23 @@ class IntelligenceCleanupServiceTest {
 
     private final NewsRepository newsRepository = mock(NewsRepository.class);
     private final BindingCodeRepository bindingCodeRepository = mock(BindingCodeRepository.class);
+    private final VerificationCodeRepository codeRepository = mock(VerificationCodeRepository.class);
     private IntelligenceCleanupService service;
 
     @BeforeEach
     void setUp() {
-        service = new IntelligenceCleanupService(newsRepository, bindingCodeRepository, CLOCK);
+        service = new IntelligenceCleanupService(newsRepository, bindingCodeRepository,
+                codeRepository, CLOCK);
     }
 
     @Test
-    @DisplayName("when清理，then新闻cutoff=now-90天、绑定码cutoff=now-1天，两仓库各扫一次")
+    @DisplayName("when清理，then新闻cutoff=now-90天、绑定码cutoff=now-1天、验证码cutoff=now-90天")
     void whenCleanup_thenCutoffsAreNowMinus90dAndNowMinus1d() {
         service.cleanupNow();
 
         verify(newsRepository).deleteRawBefore(NOW.minus(Duration.ofDays(90)));
         verify(bindingCodeRepository).deleteExpiredBefore(NOW.minus(Duration.ofDays(1)));
+        verify(codeRepository).deleteCreatedBefore(NOW.minus(Duration.ofDays(90)));
     }
 
     @Test
@@ -56,26 +60,41 @@ class IntelligenceCleanupServiceTest {
     }
 
     @Test
-    @DisplayName("给定两步全炸，when调度入口，then顶层吞异常不炸调度线程")
-    void givenBothStepsBlowUp_whenScheduled_thenSwallowed() {
+    @DisplayName("给定验证码清理抛异常，when清理，then新闻与绑定码两步已生效且异常不外抛")
+    void givenCodeCleanupBlowsUp_whenCleanup_thenNewsAndBindingStillSwept() {
+        doThrow(new IllegalStateException("db down")).when(codeRepository).deleteCreatedBefore(any());
+
+        assertThatCode(() -> service.cleanupNow()).doesNotThrowAnyException();
+
+        verify(newsRepository).deleteRawBefore(NOW.minus(Duration.ofDays(90)));
+        verify(bindingCodeRepository).deleteExpiredBefore(NOW.minus(Duration.ofDays(1)));
+    }
+
+    @Test
+    @DisplayName("给定三步全炸，when调度入口，then顶层吞异常不炸调度线程")
+    void givenAllStepsBlowUp_whenScheduled_thenSwallowed() {
         doThrow(new IllegalStateException("db down")).when(newsRepository).deleteRawBefore(any());
         doThrow(new IllegalStateException("db down"))
                 .when(bindingCodeRepository).deleteExpiredBefore(any());
+        doThrow(new IllegalStateException("db down"))
+                .when(codeRepository).deleteCreatedBefore(any());
 
         assertThatCode(() -> service.cleanupScheduled()).doesNotThrowAnyException();
     }
 
     @Test
-    @DisplayName("给定clock前移1小时，when清理，then两cutoff同步前移（无陈旧now）")
+    @DisplayName("给定clock前移1小时，when清理，then各cutoff同步前移（无陈旧now）")
     void whenClockShifts_thenCutoffsTrackClock() {
         Instant later = NOW.plus(Duration.ofHours(1));
         IntelligenceCleanupService shifted = new IntelligenceCleanupService(
-                newsRepository, bindingCodeRepository, Clock.fixed(later, ZoneId.of("Asia/Shanghai")));
+                newsRepository, bindingCodeRepository, codeRepository,
+                Clock.fixed(later, ZoneId.of("Asia/Shanghai")));
 
         shifted.cleanupNow();
 
         verify(newsRepository).deleteRawBefore(later.minus(Duration.ofDays(90)));
         verify(bindingCodeRepository).deleteExpiredBefore(later.minus(Duration.ofDays(1)));
+        verify(codeRepository).deleteCreatedBefore(later.minus(Duration.ofDays(90)));
         verify(newsRepository, never()).deleteRawBefore(NOW.minus(Duration.ofDays(90)));
     }
 }
