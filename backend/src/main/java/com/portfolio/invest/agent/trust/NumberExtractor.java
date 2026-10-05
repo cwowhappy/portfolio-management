@@ -20,6 +20,8 @@ import java.util.regex.Pattern;
  *       裸数字回退整段数字——原文形态（千分位/≤3 位/小数）全部保持匹配。</li>
  *   <li><strong>排除（非数据性数字）</strong>：纯年份（1900~2100 且无单位后缀、无小数点）；
  *       日期（数字前紧邻「月/日/号」或数字后紧跟「日/号/月/年」）；
+ *       ISO 日期/时钟时段的数字成分（{@code 2026-08-27}、{@code 14:59:32} 的年月日时分秒碎片——
+ *       B4 fix：防真值池吸入日期/时间碎片造成「文本 30元 命中池内日值 30」类假 verified）；
  *       序号（「第」紧前缀）；A股代码形态（6 位纯数字且前后均非数字/小数点）。
  *       排除项 token 保留在结果中但 {@code dataLike=false}。</li>
  *   <li><strong>白名单语境（判定为数据性）</strong>：数字后紧跟金融量词（元/亿/万/万亿/%/％/倍/手/点/股）
@@ -39,6 +41,13 @@ public final class NumberExtractor {
     /** 候选数字 + 可选单位后缀；组 1=数字核（含符号/千分位/小数），组 2=单位后缀（万亿须先于万/亿尝试）。 */
     private static final Pattern CANDIDATE = Pattern.compile(
             "([-+]?(?:\\d{1,3}(?:,\\d{3})+|\\d+)(?:\\.\\d+)?)(万亿|万|亿|%|％|倍|元|手|点|股)?");
+
+    /** ISO 日期段（yyyy-MM-dd）：段内数字成分按时段排除。 */
+    private static final Pattern ISO_DATE_SPAN = Pattern.compile("\\d{4}-\\d{2}-\\d{2}");
+
+    /** 时钟段（H:mm[:ss]）：前后瞻断禁止更长数字/冒号串内取子段（14:59:32 整段一次命中）。 */
+    private static final Pattern CLOCK_SPAN =
+            Pattern.compile("(?<![\\d:])\\d{1,2}:\\d{2}(?::\\d{2})?(?![\\d:])");
 
     /** 中文单位 → 十的幂乘数（其余后缀乘 1）。 */
     private static final Map<String, BigDecimal> UNIT_MULTIPLIERS = Map.of(
@@ -64,6 +73,7 @@ public final class NumberExtractor {
         }
         List<NumberToken> tokens = new ArrayList<>();
         Map<String, Integer> occurrenceBySnippet = new HashMap<>();
+        List<int[]> dateTimeSpans = dateTimeSpans(text);
         Matcher matcher = CANDIDATE.matcher(text);
         while (matcher.find()) {
             String core = matcher.group(1);
@@ -72,14 +82,40 @@ public final class NumberExtractor {
             char afterCore = matcher.end(1) < text.length() ? text.charAt(matcher.end(1)) : '\0';
             String snippet = matcher.group();
             int occ = occurrenceBySnippet.merge(snippet, 1, Integer::sum);
+            // ISO 日期/时钟时段成分：数字核完整落入任一时段即按日期/时间语境排除（B4 fix）
+            boolean inDateTimeSpan = withinSpan(dateTimeSpans, matcher.start(1), matcher.end(1));
             tokens.add(new NumberToken(
                     snippet,
                     normalize(core, suffix),
                     occ,
-                    !isExcluded(core, suffix, before, afterCore),
+                    !inDateTimeSpan && !isExcluded(core, suffix, before, afterCore),
                     suffix != null && PERCENT_SUFFIXES.indexOf(suffix.charAt(0)) >= 0));
         }
         return List.copyOf(tokens);
+    }
+
+    /** ISO 日期段与时钟段的区间集合（含端点），供数字成分定位。 */
+    private static List<int[]> dateTimeSpans(String text) {
+        List<int[]> spans = new ArrayList<>();
+        Matcher dates = ISO_DATE_SPAN.matcher(text);
+        while (dates.find()) {
+            spans.add(new int[]{dates.start(), dates.end()});
+        }
+        Matcher clocks = CLOCK_SPAN.matcher(text);
+        while (clocks.find()) {
+            spans.add(new int[]{clocks.start(), clocks.end()});
+        }
+        return spans;
+    }
+
+    /** 数字核区间 [start,end) 是否完整落入任一时段区间。 */
+    private static boolean withinSpan(List<int[]> spans, int start, int end) {
+        for (int[] span : spans) {
+            if (start >= span[0] && end <= span[1]) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** 归一化：剥符号与千分位逗号 → BigDecimal → 中文单位乘数；负号回填。 */

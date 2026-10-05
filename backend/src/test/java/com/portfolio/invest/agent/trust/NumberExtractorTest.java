@@ -161,6 +161,45 @@ class NumberExtractorTest {
         assertThat(valueOf(tokens, "1.9万亿")).isEqualByComparingTo("1900000000000");
     }
 
+    @DisplayName("排除·ISO 日期碎片：2026-08-27 的年/月/日成分均非数据性（真值池噪声治理，B4 fix）")
+    @Test
+    void givenIsoDate_whenExtract_thenAllFragmentsNonData() {
+        List<NumberToken> tokens = NumberExtractor.extract("快照日期 2026-08-27。");
+
+        // 连字符被候选式吞进符号位：月/日碎片 snippet 为 -08/-27（值 -8/-27），同受时段排除
+        assertThat(tokens).extracting(NumberToken::snippet).containsExactly("2026", "-08", "-27");
+        assertThat(tokens).noneMatch(NumberToken::dataLike);
+    }
+
+    @DisplayName("排除·ISO 日期时间与时钟碎片：2026-10-05 14:59:32、09:30:15、14:59 成分均非数据性")
+    @Test
+    void givenIsoDatetimeAndClock_whenExtract_thenFragmentsNonDataButOthersData() {
+        List<NumberToken> tokens =
+                NumberExtractor.extract("时间 2026-10-05 14:59:32，大盘速览(09:30:15)报3990.30，截至 14:59");
+
+        assertThat(tokens).extracting(NumberToken::snippet)
+                .containsExactly("2026", "-10", "-05", "14", "59", "32",
+                        "09", "30", "15", "3990.30", "14", "59");
+        assertThat(tokens).allSatisfy(t -> assertThat(t.dataLike())
+                .as("仅非日期/时钟成分数据性：%s", t.snippet())
+                .isEqualTo("3990.30".equals(t.snippet())));
+    }
+
+    @DisplayName("边界：ISO 日期旁独立的 30元/59手 不受碎片排除影响仍数据性（时钟内 59 仍排除）")
+    @Test
+    void givenStandaloneNumbersNearIsoDate_whenExtract_thenStillDataLike() {
+        List<NumberToken> tokens =
+                NumberExtractor.extract("截至 2026-08-27 14:59，贵州茅台收于30元，成交量59手");
+
+        assertThat(bySnippet(tokens, "30元").dataLike()).isTrue();
+        assertThat(bySnippet(tokens, "59手").dataLike()).isTrue();
+        assertThat(bySnippet(tokens, "2026").dataLike()).isFalse();
+        assertThat(bySnippet(tokens, "-08").dataLike()).isFalse();
+        assertThat(bySnippet(tokens, "-27").dataLike()).isFalse();
+        assertThat(bySnippet(tokens, "14").dataLike()).isFalse();
+        assertThat(bySnippet(tokens, "59").dataLike()).isFalse();
+    }
+
     @DisplayName("护栏：null 与空串返回空列表（hook 宁可少标不可断流）")
     @Test
     void givenNullOrBlank_whenExtract_thenEmpty() {

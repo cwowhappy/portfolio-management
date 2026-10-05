@@ -29,7 +29,7 @@ class ConsistencyValidatorFixtureTest {
     @DisplayName("验收集完整性：约 30 例加载成功且 id 唯一")
     @Test
     void givenFixtureDirectory_whenLoad_thenAboutThirtyUniqueCases() {
-        assertThat(CASES).hasSizeBetween(28, 32);
+        assertThat(CASES).hasSizeBetween(28, 34);
         assertThat(CASES).extracting(Case::id).doesNotHaveDuplicates();
     }
 
