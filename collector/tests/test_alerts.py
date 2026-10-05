@@ -356,3 +356,90 @@ def test_runner_without_alerter_unchanged():
     ex.run.return_value = RunResult("t", "incremental", STATUS_SUCCESS)
     res = _run(ex, None)
     assert res.status == STATUS_SUCCESS
+
+
+# ---------------------------------------------------------------- C2 悬挂 running reaper 接线
+
+import datetime as dt
+
+from collector.scheduler.jobs import main, reap_stale_running_once
+
+
+def _reap_once(alerter, reaped, cutoff):
+    """mock jobs.psycopg / jobs.RunRepository 后调 reaper 入口，返回 (返回值, repo mock)。"""
+    with (
+        patch("collector.scheduler.jobs.psycopg"),
+        patch("collector.scheduler.jobs.RunRepository") as repo_cls,
+    ):
+        repo_cls.return_value.reap_stale_running.return_value = reaped
+        got = reap_stale_running_once("postgresql://u:p@localhost/db", alerter, cutoff)
+    return got, repo_cls.return_value
+
+
+def test_reaper_once_alerts_when_stale_rows_reaped():
+    alerter = MagicMock()
+    cutoff = dt.datetime.now(dt.UTC) - dt.timedelta(days=1)
+    got, repo = _reap_once(alerter, 3, cutoff)
+    assert got == 3
+    repo.reap_stale_running.assert_called_once_with(cutoff)
+    alerter.send.assert_called_once()
+    payload = alerter.send.call_args[0][0]
+    assert payload["type"] == "reaper"
+    assert payload["reaped"] == 3
+
+
+def test_reaper_once_silent_when_nothing_reaped():
+    alerter = MagicMock()
+    got, _ = _reap_once(alerter, 0, dt.datetime.now(dt.UTC))
+    assert got == 0
+    alerter.send.assert_not_called()
+
+
+def test_reaper_once_without_alerter_still_logs(caplog):
+    """alerter 未配置（None，webhook 未设是常态）时 warning 照打、不 send、不拖垮启动。"""
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="collector.scheduler.jobs"):
+        got, _ = _reap_once(None, 2, dt.datetime.now(dt.UTC))
+    assert got == 2
+    assert "2" in caplog.text and "reaper" in caplog.text
+
+
+def test_main_wires_startup_reaper_before_scheduler():
+    """main() 接线：reaper 在 alerter 就绪后、调度器构建/启动前执行一次，cutoff 一天前。"""
+    alerter = MagicMock()
+    order = []
+    alerter.send.side_effect = lambda *a, **k: order.append("alert")
+    with (
+        patch("collector.scheduler.jobs.load") as load,
+        patch("collector.scheduler.jobs.AlembicConfig"),
+        patch("collector.scheduler.jobs.command"),
+        patch("collector.scheduler.jobs.build_registries"),
+        patch("collector.scheduler.jobs.psycopg"),
+        patch("collector.scheduler.jobs.refresh_calendar"),
+        patch("collector.scheduler.jobs.check_calendar_staleness"),
+        patch("collector.scheduler.jobs.load_task_defs", return_value=[]),
+        patch("collector.scheduler.jobs.seed_tasks"),
+        patch("collector.scheduler.jobs.TaskRepository") as task_repo_cls,
+        patch("collector.scheduler.jobs.RunRepository") as run_repo_cls,
+        patch("collector.scheduler.jobs.alerter_from_env", return_value=alerter),
+        patch("collector.scheduler.jobs.build_scheduler") as build_scheduler,
+    ):
+        load.return_value = MagicMock(database_url="postgresql://u:p@localhost/db")
+        task_repo_cls.return_value.list_enabled.return_value = []
+        run_repo_cls.return_value.never_succeeded.return_value = set()
+        run_repo_cls.return_value.reap_stale_running.return_value = 2
+        sched = MagicMock()
+
+        def _record_scheduler(*a, **k):
+            order.append("scheduler")
+            return sched  # side_effect 非 DEFAULT 时返回值取代 return_value，须回传 sched
+
+        build_scheduler.side_effect = _record_scheduler
+        main()
+    (cutoff,), _ = run_repo_cls.return_value.reap_stale_running.call_args
+    age = dt.datetime.now(dt.UTC) - cutoff
+    assert dt.timedelta(hours=23) < age < dt.timedelta(hours=25)  # cutoff 一天
+    assert order == ["alert", "scheduler"]  # reaper 告警先于调度器构建（alerter 就绪后、start 前）
+    assert alerter.send.call_args[0][0] == {"type": "reaper", "reaped": 2}
+    sched.start.assert_called_once()

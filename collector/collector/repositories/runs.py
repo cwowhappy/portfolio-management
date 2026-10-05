@@ -1,3 +1,4 @@
+import datetime as dt
 import json
 import logging
 
@@ -58,6 +59,17 @@ SELECT DISTINCT t.task_code
 FROM collector_task_run r
 JOIN collector_task t ON t.id = r.task_id
 WHERE t.task_code = ANY(%s) AND r.status IN ('success', 'partial') AND r.started_at::date = %s
+"""
+
+# C2 悬挂 running reaper：进程在 start_run（事务1）落行后、finish_run（事务3）回填前被 kill
+# 时 running 行永久悬挂（runner._abort_run 兜底只覆盖异常逃逸，覆盖不了 kill）。
+# error 追加 reaper 文案（CONCAT+COALESCE 保留原错误供排查）；finished_at 照 FINISH_RUN_SQL 回填 now()。
+REAP_STALE_RUNNING_SQL = """
+UPDATE collector_task_run
+SET status='failed',
+    error=CONCAT(COALESCE(error, ''), 'reaper: stale running (process killed?)'),
+    finished_at=now()
+WHERE status='running' AND started_at < %s
 """
 
 
@@ -156,3 +168,14 @@ class RunRepository:
         with self.conn.cursor() as cur:
             cur.execute(SUCCEEDED_ON_SQL, (list(task_codes), day))
             return {r[0] for r in cur.fetchall()}
+
+    def reap_stale_running(self, before: dt.datetime) -> int:
+        """C2：把 started_at 早于 before 的悬挂 running 行批量置 failed，返回 reap 数。
+
+        启动时一次性执行（非周期 reaper）；cutoff 一天，刚启动的长任务不被误杀。
+        """
+        with self.conn.cursor() as cur:
+            cur.execute(REAP_STALE_RUNNING_SQL, (before,))
+            reaped = cur.rowcount
+        self.conn.commit()
+        return reaped

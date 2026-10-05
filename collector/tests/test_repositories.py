@@ -371,3 +371,39 @@ def test_succeeded_on_empty_codes_returns_empty_set(pg_conn):
     from collector.repositories.runs import RunRepository
 
     assert RunRepository(pg_conn).succeeded_on([], dt.date.today()) == set()
+
+
+# ---------------------------------------------------------------- C2 悬挂 running reaper（真实 PG）
+
+
+def _insert_run_state(pg_conn, task_code, status, started_at, finished_at=None, error=None):
+    """直插可控制 started_at/finished_at/error 的 run 行（reaper 测试需亚日精度时刻，
+    `_insert_run` 只有日粒度 day/hour）。tz-aware datetime 与 TIMESTAMPTZ 列同走绝对时刻，
+    不受容器时区影响。"""
+    pg_conn.execute(
+        "INSERT INTO collector_task_run (task_id, mode, status, started_at, finished_at, error)"
+        " SELECT id, 'incremental', %s, %s, %s, %s FROM collector_task WHERE task_code=%s",
+        (status, started_at, finished_at, error, task_code),
+    )
+    pg_conn.commit()
+
+
+def test_reap_stale_running_only_reaps_old_running_rows(pg_conn):
+    """C2：只把 started_at 早于 cutoff 的 running 行置 failed（原错误保留并追加 reaper 文案、
+    finished_at 回填）；cutoff 内的新 running 与已终态的 success 行不动，返回 reap 数。"""
+    from collector.repositories.runs import RunRepository
+
+    _seed_upstream_tasks(pg_conn, ["t"])
+    now = pg_conn.execute("SELECT now()").fetchone()[0]  # 服务器时刻（tz-aware）
+    _insert_run_state(pg_conn, "t", "running", now - dt.timedelta(days=2), error="旧错误")  # 悬挂旧行
+    _insert_run_state(pg_conn, "t", "running", now)  # 刚启动的 running，不动
+    _insert_run_state(pg_conn, "t", "success", now - dt.timedelta(days=2), finished_at=now)  # 已终态，不动
+    reaped = RunRepository(pg_conn).reap_stale_running(now - dt.timedelta(days=1))
+    assert reaped == 1
+    rows = pg_conn.execute("SELECT status, error, finished_at FROM collector_task_run ORDER BY id").fetchall()
+    # 旧行：failed + 原错误保留且追加 reaper 文案 + finished_at 回填
+    assert rows[0][0] == "failed"
+    assert "旧错误" in rows[0][1] and "reaper" in rows[0][1]
+    assert rows[0][2] is not None
+    assert rows[1][0] == "running" and rows[1][1] is None and rows[1][2] is None  # 新 running 原样
+    assert rows[2][0] == "success" and rows[2][1] is None and rows[2][2] == now  # success 终态不动
