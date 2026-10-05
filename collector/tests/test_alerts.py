@@ -15,7 +15,9 @@ from collector.model.run import STATUS_PARTIAL, STATUS_SUCCESS, RunResult
 from collector.model.task import Collector
 from collector.scheduler.alerts import (
     DedupAlerter,
+    FallbackAlerter,
     FeishuAlerter,
+    MailAlerter,
     WebhookAlerter,
     _feishu_card,
     _sign,
@@ -85,8 +87,9 @@ def test_alerter_from_env_unset_returns_none():
 
 def test_alerter_from_env_configured():
     alerter = alerter_from_env({"COLLECTOR_ALERT_WEBHOOK": "http://hook.example/x"})
-    assert isinstance(alerter, WebhookAlerter)
-    assert alerter.url == "http://hook.example/x"
+    assert type(alerter) is DedupAlerter  # C6 起统一 DedupAlerter 包装
+    assert isinstance(alerter.inner, WebhookAlerter)
+    assert alerter.inner.url == "http://hook.example/x"
 
 
 # ---------------------------------------------------------------- alerter_from_env 优先级（FR-A3）
@@ -96,25 +99,27 @@ def test_from_env_feishu_takes_priority_over_generic():
     alerter = alerter_from_env(
         {"FEISHU_BOT_WEBHOOK": "http://f.example/hook", "COLLECTOR_ALERT_WEBHOOK": "http://g.example/x"}
     )
-    assert isinstance(alerter, FeishuAlerter)
-    assert alerter.url == "http://f.example/hook"
+    assert type(alerter) is DedupAlerter
+    assert isinstance(alerter.inner, FeishuAlerter)
+    assert alerter.inner.url == "http://f.example/hook"
 
 
 def test_from_env_feishu_secret_attached():
     alerter = alerter_from_env({"FEISHU_BOT_WEBHOOK": "http://f.example/hook", "FEISHU_BOT_SECRET": "s"})
-    assert isinstance(alerter, FeishuAlerter)
-    assert alerter.secret == "s"
+    assert isinstance(alerter.inner, FeishuAlerter)
+    assert alerter.inner.secret == "s"
 
 
 def test_from_env_feishu_secret_blank_means_none():
     alerter = alerter_from_env({"FEISHU_BOT_WEBHOOK": "http://f.example/hook", "FEISHU_BOT_SECRET": "   "})
-    assert isinstance(alerter, FeishuAlerter)
-    assert alerter.secret is None
+    assert isinstance(alerter.inner, FeishuAlerter)
+    assert alerter.inner.secret is None
 
 
 def test_from_env_feishu_blank_falls_back_to_generic():
     alerter = alerter_from_env({"FEISHU_BOT_WEBHOOK": "  ", "COLLECTOR_ALERT_WEBHOOK": "http://g.example/x"})
-    assert type(alerter) is WebhookAlerter  # 精确类型：回退不能命中飞书
+    assert type(alerter) is DedupAlerter
+    assert type(alerter.inner) is WebhookAlerter  # 精确类型：回退不能命中飞书
 
 
 # ---------------------------------------------------------------- 飞书卡片构造（FR-A1/A4）
@@ -332,6 +337,103 @@ def test_dedup_failed_send_not_recorded_so_next_passes_through():
     assert inner.send.call_count == 1
     assert dedup.send(dict(event)) is False  # 未记时间戳 → 不抑制
     assert inner.send.call_count == 2
+
+
+# ---------------------------------------------------------------- C6 MailAlerter / FallbackAlerter / 组装
+
+MAIL_ENV = {
+    "MAIL_SMTP_HOST": "smtp.x",
+    "MAIL_SMTP_PORT": "465",
+    "MAIL_SMTP_USERNAME": "u",
+    "MAIL_SMTP_PASSWORD": "p",
+    "MAIL_FROM": "a@x",
+    "ALERT_MAIL_TO": "ops@x,ops2@x",
+}
+
+
+def test_mail_alerter_sends_mime_with_both_recipients():
+    """SMTP_SSL + login + sendmail：收件人按逗号拆两个，正文含 task 与 error，Subject 带类型定位。"""
+    import email
+
+    with patch("collector.scheduler.alerts.smtplib.SMTP_SSL") as smtp_ssl:
+        smtp = smtp_ssl.return_value.__enter__.return_value
+        ok = MailAlerter.from_env(dict(MAIL_ENV)).send(
+            {"type": "task_run", "task": "stock_daily", "status": "failed", "error": "全源熔断"}
+        )
+    assert ok is True
+    smtp_ssl.assert_called_once_with("smtp.x", 465)
+    smtp.login.assert_called_once_with("u", "p")
+    (sender, tos, body), _ = smtp.sendmail.call_args
+    assert sender == "a@x"
+    assert list(tos) == ["ops@x", "ops2@x"]
+    msg = email.message_from_string(body)  # utf-8 正文被 base64 编码，按 MIME 结构断言
+    assert msg["Subject"] == "[collector] task_run stock_daily"
+    assert msg["From"] == "a@x" and msg["To"] == "ops@x, ops2@x"
+    payload = json.loads(msg.get_payload(decode=True).decode("utf-8"))
+    assert payload["task"] == "stock_daily" and payload["error"] == "全源熔断"
+
+
+def test_mail_alerter_smtp_failure_returns_false_without_raising(caplog):
+    """SMTP 全程异常吞掉：返回 False 不抛（告警链路绝不影响任务语义），记 ERROR 留痕。"""
+    with (
+        patch("collector.scheduler.alerts.smtplib.SMTP_SSL", side_effect=OSError("smtp down")),
+        caplog.at_level(logging.ERROR, logger="collector.scheduler.alerts"),
+    ):
+        ok = MailAlerter.from_env(dict(MAIL_ENV)).send({"type": "task_run", "task": "t", "error": "boom"})
+    assert ok is False
+    assert "smtp down" in caplog.text
+
+
+def test_fallback_primary_failed_delegates_to_fallback():
+    primary, fallback = MagicMock(), MagicMock()
+    primary.send.return_value = False
+    fallback.send.return_value = True
+    assert FallbackAlerter(primary, fallback).send({"type": "task_run"}) is True
+    fallback.send.assert_called_once_with({"type": "task_run"})
+
+
+def test_fallback_primary_ok_skips_fallback():
+    primary, fallback = MagicMock(), MagicMock()
+    primary.send.return_value = True
+    assert FallbackAlerter(primary, fallback).send({"type": "task_run"}) is True
+    fallback.send.assert_not_called()
+
+
+def test_fallback_without_fallback_returns_false():
+    primary = MagicMock()
+    primary.send.return_value = False
+    assert FallbackAlerter(primary, None).send({"type": "task_run"}) is False
+
+
+def test_assembly_feishu_plus_mail_full_stack():
+    """飞书+邮件齐 → DedupAlerter(FallbackAlerter(FeishuAlerter, MailAlerter))，逐层解包断言。"""
+    alerter = alerter_from_env({"FEISHU_BOT_WEBHOOK": "http://f.example/h", **MAIL_ENV})
+    assert type(alerter) is DedupAlerter
+    assert type(alerter.inner) is FallbackAlerter
+    assert type(alerter.inner.primary) is FeishuAlerter
+    assert type(alerter.inner.fallback) is MailAlerter
+
+
+def test_assembly_feishu_only_no_fallback_wrapper():
+    """仅飞书 → DedupAlerter(FeishuAlerter)，不包 Fallback（无降级通道可包）。"""
+    alerter = alerter_from_env({"FEISHU_BOT_WEBHOOK": "http://f.example/h"})
+    assert type(alerter) is DedupAlerter
+    assert type(alerter.inner) is FeishuAlerter
+
+
+def test_assembly_all_unset_returns_none():
+    assert alerter_from_env({}) is None
+    assert alerter_from_env({**{k: "" for k in MAIL_ENV}}) is None
+
+
+def test_assembly_smtp_without_mail_to_skips_mail_with_warning(caplog):
+    """缺 ALERT_MAIL_TO 但 SMTP 四要素齐 → 不构建邮件通道（主通道不包 Fallback）+ WARN 留痕。"""
+    env = {"FEISHU_BOT_WEBHOOK": "http://f.example/h", **{k: v for k, v in MAIL_ENV.items() if k != "ALERT_MAIL_TO"}}
+    with caplog.at_level(logging.WARNING, logger="collector.scheduler.alerts"):
+        alerter = alerter_from_env(env)
+    assert type(alerter) is DedupAlerter
+    assert type(alerter.inner) is FeishuAlerter  # 未包 FallbackAlerter
+    assert "ALERT_MAIL_TO" in caplog.text
 
 
 # ---------------------------------------------------------------- runner 接线
