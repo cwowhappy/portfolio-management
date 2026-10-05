@@ -11,6 +11,12 @@ import {
 } from "@/lib/api";
 import type { Financials, KlineBar, MarketOverview, NewsItem, Quote, StockHit } from "@/lib/types";
 
+// 深链 ?code= 消费（MS-28 P2-F1）：默认空 searchParams（无参数时行为不变，既有用例回归口径）
+const { searchParamsMock } = vi.hoisted(() => ({ searchParamsMock: vi.fn() }));
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => searchParamsMock(),
+}));
+
 vi.mock("@/lib/api", () => ({
   fetchOverview: vi.fn(),
   fetchQuote: vi.fn(),
@@ -101,6 +107,7 @@ const news: NewsItem[] = [
 
 beforeEach(() => {
   vi.resetAllMocks();
+  searchParamsMock.mockReturnValue(new URLSearchParams());
   m.fetchOverview.mockResolvedValue(overview);
   m.fetchQuote.mockResolvedValue(quote);
   m.fetchKline.mockResolvedValue(kline);
@@ -288,5 +295,34 @@ describe("MarketBoard", () => {
     });
     unmount();
     expect(m.searchStocks).not.toHaveBeenCalled();
+  });
+
+  describe("深链 ?code= 消费（MS-28 P2-F1）", () => {
+    it("?code=600519：挂载自动搜索并选中首个命中（搜索框置为股名、渲染选中面板）", async () => {
+      searchParamsMock.mockReturnValue(new URLSearchParams("code=600519"));
+      render(<MarketBoard />);
+      await waitFor(() => expect(m.searchStocks).toHaveBeenCalledWith("600519"));
+      const input = screen.getByPlaceholderText(
+        "输入股票名称或代码搜索，如 茅台 / 600519",
+      ) as HTMLInputElement;
+      await waitFor(() => expect(input.value).toBe("贵州茅台"));
+      await waitFor(() => expect(screen.getByText("走势 · 前复权")).toBeTruthy());
+      expect(m.fetchQuote).toHaveBeenCalledWith("600519");
+    });
+
+    it("?code= 无命中：静默忽略（不报错、selected 仍空、初始渲染不变）", async () => {
+      m.searchStocks.mockResolvedValue([]);
+      searchParamsMock.mockReturnValue(new URLSearchParams("code=300999"));
+      render(<MarketBoard />);
+      await waitFor(() => expect(m.searchStocks).toHaveBeenCalledWith("300999"));
+      await waitFor(() =>
+        expect(screen.getByText("搜索一只股票，查看行情、走势、财务与新闻")).toBeTruthy(),
+      );
+      const input = screen.getByPlaceholderText(
+        "输入股票名称或代码搜索，如 茅台 / 600519",
+      ) as HTMLInputElement;
+      expect(input.value).toBe("");
+      expect(m.fetchQuote).not.toHaveBeenCalled();
+    });
   });
 });

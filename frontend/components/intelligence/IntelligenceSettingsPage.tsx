@@ -193,12 +193,12 @@ export default function IntelligenceSettingsPage() {
     <div className="mx-auto max-w-3xl px-6 py-8 space-y-4" data-testid="intel-settings">
       <h1 className="font-[family-name:var(--font-display)] text-2xl">情报订阅</h1>
       {error && (
-        <div className="text-sm text-red-600" data-testid="settings-error">
+        <div className="text-sm text-[color:var(--color-up)]" data-testid="settings-error">
           {error}
         </div>
       )}
       {okMsg && (
-        <div className="text-sm text-green-600" data-testid="save-ok">
+        <div className="text-sm text-[color:var(--color-down)]" data-testid="save-ok">
           {okMsg}
         </div>
       )}
@@ -273,7 +273,7 @@ export default function IntelligenceSettingsPage() {
                 <button
                   type="button"
                   aria-label={`删除标的 ${s.code}`}
-                  className="text-[color:var(--color-ink-faint)] hover:text-red-600"
+                  className="text-[color:var(--color-ink-faint)] hover:text-[color:var(--color-up)]"
                   onClick={() => removeStock(s.code)}
                 >
                   ×
@@ -306,7 +306,7 @@ export default function IntelligenceSettingsPage() {
                 <button
                   type="button"
                   aria-label={`删除行业 ${code}`}
-                  className="text-[color:var(--color-ink-faint)] hover:text-red-600"
+                  className="text-[color:var(--color-ink-faint)] hover:text-[color:var(--color-up)]"
                   onClick={() => removeIndustry(code)}
                 >
                   ×
@@ -348,7 +348,7 @@ export default function IntelligenceSettingsPage() {
                   </span>
                 </div>
                 {expired ? (
-                  <div className="text-xs text-red-600">绑定码已过期，请生成新码</div>
+                  <div className="text-xs text-[color:var(--color-up)]">绑定码已过期，请生成新码</div>
                 ) : (
                   <div className="text-xs text-[color:var(--color-ink-dim)]">
                     在飞书中对机器人发送此码完成绑定（有效期 10 分钟）；若要查询股票，请在消息中附带文字，如“帮我看看

@@ -386,7 +386,7 @@ function isUnauthorizedError(e: unknown): boolean {
 export default function ThreadArea({ llmReady, onUnauthorized }: {
   llmReady: boolean | null; onUnauthorized?: () => void;
 }) {
-  const { currentThreadId, persistMessages, setRunning } = useChatRuntime();
+  const { currentThreadId, persistMessages, setRunning, newThread } = useChatRuntime();
   const { agent, isReady } = useAgent({
     agentId: AGENT_ID,
     updates: AGENT_UPDATES,
@@ -426,6 +426,12 @@ export default function ThreadArea({ llmReady, onUnauthorized }: {
   const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 防抖窗口内待写入的快照：供「运行停止立即 flush」与「卸载/切线程 best-effort flush」使用
   const pendingPersist = useRef<{ threadId: string; msgs: Message[] } | null>(null);
+  // flushPersist 并发序号（P2-F3，按线程隔离）：每次发起 flush 为该线程自增。运行停止
+  // flush 与防抖/keepalive flush 重叠时各自 async IIFE 并发，先发起者的 PUT 可能后完成、
+  // 以旧快照覆盖新快照——后发起的 flush 代表更新的消息快照；旧的让其自然作废（新快照会
+  // 带走内容）。必须按 threadId 隔离：跨线程 PUT 按 URL 隔离本就安全，全局序号会误杀旧
+  // 线程在途 flush——它携带的尾部内容只有它自己能写，丢弃后切回即被服务端记录覆盖（审查发现）。
+  const flushSeqByThreadRef = useRef(new Map<string, number>());
   // 最新 currentThreadId：供防抖定时器到期 / 运行停止 flush 前校验 pending 是否已过期（双保险）
   const currentThreadIdRef = useRef(currentThreadId);
   // agent.messages 当前内容归属的线程：成功回灌某线程历史后更新。为 null 表示尚未回灌任何线程。
@@ -436,6 +442,10 @@ export default function ThreadArea({ llmReady, onUnauthorized }: {
   // 回灌失败不开启闸门：agent.messages 仍属旧线程，放行会把旧线程内容串写进本线程；
   // 切走再切回即重试回灌。
   const [hydratedThreadId, setHydratedThreadId] = useState<string | null>(null);
+  // 回灌失败可操作错误态（P2-F2）：此前 catch 仅记日志，输入区被闸门静默锁死且无出口。
+  // hydrateRetry 是重试 nonce：进回灌 effect 依赖，+1 即重跑回灌（「重试」按钮机制）。
+  const [hydrateError, setHydrateError] = useState<string | null>(null);
+  const [hydrateRetry, setHydrateRetry] = useState(0);
 
   // 同步最新线程到 ref，供异步 flush 前比对 pending.threadId
   useEffect(() => {
@@ -498,15 +508,18 @@ export default function ThreadArea({ llmReady, onUnauthorized }: {
         agent.setMessages(historyToAgentMessages(history));
         hydratedThreadIdRef.current = threadId;
         setHydratedThreadId(threadId);
+        setHydrateError(null);
       } catch (e) {
-        if (!cancelled) console.error("[ThreadArea] 加载会话历史失败", threadId, e);
-        // 回灌失败不 setMessages：hydrated 仍指向旧线程，防抖不会把旧内容写进本线程
+        console.error("[ThreadArea] 加载会话历史失败", threadId, e);
+        // 回灌失败不 setMessages：hydrated 仍指向旧线程，防抖不会把旧内容写进本线程；
+        // 闸门保持不放行（放行会把旧线程内容串写进本线程），改为透出可操作错误态（P2-F2）
+        if (!cancelled) setHydrateError("会话历史加载失败");
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [agent, isReady, currentThreadId]);
+  }, [agent, isReady, currentThreadId, hydrateRetry]);
 
   // 执行一次持久化。msgs 是调用点快照：若等待 loadMessages 期间发生切线程 + 历史回灌
   // setMessages，agent.messages 会变成新线程的，若不快照会把新线程消息写进旧线程记录。
@@ -517,9 +530,18 @@ export default function ThreadArea({ llmReady, onUnauthorized }: {
   // 确认——本地草稿消息保持不动，刷新后以服务端为准人工合并。
   const flushPersist = useCallback(
     (threadId: string, msgs: Message[], keepalive = false) => {
+      // 并发序号守卫（P2-F3）：为本线程登记快照序号，IIFE 内每个 await 之后、发起写之前
+      // 校验自己仍是该线程最新——后发起的 flush 代表更新的消息快照；旧的让其自然作废。
+      const seq = (flushSeqByThreadRef.current.get(threadId) ?? 0) + 1;
+      flushSeqByThreadRef.current.set(threadId, seq);
       (async () => {
         try {
           const view = await loadMessages(threadId);
+          // 已有更新的 flush 发起：放弃本快照（新快照会带走内容），不再发起写
+          if (seq !== (flushSeqByThreadRef.current.get(threadId) ?? 0)) {
+            console.debug("[ThreadArea] 过期 flush 丢弃", threadId, seq);
+            return;
+          }
           const saved = agentMessagesToHistory(msgs, view.messages);
           if (saved.length === 0) return;
           try {
@@ -529,6 +551,11 @@ export default function ThreadArea({ llmReady, onUnauthorized }: {
             if (errorStatus(e) !== 409) throw e;
           }
           const refreshed = await loadMessages(threadId);
+          // 重试 PUT 前同样校验：已有更新的 flush 发起即放弃，新快照会带走内容
+          if (seq !== (flushSeqByThreadRef.current.get(threadId) ?? 0)) {
+            console.debug("[ThreadArea] 过期 flush 丢弃", threadId, seq);
+            return;
+          }
           const merged = agentMessagesToHistory(msgs, refreshed.messages);
           try {
             await persistMessages(threadId, merged, { keepalive, ifMatch: refreshed.updatedAt });
@@ -614,6 +641,38 @@ export default function ThreadArea({ llmReady, onUnauthorized }: {
       <ToolCallRenderers />
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-[860px] px-5 py-8" aria-live="polite">
+          {/* 回灌失败错误卡（P2-F2）：仅在当前线程未回灌成功时出现；重试走 nonce 重跑回灌 effect，
+              新建会话换线程即离开失败现场。闸门（send/Composer ready）不受此卡影响，保持禁发。 */}
+          {hydrateError && hydratedThreadId !== currentThreadId && (
+            <div
+              data-testid="hydrate-error"
+              className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[color:var(--color-accent)]/40 bg-[color:var(--color-panel)] px-4 py-2.5 text-[13px] text-[color:var(--color-accent)]"
+            >
+              <span>{hydrateError}</span>
+              <span className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHydrateError(null);
+                    setHydrateRetry((n) => n + 1);
+                  }}
+                  className="rounded-md border border-[color:var(--color-line)] px-3 py-1 text-[12px] text-[color:var(--color-ink-dim)] transition-colors hover:border-[color:var(--color-up)] hover:text-[color:var(--color-up)]"
+                >
+                  重试
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHydrateError(null);
+                    void newThread();
+                  }}
+                  className="rounded-md border border-[color:var(--color-line)] px-3 py-1 text-[12px] text-[color:var(--color-ink-dim)] transition-colors hover:border-[color:var(--color-up)] hover:text-[color:var(--color-up)]"
+                >
+                  新建会话
+                </button>
+              </span>
+            </div>
+          )}
           {isEmpty ? (
             <EmptyState llmReady={llmReady} onPick={(p) => void send(p)} />
           ) : (

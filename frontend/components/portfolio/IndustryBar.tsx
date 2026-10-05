@@ -31,7 +31,7 @@ export default function IndustryBar({ industry }: { industry: IndustryDistributi
     <div className="rounded-2xl border border-[color:var(--color-line)] bg-[color:var(--color-panel)]/70 p-5">
       <div className="font-[family-name:var(--font-display)] text-[15px] mb-3">行业分布</div>
       <EChart option={option} height={200} testid="industry-chart" />
-      <div className="mt-2 text-xs text-[color:var(--color-ink-faint)]">个股按申万行业，ETF 排除</div>
+      <div className="mt-2 text-xs text-[color:var(--color-ink-faint)]">个股按申万行业，ETF 排除；无申万映射个股计入未映射</div>
     </div>
   );
 }

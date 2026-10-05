@@ -190,6 +190,8 @@ export const IndustrySliceSchema = z.object({ industryName: z.string(), marketVa
 export const IndustryDistributionSchema = z.object({ slices: z.array(IndustrySliceSchema) });
 export const ConcentrationHoldingSchema = z.object({ stockCode: z.string(), stockName: z.string(), marketValue: z.number(), ratio: z.number() });
 export const ConcentrationSchema = z.object({ holdings: z.array(ConcentrationHoldingSchema), top5Ratio: z.number() });
+// 删除影响预检（GET /api/portfolio/positions/{id}/delete-impact，与后端 B2 契约字段逐字对齐）
+export const DeleteImpactSchema = z.object({ tradeCount: z.number(), dividendCount: z.number(), realizedPnl: z.number() });
 
 // CSV 批量导入结果（POST /api/portfolio/import，rowErrors 空=全部成功）
 export const ImportRowErrorSchema = z.object({ row: z.number(), reason: z.string() });

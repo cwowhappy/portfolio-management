@@ -15,6 +15,7 @@ import DraftCard from "@/components/chat/DraftCard";
 import { buildCandlestickOption, buildLineOption, buildBarOption } from "@/components/charts/optionBuilders";
 import { KlineParamsSchema, ValuationParamsSchema, OverviewParamsSchema, FinancialsParamsSchema, ScreeningParamsSchema, FinancialsTrendParamsSchema, IndustryParamsSchema, PortfolioParamsSchema, AllocationParamsSchema, SearchNewsParamsSchema, SearchAnnouncementsParamsSchema, MacroBriefParamsSchema } from "@/lib/tool-params";
 import { extractResearchDraftJson, type ResearchDraft } from "@/lib/research-draft";
+import { safeUrl } from "@/lib/url";
 import { buildPieOption } from "@/components/charts/optionBuilders";
 
 // P2 接通（D9：落库=用户确认，D20：未保存不自动暂存）：STRATEGY 草稿「保存到项目」→
@@ -123,12 +124,13 @@ function NewsListCard({ status, result }: {
           {parsed.items.map((it, i) => {
             const dirLabel = it.direction ? NEWS_DIRECTION_LABEL[it.direction] : undefined;
             const time = formatPublished(it.publishedAt);
+            const href = safeUrl(it.url);
             return (
               <li key={it.url ?? it.title ?? i} className="py-2">
                 <div className="flex items-start gap-2">
-                  {it.url ? (
+                  {href ? (
                     <a
-                      href={it.url}
+                      href={href}
                       target="_blank"
                       rel="noreferrer"
                       className="min-w-0 flex-1 truncate text-[13px] text-[color:var(--color-accent)] hover:underline"
@@ -305,12 +307,13 @@ function AnnouncementListCard({ status, result, scope }: {
             const time = formatPublished(it.publishedAt);
             const metricsLine = announcementMetricsLine(it);
             const stockText = [it.stockName, it.stockCode].filter(Boolean).join(" ");
+            const href = safeUrl(it.pdfUrl);
             return (
               <li key={it.pdfUrl ?? it.title ?? i} className="py-2">
                 <div className="flex items-start gap-2">
-                  {it.pdfUrl ? (
+                  {href ? (
                     <a
-                      href={it.pdfUrl}
+                      href={href}
                       target="_blank"
                       rel="noreferrer"
                       className="min-w-0 flex-1 truncate text-[13px] text-[color:var(--color-accent)] hover:underline"
@@ -498,12 +501,13 @@ function MacroBriefCard({ status, result }: {
             const dirLabel = it.direction ? POLICY_DIRECTION_LABEL[it.direction] : undefined;
             const strength = it.strength ? POLICY_STRENGTH_LABEL[it.strength] : undefined;
             const time = formatPublished(it.publishedAt);
+            const href = safeUrl(it.url);
             return (
               <li key={it.url ?? it.title ?? i} className="py-2">
                 <div className="flex items-start gap-2">
-                  {it.url ? (
+                  {href ? (
                     <a
-                      href={it.url}
+                      href={href}
                       target="_blank"
                       rel="noreferrer"
                       className="min-w-0 flex-1 truncate text-[13px] text-[color:var(--color-accent)] hover:underline"

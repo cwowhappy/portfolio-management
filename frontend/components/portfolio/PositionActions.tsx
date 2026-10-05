@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { addCashDividend, addStockDividend, deletePosition, editTrade, fetchTrades, sell } from "@/lib/portfolioApi";
-import type { PositionView } from "@/lib/types";
+import { addCashDividend, addStockDividend, deletePosition, editTrade, fetchDeleteImpact, fetchTrades, sell } from "@/lib/portfolioApi";
+import type { DeleteImpact, PositionView } from "@/lib/types";
 
 const inputClass =
   "rounded-md border border-[color:var(--color-line)] bg-[color:var(--color-bg-soft)] px-3 py-2 text-[14px] text-[color:var(--color-ink)] placeholder:text-[color:var(--color-ink-faint)] focus:border-[color:var(--color-up)] focus:outline-none";
@@ -21,6 +21,11 @@ export default function PositionActions({ position, onChanged }: { position: Pos
   const [editPrice, setEditPrice] = useState("");
   const [editQuantity, setEditQuantity] = useState("");
   const [editFee, setEditFee] = useState("");
+
+  // 删除确认弹窗：confirmImpact 三态——undefined=预检加载中、null=预检失败降级（通用文案，不阻塞删除）、
+  // DeleteImpact=预检数字就绪（明示将删交易/分红笔数与已实现盈亏）
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmImpact, setConfirmImpact] = useState<DeleteImpact | null | undefined>(undefined);
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -110,7 +115,19 @@ export default function PositionActions({ position, onChanged }: { position: Pos
   }
 
   async function onDelete() {
-    if (!confirm(`确定删除 ${position.stockName} 持仓及其交易/分红记录？`)) return;
+    setConfirmImpact(undefined);
+    setConfirmOpen(true);
+    try {
+      setConfirmImpact(await fetchDeleteImpact(position.id));
+    } catch (e) {
+      // 预检失败降级为通用确认文案：删除能力不回退，不阻塞删除流程
+      console.warn("删除预检失败，降级为通用确认", e);
+      setConfirmImpact(null);
+    }
+  }
+
+  async function onConfirmDelete() {
+    setConfirmOpen(false);
     await run(() => deletePosition(position.id), "删除失败");
   }
 
@@ -157,11 +174,43 @@ export default function PositionActions({ position, onChanged }: { position: Pos
         <button className="rounded-md border border-[color:var(--color-line)] px-3 py-1.5" onClick={onEditClick} disabled={busy}>
           编辑
         </button>
-        <button className="rounded-md bg-[color:var(--color-down)] px-3 py-1.5 text-white" onClick={onDelete} disabled={busy}>
+        <button className="rounded-md bg-[color:var(--color-up)] px-3 py-1.5 text-white" onClick={onDelete} disabled={busy}>
           删除
         </button>
       </div>
-      {error && <div className="text-xs text-[color:var(--color-down)]">{error}</div>}
+      {error && <div className="text-xs text-[color:var(--color-up)]">{error}</div>}
+
+      {confirmOpen && (
+        <div data-testid="delete-confirm-dialog"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-[color:var(--color-line)] bg-[color:var(--color-bg)] p-5 space-y-3">
+            <div className="font-[family-name:var(--font-display)] text-[15px]">删除持仓 · {position.stockName}</div>
+            {confirmImpact === undefined ? (
+              <div className="text-sm text-[color:var(--color-ink-dim)]">正在获取删除影响预检…</div>
+            ) : confirmImpact === null ? (
+              <div className="text-sm">{`确定删除 ${position.stockName} 持仓及其交易/分红记录？删除后历史不可恢复。`}</div>
+            ) : (
+              <>
+                <div className="text-sm">
+                  {`将永久删除 ${confirmImpact.tradeCount} 笔交易、${confirmImpact.dividendCount} 笔分红，已实现盈亏 ${confirmImpact.realizedPnl.toFixed(2)}。`}
+                </div>
+                <div className="text-xs text-[color:var(--color-up)]">历史不可恢复，请确认后再删除。</div>
+              </>
+            )}
+            <div className="flex gap-2">
+              <button type="button" onClick={onConfirmDelete} disabled={busy || confirmImpact === undefined}
+                className="rounded-md bg-[color:var(--color-up)] px-4 py-1.5 text-sm text-white disabled:opacity-50">
+                确认删除
+              </button>
+              <button type="button" disabled={busy}
+                className="rounded-md border border-[color:var(--color-line)] px-4 py-1.5 text-sm disabled:opacity-60"
+                onClick={() => setConfirmOpen(false)}>
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

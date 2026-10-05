@@ -3,8 +3,19 @@ import type { NextRequest } from "next/server";
 
 // 反代路由只依赖 fetch 与 Response，直接测试其代理/降级行为与 no-store 头。
 
+import { GET as allocationGet } from "@/app/api/allocation/[...path]/route";
 import { GET as analyticsGet } from "@/app/api/analytics/[...path]/route";
+import { GET as industryCurationGet } from "@/app/api/industry-curation/[...path]/route";
+import { GET as industryWatchGet } from "@/app/api/industry-watch/[[...path]]/route";
+import { GET as intelligenceGet } from "@/app/api/intelligence/[...path]/route";
+import { GET as journalGet } from "@/app/api/journal/[...path]/route";
 import { GET as marketGet } from "@/app/api/market/[...path]/route";
+import { GET as mcpGet } from "@/app/api/mcp/[...path]/route";
+import { GET as portfolioGet } from "@/app/api/portfolio/[...path]/route";
+import { GET as researchGet } from "@/app/api/research/[...path]/route";
+import { GET as skillsGet } from "@/app/api/skills/[[...path]]/route";
+import { GET as watchlistGet } from "@/app/api/watchlist/[[...path]]/route";
+import { GET as wikiGet } from "@/app/api/wiki/[...path]/route";
 import { GET as screeningGet } from "@/app/api/screening/[...path]/route";
 import { GET as healthGet } from "@/app/api/agent/health/route";
 import { GET as statusGet } from "@/app/api/agent/status/route";
@@ -438,5 +449,91 @@ describe("auth 反代路由（收编到 relay）", () => {
     );
     expect(res.status).toBe(502);
     expect(await res.json()).toEqual({ message: "无法连接后端服务" });
+  });
+});
+
+describe("catch-all 反代路径重建（joinSegments：逐段重编码 + 拒 ..）", () => {
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    vi.stubGlobal("fetch", fetchMock);
+    fetchMock.mockReset();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  // 消费 ctx.params 的全部 catch-all 反代（grep 复核：10 个 [...path] + 4 个 [[...path]]）
+  const catchAllGets: ReadonlyArray<
+    readonly [string, (req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) => Promise<Response>]
+  > = [
+    ["allocation", allocationGet],
+    ["analytics", analyticsGet],
+    ["conversations", conversationsGet],
+    ["industry-curation", industryCurationGet],
+    ["industry-watch", industryWatchGet],
+    ["intelligence", intelligenceGet],
+    ["journal", journalGet],
+    ["market", marketGet],
+    ["mcp", mcpGet],
+    ["portfolio", portfolioGet],
+    ["research", researchGet],
+    ["skills", skillsGet],
+    ["watchlist", watchlistGet],
+    ["wiki", wikiGet],
+  ];
+
+  it("market：含 .. 段返回 400 JSON，不打上游", async () => {
+    const res = await marketGet(req("http://localhost:3000/api/market/a/../b"), {
+      params: Promise.resolve({ path: ["a", "..", "b"] }),
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ message: "非法路径" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("market：已解码段内 / 被重编码为 %2F（不注入新路径段）", async () => {
+    fetchMock.mockResolvedValue(new Response("{}", { status: 200 }));
+    // wire 上 /api/market/a%2Fb → ctx.params 解码为段 "a/b"，旧实现直拼会多出一个路径段
+    await marketGet(req("http://localhost:3000/api/market/a%2Fb"), {
+      params: Promise.resolve({ path: ["a/b"] }),
+    });
+    expect(fetchMock.mock.calls[0][0]).toBe("http://localhost:8080/api/market/a%2Fb");
+  });
+
+  it("market：段内 ? 被重编码为 %3F（不注入查询分隔符）", async () => {
+    fetchMock.mockResolvedValue(new Response("{}", { status: 200 }));
+    await marketGet(req("http://localhost:3000/api/market/a%3Fb"), {
+      params: Promise.resolve({ path: ["a?b"] }),
+    });
+    expect(fetchMock.mock.calls[0][0]).toBe("http://localhost:8080/api/market/a%3Fb");
+  });
+
+  it("market：含空格/CJK 的段被逐段重编码（字节级断言）", async () => {
+    fetchMock.mockResolvedValue(new Response("{}", { status: 200 }));
+    await marketGet(req("http://localhost:3000/api/market/x"), {
+      params: Promise.resolve({ path: ["a/b 般段"] }),
+    });
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "http://localhost:8080/api/market/a%2Fb%20%E8%88%AC%E6%AE%B5",
+    );
+  });
+
+  it.each(catchAllGets)("正常路径 upstream URL 逐字节不变（含 query 透传）：%s", async (prefix, get) => {
+    fetchMock.mockResolvedValue(new Response("{}", { status: 200 }));
+    await get(req(`http://localhost:3000/api/${prefix}/items/42?x=1`), {
+      params: Promise.resolve({ path: ["items", "42"] }),
+    });
+    expect(fetchMock.mock.calls[0][0]).toBe(`http://localhost:8080/api/${prefix}/items/42?x=1`);
+  });
+
+  it.each(catchAllGets)(".. 段统一 400 且不打上游：%s", async (prefix, get) => {
+    const res = await get(req(`http://localhost:3000/api/${prefix}/a/../b`), {
+      params: Promise.resolve({ path: ["a", "..", "b"] }),
+    });
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toEqual({ message: "非法路径" });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

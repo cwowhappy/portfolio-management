@@ -1,10 +1,10 @@
 import { z } from "zod";
 import {
-  AssetAllocationSchema, CashTransactionViewSchema, ConcentrationSchema, GroupViewSchema,
+  AssetAllocationSchema, CashTransactionViewSchema, ConcentrationSchema, DeleteImpactSchema, GroupViewSchema,
   IndustryDistributionSchema, PortfolioOverviewSchema, PositionViewSchema, TradeViewSchema,
 } from "./schemas";
 import type {
-  AssetAllocation, CashTransactionView, Concentration, GroupView, IndustryDistribution,
+  AssetAllocation, CashTransactionView, Concentration, DeleteImpact, GroupView, IndustryDistribution,
   PortfolioOverview, PositionView, TradeView,
 } from "./types";
 import { request } from "./http";
@@ -27,6 +27,8 @@ export const addCashDividend = (cmd: { positionId: number; exDate: string; cashP
 export const addStockDividend = (cmd: { positionId: number; exDate: string; stockRatio: number }) =>
   request<PositionView>("/api/portfolio/positions/stock-dividend", "POST", cmd, PositionViewSchema);
 export const deletePosition = (positionId: number) => request<void>(`/api/portfolio/positions/${positionId}`, "DELETE");
+export const fetchDeleteImpact = (positionId: number) =>
+  request<DeleteImpact>(`/api/portfolio/positions/${positionId}/delete-impact`, "GET", undefined, DeleteImpactSchema);
 export const fetchTrades = (positionId: number) =>
   request<TradeView[]>(`/api/portfolio/positions/${positionId}/trades`, "GET", undefined, z.array(TradeViewSchema));
 export const editTrade = (positionId: number, tradeId: number, cmd: { tradeDate: string; price: number; quantity: number; fee: number }) =>

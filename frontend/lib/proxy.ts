@@ -97,3 +97,9 @@ export function inboundCookie(req: { headers: Headers }): Record<string, string>
   const cookie = req.headers.get("cookie") ?? "";
   return cookie ? { Cookie: cookie } : {};
 }
+
+/** catch-all 反代段重建：逐段重编码（ctx.params 已解码），任何 `..` 段直接拒绝（400 由调用方返回）。 */
+export function joinSegments(base: string, segs: string[]): string | null {
+  if (segs.some((s) => s === "..")) return null;
+  return segs.length ? base + "/" + segs.map(encodeURIComponent).join("/") : base;
+}

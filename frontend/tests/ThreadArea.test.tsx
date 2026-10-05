@@ -311,6 +311,93 @@ describe("ThreadArea", () => {
     expect(arg).toEqual([{ id: "m1", role: "user", content: "历史问题" }]);
   });
 
+  // ———— P2-F2：会话回灌失败可操作错误态 ————
+
+  /**
+   * 回灌失败夹具：GET /api/conversations/:id/messages 对 failThreads 登记的线程先返回 N 次 500
+   * （loadMessages 经 request() 对非 2xx 抛错），此后及未登记线程正常返回空历史。
+   * 「新建会话」产生的新线程 GET 必须成功，避免错误卡回弹干扰断言。
+   */
+  function installHydrateFlakyApi(failThreads: Record<string, number>) {
+    const failLeft = { ...failThreads };
+    const json = (status: number, body: unknown) =>
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { "Content-Type": "application/json" },
+      });
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url === "/api/conversations" && method === "GET")
+        return json(200, [{ id: "t1", title: "会话", updatedAt: 2 }]);
+      if (url === "/api/conversations" && method === "POST")
+        return json(201, { id: "n1", title: "新会话", updatedAt: 3 });
+      const msgMatch = url.match(/^\/api\/conversations\/([^/]+)\/messages$/);
+      if (msgMatch && method === "GET") {
+        const id = msgMatch[1];
+        if ((failLeft[id] ?? 0) > 0) {
+          failLeft[id] -= 1;
+          return json(500, { message: "服务器开小差" });
+        }
+        return json(200, { updatedAt: "2026-10-04T00:00:00.000Z", messages: [] });
+      }
+      if (msgMatch && method === "PUT") return json(200, { updatedAt: "2026-10-04T00:00:01.000Z" });
+      return json(404, { message: "not found" });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    return { fetchMock };
+  }
+
+  it("回灌失败：错误卡可见（重试/新建会话），Composer 仍禁发（闸门语义不变）", async () => {
+    installHydrateFlakyApi({ t1: 1 });
+    renderThread();
+    const card = await screen.findByTestId("hydrate-error");
+    expect(card.textContent).toContain("会话历史加载失败");
+    expect(screen.getByRole("button", { name: "重试" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "新建会话" })).toBeTruthy();
+    // 闸门不放行：有输入草稿时发送按钮仍禁用、点击/回车均不得发起运行
+    fireEvent.change(screen.getByPlaceholderText(composerPlaceholder), {
+      target: { value: "试试能不能发" },
+    });
+    const sendBtn = screen.getByRole("button", { name: "发送" }) as HTMLButtonElement;
+    expect(sendBtn.disabled).toBe(true);
+    fireEvent.click(sendBtn);
+    expect(mocks.agent.addMessage).not.toHaveBeenCalled();
+    expect(mocks.runAgent).not.toHaveBeenCalled();
+  });
+
+  it("点「重试」：第二次回灌成功 → 错误卡消失、Composer 放行", async () => {
+    installHydrateFlakyApi({ t1: 1 });
+    renderThread();
+    await screen.findByTestId("hydrate-error");
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+    // 第二次 loadMessages 成功 → setMessages 落地（首次失败从未触达）
+    await waitFor(() => expect(mocks.agent.setMessages).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByTestId("hydrate-error")).toBeNull());
+    // 回灌完成后闸门开启：输入后可发送
+    fireEvent.change(screen.getByPlaceholderText(composerPlaceholder), {
+      target: { value: "你好" },
+    });
+    const sendBtn = screen.getByRole("button", { name: "发送" }) as HTMLButtonElement;
+    expect(sendBtn.disabled).toBe(false);
+    fireEvent.click(sendBtn);
+    await waitFor(() => expect(mocks.runAgent).toHaveBeenCalled());
+  });
+
+  it("点「新建会话」：newThread 生效（POST /api/conversations）、错误卡消失", async () => {
+    const api = installHydrateFlakyApi({ t1: 1 });
+    renderThread();
+    await screen.findByTestId("hydrate-error");
+    fireEvent.click(screen.getByRole("button", { name: "新建会话" }));
+    // newThread 的可观察行为：挂载时列表非空不会 POST，此处 POST 即新建会话被触发
+    const posts = () =>
+      api.fetchMock.mock.calls.filter(
+        ([input, init]) => String(input) === "/api/conversations" && init?.method === "POST",
+      );
+    await waitFor(() => expect(posts()).toHaveLength(1));
+    await waitFor(() => expect(screen.queryByTestId("hydrate-error")).toBeNull());
+  });
+
   it("消息变化后持久化到服务端", async () => {
     api = installConversationsApi({
       list: [{ id: "t1", title: "会话", updatedAt: 2 }],

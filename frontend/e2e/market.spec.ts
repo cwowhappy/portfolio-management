@@ -42,4 +42,13 @@ test.describe.serial("行情台", () => {
     await page.getByRole("button", { name: "月K" }).click();
     await expect(page.getByRole("button", { name: "月K" })).toBeVisible();
   });
+
+  // MS-28 P2-F1 深链消费：行业图表 push /market?code= → 挂载自动搜索并选中首个命中
+  // （该直连用例不依赖行业板面数据，全环境可跑；行业页点击全链路见 industry.spec 同名用例）
+  test("深链 ?code= 自动搜索选中该股", async ({ page }) => {
+    await page.goto("/market?code=600519");
+    const input = page.getByPlaceholder(/输入股票名称或代码搜索/);
+    await expect(input).toHaveValue("贵州茅台", { timeout: 60_000 });
+    await expect(page.getByText("走势 · 前复权")).toBeVisible({ timeout: 60_000 });
+  });
 });
