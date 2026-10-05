@@ -18,6 +18,11 @@ import org.springframework.stereotype.Component;
  * 并发 miss 会重复查库），值对象整体替换由 {@link ConcurrentMap#compute} 保证 per-key 原子。
  * 用户不存在时 compute 返回 null 即不落缓存、每次请求重查——删除用户即时生效，
  * 不因一次 miss 被 TTL 钉死。
+ *
+ * <p>已知可接受竞态：事件逐出同步发生于管理员事务内（先于 commit），逐出后至 commit 前的并发
+ * 请求 miss 重查会读到提交前旧值（如仍 enabled）并重新缓存 active=true——stale 读必发生于
+ * publish 与 commit 之间，重缓存至多存活一个 TTL（≤60s），落在「停用最长 60s 生效」语义内。
+ * 事件逐出为进程内生效（假设单实例部署）；多节点部署时他节点失效依赖同一 TTL 上界兜底。
  */
 @Component
 public class ActiveUserStatusCache {
