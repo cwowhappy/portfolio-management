@@ -242,7 +242,8 @@ class InvestToolsTest {
         String emittedText = ((TextBlock) emitted[0].getOutput().get(0)).getText();
         assertThat(emittedText)
                 .contains("\"type\":\"bar\"").contains("\"unit\":\"%\"")
-                .doesNotContain("3000.1");
+                .doesNotContain("3000.1")
+                .contains("\"time\":\"2026-09-11 15:00\""); // MS-29 B4 ruling：生成时刻进 spec 顶层
         // ② 返回摘要：指数名与点位进 LLM/stateStore
         assertThat(result.getState().toString()).isEqualTo("RUNNING");
         assertThat(result.getOutput().get(0).toString())

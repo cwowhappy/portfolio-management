@@ -57,6 +57,20 @@ public final class TrustContext {
         FALLBACK.remove();
     }
 
+    /**
+     * 回合开始强制预挂<strong>新池</strong>（MS-29 B5，B3 报告接线建议）：覆盖 rc 上可能残留的旧池
+     * 并同步 ThreadLocal——回合内工具调用与 hook 经 {@link #current} 命中同一池。
+     * 包私有：仅 trust 包内回合边界（hook PRE_CALL）调用。
+     */
+    static TrustContext fresh(RuntimeContext runtimeContext) {
+        TrustContext created = new TrustContext();
+        if (runtimeContext != null) {
+            runtimeContext.put(TrustContext.class, created);
+        }
+        FALLBACK.set(created);
+        return created;
+    }
+
     /** 只读快照（B5 hook 消费）。 */
     public List<ToolInvocation> invocations() {
         return List.copyOf(invocations);

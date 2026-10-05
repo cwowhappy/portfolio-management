@@ -75,6 +75,8 @@ class ChartSpecsTest {
         assertThat(json).contains("\"categories\":[\"上证指数\",\"深证成指\"]");
         assertThat(json).contains("\"data\":[0.79,-0.31]");
         assertThat(json).doesNotContain("3200.5"); // 点位不进图
+        // MS-29 B4 ruling：overview 的 time 为本机生成时刻，透进 spec 顶层供装饰器归 GENERATED
+        assertThat(json).contains("\"time\":\"2026-09-11 15:00\"");
     }
 
     @DisplayName("financialsTable 列与行映射，金额转亿")

@@ -120,11 +120,12 @@ public final class ChartSpecs {
 
   public static ChartSpec overviewBar(MarketOverview overview) {
     List<IndexQuote> idx = overview.indices();
+    // time 进 spec 顶层（MS-29 B4 ruling）：装饰器据此归 GENERATED（§6.1 生成时刻语义）
     return new ChartSpec.Bar(SPEC_VERSION, "bar", "主要指数涨跌幅", null,
             idx.stream().map(IndexQuote::name).toList(),
             List.of(new ChartSpec.Series("涨跌幅",
                     idx.stream().map(i -> (Double) i.changePct()).toList(), null)),
-            null, "%");
+            null, "%", overview.time());
   }
 
   public static String overviewSummary(MarketOverview overview) {

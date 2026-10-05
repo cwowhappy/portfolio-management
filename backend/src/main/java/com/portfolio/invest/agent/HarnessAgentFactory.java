@@ -1,6 +1,8 @@
 package com.portfolio.invest.agent;
 
 import com.portfolio.invest.application.skill.SkillApplicationService;
+import com.portfolio.invest.agent.trust.TrustAgentHook;
+import com.portfolio.invest.agent.trust.TrustWireMessageIdMiddleware;
 import com.portfolio.invest.config.InvestProperties;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.skill.SkillFilter;
@@ -22,6 +24,8 @@ public class HarnessAgentFactory {
     private final ClasspathSkillRepository builtInSkillRepository;
     private final Model model;
     private final InvestProperties.Mcp.Harness config;
+    /** MS-29 B5：可信溯源设置（容差/修正上限，TrustAgentHook 消费）。 */
+    private final InvestProperties.Trust trust;
 
     public HarnessAgentFactory(UserToolkitFactory toolkitFactory,
                                SkillApplicationService skillApplicationService,
@@ -33,6 +37,7 @@ public class HarnessAgentFactory {
         this.builtInSkillRepository = builtInSkillRepository;
         this.model = model;
         this.config = props.getMcp().getHarness();
+        this.trust = props.getTrust();
     }
 
     public HarnessAgent build(Long userId) {
@@ -56,6 +61,9 @@ public class HarnessAgentFactory {
                 .memory(MemoryConfig.builder()
                         .flushTrigger(MemoryConfig.FlushTrigger.throttled(config.getMemory().getFlushMinGap()))
                         .build())
+                // MS-29 B5：可信溯源回合钩子 + 线上 messageId 观察中间件（AG-UI 与飞书共同漏斗）
+                .hook(new TrustAgentHook(trust))
+                .middleware(new TrustWireMessageIdMiddleware())
                 .build();
     }
 

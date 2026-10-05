@@ -17,5 +17,28 @@ public record ToolInvocation(
         boolean failed) {
 
     /** 数据时点语义（决策 #17）：data=源站数据时刻 / generated=本机生成时刻 / call=调用时刻。 */
-    public enum AsOfKind { DATA, GENERATED, CALL }
+    public enum AsOfKind {
+        DATA("data"), GENERATED("generated"), CALL("call");
+
+        private final String wireName;
+
+        AsOfKind(String wireName) {
+            this.wireName = wireName;
+        }
+
+        /** payload v1 anchor.asOfKind 序列化名（设计规格 §2.1，B5 消费）。 */
+        public String wireName() {
+            return wireName;
+        }
+
+        /** 线名反解（历史池 metadata 读回，§2.2；未知值返回 null）。 */
+        public static AsOfKind fromWireName(String wireName) {
+            for (AsOfKind kind : values()) {
+                if (kind.wireName.equals(wireName)) {
+                    return kind;
+                }
+            }
+            return null;
+        }
+    }
 }

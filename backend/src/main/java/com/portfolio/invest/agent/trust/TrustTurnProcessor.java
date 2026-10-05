@@ -1,0 +1,219 @@
+package com.portfolio.invest.agent.trust;
+
+import com.portfolio.invest.config.InvestProperties;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * 回合校验流水（MS-29 B5，设计规格 §4.2 步骤 1~4/9 的纯函数半边）：完整文本 + 真值池
+ * → 数字提取 → 用户豁免（决策 #16：先配真值 verified/sourced → 无匹配且用户来源 → 豁免
+ * 不锚定 → 其余 unverified）→ 三态锚定与确定性替换（{@link ConsistencyValidator}）→
+ * 跨轮池摘要（§2.2）与 payload v1（§2.1）。
+ *
+ * <p>纯 POJO 零 agentscope 依赖（历史池以解析后的 entry 列表传入，metadata 读写归
+ * {@link TrustAgentHook}）；护栏哲学：宁可少标不可断流——null 文本直通、异常由 hook 层兜底。
+ * 类与方法非 final：B6/B7 在此接入 advice/confidence 半边（hook 侧接线点见其 javadoc）。
+ */
+public class TrustTurnProcessor {
+
+    /** 池摘要上限（§2.2 metadata 膨胀护栏；超出保留最近条目）。 */
+    static final int POOL_SUMMARY_LIMIT = 40;
+
+    private final ConsistencyValidator validator;
+
+    public TrustTurnProcessor(InvestProperties.Trust settings) {
+        this.validator = new ConsistencyValidator(settings);
+    }
+
+    /**
+     * 跑一轮校验流水。
+     *
+     * @param finalText       末轮完整文本（null/空 → 直通空报告）
+     * @param currentPool     本回合真值池（{@link TrustContext} 快照；resultText+emittedSpecs 提数建池）
+     * @param historyPool     历史 Msg metadata 池摘要（§2.2 回溯；条目 {v, tool, asOf, kind}）
+     * @param recentUserTexts 近期 user 消息文本（豁免判定）
+     */
+    public TrustTurnReport process(String finalText, List<ToolInvocation> currentPool,
+            List<Map<String, Object>> historyPool, List<String> recentUserTexts) {
+        if (finalText == null || finalText.isBlank()) {
+            return new TrustTurnReport(finalText, finalText, List.of(),
+                    new AnchorBatch.Stats(0, 0, 0), List.of(), List.of(), List.of(), 0, 0);
+        }
+        List<ToolInvocation> pool = validatorPool(currentPool, historyPool);
+        CorrectionResult correction = validator.correct(finalText, pool);
+
+        // 用户豁免（决策 #16）：仅对无真值匹配（unverified）的锚定生效——真值匹配优先
+        List<NumberToken> userValues = userNumericValues(recentUserTexts);
+        List<AnchorRecord> anchors = new ArrayList<>();
+        int verified = 0;
+        int sourced = 0;
+        int unverified = 0;
+        int exempted = 0;
+        for (AnchorRecord anchor : correction.batch().anchors()) {
+            if (anchor.state() == TrustVerdict.UNVERIFIED && isUserSourced(anchor, userValues)) {
+                exempted++;
+                continue;
+            }
+            switch (anchor.state()) {
+                case VERIFIED -> verified++;
+                case SOURCED -> sourced++;
+                default -> unverified++;
+            }
+            anchors.add(anchor);
+        }
+        return new TrustTurnReport(
+                finalText,
+                correction.correctedText(),
+                List.copyOf(anchors),
+                new AnchorBatch.Stats(verified, sourced, unverified),
+                correction.corrections(),
+                correction.batch().correctionNotes(),
+                poolSummary(currentPool),
+                exempted,
+                correction.correctionFailures());
+    }
+
+    // ———— 真值池 ————
+
+    /**
+     * 校验器池：本回合池（resultText + emittedSpecs 合并提数，emit 图表数字同为工具真值）
+     * + 历史池摘要反解为合成调用（tool/asOf/kind 随行，B2 线名编码）。
+     */
+    private static List<ToolInvocation> validatorPool(
+            List<ToolInvocation> currentPool, List<Map<String, Object>> historyPool) {
+        List<ToolInvocation> pool = new ArrayList<>();
+        if (currentPool != null) {
+            for (ToolInvocation invocation : currentPool) {
+                if (invocation.emittedSpecs() == null || invocation.emittedSpecs().isEmpty()) {
+                    pool.add(invocation);
+                    continue;
+                }
+                StringBuilder text = new StringBuilder(invocation.resultText() == null
+                        ? "" : invocation.resultText());
+                for (String spec : invocation.emittedSpecs()) {
+                    if (!text.isEmpty()) {
+                        text.append('\n');
+                    }
+                    text.append(spec);
+                }
+                pool.add(new ToolInvocation(invocation.toolName(), invocation.args(), text.toString(),
+                        List.of(), invocation.asOf(), invocation.asOfKind(), invocation.failed()));
+            }
+        }
+        if (historyPool != null) {
+            for (Map<String, Object> entry : historyPool) {
+                ToolInvocation synthesized = fromHistoryEntry(entry);
+                if (synthesized != null) {
+                    pool.add(synthesized);
+                }
+            }
+        }
+        return pool;
+    }
+
+    /** 历史池条目 {v, tool, asOf, kind} → 合成 ToolInvocation（resultText 即原值片段，truths() 自然提取）。 */
+    private static ToolInvocation fromHistoryEntry(Map<String, Object> entry) {
+        if (entry == null) {
+            return null;
+        }
+        String value = str(entry.get("v"));
+        String tool = str(entry.get("tool"));
+        if (value == null || value.isBlank() || tool == null) {
+            return null;
+        }
+        ToolInvocation.AsOfKind kind = ToolInvocation.AsOfKind.fromWireName(str(entry.get("kind")));
+        return new ToolInvocation(tool, Map.of(), value, List.of(), str(entry.get("asOf")),
+                kind == null ? ToolInvocation.AsOfKind.CALL : kind, false);
+    }
+
+    /**
+     * 池摘要（§2.2 本回合「值→(tool, asOf)」映射，落 Msg metadata）：resultText+emittedSpecs
+     * 提数、failed 不入池、同值去重（后写覆盖=最近一次调用）、上限 {@link #POOL_SUMMARY_LIMIT}
+     * （超出保留最近条目）。
+     */
+    private static List<Map<String, Object>> poolSummary(List<ToolInvocation> currentPool) {
+        LinkedHashMap<String, Map<String, Object>> byValue = new LinkedHashMap<>();
+        if (currentPool != null) {
+            for (ToolInvocation invocation : currentPool) {
+                if (invocation.failed()) {
+                    continue;
+                }
+                for (NumberToken token : NumberExtractor.extract(numbersTextOf(invocation))) {
+                    if (!token.dataLike()) {
+                        continue;
+                    }
+                    Map<String, Object> entry = new LinkedHashMap<>();
+                    entry.put("v", token.value().stripTrailingZeros().toPlainString());
+                    entry.put("tool", invocation.toolName());
+                    entry.put("asOf", invocation.asOf() == null ? "" : invocation.asOf());
+                    entry.put("kind", invocation.asOfKind() == null
+                            ? ToolInvocation.AsOfKind.CALL.wireName() : invocation.asOfKind().wireName());
+                    byValue.put((String) entry.get("v"), entry);
+                }
+            }
+        }
+        List<Map<String, Object>> entries = new ArrayList<>(byValue.values());
+        return entries.size() <= POOL_SUMMARY_LIMIT
+                ? List.copyOf(entries)
+                : List.copyOf(entries.subList(entries.size() - POOL_SUMMARY_LIMIT, entries.size()));
+    }
+
+    private static String numbersTextOf(ToolInvocation invocation) {
+        StringBuilder sb = new StringBuilder(invocation.resultText() == null ? "" : invocation.resultText());
+        if (invocation.emittedSpecs() != null) {
+            for (String spec : invocation.emittedSpecs()) {
+                if (!sb.isEmpty()) {
+                    sb.append('\n');
+                }
+                sb.append(spec);
+            }
+        }
+        return sb.toString();
+    }
+
+    // ———— 用户豁免 ————
+
+    /** 近期 user 文本的数据性数字值集合（归一比较：值相等且百分比维度一致）。 */
+    private static List<NumberToken> userNumericValues(List<String> recentUserTexts) {
+        List<NumberToken> values = new ArrayList<>();
+        if (recentUserTexts != null) {
+            for (String text : recentUserTexts) {
+                for (NumberToken token : NumberExtractor.extract(text)) {
+                    if (token.dataLike()) {
+                        values.add(token);
+                    }
+                }
+            }
+        }
+        return values;
+    }
+
+    /**
+     * 锚定是否用户来源：snippet 归一化的值与近期 user 数字同值同维度（豁免只作用于
+     * unverified 锚定——未被替换，snippet 即原文片段，重提取取值）。
+     */
+    private static boolean isUserSourced(AnchorRecord anchor, List<NumberToken> userValues) {
+        if (userValues.isEmpty()) {
+            return false;
+        }
+        // anchor 的 snippet 即文本片段（未改写——豁免锚定必未被替换）；重提取取值
+        for (NumberToken token : NumberExtractor.extract(anchor.snippet())) {
+            if (!token.dataLike()) {
+                continue;
+            }
+            for (NumberToken userToken : userValues) {
+                if (userToken.percent() == token.percent()
+                        && userToken.value().compareTo(token.value()) == 0) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static String str(Object value) {
+        return value == null ? null : String.valueOf(value);
+    }
+}
