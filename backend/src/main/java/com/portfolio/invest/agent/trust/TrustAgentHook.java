@@ -321,7 +321,19 @@ public class TrustAgentHook implements Hook, RuntimeContextAware {
         anchorsValue.put("payload", report.toPayload());
         events.add(new CustomEvent(ANCHORS_EVENT, anchorsValue));
         return Mono.deferContextual(ctx -> {
-            AgentEventEmitter.fromContext(ctx).ifPresent(emitter -> events.forEach(emitter::emit));
+            AgentEventEmitter.fromContext(ctx).ifPresent(emitter -> {
+                // 护栏（fix 轮 1）：emit 在订阅时执行（onEvent 的 try-catch 之外）——异常会
+                // 传播进库内错误处理面（可能外显 RUN_ERROR）。单事件吞并 + WARN：跳过该事件
+                // 继续发射剩余事件，绝不向上游传播（宁可少发不可断流）。
+                for (CustomEvent customEvent : events) {
+                    try {
+                        emitter.emit(customEvent);
+                    } catch (Throwable t) {
+                        log.warn("trust.guardrail: Custom 事件发射失败已吞并（name={}, messageId={}, error={}）",
+                                customEvent.getName(), messageId, t.getMessage(), t);
+                    }
+                }
+            });
             return Mono.just(event);
         });
     }

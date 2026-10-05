@@ -340,6 +340,44 @@ class TrustAgentHookTest {
                 assertThat(c.getValue()).containsEntry("messageId", "wire-id-1"));
     }
 
+    @DisplayName("护栏（fix 轮 1）：emit 在订阅时抛错被单事件吞并，Mono 正常完成且后续事件照发 + WARN 留痕")
+    @Test
+    void givenThrowingEmitterOnFirstEmit_whenOnEvent_thenSwallowedAndRemainingEmitted() {
+        RuntimeContext rc = bound();
+        recordQuoteTruth(rc);
+        ch.qos.logback.classic.Logger hookLogger =
+                (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(TrustAgentHook.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        hookLogger.addAppender(appender);
+        List<CustomEvent> seen = new java.util.ArrayList<>();
+        java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
+        PostReasoningEvent event = new PostReasoningEvent(STUB_AGENT, "model", null, assistantMsg(WRONG));
+        try {
+            hook.onEvent(event)
+                    .contextWrite(ctx -> ctx.put(io.agentscope.core.event.AgentEventEmitter.CONTEXT_KEY,
+                            (io.agentscope.core.event.AgentEventEmitter) e -> {
+                                if (calls.incrementAndGet() == 1) {
+                                    throw new IllegalStateException("sink down");
+                                }
+                                if (e instanceof CustomEvent c) {
+                                    seen.add(c);
+                                }
+                            }))
+                    .block();
+        } finally {
+            hookLogger.detachAppender(appender);
+        }
+
+        // 修正事件（首个 emit）抛错被吞：Mono 正常完成（block 未抛错即证）、anchors 照发、WARN 留痕
+        assertThat(seen).extracting(CustomEvent::getName)
+                .containsExactly(TrustAgentHook.ANCHORS_EVENT);
+        assertThat(appender.list)
+                .anyMatch(le -> le.getLevel() == ch.qos.logback.classic.Level.WARN
+                        && le.getFormattedMessage().contains("trust.guardrail"));
+    }
+
     /** 护栏用：process 恒抛错的处理器替身。 */
     static final class ThrowingProcessor extends TrustTurnProcessor {
         ThrowingProcessor() {
