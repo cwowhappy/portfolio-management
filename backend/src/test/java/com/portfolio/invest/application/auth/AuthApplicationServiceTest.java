@@ -17,6 +17,7 @@ import com.portfolio.invest.domain.user.UserErrorCode;
 import com.portfolio.invest.domain.user.UserException;
 import com.portfolio.invest.domain.user.UserRepository;
 import com.portfolio.invest.domain.user.UserRole;
+import com.portfolio.invest.domain.user.UserSessionRegistry;
 import com.portfolio.invest.domain.user.UserStatus;
 import com.portfolio.invest.domain.user.VerificationPurpose;
 import java.time.Instant;
@@ -35,11 +36,12 @@ class AuthApplicationServiceTest {
     private final PasswordEncoder encoder = mock(PasswordEncoder.class);
     private final EmailCodeService emailCodeService = mock(EmailCodeService.class);
     private final RememberMeTokenStore tokenStore = mock(RememberMeTokenStore.class);
+    private final UserSessionRegistry sessionRegistry = mock(UserSessionRegistry.class);
     private AuthApplicationService service;
 
     @BeforeEach
     void setUp() {
-        service = new AuthApplicationService(repo, encoder, emailCodeService, tokenStore);
+        service = new AuthApplicationService(repo, encoder, emailCodeService, tokenStore, sessionRegistry);
     }
 
     @DisplayName("注册创建PENDING用户并哈希密码")
@@ -168,6 +170,7 @@ class AuthApplicationServiceTest {
         verify(emailCodeService).verify(EMAIL, VerificationPurpose.RESET, "123456");
         verify(repo).save(argThat(u -> u.passwordHash().equals("$2a$new")));
         verify(tokenStore).removeUserTokens("alice");
+        verify(sessionRegistry).expireAll("alice"); // B14：换密码同时吊销全部会话
     }
 
     @DisplayName("重置密码：错码拒绝且不改库不吊销令牌")
@@ -184,6 +187,7 @@ class AuthApplicationServiceTest {
                 .satisfies(e -> assertThat(((UserException) e).getCode()).isEqualTo(UserErrorCode.CODE_INVALID));
         verify(repo, never()).save(any());
         verify(tokenStore, never()).removeUserTokens(any());
+        verify(sessionRegistry, never()).expireAll(anyString()); // B14：失败路径不吊销会话
     }
 
     @DisplayName("重置密码：不可找回标识按错码处理（CODE_INVALID，不枚举账号状态）")

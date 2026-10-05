@@ -22,6 +22,7 @@ import com.portfolio.invest.domain.user.UserErrorCode;
 import com.portfolio.invest.domain.user.UserException;
 import com.portfolio.invest.domain.user.UserRepository;
 import com.portfolio.invest.domain.user.UserRole;
+import com.portfolio.invest.domain.user.UserSessionRegistry;
 import com.portfolio.invest.domain.user.UserStatus;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,6 +36,7 @@ class UserAdminApplicationServiceTest {
     private final UserRepository repo = mock(UserRepository.class);
     private final PasswordEncoder encoder = mock(PasswordEncoder.class);
     private final RememberMeTokenStore tokenStore = mock(RememberMeTokenStore.class);
+    private final UserSessionRegistry sessionRegistry = mock(UserSessionRegistry.class);
     private final EmailCodeService emailCodeService = mock(EmailCodeService.class);
     private final MailSender mailSender = mock(MailSender.class);
     private final org.springframework.context.ApplicationEventPublisher publisher =
@@ -43,7 +45,8 @@ class UserAdminApplicationServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new UserAdminApplicationService(repo, encoder, tokenStore, emailCodeService, mailSender, publisher);
+        service = new UserAdminApplicationService(repo, encoder, tokenStore, sessionRegistry, emailCodeService,
+                mailSender, publisher);
         when(repo.save(any())).thenAnswer(inv -> inv.getArgument(0));
     }
 
@@ -95,6 +98,7 @@ class UserAdminApplicationServiceTest {
         when(encoder.encode("xyz12345")).thenReturn("$2a$new");
         service.resetPassword(1L, "xyz12345");
         org.mockito.Mockito.verify(tokenStore).removeUserTokens("u1");
+        org.mockito.Mockito.verify(sessionRegistry).expireAll("u1"); // B14：换密码同时吊销全部会话
     }
 
     @DisplayName("不能对管理员操作")

@@ -9,6 +9,7 @@ import com.portfolio.invest.domain.user.UserErrorCode;
 import com.portfolio.invest.domain.user.UserException;
 import com.portfolio.invest.domain.user.UserRepository;
 import com.portfolio.invest.domain.user.UserRole;
+import com.portfolio.invest.domain.user.UserSessionRegistry;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -27,17 +28,20 @@ public class UserAdminApplicationService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final RememberMeTokenStore rememberMeTokenStore;
+    private final UserSessionRegistry userSessionRegistry;
     private final EmailCodeService emailCodeService;
     private final MailSender mailSender;
     private final ApplicationEventPublisher publisher;
 
     public UserAdminApplicationService(UserRepository userRepository, PasswordEncoder passwordEncoder,
                                        RememberMeTokenStore rememberMeTokenStore,
+                                       UserSessionRegistry userSessionRegistry,
                                        EmailCodeService emailCodeService, MailSender mailSender,
                                        ApplicationEventPublisher publisher) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.rememberMeTokenStore = rememberMeTokenStore;
+        this.userSessionRegistry = userSessionRegistry;
         this.emailCodeService = emailCodeService;
         this.mailSender = mailSender;
         this.publisher = publisher;
@@ -73,6 +77,8 @@ public class UserAdminApplicationService {
         UserAdminView view = mutate(id, u -> u.withPassword(passwordEncoder.encode(newPassword)));
         // 密码已换，该用户所有 remember-me 令牌必须失效，否则旧令牌仍可免密登录
         rememberMeTokenStore.removeUserTokens(view.username());
+        // B14：同时吊销该用户全部 HTTP 会话，旧 JSESSIONID 再请求即 401
+        userSessionRegistry.expireAll(view.username());
         return view;
     }
 

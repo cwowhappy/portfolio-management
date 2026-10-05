@@ -1,6 +1,7 @@
 package com.portfolio.invest.infrastructure.security;
 
 import com.portfolio.invest.config.InvestProperties;
+import jakarta.servlet.http.HttpServletResponse;
 import javax.sql.DataSource;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -10,6 +11,8 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.session.SessionRegistry;
+import org.springframework.security.core.session.SessionRegistryImpl;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -19,6 +22,7 @@ import org.springframework.security.web.authentication.RememberMeServices;
 import org.springframework.security.web.authentication.rememberme.JdbcTokenRepositoryImpl;
 import org.springframework.security.web.authentication.rememberme.PersistentTokenBasedRememberMeServices;
 import org.springframework.security.web.authentication.rememberme.PersistentTokenRepository;
+import org.springframework.security.web.session.HttpSessionEventPublisher;
 
 /** Spring Security 装配：会话认证 + remember-me；CSRF 关闭（同源 JSON API + SameSite=Lax，ADR-0007）。 */
 @Configuration
@@ -30,7 +34,7 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http, ActiveUserStatusCache activeUserStatusCache,
-            RememberMeServices rememberMeServices) throws Exception {
+            RememberMeServices rememberMeServices, SessionRegistry sessionRegistry) throws Exception {
 
         http
             .csrf(csrf -> csrf.disable())
@@ -44,7 +48,22 @@ public class SecurityConfig {
                         res.getWriter().write("{\"message\":\"已退出登录\"}");
                     })
                     .deleteCookies("JSESSIONID", REMEMBER_ME_COOKIE))
-            .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
+            .sessionManagement(sm -> sm
+                    .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)
+                    // B14 重置密码吊销全部会话：maximumSessions(-1)=不限并发，仅为启用过期会话拦截
+                    //（ConcurrentSessionFilter 查 SessionRegistry，过期会话不再放行）。登录是控制器手动
+                    // 认证、不走过滤器内 SessionAuthenticationStrategy，登记由 AuthController 显式调用
+                    // UserSessionRegistry.register 完成。默认过期策略写 200 纯文本，JSON API 统一改 401。
+                    .sessionConcurrency(conc -> conc
+                            .maximumSessions(-1)
+                            .sessionRegistry(sessionRegistry)
+                            .expiredSessionStrategy(event -> {
+                                HttpServletResponse response = event.getResponse();
+                                response.setStatus(HttpStatus.UNAUTHORIZED.value());
+                                response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+                                response.getWriter()
+                                        .write("{\"code\":\"SESSION_EXPIRED\",\"message\":\"会话已失效，请重新登录\"}");
+                            })))
             .authorizeHttpRequests(auth -> auth
                     // 公开端点单一清单：PublicEndpointPaths（与 ActiveUserFilter 对齐）
                     .requestMatchers(PublicEndpointPaths.EXACT).permitAll()
@@ -97,6 +116,21 @@ public class SecurityConfig {
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
+    }
+
+    /** 会话登记表（B14）：记录 sessionId→username 归属，重置密码按用户名吊销全部会话。 */
+    @Bean
+    public SessionRegistry sessionRegistry() {
+        return new SessionRegistryImpl();
+    }
+
+    /**
+     * 会话销毁事件桥（B14）：session invalidate/超时 → HttpSessionDestroyedEvent →
+     * SessionRegistryImpl 自动逐出条目，避免登记表随时间泄漏已销毁会话。
+     */
+    @Bean
+    public HttpSessionEventPublisher httpSessionEventPublisher() {
+        return new HttpSessionEventPublisher();
     }
 
     @Bean
