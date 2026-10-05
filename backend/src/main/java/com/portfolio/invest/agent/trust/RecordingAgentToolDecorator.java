@@ -14,6 +14,7 @@ import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
 import java.time.Clock;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -44,6 +45,8 @@ import reactor.core.publisher.Mono;
  * GENERATED；emit spec（ChartSpec JSON）顶层与 Table 首行同序扫描（B4 透出 DTO 侧字段后自然命中）；
  * 无可解析时点 → 调用时刻 CALL。MCP 工具恒 CALL（决策 #5：sourced 语义，真值不入比对池）。
  * {@code get_market_overview} 特例（§6.1）：time 为本机生成时刻，解析到的时点归 GENERATED 而非 DATA。
+ * {@code macro_brief} 特例（B7 fix）：数据期别嵌在 indicators[].period——顶层扫描之前先取各指标
+ * 期别最新值作 DATA（无可解析期别落回既有阶梯），激活宏观陈旧信号。
  */
 public class RecordingAgentToolDecorator extends ToolBase {
 
@@ -61,6 +64,13 @@ public class RecordingAgentToolDecorator extends ToolBase {
      * 时点仍走 CALL 兜底（best-effort 阶梯不变）。
      */
     private static final Set<String> GENERATED_TIME_TOOLS = Set.of("get_market_overview");
+
+    /**
+     * macro_brief 特例工具名（MS-29 B7 fix）：数据期别 {@code period} 嵌在 {@code indicators[]}
+     * 数组内，顶层时点扫描只够到 {@code generatedAt}（GENERATED）——宏观陈旧信号恒休眠；
+     * 故在既有阶梯之前先取各指标期别<strong>最新值</strong>作 DATA 时点（见 {@link #latestMacroPeriod}）。
+     */
+    private static final String MACRO_BRIEF_TOOL = "macro_brief";
 
     /** 在途调用的 emit 收集走廊：toolUseId → 该调用已 emit 的块文本（跨线程安全，doFinally 摘除）。 */
     private static final Map<String, ConcurrentLinkedQueue<String>> EMISSIONS = new ConcurrentHashMap<>();
@@ -186,7 +196,13 @@ public class RecordingAgentToolDecorator extends ToolBase {
         if (mcp) {
             return new AsOf(callTime, ToolInvocation.AsOfKind.CALL);
         }
-        AsOf parsed = scan(resultText);
+        // macro_brief 特例（B7 fix）：indicators[].period 先于顶层扫描（否则只够到 generatedAt）
+        AsOf parsed = MACRO_BRIEF_TOOL.equals(delegate.getName())
+                ? latestMacroPeriod(resultText)
+                : null;
+        if (parsed == null) {
+            parsed = scan(resultText);
+        }
         if (parsed == null) {
             for (String spec : emittedSpecs) {
                 parsed = scan(spec);
@@ -202,6 +218,34 @@ public class RecordingAgentToolDecorator extends ToolBase {
         return GENERATED_TIME_TOOLS.contains(delegate.getName())
                 ? new AsOf(parsed.value(), ToolInvocation.AsOfKind.GENERATED)
                 : parsed;
+    }
+
+    /**
+     * macro_brief 各指标期别取最新 → DATA（B7 fix，激活 stale_macro）：period 形态
+     * {@code yyyy-MM}（月度，MacroPoint 契约）/ {@code yyyy-MM-dd}（日度），解析复用
+     * {@link ConfidenceScorer#parseAsOf} 同一阶梯（月度折算月初参与比较，返回保留原串）；
+     * indicators 缺失/非数组/全部不可解析返回 null（落回既有 best-effort 阶梯）。
+     */
+    private AsOf latestMacroPeriod(String resultText) {
+        JsonNode root = parse(resultText);
+        JsonNode indicators = root == null || !root.isObject() ? null : root.get("indicators");
+        if (indicators == null || !indicators.isArray()) {
+            return null;
+        }
+        String latest = null;
+        LocalDate latestDate = null;
+        for (JsonNode entry : indicators) {
+            JsonNode period = entry == null || !entry.isObject() ? null : entry.get("period");
+            if (period == null || period.isNull()) {
+                continue;
+            }
+            LocalDate date = ConfidenceScorer.parseAsOf(period.asText());
+            if (date != null && (latestDate == null || date.isAfter(latestDate))) {
+                latestDate = date;
+                latest = period.asText();
+            }
+        }
+        return latest == null ? null : new AsOf(latest, ToolInvocation.AsOfKind.DATA);
     }
 
     /** 单个 JSON 文档扫描：顶层时点字段 → Table 首行时点字段。 */

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.portfolio.invest.config.InvestProperties;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
@@ -325,6 +326,76 @@ class RecordingAgentToolDecoratorTest {
         ToolInvocation invocation = TrustContext.current(rc).invocations().get(0);
         assertThat(invocation.asOf()).isEqualTo(CALL_TIME);
         assertThat(invocation.asOfKind()).isEqualTo(ToolInvocation.AsOfKind.CALL);
+    }
+
+    // ———— macro_brief 数据期别透出（B7 fix：indicators[].period → DATA，激活 stale_macro） ————
+
+    @DisplayName("macro_brief 多期 indicators：asOf 取各指标 period 最新值（DATA），不再落 generatedAt")
+    @Test
+    void givenMacroBriefWithMultiplePeriods_whenCallAsync_thenLatestPeriodAsData() {
+        RuntimeContext rc = RuntimeContext.empty();
+        RecordingAgentToolDecorator decorator = new RecordingAgentToolDecorator(
+                new StubTool("macro_brief", p -> Mono.just(ToolResultBlock.text(
+                        "{\"indicators\":["
+                                + "{\"indicator\":\"CPI\",\"value\":100.5,\"period\":\"2026-08\"},"
+                                + "{\"indicator\":\"PMI\",\"value\":49.8,\"period\":\"2026-09\"}],"
+                                + "\"generatedAt\":\"2026-10-05 09:00\"}"))),
+                false, MAPPER, CLOCK);
+
+        decorator.callAsync(param(use("call_macro", "macro_brief", Map.of()), rc)).block();
+
+        ToolInvocation invocation = TrustContext.current(rc).invocations().get(0);
+        assertThat(invocation.asOf()).as("取最新期别而非顶层 generatedAt").isEqualTo("2026-09");
+        assertThat(invocation.asOfKind()).isEqualTo(ToolInvocation.AsOfKind.DATA);
+    }
+
+    @DisplayName("macro_brief 空/全不可解析期别：落回既有阶梯（generatedAt → GENERATED）")
+    @Test
+    void givenMacroBriefWithoutParsablePeriods_whenCallAsync_thenFallsBackToExistingLadder() {
+        RuntimeContext emptyRc = RuntimeContext.empty();
+        RuntimeContext garbageRc = RuntimeContext.empty();
+        RecordingAgentToolDecorator empty = new RecordingAgentToolDecorator(
+                new StubTool("macro_brief", p -> Mono.just(ToolResultBlock.text(
+                        "{\"indicators\":[],\"generatedAt\":\"2026-10-05 09:00\"}"))),
+                false, MAPPER, CLOCK);
+        RecordingAgentToolDecorator garbage = new RecordingAgentToolDecorator(
+                new StubTool("macro_brief", p -> Mono.just(ToolResultBlock.text(
+                        "{\"indicators\":[{\"indicator\":\"CPI\",\"period\":\"早期\"}],"
+                                + "\"generatedAt\":\"2026-10-05 09:00\"}"))),
+                false, MAPPER, CLOCK);
+
+        empty.callAsync(param(use("m1", "macro_brief", Map.of()), emptyRc)).block();
+        garbage.callAsync(param(use("m2", "macro_brief", Map.of()), garbageRc)).block();
+
+        ToolInvocation emptyInvocation = TrustContext.current(emptyRc).invocations().get(0);
+        assertThat(emptyInvocation.asOf()).isEqualTo("2026-10-05 09:00");
+        assertThat(emptyInvocation.asOfKind()).isEqualTo(ToolInvocation.AsOfKind.GENERATED);
+        ToolInvocation garbageInvocation = TrustContext.current(garbageRc).invocations().get(0);
+        assertThat(garbageInvocation.asOfKind()).isEqualTo(ToolInvocation.AsOfKind.GENERATED);
+    }
+
+    @DisplayName("池→scorer 连通：macro DATA 期别超 35 天（注入时钟）→ ConfidenceScorer 产出 stale_macro:1")
+    @Test
+    void givenMacroDataPoolEntryBeyondThreshold_whenProcessTurn_thenStaleMacroActivated() {
+        RuntimeContext rc = RuntimeContext.empty();
+        RecordingAgentToolDecorator decorator = new RecordingAgentToolDecorator(
+                new StubTool("macro_brief", p -> Mono.just(ToolResultBlock.text(
+                        "{\"indicators\":[{\"indicator\":\"CPI\",\"value\":100.5,\"period\":\"2026-08\"}],"
+                                + "\"generatedAt\":\"2026-10-05 09:00\"}"))),
+                false, MAPPER, CLOCK);
+        decorator.callAsync(param(use("call_macro2", "macro_brief", Map.of()), rc)).block();
+
+        // 池快照 → 回合流水（「今日」=2026-10-06，期别 2026-08 折算月初 → 66 自然日 > 35）
+        TrustTurnProcessor processor = new TrustTurnProcessor(new InvestProperties().getTrust(),
+                Clock.fixed(Instant.parse("2026-10-06T04:00:00Z"), ZoneId.of("Asia/Shanghai")));
+        TrustTurnReport report = processor.process(
+                "CPI 最新为 100.5。", TrustContext.current(rc).invocations(), List.of(), List.of());
+
+        assertThat(report.confidence())
+                .containsExactly(new ConfidenceSignal.Hit(ConfidenceSignal.STALE_MACRO, 1));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> confidence = (Map<String, Object>) report.toPayload().get("confidence");
+        assertThat(confidence.get("signals")).asList().containsExactly("stale_macro:1");
     }
 
     @DisplayName("MCP 工具恒 sourced：结果含 time 仍记 asOfKind=CALL + 调用时刻（决策 #5，不入比对池）")

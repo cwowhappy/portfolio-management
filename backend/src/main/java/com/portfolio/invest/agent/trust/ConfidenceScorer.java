@@ -143,8 +143,10 @@ public class ConfidenceScorer {
      * asOf 解析（best-effort，对齐 B3 resolveAsOf 产出）：≥10 字符取前 10 位
      * {@code yyyy-MM-dd}（兼容 "HH:mm[:ss]" 与 ISO 时间前缀）；不足 10 位按宏观月度期别
      * {@code yyyy-MM} 折算月初；不可解析返回 null（保守跳过）。
+     * 包私有共享：{@link RecordingAgentToolDecorator} 的 macro_brief 期别透出（B7 fix）
+     * 复用同一解析阶梯（单一真相源）。
      */
-    private static LocalDate parseAsOf(String asOf) {
+    static LocalDate parseAsOf(String asOf) {
         if (asOf == null || asOf.isBlank()) {
             return null;
         }
