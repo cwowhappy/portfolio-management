@@ -117,6 +117,54 @@ def alerter_from_env(env=None) -> WebhookAlerter | None:
     return WebhookAlerter(url) if url else None
 
 
+# ---------------------------------------------------------------- C3 告警风暴抑制
+
+# 同签名抑制窗口：cron 每周期都发同类失败（如 tushare 限流）会刷屏，30 分钟一条足够定位。
+DEDUP_WINDOW_SECONDS = 1800
+# 签名截断长度：error/message 前 120 字符足以区分故障类别，又避免超长 traceback 干扰键相等。
+_SIGNATURE_MAX_CHARS = 120
+
+
+class DedupAlerter:
+    """装饰任意告警器：同签名事件在窗口期内只透传一次（风暴抑制）。
+
+    键 = (type, task, 签名)。签名默认取 error or message 前 120 字符；freshness_patrol
+    特殊化为滞留表名有序集合——每交易日同表集合重复告警只发一条，表集合变化是新事件。
+    inner.send 失败不记时间戳（失败≠已送达，下次仍透传重试）；抑制命中返回 True，
+    调用方零感知。过期键惰性清理（dict 全扫删除，量级=告警种类数，无需 LRU）。
+    """
+
+    def __init__(self, inner, window_seconds=DEDUP_WINDOW_SECONDS, clock=time.monotonic):
+        self.inner = inner
+        self.window_seconds = window_seconds
+        self.clock = clock
+        self._sent_at: dict[tuple, float] = {}  # 签名键 → 上次成功发送的 clock 读数
+
+    def _key(self, event: dict) -> tuple:
+        etype = event.get("type")
+        if etype == "freshness_patrol":
+            # findings 字段以 run_freshness_patrol 实际结构为准：table/kind/latest（+expected|max_days）
+            signature = ",".join(
+                sorted(str(f.get("table", f.get("target", ""))) for f in event.get("stale", []))
+            )
+        else:
+            signature = str(event.get("error") or event.get("message") or "")[:_SIGNATURE_MAX_CHARS]
+        return (etype, event.get("task"), signature)
+
+    def send(self, event: dict) -> bool:
+        now = self.clock()
+        for key in [k for k, ts in self._sent_at.items() if now - ts >= self.window_seconds]:
+            del self._sent_at[key]  # 惰性清理：只在 send 时扫，无后台线程
+        key = self._key(event)
+        if key in self._sent_at:
+            logger.info("告警抑制：同签名事件 %r 在 %ds 窗口内已发送过", key, self.window_seconds)
+            return True
+        if self.inner.send(event):
+            self._sent_at[key] = now
+            return True
+        return False
+
+
 # ---------------------------------------------------------------- 飞书卡片构造（FR-A1/A4）
 # 纯函数：内部事件 dict → 飞书群自定义机器人 interactive 卡片（官方 msg_type 之一，无 markdown 类型）。
 

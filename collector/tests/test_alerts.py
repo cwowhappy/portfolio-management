@@ -13,7 +13,14 @@ from unittest.mock import MagicMock, patch
 from collector.executor.executor import AllSourcesFailed
 from collector.model.run import STATUS_PARTIAL, STATUS_SUCCESS, RunResult
 from collector.model.task import Collector
-from collector.scheduler.alerts import FeishuAlerter, WebhookAlerter, _feishu_card, _sign, alerter_from_env
+from collector.scheduler.alerts import (
+    DedupAlerter,
+    FeishuAlerter,
+    WebhookAlerter,
+    _feishu_card,
+    _sign,
+    alerter_from_env,
+)
 from collector.scheduler.calendar import TradingCalendar
 from collector.scheduler.runner import TaskRunner
 
@@ -258,6 +265,73 @@ def test_generic_webhook_http_200_any_body_still_success():
         ok = WebhookAlerter("http://hook.example/x", max_attempts=3).send({"task": "t"})
     assert ok is True
     assert up.call_count == 1
+
+
+# ---------------------------------------------------------------- C3 DedupAlerter（告警风暴抑制）
+
+
+def _dedup(inner, t0=1000.0):
+    """可控时钟的 DedupAlerter：clock 返回 now["t"]，测试推进 now["t"] 模拟时间流逝。"""
+    now = {"t": t0}
+    return DedupAlerter(inner, window_seconds=1800, clock=lambda: now["t"]), now
+
+
+def test_dedup_suppresses_same_signature_within_window_and_repasses_after_expiry():
+    """同 (type, task, error) 签名 30 分钟窗口内第二次 send 被抑制（返回 True、inner 只透传一次）；
+    窗口外（clock 推进超过 window_seconds）同签名再次透传。"""
+    inner = MagicMock()
+    inner.send.return_value = True
+    dedup, now = _dedup(inner)
+    event = {"type": "task_run", "task": "stock_daily", "status": "failed", "error": "全源熔断"}
+    assert dedup.send(dict(event)) is True
+    assert dedup.send(dict(event)) is True  # 抑制不是失败——调用方零感知
+    assert inner.send.call_count == 1
+    now["t"] += 1801  # 窗口过期
+    assert dedup.send(dict(event)) is True
+    assert inner.send.call_count == 2
+
+
+def test_dedup_different_error_or_task_pass_through():
+    """签名含 error 与 task：同 task 不同 error、不同 task 同 error 都是新事件。"""
+    inner = MagicMock()
+    inner.send.return_value = True
+    dedup, _ = _dedup(inner)
+    dedup.send({"type": "task_run", "task": "t", "status": "failed", "error": "boom-a"})
+    dedup.send({"type": "task_run", "task": "t", "status": "failed", "error": "boom-b"})  # 同 task 不同 error
+    dedup.send({"type": "task_run", "task": "t2", "status": "failed", "error": "boom-a"})  # 不同 task 同 error
+    assert inner.send.call_count == 3
+
+
+def test_dedup_patrol_signature_is_sorted_table_set():
+    """freshness_patrol 按滞留表名集合签名：集合不变（乱序/字段值变化）抑制，多一张表透传。"""
+    inner = MagicMock()
+    inner.send.return_value = True
+    dedup, _ = _dedup(inner)
+    base = {"type": "freshness_patrol", "date": "2026-09-26"}
+    dedup.send({**base, "stale": [{"table": "etf_basic"}, {"table": "index_constituent"}]})
+    dedup.send(
+        {**base, "stale": [{"table": "index_constituent", "latest": "2026-09-20"}, {"table": "etf_basic"}]}
+    )  # 同表集合乱序 + latest 值变化 → 抑制
+    assert inner.send.call_count == 1
+    dedup.send(
+        {
+            **base,
+            "stale": [{"table": "etf_basic"}, {"table": "index_constituent"}, {"table": "stock_valuation_daily"}],
+        }
+    )
+    assert inner.send.call_count == 2  # 表集合变化 → 透传
+
+
+def test_dedup_failed_send_not_recorded_so_next_passes_through():
+    """inner.send 失败不记时间戳：下次同签名仍透传（发送失败≠已送达，不能吞重试机会）。"""
+    inner = MagicMock()
+    inner.send.return_value = False
+    dedup, _ = _dedup(inner)
+    event = {"type": "task_run", "task": "t", "status": "failed", "error": "boom"}
+    assert dedup.send(event) is False
+    assert inner.send.call_count == 1
+    assert dedup.send(dict(event)) is False  # 未记时间戳 → 不抑制
+    assert inner.send.call_count == 2
 
 
 # ---------------------------------------------------------------- runner 接线
