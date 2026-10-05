@@ -14,10 +14,11 @@ import { registerAndApprove, TEST_PASSWORD, uniqueUsername } from "./helpers";
 //   渲染于内容尾部（trust-correction-notes，行形态「校验修正：原文误述 X」），
 //   live 与回灌两路径均断言。
 //
-// 选择器契约（F2/F3 报告 + F6 修复轮）：trust-anchor-badge[data-anchor-state]（wrapper
-// span 同带 data-anchor-state）、trust-anchor-popover（role=tooltip，常驻 DOM opacity
-// 切换）、confidence-banner / confidence-signal[data-signal] / confidence-suggestion /
-// disclaimer-note / disclaimer-by、trust-correction-notes。
+// 选择器契约（F2/F3 报告 + F6 修复轮 + 终审修复）：trust-anchor-badge[data-anchor-state]
+// （wrapper span 同带 data-anchor-state，内含可聚焦 button——点击/键盘可达）、
+// trust-anchor-popover（role=tooltip，常驻 DOM opacity 切换）、confidence-banner /
+// confidence-signal[data-signal] / confidence-suggestion / disclaimer-note /
+// disclaimer-by、trust-correction-notes。
 
 const hasAdminSeed = !!(process.env.ADMIN_USERNAME && process.env.ADMIN_PASSWORD);
 
@@ -58,10 +59,13 @@ const badge = (page: Page, state?: string): Locator =>
 const anchorWrap = (page: Page, state: string, snippet: string): Locator =>
   page.locator(`span[data-anchor-state="${state}"]`).filter({ hasText: snippet });
 
-/** hover 角标 → 浮层 opacity 升为 1（常驻 DOM、group-hover 切换；opacity-0 对 Playwright 仍“可见”）。 */
-async function hoverBadge(page: Page, state: string, snippet: string): Promise<Locator> {
+/** click 角标 → 浮层 opacity 升为 1（常驻 DOM、受控 state 切换；终审裁定「点击浮层」
+ *  规格符合——需求决策 #2/F01，Playwright click 比 hover 稳且覆盖触屏主通道）。 */
+async function clickBadge(page: Page, state: string, snippet: string): Promise<Locator> {
   const wrap = anchorWrap(page, state, snippet);
-  await wrap.locator(`[data-testid="trust-anchor-badge"][data-anchor-state="${state}"]`).hover();
+  await wrap
+    .locator(`[data-testid="trust-anchor-badge"][data-anchor-state="${state}"] button`)
+    .click();
   const popover = wrap.getByTestId("trust-anchor-popover");
   await expect(popover).toHaveCSS("opacity", "1");
   return popover;
@@ -182,24 +186,40 @@ test.describe("信任溯源（MS-29）", () => {
     await expect(anchorWrap(page, "sourced", "862 亿元").locator("sup")).toHaveText("2");
     await expect(anchorWrap(page, "unverified", "25%").locator("sup")).toHaveText("3");
 
-    // 浮层（真 hover 后 opacity→1）：verified 措辞契约 + 工具/args/数据时间戳/raw 四行，
+    // 浮层（点击角标后 opacity→1）：verified 措辞契约 + 工具/args/数据时间戳/raw 四行，
     // 且不出现「已核实」（决策 #13：verified 仅承诺数值一致）
-    const verifiedPop = await hoverBadge(page, "verified", "1741 亿元");
+    const verifiedPop = await clickBadge(page, "verified", "1741 亿元");
     await expect(verifiedPop).toContainText("数值与工具返回一致");
     await expect(verifiedPop).not.toContainText("已核实");
     await expect(verifiedPop).toContainText("get_financial_metrics");
     await expect(verifiedPop).toContainText("code：600519");
     await expect(verifiedPop).toContainText("数据时间戳：2025-04-02");
     await expect(verifiedPop).toContainText("工具返回原值：174143000000.00");
+    // aria 关联（补 F2-③ 欠账，终审修复）：aria-expanded 随开合、describedby ↔ 浮层 id
+    const verifiedButton = anchorWrap(page, "verified", "1741 亿元")
+      .locator("[data-testid=\"trust-anchor-badge\"] button");
+    await expect(verifiedButton).toHaveAttribute("aria-expanded", "true");
+    const describedId = await verifiedButton.getAttribute("aria-describedby");
+    expect(describedId).toBeTruthy();
+    await expect(page.locator(`[id="${describedId}"]`)).toHaveAttribute("role", "tooltip");
     // sourced：已溯源未校验 + 调用时刻（决策 #17：不与数据时间戳混同），无 raw 行
-    const sourcedPop = await hoverBadge(page, "sourced", "862 亿元");
+    const sourcedPop = await clickBadge(page, "sourced", "862 亿元");
     await expect(sourcedPop).toContainText("已溯源未校验");
     await expect(sourcedPop).toContainText("调用时刻：2026-10-06 09:31:00");
     await expect(sourcedPop).not.toContainText("工具返回原值");
     // unverified：无工具/时间戳/raw 行
-    const unverifiedPop = await hoverBadge(page, "unverified", "25%");
+    const unverifiedPop = await clickBadge(page, "unverified", "25%");
     await expect(unverifiedPop).toContainText("未溯源：无工具数据支撑");
     await expect(unverifiedPop).not.toContainText("工具：");
+    // click 切换语义：再点同角标收回（opacity→0），Escape 关闭（verified 浮层）。
+    // 收回断言前先移开鼠标——点击后指针停在角标上时 group-hover 通道仍持亮（三通道并存语义）
+    await anchorWrap(page, "unverified", "25%")
+      .locator("[data-testid=\"trust-anchor-badge\"] button")
+      .click();
+    await page.mouse.move(0, 0);
+    await expect(unverifiedPop).toHaveCSS("opacity", "0");
+    await verifiedButton.press("Escape");
+    await expect(verifiedPop).toHaveCSS("opacity", "0");
 
     // 低置信横幅：unverified_ratio 计数口径（3 处）+ stale_financials + 核实路径建议（data-signal 稳定断言）
     const banner = page.getByTestId("confidence-banner");
@@ -324,7 +344,7 @@ test.describe("信任溯源（MS-29）", () => {
     await expect(badge(page, "sourced")).toHaveCount(1);
     await expect(badge(page, "unverified")).toHaveCount(1);
     await expect(anchorWrap(page, "verified", "1708 亿元").locator("sup")).toHaveText("2");
-    const replacedPop = await hoverBadge(page, "verified", "1708 亿元");
+    const replacedPop = await clickBadge(page, "verified", "1708 亿元");
     await expect(replacedPop).toContainText("数值与工具返回一致");
 
     // 低置信横幅：corrections（修正介入的可见信号）+ unverified_ratio 计数

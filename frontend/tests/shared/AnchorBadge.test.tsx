@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { AnchorBadge } from "@/components/shared/AnchorBadge";
 import type { TrustAnchor } from "@/lib/trustMeta";
 
@@ -29,7 +29,7 @@ const SOURCED: TrustAnchor = {
 
 const UNVERIFIED: TrustAnchor = { snippet: "38倍", occ: 1, state: "unverified" };
 
-describe("AnchorBadge（角标三态 + CSS group-hover 浮层）", () => {
+describe("AnchorBadge（角标三态 + hover/click/focus 三通道浮层）", () => {
   it("verified：中性绿角标序号 + 正文数字原样渲染", () => {
     render(
       <AnchorBadge anchor={VERIFIED} label={1}>
@@ -65,7 +65,21 @@ describe("AnchorBadge（角标三态 + CSS group-hover 浮层）", () => {
     expect(badge.className).toContain("text-[color:var(--color-ink-faint)]");
   });
 
-  it("浮层常驻 DOM、group-hover 显隐（Sidebar 先例）", () => {
+  it("角标序号是可聚焦 button（type=button，键盘可达——终审裁定规格符合）", () => {
+    render(
+      <AnchorBadge anchor={VERIFIED} label={1}>
+        1520.33元
+      </AnchorBadge>,
+    );
+    const badge = screen.getByTestId("trust-anchor-badge");
+    const button = screen.getByRole("button");
+    expect(button.tagName).toBe("BUTTON");
+    expect(button.getAttribute("type")).toBe("button");
+    expect(badge.contains(button)).toBe(true);
+    expect(button.textContent).toBe("1");
+  });
+
+  it("浮层常驻 DOM、group-hover 显隐保留（Sidebar 先例，触屏之外的指针通道）", () => {
     render(
       <AnchorBadge anchor={VERIFIED} label={1}>
         1520.33元
@@ -76,6 +90,80 @@ describe("AnchorBadge（角标三态 + CSS group-hover 浮层）", () => {
     expect(popover.className).toContain("group-hover:opacity-100");
     expect(popover.className).toContain("pointer-events-none");
     expect(popover.className).toContain("group-hover:pointer-events-auto");
+  });
+
+  // ———— 三通道开合（需求决策 #2「点击浮层」：click 触屏可达 + focus 键盘可达 + hover 保留） ————
+
+  it("click 开合：点击角标浮层显（opacity-100 且不含 opacity-0），再点收回", () => {
+    render(
+      <AnchorBadge anchor={VERIFIED} label={1}>
+        1520.33元
+      </AnchorBadge>,
+    );
+    const button = screen.getByRole("button");
+    const popover = screen.getByRole("tooltip");
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(button);
+    expect(button.getAttribute("aria-expanded")).toBe("true");
+    expect(popover.className).toContain("opacity-100");
+    expect(popover.className).toContain("pointer-events-auto");
+    expect(popover.className).not.toContain("opacity-0");
+    fireEvent.click(button);
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+    expect(popover.className).toContain("opacity-0");
+  });
+
+  it("Escape 关闭：click 打开后按 Escape 收回", () => {
+    render(
+      <AnchorBadge anchor={VERIFIED} label={1}>
+        1520.33元
+      </AnchorBadge>,
+    );
+    const button = screen.getByRole("button");
+    fireEvent.click(button);
+    fireEvent.keyDown(button, { key: "Escape" });
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getByRole("tooltip").className).toContain("opacity-0");
+  });
+
+  it("focus 通道：聚焦即开、失焦即合（键盘 Tab 可达）", () => {
+    render(
+      <AnchorBadge anchor={VERIFIED} label={1}>
+        1520.33元
+      </AnchorBadge>,
+    );
+    const button = screen.getByRole("button");
+    fireEvent.focus(button);
+    expect(button.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.blur(button);
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("指针点击路径：pointerdown 引发的 focus 不开浮层（click 切换不被紧跟的 focus 抵消）", () => {
+    render(
+      <AnchorBadge anchor={VERIFIED} label={1}>
+        1520.33元
+      </AnchorBadge>,
+    );
+    const button = screen.getByRole("button");
+    fireEvent.pointerDown(button);
+    fireEvent.focus(button);
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(button);
+    expect(button.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("aria 关联（补 F2-③ 欠账）：aria-describedby ↔ 浮层 id 一致", () => {
+    render(
+      <AnchorBadge anchor={VERIFIED} label={1}>
+        1520.33元
+      </AnchorBadge>,
+    );
+    const button = screen.getByRole("button");
+    const popover = screen.getByRole("tooltip");
+    const describedby = button.getAttribute("aria-describedby");
+    expect(describedby).toBeTruthy();
+    expect(popover.getAttribute("id")).toBe(describedby);
   });
 
   it("verified 浮层：数值一致措辞（决策 #13）+ 工具/参数/数据时间戳/raw 原值", () => {
