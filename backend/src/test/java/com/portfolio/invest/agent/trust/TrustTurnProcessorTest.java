@@ -253,6 +253,70 @@ class TrustTurnProcessorTest {
         assertThat(anchors.get(0)).containsEntry("asOfKind", "generated");
     }
 
+    // ———— advice 半边（B6：自声明标记 + 词表兜底井集；payload §2.1 缺键表达无建议） ————
+
+    @DisplayName("标记剥离先于校验改写：注记行附加在干净文本上，originalText 保留原始标记")
+    @Test
+    void givenMarkerAndMagnitudeError_whenProcess_thenNoteAppendedOnCleanText() {
+        var report = processor.process(
+                "现价15.20元\n<!--advice-->",
+                List.of(invocation("{\"price\":1520.33,\"time\":\"2026-10-05 14:59:32\"}")),
+                List.of(),
+                List.of());
+
+        assertThat(report.originalText()).isEqualTo("现价15.20元\n<!--advice-->");
+        assertThat(report.correctedText())
+                .isEqualTo("现价1520.33元\n> ⚠ 校验修正：原文误述 15.20元");
+        assertThat(report.rewritten()).isTrue();
+        assertThat(report.advice().flag()).isTrue();
+        assertThat(report.advice().by()).isEqualTo("self");
+    }
+
+    @DisplayName("payload.advice：标记+词表都命中 → {flag,by,text} 全携带（by=both）")
+    @Test
+    void givenMarkerAndLexiconHit_whenToPayload_thenAdviceCarriedWithText() {
+        var report = processor.process(
+                "估值偏低，建议分批建仓。\n<!--advice-->", List.of(), List.of(), List.of());
+
+        Map<String, Object> payload = report.toPayload();
+
+        assertThat(payload).containsKey("advice");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> advice = (Map<String, Object>) payload.get("advice");
+        assertThat(advice)
+                .containsEntry("flag", true)
+                .containsEntry("by", "both")
+                .containsEntry("text",
+                        "以上内容由 AI 生成，仅供参考，不构成任何投资建议；"
+                                + "市场有风险，投资决策请独立判断或咨询持牌专业机构。");
+        assertNoNullValues(payload, "$");
+        assertThat(report.correctedText()).isEqualTo("估值偏低，建议分批建仓。");
+        assertThat(report.rewritten()).isTrue();
+    }
+
+    @DisplayName("payload.advice：仅词表命中 → by=lexicon（文案随行）")
+    @Test
+    void givenLexiconHitOnly_whenToPayload_thenAdviceByLexicon() {
+        var report = processor.process("高位震荡，注意设置止损位。", List.of(), List.of(), List.of());
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> advice = (Map<String, Object>) report.toPayload().get("advice");
+
+        assertThat(advice).containsEntry("flag", true).containsEntry("by", "lexicon");
+        assertThat(advice).containsKey("text");
+    }
+
+    @DisplayName("payload.advice 缺键：无标记且词表未命中（含否定豁免）→ 无 advice 键")
+    @Test
+    void givenNoAdviceOrNegatedLexicon_whenToPayload_thenAdviceKeyAbsent() {
+        var negated = processor.process("以上内容不构成买入建议。", List.of(), List.of(), List.of());
+        assertThat(negated.toPayload()).doesNotContainKey("advice");
+        assertThat(negated.rewritten()).isFalse();
+
+        var plain = processor.process("今日大盘上涨。", List.of(), List.of(), List.of());
+        assertThat(plain.toPayload()).doesNotContainKey("advice");
+    }
+
     // ———— 护栏（null 入参直通） ————
 
     @DisplayName("护栏：null/空文本直通，零锚定零修正")

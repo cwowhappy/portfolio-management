@@ -61,4 +61,31 @@ class InvestPropertiesTrustBindingTest {
         assertThat(tolerance.price()).isEqualByComparingTo("0.01");
         assertThat(tolerance.deviation()).isEqualByComparingTo("0.10");
     }
+
+    @DisplayName("未配置时：advice 词表 14 词与 disclaimer 文案代码默认值生效（参数组③④，MS-29 B6）")
+    @Test
+    void givenNoAdviceConfig_whenBind_thenDefaultsApply() {
+        InvestProperties props = new Binder(new MapConfigurationPropertySource(Map.of()))
+                .bindOrCreate("invest", InvestProperties.class);
+
+        assertThat(props.getTrust().getAdviceLexicon())
+                .hasSize(14)
+                .containsExactly("买入", "卖出", "加仓", "减仓", "清仓", "建仓", "补仓",
+                        "止损", "止盈", "目标价", "抄底", "逃顶", "满仓", "空仓");
+        assertThat(props.getTrust().getDisclaimerText())
+                .isEqualTo("以上内容由 AI 生成，仅供参考，不构成任何投资建议；"
+                        + "市场有风险，投资决策请独立判断或咨询持牌专业机构。");
+    }
+
+    @DisplayName("advice-lexicon/disclaimer-text 松命名绑定覆盖（invest.trust.*，MS-29 B6）")
+    @Test
+    void givenAdviceConfig_whenBind_thenValuesBound() {
+        InvestProperties props = new Binder(new MapConfigurationPropertySource(Map.of(
+                "invest.trust.advice-lexicon", "买入,持有",
+                "invest.trust.disclaimer-text", "自定义免责文案")))
+                .bindOrCreate("invest", InvestProperties.class);
+
+        assertThat(props.getTrust().getAdviceLexicon()).containsExactly("买入", "持有");
+        assertThat(props.getTrust().getDisclaimerText()).isEqualTo("自定义免责文案");
+    }
 }

@@ -7,11 +7,12 @@ import java.util.Objects;
 
 /**
  * 一次回合校验流水（{@link TrustTurnProcessor}）的产物（MS-29 B5，设计规格 §4.2）：
- * 修正后文本 + 豁免过滤后的锚定批次 + 池摘要（§2.2 metadata 落盘形态）与留痕计数。
+ * 修正后文本 + 豁免过滤后的锚定批次 + 池摘要（§2.2 metadata 落盘形态）与留痕计数
+ * + advice 半边（B6：自声明标记 + 词表兜底井集）。
  *
  * <p>{@link #toPayload()} 输出 payload v1（设计规格 §2.1）：无 null 用缺键——
  * unverified anchor 缺省 tool/args/asOf/asOfKind/raw；correction 键仅有注记时存在；
- * advice/confidence 键由 B6/B7 落地时补，本任务不产出。
+ * advice 键仅有命中时存在（B6），confidence 键由 B7 落地时补。
  */
 public record TrustTurnReport(
         String originalText,
@@ -22,9 +23,19 @@ public record TrustTurnReport(
         List<String> correctionNotes,
         List<Map<String, Object>> poolSummary,
         int exempted,
-        int correctionFailures) {
+        int correctionFailures,
+        Advice advice) {
 
-    /** 文本是否被改写（大偏差替换发生）。 */
+    /**
+     * advice 半边（B6，§2.1）：flag=任一层命中；by=self|lexicon|both；text=disclaimer
+     * 文案（参数组③，仅 flag=true 时由 processor 随行——payload 缺 advice 键表达无建议）。
+     */
+    public record Advice(boolean flag, String by, String text) {
+        /** 无建议命中的缺省实例（payload 以缺键表达，不产出 advice map）。 */
+        public static final Advice NONE = new Advice(false, null, null);
+    }
+
+    /** 文本是否被改写（大偏差替换发生，或自声明标记行被剥离）。 */
     public boolean rewritten() {
         return !Objects.equals(originalText, correctedText);
     }
@@ -41,6 +52,15 @@ public record TrustTurnReport(
         payload.put("stats", statsMap);
         if (!correctionNotes.isEmpty()) {
             payload.put("correction", Map.of("notes", List.copyOf(correctionNotes)));
+        }
+        if (advice.flag()) {
+            Map<String, Object> adviceMap = new LinkedHashMap<>();
+            adviceMap.put("flag", true);
+            adviceMap.put("by", advice.by());
+            if (advice.text() != null && !advice.text().isBlank()) {
+                adviceMap.put("text", advice.text());
+            }
+            payload.put("advice", adviceMap);
         }
         return payload;
     }

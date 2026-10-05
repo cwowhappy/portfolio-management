@@ -417,11 +417,22 @@ public class InvestProperties {
                 new ToleranceSettings(new BigDecimal("0.02"), new BigDecimal("0.05"),
                         new BigDecimal("0.01"), new BigDecimal("0.10"));
         private CorrectionSettings correction = new CorrectionSettings(2);
+        /** 词表参数组④（MS-29 B6，决策 #4 双层井集的兜底层；空表 = 仅自声明标记生效）。 */
+        private List<String> adviceLexicon = new ArrayList<>(List.of(
+                "买入", "卖出", "加仓", "减仓", "清仓", "建仓", "补仓", "止损", "止盈",
+                "目标价", "抄底", "逃顶", "满仓", "空仓"));
+        /** 文案参数组③（MS-29 B6）：advice.flag=true 时随 trust.anchors payload 透传（F3 前端 DisclaimerNote 消费）。 */
+        private String disclaimerText = "以上内容由 AI 生成，仅供参考，不构成任何投资建议；"
+                + "市场有风险，投资决策请独立判断或咨询持牌专业机构。";
 
         public ToleranceSettings getTolerance() { return tolerance; }
         public void setTolerance(ToleranceSettings tolerance) { this.tolerance = tolerance; }
         public CorrectionSettings getCorrection() { return correction; }
         public void setCorrection(CorrectionSettings correction) { this.correction = correction; }
+        public List<String> getAdviceLexicon() { return adviceLexicon; }
+        public void setAdviceLexicon(List<String> adviceLexicon) { this.adviceLexicon = adviceLexicon; }
+        public String getDisclaimerText() { return disclaimerText; }
+        public void setDisclaimerText(String disclaimerText) { this.disclaimerText = disclaimerText; }
 
         /**
          * 容差参数组①（用户拍板默认）：relative=相对 2%；absolute=无量纲绝对 0.05（%、倍）；

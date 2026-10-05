@@ -236,6 +236,36 @@ class TrustAgentHookTest {
         assertThat(hook.lastReport().exempted()).isEqualTo(1);
     }
 
+    @DisplayName("advice 接线（B6）：标记行剥离进改写 Msg，payload.advice 进 trust.anchors 事件")
+    @Test
+    void givenAdviceMarkerAndLexiconWord_whenOnEvent_thenMarkerStrippedAndAdviceInPayload() {
+        bound();
+        List<CustomEvent> seen = new java.util.ArrayList<>();
+        PostReasoningEvent event = new PostReasoningEvent(STUB_AGENT, "model", null,
+                assistantMsg("估值偏低，建议分批建仓。\n<!--advice-->"));
+
+        hook.onEvent(event)
+                .contextWrite(ctx -> ctx.put(io.agentscope.core.event.AgentEventEmitter.CONTEXT_KEY,
+                        (io.agentscope.core.event.AgentEventEmitter) e -> {
+                            if (e instanceof CustomEvent c) {
+                                seen.add(c);
+                            }
+                        }))
+                .block();
+
+        // 改写 Msg：标记行剥离（rewritten() 触发 applyRewrite），干净文本成为最终消息
+        assertThat(event.getReasoningMessage().getTextContent()).isEqualTo("估值偏低，建议分批建仓。");
+        // trust.anchors 事件 payload：advice {flag, by=both, text}
+        assertThat(seen).extracting(CustomEvent::getName)
+                .containsExactly(TrustAgentHook.ANCHORS_EVENT);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> payload = (Map<String, Object>) seen.get(0).getValue().get("payload");
+        assertThat(payload).containsKey("advice");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> advice = (Map<String, Object>) payload.get("advice");
+        assertThat(advice).containsEntry("flag", true).containsEntry("by", "both");
+    }
+
     @DisplayName("跨轮池回读：rc state 内历史 Msg metadata 参与本回合配对")
     @Test
     void givenHistoryMetadataInState_whenOnEvent_thenHistoryPoolPaired() {

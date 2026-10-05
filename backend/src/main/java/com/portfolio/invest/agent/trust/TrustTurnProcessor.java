@@ -14,7 +14,7 @@ import java.util.Map;
  *
  * <p>纯 POJO 零 agentscope 依赖（历史池以解析后的 entry 列表传入，metadata 读写归
  * {@link TrustAgentHook}）；护栏哲学：宁可少标不可断流——null 文本直通、异常由 hook 层兜底。
- * 类与方法非 final：B6/B7 在此接入 advice/confidence 半边（hook 侧接线点见其 javadoc）。
+ * advice 半边已接入（B6，步骤 7）；类与方法非 final：B7 在此接入 confidence 半边。
  */
 public class TrustTurnProcessor {
 
@@ -22,9 +22,13 @@ public class TrustTurnProcessor {
     static final int POOL_SUMMARY_LIMIT = 40;
 
     private final ConsistencyValidator validator;
+    private final AdviceDetector adviceDetector;
+    private final String disclaimerText;
 
     public TrustTurnProcessor(InvestProperties.Trust settings) {
         this.validator = new ConsistencyValidator(settings);
+        this.adviceDetector = new AdviceDetector(settings.getAdviceLexicon());
+        this.disclaimerText = settings.getDisclaimerText();
     }
 
     /**
@@ -39,10 +43,14 @@ public class TrustTurnProcessor {
             List<Map<String, Object>> historyPool, List<String> recentUserTexts) {
         if (finalText == null || finalText.isBlank()) {
             return new TrustTurnReport(finalText, finalText, List.of(),
-                    new AnchorBatch.Stats(0, 0, 0), List.of(), List.of(), List.of(), 0, 0);
+                    new AnchorBatch.Stats(0, 0, 0), List.of(), List.of(), List.of(), 0, 0,
+                    TrustTurnReport.Advice.NONE);
         }
+        // 步骤 7 前半（B6）：自声明标记先行检测剥离——剥离后的文本才进入校验/改写
+        // （注记行附加在干净文本上），词表兜底扫描亦在干净文本上（标记本身无词表词）
+        AdviceDetector.Detection detection = adviceDetector.detect(finalText);
         List<ToolInvocation> pool = validatorPool(currentPool, historyPool);
-        CorrectionResult correction = validator.correct(finalText, pool);
+        CorrectionResult correction = validator.correct(detection.cleanText(), pool);
 
         // 用户豁免（决策 #16）：仅对无真值匹配（unverified）的锚定生效——真值匹配优先
         List<NumberToken> userValues = userNumericValues(recentUserTexts);
@@ -72,7 +80,16 @@ public class TrustTurnProcessor {
                 correction.batch().correctionNotes(),
                 poolSummary(currentPool),
                 exempted,
-                correction.correctionFailures());
+                correction.correctionFailures(),
+                adviceOf(detection));
+    }
+
+    /** advice 半边组装：命中时 disclaimer 文案（参数组③）随行——payload 缺键表达无建议。 */
+    private TrustTurnReport.Advice adviceOf(AdviceDetector.Detection detection) {
+        if (!detection.flag()) {
+            return TrustTurnReport.Advice.NONE;
+        }
+        return new TrustTurnReport.Advice(true, detection.by(), disclaimerText);
     }
 
     // ———— 真值池 ————
