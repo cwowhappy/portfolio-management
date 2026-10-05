@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.portfolio.invest.application.im.ImCommandRouter;
@@ -28,11 +29,12 @@ class FeishuWsClientDispatchTest {
     private final ImMessageListener listener = mock(ImMessageListener.class);
     private final ImCommandRouter router = mock(ImCommandRouter.class);
     private final FeishuClient feishuClient = mock(FeishuClient.class);
+    private InvestProperties props;
     private FeishuWsClient client;
 
     @BeforeEach
     void setUp() {
-        InvestProperties props = new InvestProperties();
+        props = new InvestProperties();
         props.getIm().setAppId("cli_x");
         props.getIm().setAppSecret("s");
         props.getIm().setDialogueEnabled(true);
@@ -90,5 +92,29 @@ class FeishuWsClientDispatchTest {
 
         verify(listener, never()).onMessage(any());
         verify(feishuClient, never()).sendReply(anyString(), anyString());
+    }
+
+    // ── B10：owner 门 × 命令路由（非 owner 仅命令格式可入队走路由） ──
+
+    @Test
+    @DisplayName("给定已配置owner，when非owner发绑定码命令，then仍入队走路由回话术")
+    void given配置owner_when非owner绑定命令_then仍走路由() {
+        props.getIm().setOwnerOpenId("ou_owner");
+        when(router.tryRoute(any())).thenReturn(Optional.of("绑定成功：将为你推送个性化盘前简报与重大公告提醒"));
+
+        client.dispatch("oc_1", "om_cmd_stranger", "ou_stranger", "p2p", "text", "{\"text\":\"483920\"}");
+
+        verify(feishuClient).sendReply("om_cmd_stranger", "绑定成功：将为你推送个性化盘前简报与重大公告提醒");
+        verify(listener, never()).onMessage(any());
+    }
+
+    @Test
+    @DisplayName("给定已配置owner，when非owner发纯对话文本，then不进路由不进listener")
+    void given配置owner_when非owner纯对话_then不进路由不进listener() {
+        props.getIm().setOwnerOpenId("ou_owner");
+
+        client.dispatch("oc_1", "om_chat_stranger", "ou_stranger", "p2p", "text", "{\"text\":\"我的持仓怎么样\"}");
+
+        verifyNoInteractions(router, feishuClient, listener);
     }
 }

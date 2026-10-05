@@ -10,6 +10,7 @@ import com.lark.oapi.service.im.v1.model.P2MessageReceiveV1;
 import com.portfolio.invest.application.im.ImCommandRouter;
 import com.portfolio.invest.application.im.ImInboundMessage;
 import com.portfolio.invest.application.im.ImMessageListener;
+import com.portfolio.invest.application.intelligence.BindingCommandHandler;
 import com.portfolio.invest.config.InvestProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,9 +19,11 @@ import org.springframework.context.SmartLifecycle;
 import org.springframework.stereotype.Component;
 
 import java.util.Optional;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.Executor;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * 飞书事件长连接客户端（feishu-messaging P2）：oapi-sdk ws.Client 收 im.message.receive_v1。
@@ -30,11 +33,18 @@ import java.util.concurrent.TimeUnit;
  *
  * <p>P4 Task 5：转投 listener 前先过 {@link ImCommandRouter} 命令前置路由（如飞书绑定码），
  * 命中即 sendReply 回话术后返回——不进对话桥；未命中/无路由 bean 照旧透传。
+ *
+ * <p>P2-B10 入站三重加固：① 单线程有界队列（满即丢弃留痕，不阻塞 WS 事件/ack 路径）；
+ * ② 非 owner 纯对话消息入队前丢弃（防刷占队；命令格式文本仍放行走路由）；
+ * ③ 绑定命令冷却见 {@link BindingCommandHandler}。
  */
 @Component
 public class FeishuWsClient implements SmartLifecycle {
 
     private static final Logger log = LoggerFactory.getLogger(FeishuWsClient.class);
+
+    /** B10：入站队列容量（单线程消费；满即丢弃计数+告警，绝不阻塞 ack 路径）。 */
+    static final int QUEUE_CAPACITY = 100;
 
     private final InvestProperties props;
     /** 测试构造器直注；生产构造器注入 provider，start() 时解析——无桥接 bean 时显式告警、不破上下文装配。 */
@@ -45,6 +55,8 @@ public class FeishuWsClient implements SmartLifecycle {
     private final ObjectProvider<ImCommandRouter> routerProvider; // 生产路径；测试构造器为 null
     private final FeishuClient feishuClient; // 命令命中的回复通道（同包直用，不经 ImReplyPort 门面）
     private final Executor executor;
+    /** B10：队列满丢弃计数（可观测/测试断言）。 */
+    private final AtomicInteger dropped = new AtomicInteger();
     private final Cache<String, Boolean> seenMessages =
             CacheBuilder.newBuilder().expireAfterWrite(5, TimeUnit.MINUTES).maximumSize(1000).build();
     private volatile com.lark.oapi.ws.Client client;
@@ -53,12 +65,14 @@ public class FeishuWsClient implements SmartLifecycle {
     @org.springframework.beans.factory.annotation.Autowired
     public FeishuWsClient(InvestProperties props, ObjectProvider<ImMessageListener> listenerProvider,
                           ObjectProvider<ImCommandRouter> routerProvider, FeishuClient feishuClient) {
-        this(props, null, listenerProvider, null, routerProvider, feishuClient,
-                Executors.newSingleThreadExecutor(r -> {
-                    Thread t = new Thread(r, "feishu-dialogue");
-                    t.setDaemon(true);
-                    return t;
-                }));
+        // 不走 this(...) 委托：有界执行器需引用实例字段 dropped（字段初始化先于构造器体，但后于委托调用）
+        this.props = props;
+        this.listener = null;
+        this.listenerProvider = listenerProvider;
+        this.router = null;
+        this.routerProvider = routerProvider;
+        this.feishuClient = feishuClient;
+        this.executor = boundedExecutor(QUEUE_CAPACITY, dropped);
     }
 
     /** 既有测试构造器（无命令路由/回复通道：命令不拦截，照旧透传 listener）。 */
@@ -70,6 +84,18 @@ public class FeishuWsClient implements SmartLifecycle {
     FeishuWsClient(InvestProperties props, ImMessageListener listener, ImCommandRouter router,
                    FeishuClient feishuClient, Executor executor) {
         this(props, listener, null, router, null, feishuClient, executor);
+    }
+
+    /** B10 测试构造器：小容量有界队列驱动「队列满丢弃留痕」路径（真实 ThreadPoolExecutor）。 */
+    FeishuWsClient(InvestProperties props, ImMessageListener listener, int queueCapacity) {
+        // 同上：不经委托以引用实例字段 dropped
+        this.props = props;
+        this.listener = listener;
+        this.listenerProvider = null;
+        this.router = null;
+        this.routerProvider = null;
+        this.feishuClient = null;
+        this.executor = boundedExecutor(queueCapacity, dropped);
     }
 
     private FeishuWsClient(InvestProperties props, ImMessageListener listener,
@@ -145,7 +171,8 @@ public class FeishuWsClient implements SmartLifecycle {
     }
 
     /** 解析+去重+异步转投（handler 内同步调用的部分保持轻薄，快速 ack）。
-     * 命令前置路由在 executor 线程内进行（bindByCode 落库属慢工作，不占 ack 路径）。 */
+     * 命令前置路由在 executor 线程内进行（bindByCode 落库属慢工作，不占 ack 路径）。
+     * B10：非 owner 纯对话消息在入队前丢弃（防刷占队），命令格式文本仍放行走路由。 */
     void dispatch(String chatId, String messageId, String openId, String chatType, String msgType,
                   String contentJson) {
         if (messageId == null || seenMessages.getIfPresent(messageId) != null) {
@@ -153,6 +180,10 @@ public class FeishuWsClient implements SmartLifecycle {
         }
         seenMessages.put(messageId, Boolean.TRUE);
         String text = extractText(contentJson);
+        if (blockedByOwnerGate(openId, text)) {
+            log.debug("飞书消息来自非 owner（open_id={}，messageId={}），入队前丢弃", openId, messageId);
+            return;
+        }
         executor.execute(() -> {
             try {
                 ImInboundMessage message =
@@ -183,6 +214,43 @@ public class FeishuWsClient implements SmartLifecycle {
             router = resolved;
         }
         return resolved;
+    }
+
+    /**
+     * B10 非 owner 防刷门：owner 未配置（null/空白）全放行（向后兼容）；配置后仅 owner 消息
+     * 与命令格式文本（绑定码，仍需走路由核销，口径复用 {@link BindingCommandHandler#extractCode}
+     * 保持与真实命令形态同步）可入队。owner 判定就地复刻 agent 层 FeishuDialogueBridge 的口径
+     * （infrastructure 禁 import agent 包），均以 invest.im.owner-open-id 为准。
+     */
+    private boolean blockedByOwnerGate(String openId, String text) {
+        String owner = props.getIm().getOwnerOpenId();
+        if (owner == null || owner.isBlank()) {
+            return false;
+        }
+        return !owner.equals(openId) && BindingCommandHandler.extractCode(text) == null;
+    }
+
+    /** B10：单线程有界执行器——队列满不阻塞 WS 事件线程（拒绝仅在调用方计数+告警后丢弃）。 */
+    private static ThreadPoolExecutor boundedExecutor(int queueCapacity, AtomicInteger dropped) {
+        if (queueCapacity <= 0) {
+            throw new IllegalArgumentException("queueCapacity 必须为正数: " + queueCapacity);
+        }
+        return new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(queueCapacity),
+                r -> {
+                    Thread t = new Thread(r, "feishu-dialogue");
+                    t.setDaemon(true);
+                    return t;
+                },
+                (r, executor) -> {
+                    dropped.incrementAndGet();
+                    log.warn("飞书入站队列已满（capacity={}），丢弃消息", queueCapacity);
+                });
+    }
+
+    /** B10：队列满丢弃累计数（测试断言/运维观测）。 */
+    int droppedCount() {
+        return dropped.get();
     }
 
     private String extractText(String contentJson) {
