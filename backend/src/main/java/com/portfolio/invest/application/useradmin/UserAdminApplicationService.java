@@ -14,6 +14,7 @@ import java.util.Locale;
 import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,15 +29,18 @@ public class UserAdminApplicationService {
     private final RememberMeTokenStore rememberMeTokenStore;
     private final EmailCodeService emailCodeService;
     private final MailSender mailSender;
+    private final ApplicationEventPublisher publisher;
 
     public UserAdminApplicationService(UserRepository userRepository, PasswordEncoder passwordEncoder,
                                        RememberMeTokenStore rememberMeTokenStore,
-                                       EmailCodeService emailCodeService, MailSender mailSender) {
+                                       EmailCodeService emailCodeService, MailSender mailSender,
+                                       ApplicationEventPublisher publisher) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.rememberMeTokenStore = rememberMeTokenStore;
         this.emailCodeService = emailCodeService;
         this.mailSender = mailSender;
+        this.publisher = publisher;
     }
 
     public List<UserAdminView> list() {
@@ -101,7 +105,13 @@ public class UserAdminApplicationService {
         if (user.role() == UserRole.ADMIN) {
             throw new UserException(UserErrorCode.FORBIDDEN, "不能对管理员账号执行此操作");
         }
-        return UserAdminView.from(userRepository.save(fn.apply(user)));
+        User updated = userRepository.save(fn.apply(user));
+        // canLogin 判定输入（status/enabled）变化才发事件：ActiveUserStatusCache 逐出重查，
+        // 密码/邮箱等不影响登录资格的写路径不发（B9）。
+        if (updated.status() != user.status() || updated.enabled() != user.enabled()) {
+            publisher.publishEvent(new UserStatusChangedEvent(updated.username()));
+        }
+        return UserAdminView.from(updated);
     }
 
     private User requireUser(Long id) {

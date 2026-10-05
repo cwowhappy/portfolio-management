@@ -22,6 +22,7 @@ import com.portfolio.invest.domain.user.UserRepository;
 import com.portfolio.invest.domain.user.UserRole;
 import com.portfolio.invest.domain.user.UserStatus;
 import com.portfolio.invest.infrastructure.security.AuthenticatedUser;
+import com.portfolio.invest.infrastructure.security.ActiveUserStatusCache;
 import com.portfolio.invest.infrastructure.security.LoginRateLimiter;
 import com.portfolio.invest.infrastructure.security.SecurityConfig;
 import jakarta.servlet.http.Cookie;
@@ -51,7 +52,7 @@ import org.springframework.test.web.servlet.MockMvc;
  * AuthenticationManager 打桩，RememberMeServices 打桩以观察 loginSuccess 调用。
  */
 @WebMvcTest(AuthController.class)
-@Import(SecurityConfig.class)
+@Import({SecurityConfig.class, ActiveUserStatusCache.class})
 class AuthControllerSliceTest {
 
     @Autowired

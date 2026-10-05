@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.portfolio.invest.application.useradmin.UserAdminApplicationService;
 import com.portfolio.invest.application.useradmin.UserAdminView;
 import com.portfolio.invest.domain.user.UserRepository;
+import com.portfolio.invest.infrastructure.security.ActiveUserStatusCache;
 import com.portfolio.invest.infrastructure.security.SecurityConfig;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -29,7 +30,7 @@ import org.springframework.test.web.servlet.MockMvc;
  * ActiveUserFilter 直接放行，不触发 UserRepository 查询。
  */
 @WebMvcTest(UserAdminController.class)
-@Import(SecurityConfig.class)
+@Import({SecurityConfig.class, ActiveUserStatusCache.class})
 class UserAdminControllerSliceTest {
 
     @Autowired

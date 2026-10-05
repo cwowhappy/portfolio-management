@@ -1,7 +1,6 @@
 package com.portfolio.invest.infrastructure.security;
 
 import com.portfolio.invest.config.InvestProperties;
-import com.portfolio.invest.domain.user.UserRepository;
 import javax.sql.DataSource;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -30,7 +29,7 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(
-            HttpSecurity http, UserRepository userRepository,
+            HttpSecurity http, ActiveUserStatusCache activeUserStatusCache,
             RememberMeServices rememberMeServices) throws Exception {
 
         http
@@ -57,7 +56,8 @@ public class SecurityConfig {
             .rememberMe(remember -> remember.rememberMeServices(rememberMeServices))
             // 停用即时生效：在所有认证过滤器（含 remember-me）之后、授权之前校验用户状态；
             // 若置于 SecurityContextHolderFilter 之前，上下文尚未加载，检查永远是空操作。
-            .addFilterBefore(new ActiveUserFilter(userRepository),
+            // 判定走短 TTL 缓存（60s 复用 + 状态变更事件逐出），不每请求查库（B9）。
+            .addFilterBefore(new ActiveUserFilter(activeUserStatusCache),
                     org.springframework.security.web.access.intercept.AuthorizationFilter.class);
 
         return http.build();

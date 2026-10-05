@@ -15,6 +15,7 @@ import com.portfolio.invest.domain.user.User;
 import com.portfolio.invest.domain.user.UserRepository;
 import com.portfolio.invest.domain.user.UserRole;
 import com.portfolio.invest.domain.user.UserStatus;
+import com.portfolio.invest.infrastructure.security.ActiveUserStatusCache;
 import com.portfolio.invest.infrastructure.security.AuthenticatedUser;
 import com.portfolio.invest.infrastructure.security.SecurityConfig;
 import java.time.Instant;
@@ -41,9 +42,12 @@ import org.springframework.test.web.servlet.MockMvc;
  * <p>remember-me 场景里 RememberMeAuthenticationFilter 会把 autoLogin 的结果交给
  * 真实全局 AuthenticationManager 再认证，因此用 UserDetailsService 打桩 +
  * 真实 BCrypt 哈希让 DaoAuthenticationProvider 放行，而不是 mock AuthenticationManager。
+ *
+ * <p>状态判定经共享的 ActiveUserStatusCache（真实墙钟 60s TTL）：各用例用独立 username，
+ * 避免先置 active 的缓存条目在用例间串味（生产中由 UserStatusChangedEvent 逐出）。
  */
 @WebMvcTest(PortfolioController.class)
-@Import(SecurityConfig.class)
+@Import({SecurityConfig.class, ActiveUserStatusCache.class})
 class SecuritySliceTest {
 
     private static final String PASSWORD = "p";
@@ -73,17 +77,17 @@ class SecuritySliceTest {
         return new UsernamePasswordAuthenticationToken(principal, PASSWORD, principal.getAuthorities());
     }
 
-    private User user(boolean enabled) {
-        return User.reconstitute(1L, "u", PASSWORD_HASH, UserRole.USER, UserStatus.APPROVED, enabled,
+    private User user(String username, boolean enabled) {
+        return User.reconstitute(1L, username, PASSWORD_HASH, UserRole.USER, UserStatus.APPROVED, enabled,
                 Instant.now(), Instant.now());
     }
 
     @DisplayName("已认证但用户已停用被拦截返回401")
     @Test
     void givenDisabledUser_whenAccessProtectedEndpoint_thenReturn401() throws Exception {
-        when(userRepository.findByUsername("u")).thenReturn(Optional.of(user(false)));
+        when(userRepository.findByUsername("u-disabled")).thenReturn(Optional.of(user("u-disabled", false)));
 
-        mvc.perform(get("/api/portfolio/overview").with(authentication(authOf(user(false)))))
+        mvc.perform(get("/api/portfolio/overview").with(authentication(authOf(user("u-disabled", false)))))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.message").value("账号不可用"));
     }
@@ -91,9 +95,9 @@ class SecuritySliceTest {
     @DisplayName("已认证但用户已被删除返回401")
     @Test
     void givenDeletedUser_whenAccessProtectedEndpoint_thenReturn401() throws Exception {
-        when(userRepository.findByUsername("u")).thenReturn(Optional.empty());
+        when(userRepository.findByUsername("u-deleted")).thenReturn(Optional.empty());
 
-        mvc.perform(get("/api/portfolio/overview").with(authentication(authOf(user(true)))))
+        mvc.perform(get("/api/portfolio/overview").with(authentication(authOf(user("u-deleted", true)))))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.message").value("账号不可用"));
     }
@@ -101,19 +105,19 @@ class SecuritySliceTest {
     @DisplayName("已认证且状态正常放行")
     @Test
     void givenActiveUser_whenAccessProtectedEndpoint_thenReturn200() throws Exception {
-        when(userRepository.findByUsername("u")).thenReturn(Optional.of(user(true)));
+        when(userRepository.findByUsername("u-active")).thenReturn(Optional.of(user("u-active", true)));
 
-        mvc.perform(get("/api/portfolio/overview").with(authentication(authOf(user(true)))))
+        mvc.perform(get("/api/portfolio/overview").with(authentication(authOf(user("u-active", true)))))
                 .andExpect(status().isOk());
     }
 
     @DisplayName("rememberMe自动认证后放行")
     @Test
     void givenRememberMeAutoLogin_whenAccessProtectedEndpoint_thenReturn200() throws Exception {
-        var user = user(true);
+        var user = user("u-rememberme", true);
         when(rememberMeServices.autoLogin(any(), any())).thenReturn(authOf(user));
-        when(userDetailsService.loadUserByUsername("u")).thenReturn(new AuthenticatedUser(user));
-        when(userRepository.findByUsername("u")).thenReturn(Optional.of(user));
+        when(userDetailsService.loadUserByUsername("u-rememberme")).thenReturn(new AuthenticatedUser(user));
+        when(userRepository.findByUsername("u-rememberme")).thenReturn(Optional.of(user));
 
         mvc.perform(get("/api/portfolio/overview"))
                 .andExpect(status().isOk());
@@ -122,10 +126,10 @@ class SecuritySliceTest {
     @DisplayName("rememberMe自动认证但用户已停用仍被拦截")
     @Test
     void givenRememberMeAutoLoginWithDisabledUser_whenAccessProtectedEndpoint_thenReturn401() throws Exception {
-        var user = user(false);
+        var user = user("u-rememberme-disabled", false);
         when(rememberMeServices.autoLogin(any(), any())).thenReturn(authOf(user));
-        when(userDetailsService.loadUserByUsername("u")).thenReturn(new AuthenticatedUser(user));
-        when(userRepository.findByUsername("u")).thenReturn(Optional.of(user));
+        when(userDetailsService.loadUserByUsername("u-rememberme-disabled")).thenReturn(new AuthenticatedUser(user));
+        when(userRepository.findByUsername("u-rememberme-disabled")).thenReturn(Optional.of(user));
 
         mvc.perform(get("/api/portfolio/overview"))
                 .andExpect(status().isUnauthorized())
@@ -136,9 +140,9 @@ class SecuritySliceTest {
     @Test
     void whenLogout_thenReturn200AndClearSessionAndRememberMeCookie() throws Exception {
         // logout 路径不在 ActiveUserFilter 排除清单内，需打桩用户有效才能走到 LogoutFilter
-        when(userRepository.findByUsername("u")).thenReturn(Optional.of(user(true)));
+        when(userRepository.findByUsername("u-logout")).thenReturn(Optional.of(user("u-logout", true)));
 
-        mvc.perform(post("/api/auth/logout").with(authentication(authOf(user(true)))))
+        mvc.perform(post("/api/auth/logout").with(authentication(authOf(user("u-logout", true)))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").value("已退出登录"))
                 .andExpect(cookie().maxAge("JSESSIONID", 0))

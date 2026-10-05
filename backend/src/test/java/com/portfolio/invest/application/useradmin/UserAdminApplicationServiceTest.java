@@ -9,6 +9,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -36,11 +37,13 @@ class UserAdminApplicationServiceTest {
     private final RememberMeTokenStore tokenStore = mock(RememberMeTokenStore.class);
     private final EmailCodeService emailCodeService = mock(EmailCodeService.class);
     private final MailSender mailSender = mock(MailSender.class);
+    private final org.springframework.context.ApplicationEventPublisher publisher =
+            mock(org.springframework.context.ApplicationEventPublisher.class);
     private UserAdminApplicationService service;
 
     @BeforeEach
     void setUp() {
-        service = new UserAdminApplicationService(repo, encoder, tokenStore, emailCodeService, mailSender);
+        service = new UserAdminApplicationService(repo, encoder, tokenStore, emailCodeService, mailSender, publisher);
         when(repo.save(any())).thenAnswer(inv -> inv.getArgument(0));
     }
 
@@ -178,5 +181,52 @@ class UserAdminApplicationServiceTest {
 
         assertThat(v.email()).isEqualTo("mf@target.local");
         verify(repo).save(any(User.class));
+    }
+
+    @DisplayName("审核通过与拒绝发布UserStatusChangedEvent")
+    @Test
+    void givenPendingUser_whenApproveOrReject_thenPublishesStatusChangedEvent() {
+        when(repo.findById(1L)).thenReturn(Optional.of(pendingUser(1L)));
+        service.approve(1L);
+        verify(publisher).publishEvent(new UserStatusChangedEvent("u1"));
+
+        when(repo.findById(1L)).thenReturn(Optional.of(pendingUser(1L)));
+        service.reject(1L);
+        verify(publisher, times(2)).publishEvent(new UserStatusChangedEvent("u1"));
+    }
+
+    @DisplayName("停用与启用发布UserStatusChangedEvent")
+    @Test
+    void givenApprovedUser_whenDisableOrEnable_thenPublishesStatusChangedEvent() {
+        when(repo.findById(1L)).thenReturn(Optional.of(pendingUser(1L).approve()));
+        service.disable(1L);
+        verify(publisher).publishEvent(new UserStatusChangedEvent("u1"));
+
+        when(repo.findById(1L)).thenReturn(Optional.of(pendingUser(1L).approve().disable()));
+        service.enable(1L);
+        verify(publisher, times(2)).publishEvent(new UserStatusChangedEvent("u1"));
+    }
+
+    @DisplayName("重置密码不变更状态不发事件")
+    @Test
+    void givenApprovedUser_whenResetPassword_thenNoStatusChangedEvent() {
+        when(repo.findById(1L)).thenReturn(Optional.of(pendingUser(1L).approve()));
+        when(encoder.encode("xyz12345")).thenReturn("$2a$new");
+
+        service.resetPassword(1L, "xyz12345");
+
+        verify(repo).save(any(User.class));
+        verifyNoInteractions(publisher);
+    }
+
+    @DisplayName("代填邮箱不变更状态不发事件")
+    @Test
+    void givenUserWithoutEmail_whenSetEmail_thenNoStatusChangedEvent() {
+        when(repo.findById(1L)).thenReturn(Optional.of(userWith(1L, null, false)));
+
+        service.setEmail(1L, "new@target.local");
+
+        verify(repo).save(any(User.class));
+        verifyNoInteractions(publisher);
     }
 }
