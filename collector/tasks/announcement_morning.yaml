@@ -22,5 +22,6 @@ schedule: { type: cron, cron: "20 6 * * MON-FRI" }
 enabled: true
 # 公告披露跨非交易日（本批专职回补周末披露，设计 §6：全部情报任务不门控）
 trading_day_gated: false
+depends_on: null
 retry_max: 2
 retry_backoff: fixed

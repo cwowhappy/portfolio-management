@@ -11,19 +11,20 @@ TASK_COLS = [
     "schedule",
     "enabled",
     "trading_day_gated",
+    "depends_on",
     "retry_max",
     "retry_backoff",
 ]
 
 UPSERT_TASK = """
 INSERT INTO collector_task (task_code, task_name, source_ids, converter, calc, validator,
-  target_table, schedule, enabled, trading_day_gated, retry_max, retry_backoff)
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+  target_table, schedule, enabled, trading_day_gated, depends_on, retry_max, retry_backoff)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 ON CONFLICT (task_code) DO UPDATE SET
   task_name=EXCLUDED.task_name, source_ids=EXCLUDED.source_ids, converter=EXCLUDED.converter,
   calc=EXCLUDED.calc, validator=EXCLUDED.validator, target_table=EXCLUDED.target_table,
   schedule=EXCLUDED.schedule, enabled=EXCLUDED.enabled, trading_day_gated=EXCLUDED.trading_day_gated,
-  retry_max=EXCLUDED.retry_max, retry_backoff=EXCLUDED.retry_backoff
+  depends_on=EXCLUDED.depends_on, retry_max=EXCLUDED.retry_max, retry_backoff=EXCLUDED.retry_backoff
 """
 
 DISABLE_TASK = "UPDATE collector_task SET enabled=false WHERE task_code=%s"
@@ -43,6 +44,7 @@ def _parse_row(row):
     d["source_ids"] = _parse_json(d["source_ids"])
     d["validator"] = _parse_json(d["validator"])
     d["schedule"] = _parse_json(d["schedule"])
+    d["depends_on"] = _parse_json(d["depends_on"])
     return d
 
 

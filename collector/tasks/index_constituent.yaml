@@ -11,5 +11,6 @@ target_table: index_constituent
 schedule: { type: interval, days: 180 }
 enabled: true
 trading_day_gated: false
+depends_on: null
 retry_max: 3
 retry_backoff: exponential

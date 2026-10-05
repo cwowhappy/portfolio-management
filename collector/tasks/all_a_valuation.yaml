@@ -12,5 +12,6 @@ target_table: valuation_snapshot
 schedule: { type: cron, cron: "30 15 * * 1-5" }
 enabled: true
 trading_day_gated: true
+depends_on: null
 retry_max: 3
 retry_backoff: exponential

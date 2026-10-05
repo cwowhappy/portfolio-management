@@ -24,6 +24,18 @@ def test_range_soft_drops_outliers():
     assert len(issues) == 1
 
 
+def test_range_hard_raises():
+    v = RuleValidator([{"field": "pe", "check": "range", "min": 0, "max": 100, "level": "hard"}])
+    with pytest.raises(SourceError):
+        v.validate([{"pe": 20.0}, {"pe": 200.0}])
+
+
+def test_range_default_level_is_hard():
+    v = RuleValidator([{"field": "pe", "check": "range", "min": 0, "max": 100}])
+    with pytest.raises(SourceError):
+        v.validate([{"pe": 20.0}, {"pe": 200.0}])
+
+
 def test_min_rows_hard():
     v = RuleValidator([{"check": "min_rows", "value": 5, "level": "hard"}])
     with pytest.raises(SourceError):

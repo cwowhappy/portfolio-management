@@ -82,6 +82,14 @@ services:
       # 飞书群自定义机器人（优先于上方通用 webhook）：卡片告警；secret 为签名校验（可选）
       FEISHU_BOT_WEBHOOK: ${FEISHU_BOT_WEBHOOK:-}
       FEISHU_BOT_SECRET: ${FEISHU_BOT_SECRET:-}
+      # 邮件告警降级（opt-in）：飞书发送失败时改走 SMTP 兜底；与 backend MAIL_* 同名可共用凭证，
+      # 四要素 + ALERT_MAIL_TO 配齐才启用
+      MAIL_SMTP_HOST: ${MAIL_SMTP_HOST:-}
+      MAIL_SMTP_PORT: ${MAIL_SMTP_PORT:-465}
+      MAIL_SMTP_USERNAME: ${MAIL_SMTP_USERNAME:-}
+      MAIL_SMTP_PASSWORD: ${MAIL_SMTP_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      ALERT_MAIL_TO: ${ALERT_MAIL_TO:-}
       TZ: Asia/Shanghai
     depends_on:
       db:

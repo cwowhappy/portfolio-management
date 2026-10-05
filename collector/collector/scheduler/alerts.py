@@ -11,14 +11,23 @@ import hmac
 import json
 import logging
 import os
+import smtplib
 import time
 import urllib.request
+from email.mime.text import MIMEText
 
 logger = logging.getLogger(__name__)
 
 ALERT_WEBHOOK_ENV = "COLLECTOR_ALERT_WEBHOOK"
 FEISHU_WEBHOOK_ENV = "FEISHU_BOT_WEBHOOK"
 FEISHU_SECRET_ENV = "FEISHU_BOT_SECRET"
+# 邮件降级通道（C6）：与 backend MAIL_* 命名先例一致（同机可共用同一组 SMTP 凭证）
+MAIL_SMTP_HOST_ENV = "MAIL_SMTP_HOST"
+MAIL_SMTP_PORT_ENV = "MAIL_SMTP_PORT"
+MAIL_SMTP_USERNAME_ENV = "MAIL_SMTP_USERNAME"
+MAIL_SMTP_PASSWORD_ENV = "MAIL_SMTP_PASSWORD"
+MAIL_FROM_ENV = "MAIL_FROM"
+ALERT_MAIL_TO_ENV = "ALERT_MAIL_TO"
 
 _MAX_FIELD_CHARS = 800
 _MAX_STALE_ITEMS = 8
@@ -103,18 +112,137 @@ class FeishuAlerter(WebhookAlerter):
             raise OSError(f"飞书返回 code={code}：{data.get('msg', '')}")
 
 
-def alerter_from_env(env=None) -> WebhookAlerter | None:
-    """从环境构造告警器；未配置返回 None（runner 拿到 None 即完全走现状路径）。
+# ---------------------------------------------------------------- C3 告警风暴抑制
+
+# 同签名抑制窗口：cron 每周期都发同类失败（如 tushare 限流）会刷屏，30 分钟一条足够定位。
+DEDUP_WINDOW_SECONDS = 1800
+# 签名截断长度：error/message 前 120 字符足以区分故障类别，又避免超长 traceback 干扰键相等。
+_SIGNATURE_MAX_CHARS = 120
+
+
+class DedupAlerter:
+    """装饰任意告警器：同签名事件在窗口期内只透传一次（风暴抑制）。
+
+    键 = (type, task, 签名)。签名默认取 error or message 前 120 字符；freshness_patrol
+    特殊化为滞留表名有序集合——每交易日同表集合重复告警只发一条，表集合变化是新事件。
+    inner.send 失败不记时间戳（失败≠已送达，下次仍透传重试）；抑制命中返回 True，
+    调用方零感知。过期键惰性清理（dict 全扫删除，量级=告警种类数，无需 LRU）。
+    """
+
+    def __init__(self, inner, window_seconds=DEDUP_WINDOW_SECONDS, clock=time.monotonic):
+        self.inner = inner
+        self.window_seconds = window_seconds
+        self.clock = clock
+        self._sent_at: dict[tuple, float] = {}  # 签名键 → 上次成功发送的 clock 读数
+
+    def _key(self, event: dict) -> tuple:
+        etype = event.get("type")
+        if etype == "freshness_patrol":
+            # findings 字段以 run_freshness_patrol 实际结构为准：table/kind/latest（+expected|max_days）
+            signature = ",".join(sorted(str(f.get("table", f.get("target", ""))) for f in event.get("stale", [])))
+        else:
+            signature = str(event.get("error") or event.get("message") or "")[:_SIGNATURE_MAX_CHARS]
+        return (etype, event.get("task"), signature)
+
+    def send(self, event: dict) -> bool:
+        now = self.clock()
+        for key in [k for k, ts in self._sent_at.items() if now - ts >= self.window_seconds]:
+            del self._sent_at[key]  # 惰性清理：只在 send 时扫，无后台线程
+        key = self._key(event)
+        if key in self._sent_at:
+            logger.info("告警抑制：同签名事件 %r 在 %ds 窗口内已发送过", key, self.window_seconds)
+            return True
+        if self.inner.send(event):
+            self._sent_at[key] = now
+            return True
+        return False
+
+
+class MailAlerter:
+    """SMTP 邮件告警（C6 降级通道）：飞书 webhook 不可达时的兜底送达。
+
+    命名对齐 backend MAIL_* 先例；直读 env 不进 Config（照 alerter_from_env 先例）。
+    全程吞异常返回 False 记 ERROR——告警链路绝不影响任务语义。
+    """
+
+    def __init__(self, host, port, username, password, from_addr, to_addrs):
+        self.host = host
+        self.port = port
+        self.username = username
+        self.password = password
+        self.from_addr = from_addr
+        self.to_addrs = to_addrs
+
+    @classmethod
+    def from_env(cls, env=None) -> "MailAlerter | None":
+        """SMTP 四要素（HOST/USERNAME/PASSWORD/FROM）+ ALERT_MAIL_TO 配齐才启用；缺关键变量返回 None。"""
+        env = os.environ if env is None else env
+        host = env.get(MAIL_SMTP_HOST_ENV, "").strip()
+        username = env.get(MAIL_SMTP_USERNAME_ENV, "").strip()
+        password = env.get(MAIL_SMTP_PASSWORD_ENV, "").strip()
+        from_addr = env.get(MAIL_FROM_ENV, "").strip()
+        to_raw = env.get(ALERT_MAIL_TO_ENV, "").strip()
+        if not (host and username and password and from_addr):
+            return None
+        if not to_raw:
+            logger.warning("邮件告警未启用：SMTP 已配置但缺 %s 收件人", ALERT_MAIL_TO_ENV)
+            return None
+        try:
+            port = int(env.get(MAIL_SMTP_PORT_ENV, "").strip() or 465)
+        except ValueError:
+            logger.warning("邮件告警未启用：%s=%r 非法端口", MAIL_SMTP_PORT_ENV, env.get(MAIL_SMTP_PORT_ENV))
+            return None
+        to_addrs = [t.strip() for t in to_raw.split(",") if t.strip()]
+        return cls(host, port, username, password, from_addr, to_addrs)
+
+    def send(self, event: dict) -> bool:
+        try:
+            msg = MIMEText(json.dumps(event, ensure_ascii=False, default=str), "plain", "utf-8")
+            msg["Subject"] = f"[collector] {event.get('type', '')} {event.get('task', '')}".strip()
+            msg["From"] = self.from_addr
+            msg["To"] = ", ".join(self.to_addrs)
+            # timeout=10：send 会被 runner 在持 advisory lock 的块内同步调用，无超时的 SMTP
+            # 挂起会拖死任务锁（照 WebhookAlerter timeout 先例）；超时异常仍走下方吞错返回 False。
+            with smtplib.SMTP_SSL(self.host, self.port, timeout=10) as smtp:
+                smtp.login(self.username, self.password)
+                smtp.sendmail(self.from_addr, self.to_addrs, msg.as_string())
+            return True
+        except Exception as e:  # noqa: BLE001 告警链路吞掉一切，任务语义优先
+            logger.error("邮件告警发送失败（事件=%s）：%s", event, e)
+            return False
+
+
+class FallbackAlerter:
+    """主备降级（C6）：primary 失败才走 fallback；fallback=None 时原样返回 False。"""
+
+    def __init__(self, primary, fallback=None):
+        self.primary = primary
+        self.fallback = fallback
+
+    def send(self, event: dict) -> bool:
+        if self.primary.send(event):
+            return True
+        return self.fallback.send(event) if self.fallback is not None else False
+
+
+def alerter_from_env(env=None) -> DedupAlerter | None:
+    """从环境组装告警器；未配置返回 None（runner 拿到 None 即完全走现状路径）。
 
     优先级：FEISHU_BOT_WEBHOOK（FeishuAlerter，FEISHU_BOT_SECRET 可选签名）
     > COLLECTOR_ALERT_WEBHOOK（通用 JSON POST 逃生通道）。
+    组装（C6）：邮件通道可用时 FallbackAlerter(主通道, MailAlerter)；最外层统一
+    DedupAlerter 抑制风暴——抑制在组装层，runner/patrol/reaper 调用点零改动。
     """
     env = os.environ if env is None else env
     feishu_url = env.get(FEISHU_WEBHOOK_ENV, "").strip()
     if feishu_url:
-        return FeishuAlerter(feishu_url, secret=env.get(FEISHU_SECRET_ENV, "").strip() or None)
-    url = env.get(ALERT_WEBHOOK_ENV, "").strip()
-    return WebhookAlerter(url) if url else None
+        base = FeishuAlerter(feishu_url, secret=env.get(FEISHU_SECRET_ENV, "").strip() or None)
+    else:
+        url = env.get(ALERT_WEBHOOK_ENV, "").strip()
+        base = WebhookAlerter(url) if url else None
+    mail = MailAlerter.from_env(env)
+    wrapped = FallbackAlerter(base, mail) if (base is not None and mail is not None) else base
+    return DedupAlerter(wrapped) if wrapped is not None else None
 
 
 # ---------------------------------------------------------------- 飞书卡片构造（FR-A1/A4）

@@ -50,6 +50,7 @@ from collector.sources.plugins import (
     TrackingIndexCloseSource,
     TreasuryCurveSource,
     make_index_dividend_fetch,
+    make_open_day_check,
 )
 from collector.sources.policy import POLICY_SOURCE_SPECS, PolicySiteSource
 from collector.sources.registry import SourceRegistry
@@ -117,6 +118,7 @@ def assemble_collector(row, registries):
         schedule=row["schedule"],
         enabled=row["enabled"],
         trading_day_gated=row["trading_day_gated"],
+        depends_on=row.get("depends_on"),
         retry_max=row["retry_max"],
         retry_backoff=row["retry_backoff"],
         # P0-1：source 条目的 timeout_seconds 提取为 {source_id: 秒}，executor 按 id 查
@@ -157,6 +159,26 @@ def _freshness_patrol_job(database_url, alerter, calendar):
             alerter.send({"type": "freshness_patrol", "date": dt.date.today().isoformat(), "stale": findings})
 
     return job
+
+
+def reap_stale_running_once(database_url, alerter, cutoff):
+    """C2 悬挂 running reaper：启动时一次性把 started_at 早于 cutoff 的 running 行置 failed。
+
+    进程在 start_run（事务1）落 running 行后、finish_run（事务3）回填前被 kill 时该行永久
+    悬挂，既有 _abort_run 兜底只覆盖异常逃逸。cutoff 一天，刚启动的长任务不被误杀。
+    有 reap 才 warning+告警留痕；alerter 未配置（webhook 未设是常态）只打日志，不拖垮启动。
+    非周期 reaper：仅启动时执行一次（决策口径）。
+    """
+    with psycopg.connect(database_url) as conn:
+        reaped = RunRepository(conn).reap_stale_running(cutoff)
+    if not reaped:
+        return 0
+    logger.warning("启动 reaper：清理 %d 条悬挂 running run（进程被 kill?）", reaped)
+    if alerter is not None:
+        # message 兜底文案：type=reaper 落飞书 _task_run_card 渲染（无 message 卡片全空），
+        # 同时让 DedupAlerter 签名（error/message 前 120 字符）带上语义。
+        alerter.send({"type": "reaper", "reaped": reaped, "message": f"reaper: 清理悬挂 running {reaped} 行"})
+    return reaped
 
 
 def build_scheduler(tasks, runner, never_succeeded=None, calendar_refresher=None, patrol_fn=None):
@@ -394,7 +416,10 @@ def build_registries(config):
             "index_constituent": IndexConstituentSource("index_constituent", pro_factory=pro),
             "all_a_spot_backup": AllASpotBackupSource("all_a_spot_backup", pro_factory=pro),
             "stock_valuation_daily": StockValuationDailySource("stock_valuation_daily", pro_factory=pro),
-            "stock_valuation_daily_backup": StockValuationDailyBackupSource("stock_valuation_daily_backup"),
+            # MS-28 P2-C5：备源注入开市判定（trade_cal 单日），节假日空帧保护
+            "stock_valuation_daily_backup": StockValuationDailyBackupSource(
+                "stock_valuation_daily_backup", is_open_day=make_open_day_check(pro)
+            ),
             "stock_financial": StockFinancialSource("stock_financial", pro_factory=pro),
             "index_close": IndexCloseSource("index_close", pro_factory=pro),
             "industry_index_close": IndustryIndexCloseSource("industry_index_close"),
@@ -502,6 +527,8 @@ def main():
     alerter = alerter_from_env()
     if alerter is not None:
         logger.info("终态告警已启用（%s）", type(alerter).__name__)
+    # C2 悬挂 running reaper：启动时一次性清理被 kill 留下的 running 行（cutoff 一天），有则告警留痕
+    reap_stale_running_once(config.database_url, alerter, cutoff=dt.datetime.now(dt.UTC) - dt.timedelta(days=1))
     runner = TaskRunner(config.database_url, calendar, executor, alerter=alerter)
     scheduler = build_scheduler(
         tasks,

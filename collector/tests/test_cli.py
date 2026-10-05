@@ -42,6 +42,7 @@ def _task_row():
         json.dumps({"type": "cron", "cron": "30 15 * * 1-5"}),
         True,
         True,
+        None,
         3,
         "exponential",
     )

@@ -10,5 +10,6 @@ target_table: index_close_history
 schedule: { type: cron, cron: "40 15 * * 1-5" }
 enabled: true
 trading_day_gated: true
+depends_on: null
 retry_max: 3
 retry_backoff: exponential

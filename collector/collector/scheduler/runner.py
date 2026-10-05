@@ -55,6 +55,21 @@ class TaskRunner:
             self._record_skip(task, mode, params, "非交易日")
             return RunResult(task.task_code, mode, STATUS_SKIPPED, message="非交易日")
 
+        # C1 depends_on 前置检查（门控后、advisory lock 前）：上游当日（day 口径，
+        # 与交易日门控一致尊重 --date）无 success/partial run 则 skipped + 告警留痕，
+        # 不触 executor——skipped 不入失败口径（无 retry、不放大熔断计数）。
+        deps = getattr(task, "depends_on", None) or []
+        if deps:
+            with psycopg.connect(self.database_url) as conn:
+                ok = RunRepository(conn).succeeded_on(deps, day)
+                missing = [d for d in deps if d not in ok]
+                if missing:
+                    message = f"依赖未满足: {missing}"
+                    logger.info("任务 %s 跳过：%s", task.task_code, message)
+                    RunRepository(conn).record(task.task_code, mode, STATUS_SKIPPED, message=message)
+                    self._alert(task, mode, STATUS_SKIPPED, message=message)
+                    return RunResult(task.task_code, mode, STATUS_SKIPPED, message=message)
+
         retry_max = getattr(task, "retry_max", None)
         if retry_max is None:
             retry_max = self.retry_max

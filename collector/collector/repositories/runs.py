@@ -1,3 +1,4 @@
+import datetime as dt
 import json
 import logging
 
@@ -48,6 +49,31 @@ SELECT t.task_code FROM collector_task t
 WHERE t.task_code = ANY(%s) AND NOT EXISTS (
   SELECT 1 FROM collector_task_run r
   WHERE r.task_id = t.id AND r.status IN ('success', 'partial'))
+"""
+
+# C1 depends_on 前置检查：join 形态照 LIST_RUNS_SQL（task_code 在 collector_task，
+# run 状态在 collector_task_run，经 task_id FK 关联）；success/partial 口径照
+# never_succeeded 先例——partial 也已落数据，视为上游已就绪。
+# 「当日」钉死上海时区而非会话时区：day 来自宿主本地（run_date→dt.date.today()），
+# 会话与宿主时区不一致时（如 UTC 会话）00:00–07:59 的任务族会差一天——news_night
+# cron 00:00–06:00 在部署环境会被 ::date 静默误判到昨日，上游已成功却判未就绪。
+SUCCEEDED_ON_SQL = """
+SELECT DISTINCT t.task_code
+FROM collector_task_run r
+JOIN collector_task t ON t.id = r.task_id
+WHERE t.task_code = ANY(%s) AND r.status IN ('success', 'partial')
+  AND (r.started_at AT TIME ZONE 'Asia/Shanghai')::date = %s
+"""
+
+# C2 悬挂 running reaper：进程在 start_run（事务1）落行后、finish_run（事务3）回填前被 kill
+# 时 running 行永久悬挂（runner._abort_run 兜底只覆盖异常逃逸，覆盖不了 kill）。
+# error 追加 reaper 文案（CONCAT+COALESCE 保留原错误供排查）；finished_at 照 FINISH_RUN_SQL 回填 now()。
+REAP_STALE_RUNNING_SQL = """
+UPDATE collector_task_run
+SET status='failed',
+    error=CONCAT(COALESCE(error, ''), 'reaper: stale running (process killed?)'),
+    finished_at=now()
+WHERE status='running' AND started_at < %s
 """
 
 
@@ -138,3 +164,22 @@ class RunRepository:
         with self.conn.cursor() as cur:
             cur.execute(NEVER_SUCCEEDED_SQL, (list(task_codes),))
             return {r[0] for r in cur.fetchall()}
+
+    def succeeded_on(self, task_codes, day) -> set:
+        """day 当日（上海时区自然日）已有 success/partial run 的任务集合，供 depends_on 前置检查。"""
+        if not task_codes:
+            return set()
+        with self.conn.cursor() as cur:
+            cur.execute(SUCCEEDED_ON_SQL, (list(task_codes), day))
+            return {r[0] for r in cur.fetchall()}
+
+    def reap_stale_running(self, before: dt.datetime) -> int:
+        """C2：把 started_at 早于 before 的悬挂 running 行批量置 failed，返回 reap 数。
+
+        启动时一次性执行（非周期 reaper）；cutoff 一天，刚启动的长任务不被误杀。
+        """
+        with self.conn.cursor() as cur:
+            cur.execute(REAP_STALE_RUNNING_SQL, (before,))
+            reaped = cur.rowcount
+        self.conn.commit()
+        return reaped

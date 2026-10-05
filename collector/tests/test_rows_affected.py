@@ -100,6 +100,7 @@ def test_finish_run_persists_rows_affected(pg_conn):
                 "schedule": {},
                 "enabled": True,
                 "trading_day_gated": False,
+                "depends_on": None,
                 "retry_max": 3,
                 "retry_backoff": "exponential",
             }

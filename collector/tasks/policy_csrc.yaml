@@ -16,5 +16,6 @@ target_table: intelligence_policy_raw
 schedule: { type: cron, cron: "40 8 * * *" }
 enabled: true
 trading_day_gated: false
+depends_on: null
 retry_max: 2
 retry_backoff: fixed

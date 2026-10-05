@@ -12,5 +12,6 @@ target_table: stock_financial
 schedule: { type: cron, cron: "40 15 * * 1-5" }
 enabled: true
 trading_day_gated: false
+depends_on: null
 retry_max: 3
 retry_backoff: exponential

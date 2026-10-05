@@ -71,9 +71,11 @@ class RuleValidator(Validator):
                         kept.append(r)
                     else:
                         dropped += 1
-                records = kept
                 if dropped:
+                    if level == "hard":
+                        raise SourceError(f"range {rule['field']}: 越界 {dropped} 行")
                     issues.append(f"range {rule['field']}: 剔除 {dropped} 行")
+                    records = kept
             elif check == "unique":
                 fields = rule["field"]
                 keys = fields if isinstance(fields, list) else [fields]

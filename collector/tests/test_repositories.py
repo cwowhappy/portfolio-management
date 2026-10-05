@@ -1,3 +1,4 @@
+import datetime as dt
 import json
 from unittest.mock import MagicMock
 
@@ -19,6 +20,7 @@ def test_list_all_parses_jsonb_without_enabled_filter():
             json.dumps({"type": "cron", "cron": "30 15 * * 1-5"}),
             True,
             True,
+            json.dumps(["tracking_index_close"]),
             3,
             "exponential",
         ),
@@ -33,6 +35,7 @@ def test_list_all_parses_jsonb_without_enabled_filter():
             json.dumps({"type": "interval", "days": 7}),
             False,
             False,
+            None,
             3,
             "exponential",
         ),
@@ -60,6 +63,7 @@ def test_list_enabled_parses_jsonb():
             json.dumps({"type": "cron", "cron": "30 15 * * 1-5"}),
             True,
             True,
+            None,
             3,
             "exponential",
         ),
@@ -86,6 +90,7 @@ def test_list_enabled_handles_parsed_jsonb():
             {"type": "cron", "cron": "30 15 * * 1-5"},
             True,
             True,
+            ["etf_close"],
             3,
             "exponential",
         ),
@@ -94,6 +99,7 @@ def test_list_enabled_handles_parsed_jsonb():
     assert rows[0]["source_ids"] == [{"source_id": "a"}]
     assert rows[0]["validator"] == [{"check": "min_rows", "value": 1000, "level": "hard"}]
     assert rows[0]["schedule"]["cron"] == "30 15 * * 1-5"
+    assert rows[0]["depends_on"] == ["etf_close"]
 
 
 def test_get_parses_null_jsonb_columns_as_none():
@@ -111,6 +117,7 @@ def test_get_parses_null_jsonb_columns_as_none():
         {"type": "cron", "cron": "0 9 * * *"},
         True,
         True,
+        None,  # depends_on 为 NULL
         None,
         None,
     )
@@ -142,6 +149,7 @@ def test_upsert_serializes_jsonb_and_commits():
             "schedule": {"type": "cron", "cron": "30 15 * * 1-5"},
             "enabled": True,
             "trading_day_gated": True,
+            "depends_on": ["etf_close"],
             "retry_max": 3,
             "retry_backoff": "exponential",
         }
@@ -149,6 +157,7 @@ def test_upsert_serializes_jsonb_and_commits():
     args = cur.execute.call_args.args[1]
     assert isinstance(args[2], str)  # source_ids 被 json.dumps
     assert isinstance(args[5], str)  # validator 被 json.dumps
+    assert isinstance(args[10], str)  # depends_on 被 json.dumps
     conn.commit.assert_called_once()
 
 
@@ -305,3 +314,112 @@ def test_never_succeeded_returns_codes():
     cur.fetchall.return_value = [("a",), ("b",)]
     assert RunRepository(conn).never_succeeded(["a", "b", "c"]) == {"a", "b"}
     assert RunRepository(conn).never_succeeded([]) == set()
+
+
+# ---------------------------------------------------------------- C1 depends_on 前置检查（真实 PG）
+
+
+def _seed_upstream_tasks(pg_conn, codes):
+    """直插上游任务行（collector_task_run 有 task_id FK）。"""
+    for code in codes:
+        pg_conn.execute(
+            "INSERT INTO collector_task (task_code, task_name, source_ids, converter, target_table, schedule)"
+            " VALUES (%s, %s, '[]'::jsonb, 'c', 'x', '{}'::jsonb)",
+            (code, code),
+        )
+    pg_conn.commit()
+
+
+def _insert_run(pg_conn, task_code, status, day, hour=16, minute=0):
+    """直插 run 行（绕过 record——须显式控制 started_at 日期）。datetime 钉死上海墙钟
+    （UTC+8，与 SUCCEEDED_ON_SQL 的 AT TIME ZONE 'Asia/Shanghai' 同口径），day 即上海
+    自然日——不受测试库会话时区影响（CI postgres service 为 UTC）。"""
+    shanghai = dt.timezone(dt.timedelta(hours=8))
+    pg_conn.execute(
+        "INSERT INTO collector_task_run (task_id, mode, status, started_at)"
+        " SELECT id, 'incremental', %s, %s FROM collector_task WHERE task_code=%s",
+        (status, dt.datetime.combine(day, dt.time(hour, minute)).replace(tzinfo=shanghai), task_code),
+    )
+    pg_conn.commit()
+
+
+def test_succeeded_on_includes_success_and_partial_of_the_day(pg_conn):
+    from collector.repositories.runs import RunRepository
+
+    _seed_upstream_tasks(pg_conn, ["etf_close", "tracking_index_close"])
+    # current_date 仅取一个「近邻日期」；插入与查询两侧都以上海墙钟钉死，会话时区不漂移
+    today = pg_conn.execute("SELECT current_date").fetchone()[0]
+    _insert_run(pg_conn, "etf_close", "success", today, hour=15)
+    _insert_run(pg_conn, "tracking_index_close", "partial", today, hour=15)
+    got = RunRepository(pg_conn).succeeded_on(["etf_close", "tracking_index_close"], today)
+    assert got == {"etf_close", "tracking_index_close"}
+
+
+def test_succeeded_on_excludes_failed_running_and_other_days(pg_conn):
+    from collector.repositories.runs import RunRepository
+
+    _seed_upstream_tasks(pg_conn, ["a", "b", "c"])
+    today = pg_conn.execute("SELECT current_date").fetchone()[0]
+    yesterday = today - dt.timedelta(days=1)
+    _insert_run(pg_conn, "a", "failed", today)
+    _insert_run(pg_conn, "a", "running", today)
+    _insert_run(pg_conn, "b", "success", yesterday)  # 他日 success 不算
+    _insert_run(pg_conn, "c", "success", today)  # 对照组：当日 success 算
+    got = RunRepository(pg_conn).succeeded_on(["a", "b", "c"], today)
+    assert got == {"c"}
+
+
+def test_succeeded_on_empty_codes_returns_empty_set(pg_conn):
+    from collector.repositories.runs import RunRepository
+
+    assert RunRepository(pg_conn).succeeded_on([], dt.date.today()) == set()
+
+
+def test_succeeded_on_pinned_to_shanghai_natural_day_across_midnight(pg_conn):
+    """「当日」钉死上海自然日而非会话时区（对抗态）：上海 15 日 00:05（UTC 视角 14 日
+    16:05）属 15 日、上海 14 日 23:59（UTC 视角 14 日 15:59）不属。固定历史日期构造
+    （SQL 不涉 now()，无时钟竞态）；UTC 会话（CI postgres service）下旧 ::date 口径
+    会把 00:05 的 run 误判到昨日——news_night cron 00:00–06:00 任务族将静默差一天。"""
+    from collector.repositories.runs import RunRepository
+
+    _seed_upstream_tasks(pg_conn, ["night_owl", "prev_day"])
+    _insert_run(pg_conn, "night_owl", "success", dt.date(2026, 1, 15), hour=0, minute=5)
+    _insert_run(pg_conn, "prev_day", "success", dt.date(2026, 1, 14), hour=23, minute=59)
+    got = RunRepository(pg_conn).succeeded_on(["night_owl", "prev_day"], dt.date(2026, 1, 15))
+    assert got == {"night_owl"}
+
+
+# ---------------------------------------------------------------- C2 悬挂 running reaper（真实 PG）
+
+
+def _insert_run_state(pg_conn, task_code, status, started_at, finished_at=None, error=None):
+    """直插可控制 started_at/finished_at/error 的 run 行（reaper 测试需亚日精度时刻，
+    `_insert_run` 只有日粒度 day/hour）。tz-aware datetime 与 TIMESTAMPTZ 列同走绝对时刻，
+    不受容器时区影响。"""
+    pg_conn.execute(
+        "INSERT INTO collector_task_run (task_id, mode, status, started_at, finished_at, error)"
+        " SELECT id, 'incremental', %s, %s, %s, %s FROM collector_task WHERE task_code=%s",
+        (status, started_at, finished_at, error, task_code),
+    )
+    pg_conn.commit()
+
+
+def test_reap_stale_running_only_reaps_old_running_rows(pg_conn):
+    """C2：只把 started_at 早于 cutoff 的 running 行置 failed（原错误保留并追加 reaper 文案、
+    finished_at 回填）；cutoff 内的新 running 与已终态的 success 行不动，返回 reap 数。"""
+    from collector.repositories.runs import RunRepository
+
+    _seed_upstream_tasks(pg_conn, ["t"])
+    now = pg_conn.execute("SELECT now()").fetchone()[0]  # 服务器时刻（tz-aware）
+    _insert_run_state(pg_conn, "t", "running", now - dt.timedelta(days=2), error="旧错误")  # 悬挂旧行
+    _insert_run_state(pg_conn, "t", "running", now)  # 刚启动的 running，不动
+    _insert_run_state(pg_conn, "t", "success", now - dt.timedelta(days=2), finished_at=now)  # 已终态，不动
+    reaped = RunRepository(pg_conn).reap_stale_running(now - dt.timedelta(days=1))
+    assert reaped == 1
+    rows = pg_conn.execute("SELECT status, error, finished_at FROM collector_task_run ORDER BY id").fetchall()
+    # 旧行：failed + 原错误保留且追加 reaper 文案 + finished_at 回填
+    assert rows[0][0] == "failed"
+    assert "旧错误" in rows[0][1] and "reaper" in rows[0][1]
+    assert rows[0][2] is not None
+    assert rows[1][0] == "running" and rows[1][1] is None and rows[1][2] is None  # 新 running 原样
+    assert rows[2][0] == "success" and rows[2][1] is None and rows[2][2] == now  # success 终态不动

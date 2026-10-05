@@ -78,6 +78,17 @@ def test_all_yaml_tasks_assemble():
         assert make_trigger(c.schedule) is not None
 
 
+def test_etf_tracking_error_declares_dependencies():
+    """C1：etf_tracking_error 显式声明上游依赖（首批唯一非空 depends_on），装配链路
+    （YAML → seed/DB → assemble_collector → Collector）全程携带；其余任务键必须在场
+    且值为 null（封闭契约：缺键 fail-fast）。"""
+    defs = {d["task_code"]: d for d in load_task_defs(str(TASKS_DIR))}
+    assert defs["etf_tracking_error"]["depends_on"] == ["tracking_index_close", "etf_close"]
+    assert all(d["depends_on"] is None for code, d in defs.items() if code != "etf_tracking_error")
+    c = assemble_collector(defs["etf_tracking_error"], _registries())
+    assert c.depends_on == ["tracking_index_close", "etf_close"]
+
+
 def test_all_a_valuation_yaml_has_tushare_backup_source():
     """C-3.1：all_a_valuation 主源 akshare_spot_em + 备源 all_a_spot_backup（降级）。"""
     defs = {d["task_code"]: d for d in load_task_defs(str(TASKS_DIR))}

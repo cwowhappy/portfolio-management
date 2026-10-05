@@ -13,5 +13,6 @@ target_table: etf_basic
 schedule: { type: cron, cron: "30 9 * * 1" }
 enabled: true
 trading_day_gated: false
+depends_on: null
 retry_max: 3
 retry_backoff: exponential
