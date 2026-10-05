@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { inboundCookie, relay } from "@/lib/proxy";
+import { inboundCookie, joinSegments, relay } from "@/lib/proxy";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -179,5 +179,30 @@ describe("反代中继（lib/proxy）", () => {
     const res = await relay("/api/conversations", "GET", req);
     expect(res.status).toBe(502);
     await expect(res.json()).resolves.toEqual({ message: "无法连接后端服务" });
+  });
+});
+
+describe("joinSegments（catch-all 反代段重建：逐段重编码 + 拒 ..）", () => {
+  it("正常段逐段拼接", () => {
+    expect(joinSegments("/api/market", ["quote", "600519"])).toBe("/api/market/quote/600519");
+  });
+
+  it("已解码段内 / 重编码为 %2F，不产生新路径段", () => {
+    // ctx.params 已解码：wire 上的 a%2Fb 到这里段原字符是 "a/b"（含 /），
+    // 重编码后回到 a%2Fb——往返一致，且无法借 %2F 注入额外路径段
+    expect(joinSegments("/api/market", ["a/b"])).toBe("/api/market/a%2Fb");
+  });
+
+  it("段内 % 自身也重编码为 %25（双编码往返一致）", () => {
+    expect(joinSegments("/api/market", ["a%2Fb"])).toBe("/api/market/a%252Fb");
+  });
+
+  it("任何 .. 段直接拒绝（返回 null，400 由调用方返回）", () => {
+    expect(joinSegments("/api/market", [".."])).toBeNull();
+    expect(joinSegments("/api/market", ["a", "..", "b"])).toBeNull();
+  });
+
+  it("空段数组合法（可选 catch-all 根路径）", () => {
+    expect(joinSegments("/api/market", [])).toBe("/api/market");
   });
 });
