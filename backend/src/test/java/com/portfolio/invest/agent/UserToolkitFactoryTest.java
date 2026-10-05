@@ -282,7 +282,7 @@ class UserToolkitFactoryTest {
         assertThat(toolkit.getTool("search_stock")).as("内置工具不受影响").isNotNull();
     }
 
-    @DisplayName("装配后内置工具含 5 新工具 + research_draft + search_news + search_announcements + macro_brief（无 MCP 环境共 16 个）")
+    @DisplayName("装配后内置工具按名集合断言（InvestTools 13 + UserInvestTools 3 = 16，增删注册即红，B9-③）")
     @Test
     void givenInvestToolsAndUserServices_whenBuild_thenRegistersUserTools() {
         InvestTools investTools = mock(InvestTools.class);
@@ -296,11 +296,17 @@ class UserToolkitFactoryTest {
                 mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
                 new com.fasterxml.jackson.databind.ObjectMapper(), TOOL_TIMEOUT).build(1L);
 
-        var names = toolkit.getToolNames();
-        assertThat(names).contains("screen_stocks", "analyze_financials", "analyze_industry",
-                "analyze_portfolio", "suggest_allocation", "research_draft", "search_news",
-                "search_announcements", "macro_brief");
-        assertThat(names).as("7 既有 + 5 新 + research_draft + search_news + search_announcements + macro_brief（inline mock 保留 @Tool 注解扫描）").hasSize(16);
+        // 按名集合断言替代 hasSize(16)：注册增删（或意外混入 MCP/装饰器改名）都直接点名失败，
+        // 而非计数恰好掩盖换名；inline mock 保留 @Tool 注解扫描（13+3 共 16 名）
+        assertThat(toolkit.getToolNames())
+                .as("内置 16 工具名（InvestTools 13 + UserInvestTools 3，无 MCP 环境）")
+                .containsExactlyInAnyOrder(
+                        // InvestTools @Tool（13）
+                        "search_stock", "get_quote", "get_kline", "get_financials", "get_news",
+                        "search_news", "macro_brief", "get_market_overview", "get_valuation",
+                        "screen_stocks", "analyze_financials", "analyze_industry", "research_draft",
+                        // UserInvestTools @Tool（3）
+                        "analyze_portfolio", "suggest_allocation", "search_announcements");
     }
 
     @DisplayName("token 为 v1 密文 → 解密后的明文进入客户端装配")
