@@ -386,7 +386,7 @@ function isUnauthorizedError(e: unknown): boolean {
 export default function ThreadArea({ llmReady, onUnauthorized }: {
   llmReady: boolean | null; onUnauthorized?: () => void;
 }) {
-  const { currentThreadId, persistMessages, setRunning } = useChatRuntime();
+  const { currentThreadId, persistMessages, setRunning, newThread } = useChatRuntime();
   const { agent, isReady } = useAgent({
     agentId: AGENT_ID,
     updates: AGENT_UPDATES,
@@ -436,6 +436,10 @@ export default function ThreadArea({ llmReady, onUnauthorized }: {
   // 回灌失败不开启闸门：agent.messages 仍属旧线程，放行会把旧线程内容串写进本线程；
   // 切走再切回即重试回灌。
   const [hydratedThreadId, setHydratedThreadId] = useState<string | null>(null);
+  // 回灌失败可操作错误态（P2-F2）：此前 catch 仅记日志，输入区被闸门静默锁死且无出口。
+  // hydrateRetry 是重试 nonce：进回灌 effect 依赖，+1 即重跑回灌（「重试」按钮机制）。
+  const [hydrateError, setHydrateError] = useState<string | null>(null);
+  const [hydrateRetry, setHydrateRetry] = useState(0);
 
   // 同步最新线程到 ref，供异步 flush 前比对 pending.threadId
   useEffect(() => {
@@ -498,15 +502,18 @@ export default function ThreadArea({ llmReady, onUnauthorized }: {
         agent.setMessages(historyToAgentMessages(history));
         hydratedThreadIdRef.current = threadId;
         setHydratedThreadId(threadId);
+        setHydrateError(null);
       } catch (e) {
-        if (!cancelled) console.error("[ThreadArea] 加载会话历史失败", threadId, e);
-        // 回灌失败不 setMessages：hydrated 仍指向旧线程，防抖不会把旧内容写进本线程
+        console.error("[ThreadArea] 加载会话历史失败", threadId, e);
+        // 回灌失败不 setMessages：hydrated 仍指向旧线程，防抖不会把旧内容写进本线程；
+        // 闸门保持不放行（放行会把旧线程内容串写进本线程），改为透出可操作错误态（P2-F2）
+        if (!cancelled) setHydrateError("会话历史加载失败");
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [agent, isReady, currentThreadId]);
+  }, [agent, isReady, currentThreadId, hydrateRetry]);
 
   // 执行一次持久化。msgs 是调用点快照：若等待 loadMessages 期间发生切线程 + 历史回灌
   // setMessages，agent.messages 会变成新线程的，若不快照会把新线程消息写进旧线程记录。
@@ -614,6 +621,38 @@ export default function ThreadArea({ llmReady, onUnauthorized }: {
       <ToolCallRenderers />
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-[860px] px-5 py-8" aria-live="polite">
+          {/* 回灌失败错误卡（P2-F2）：仅在当前线程未回灌成功时出现；重试走 nonce 重跑回灌 effect，
+              新建会话换线程即离开失败现场。闸门（send/Composer ready）不受此卡影响，保持禁发。 */}
+          {hydrateError && hydratedThreadId !== currentThreadId && (
+            <div
+              data-testid="hydrate-error"
+              className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[color:var(--color-accent)]/40 bg-[color:var(--color-panel)] px-4 py-2.5 text-[13px] text-[color:var(--color-accent)]"
+            >
+              <span>{hydrateError}</span>
+              <span className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHydrateError(null);
+                    setHydrateRetry((n) => n + 1);
+                  }}
+                  className="rounded-md border border-[color:var(--color-line)] px-3 py-1 text-[12px] text-[color:var(--color-ink-dim)] transition-colors hover:border-[color:var(--color-up)] hover:text-[color:var(--color-up)]"
+                >
+                  重试
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHydrateError(null);
+                    void newThread();
+                  }}
+                  className="rounded-md border border-[color:var(--color-line)] px-3 py-1 text-[12px] text-[color:var(--color-ink-dim)] transition-colors hover:border-[color:var(--color-up)] hover:text-[color:var(--color-up)]"
+                >
+                  新建会话
+                </button>
+              </span>
+            </div>
+          )}
           {isEmpty ? (
             <EmptyState llmReady={llmReady} onPick={(p) => void send(p)} />
           ) : (
