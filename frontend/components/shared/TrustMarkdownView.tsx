@@ -100,14 +100,48 @@ function TrustMarkdownView({
 }
 
 /**
+ * 修正注记引用块（拍板 #10「注记保留——改写痕迹可查」，F6 修复轮落地）：
+ * `payload.correction.notes` 渲染在消息内容尾部。后端 stateStore 文本本带注记行
+ * （「> ⚠ 校验修正：原文误述 X」，ConsistencyValidator#noteLine），但前端实时文本
+ * 无注记行、防抖 PUT 会以实时文本覆盖——注记的可见性由本组件从 payload 重建，
+ * live（trust.correction 事件落 store，anchors 未到的占位 payload 即携带）与
+ * 回灌（F5 payload 重建）同一订阅渲染路径。与 F3 横幅 corrections 信号并存不互斥：
+ * 信号是低置信概览，注记是逐条改写痕迹（原文误述值）。
+ * 行形态与后端注记行同形「⚠ 校验修正：原文误述 X」（wire note = "原文误述 " + snippet）；
+ * 降级注记（"校验修正失败：…"）已自带「校验修正」字样，原样渲染不叠双前缀。
+ * 无 correction 键 / 空数组零渲染。
+ */
+export function CorrectionNotes({ notes }: { notes?: readonly string[] | null }) {
+  if (!notes || notes.length === 0) return null;
+  return (
+    <blockquote
+      data-testid="trust-correction-notes"
+      className="mt-2 border-l-2 border-[color:var(--color-line-soft)] pl-3.5 text-[12px] leading-relaxed text-[color:var(--color-ink-faint)]"
+    >
+      {notes.map((note, i) => (
+        <p key={`${note}#${i}`} className={i === 0 ? undefined : "mt-1"}>
+          ⚠ {note.includes("校验修正") ? note : `校验修正：${note}`}
+        </p>
+      ))}
+    </blockquote>
+  );
+}
+
+/**
  * AssistantMessage 的信任渲染入口：订阅 trustStore，有锚走 TrustMarkdownView、
  * 无锚走原 MarkdownView。**独立子组件订阅**（F1 报告建议形态）：AssistantMessage 的
  * memo 比较器只看 message/toolMessage 引用，trust 数据带外——store 事件只重渲染本
  * 组件，不触发整列表重渲染，也绕开 CopilotKit 两套 context 实例的坑。
+ * 内容尾部挂 CorrectionNotes（拍板 #10 注记保留）：live 与回灌同一订阅路径。
  */
 export function TrustMessageContent({ messageId, content }: { messageId: string; content: string }) {
   const payload = useTrustPayload(messageId);
-  return <TrustMarkdownView content={content} anchors={payload?.anchors} />;
+  return (
+    <>
+      <TrustMarkdownView content={content} anchors={payload?.anchors} />
+      <CorrectionNotes notes={payload?.correction?.notes} />
+    </>
+  );
 }
 
 export default memo(TrustMarkdownView);

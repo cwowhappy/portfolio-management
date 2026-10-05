@@ -1012,6 +1012,42 @@ describe("ThreadArea", () => {
     expect(badges[0].parentElement?.textContent).toContain("1708 亿");
   });
 
+  // ———— F6 修复轮：修正注记 live 可见（拍板 #10 注记保留——correction 事件落 store 即渲染）————
+
+  it("F6：correction 事件落地 → 注记引用块 live 出现（anchors 未到也渲染，正文与横幅之间）", async () => {
+    mocks.agent.messages = [
+      agentMessage({ id: "ta-f6-u", role: "user", content: "看看" }),
+      agentMessage({ id: "ta-f6-a1", role: "assistant", content: "现价1520.33元。" }),
+    ];
+    renderThread();
+    await waitFor(() => expect(screen.getByText(/现价/)).toBeTruthy());
+    // 事件落地前：无注记块
+    expect(screen.queryByTestId("trust-correction-notes")).toBeNull();
+    act(() => {
+      lastTrustSubscriber().onCustomEvent({
+        event: {
+          name: TRUST_CORRECTION_EVENT,
+          value: {
+            messageId: "ta-f6-a1",
+            snippet: "15.20元",
+            occ: 1,
+            replacement: "1520.33元",
+            note: "原文误述 15.20元",
+          },
+        },
+        messages: mocks.agent.messages,
+      });
+    });
+    // 占位 payload（anchors 未到）即携带 correction.notes → 注记块 live 出现
+    const block = await screen.findByTestId("trust-correction-notes");
+    expect(block.textContent).toContain("校验修正：原文误述 15.20元");
+    // 注记块在正文之后（内容尾部挂点）
+    const content = screen.getByText(/现价/);
+    expect(
+      (content.compareDocumentPosition(block) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
+    ).toBe(true);
+  });
+
   // ———— MS-29 F3：低置信横幅 + disclaimer 接线（TrustMessageAdvisories 同消息级订阅，正文与反馈条之间）————
 
   it("F3：payload 携带 confidence/advice → 横幅与 disclaimer 落在正文与反馈条之间（并存不互斥）", async () => {

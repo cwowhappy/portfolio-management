@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import TrustMarkdownView from "@/components/shared/TrustMarkdownView";
+import TrustMarkdownView, { CorrectionNotes } from "@/components/shared/TrustMarkdownView";
 import { TrustPayloadSchema, type TrustPayload } from "@/lib/trustMeta";
 
 afterEach(() => cleanup());
@@ -184,5 +184,38 @@ describe("TrustMarkdownView（markdown + anchors → 角标落位渲染）", () 
     expect(img.getAttribute("loading")).toBe("lazy");
     expect(img.getAttribute("referrerPolicy")).toBe("no-referrer");
     expect(img.getAttribute("src")).toBe("https://example.com/k.png");
+  });
+});
+
+// ———— F6 修复轮：CorrectionNotes（拍板 #10 注记保留——改写痕迹引用块） ————
+
+describe("CorrectionNotes（修正注记引用块）", () => {
+  it("多条注记按序渲染，行形态「校验修正：原文误述 X」（后端 wire note = 原文误述 + snippet）", () => {
+    render(<CorrectionNotes notes={["原文误述 15.20元", "原文误述 38倍"]} />);
+    const block = screen.getByTestId("trust-correction-notes");
+    expect(block.textContent).toContain("校验修正：原文误述 15.20元");
+    expect(block.textContent).toContain("校验修正：原文误述 38倍");
+    // 行序 = notes 数组序
+    expect(block.textContent!.indexOf("15.20元")).toBeLessThan(block.textContent!.indexOf("38倍"));
+  });
+
+  it("缺键 / null / 空数组 → 零渲染", () => {
+    const { rerender } = render(<CorrectionNotes notes={undefined} />);
+    expect(screen.queryByTestId("trust-correction-notes")).toBeNull();
+    rerender(<CorrectionNotes notes={null} />);
+    expect(screen.queryByTestId("trust-correction-notes")).toBeNull();
+    rerender(<CorrectionNotes notes={[]} />);
+    expect(screen.queryByTestId("trust-correction-notes")).toBeNull();
+  });
+
+  it("降级注记（已自带「校验修正」字样）原样渲染，不叠双前缀", () => {
+    render(
+      <CorrectionNotes
+        notes={["校验修正失败：原文误述 15.20元（重试上限已到，保留原文并转显式标注）"]}
+      />,
+    );
+    const block = screen.getByTestId("trust-correction-notes");
+    expect(block.textContent).toContain("校验修正失败：原文误述 15.20元");
+    expect(block.textContent!.match(/校验修正/g)).toHaveLength(1);
   });
 });

@@ -9,12 +9,15 @@ import { registerAndApprove, TEST_PASSWORD, uniqueUsername } from "./helpers";
 //   浏览器侧是 ProxiedCopilotRuntimeAgent extends HttpAgent，直接消费 AG-UI SSE——
 //   `data: {事件JSON}\n\n`，@ag-ui/encoder EventEncoder.encodeSSE 同格式），注入脚本化
 //   信任事件流：错值文本 → trust.correction 原位替换 → trust.anchors 满配 payload；
-// - 不误附对照：无 advice/confidence 键的 anchors → 横幅与 disclaimer 缺席（含刷新后）。
+// - 不误附对照：无 advice/confidence/correction 键的 anchors → 横幅/disclaimer/注记块缺席（含刷新后）。
+// - 修正注记可见化（拍板 #10 注记保留，F6 修复轮）：payload.correction.notes 引用块
+//   渲染于内容尾部（trust-correction-notes，行形态「校验修正：原文误述 X」），
+//   live 与回灌两路径均断言。
 //
-// 选择器契约（F2/F3 报告）：trust-anchor-badge[data-anchor-state]（wrapper span 同带
-// data-anchor-state）、trust-anchor-popover（role=tooltip，常驻 DOM opacity 切换）、
-// confidence-banner / confidence-signal[data-signal] / confidence-suggestion /
-// disclaimer-note / disclaimer-by。
+// 选择器契约（F2/F3 报告 + F6 修复轮）：trust-anchor-badge[data-anchor-state]（wrapper
+// span 同带 data-anchor-state）、trust-anchor-popover（role=tooltip，常驻 DOM opacity
+// 切换）、confidence-banner / confidence-signal[data-signal] / confidence-suggestion /
+// disclaimer-note / disclaimer-by、trust-correction-notes。
 
 const hasAdminSeed = !!(process.env.ADMIN_USERNAME && process.env.ADMIN_PASSWORD);
 
@@ -82,19 +85,25 @@ async function firstConversationId(page: Page): Promise<string> {
   return convId;
 }
 
-/** 正文 → 横幅 → disclaimer → 反馈条的 DOM 序（F3 接线锁定的落位，真浏览器复验）。 */
+/** 正文 → 修正注记 → 横幅 → disclaimer → 反馈条的 DOM 序（F3 落位 + F6 修复轮注记尾部挂点，真浏览器复验）。 */
 async function expectAdvisoryOrder(page: Page): Promise<void> {
   const ok = await page.evaluate(() => {
     const content = document.querySelector("span[data-anchor-state]");
+    const notes = document.querySelector("[data-testid='trust-correction-notes']");
     const banner = document.querySelector("[data-testid='confidence-banner']");
     const disclaimer = document.querySelector("[data-testid='disclaimer-note']");
     const feedback = document.querySelector("button[aria-label='回答有帮助']");
-    if (!content || !banner || !disclaimer || !feedback) return false;
+    if (!content || !notes || !banner || !disclaimer || !feedback) return false;
     const follows = (a: Element, b: Element) =>
       (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
-    return follows(content, banner) && follows(banner, disclaimer) && follows(disclaimer, feedback);
+    return (
+      follows(content, notes) &&
+      follows(notes, banner) &&
+      follows(banner, disclaimer) &&
+      follows(disclaimer, feedback)
+    );
   });
-  expect(ok, "正文 → 横幅 → disclaimer → 反馈条 DOM 序").toBe(true);
+  expect(ok, "正文 → 注记 → 横幅 → disclaimer → 反馈条 DOM 序").toBe(true);
 }
 
 test.describe("信任溯源（MS-29）", () => {
@@ -141,6 +150,8 @@ test.describe("信任溯源（MS-29）", () => {
         { snippet: "5.6 万吨", occ: 1, state: "unverified" },
       ],
       stats: { verified: 1, sourced: 1, unverified: 3 },
+      // 拍板 #10 注记保留：改写痕迹（模型原文误述 1400 亿元，已被工具值 1741 亿元替换）
+      correction: { notes: ["原文误述 1400 亿元"] },
       advice: { flag: true, by: "both", text: "本回答由 AI 生成，可能包含未经核实的信息，不构成投资建议。" },
       confidence: { signals: ["unverified_ratio:0.6", "stale_financials:1"] },
     };
@@ -203,13 +214,17 @@ test.describe("信任溯源（MS-29）", () => {
     // disclaimer：后端透传文案 + by 小标签（both→两者）
     await expect(page.getByTestId("disclaimer-note")).toContainText("不构成投资建议");
     await expect(page.getByTestId("disclaimer-by")).toHaveText("两者");
+    // 修正注记（拍板 #10 注记保留，F6 修复轮）：回灌 payload.correction.notes → 引用块
+    // 渲染于内容尾部，行形态「校验修正：原文误述 X」
+    await expect(page.getByTestId("trust-correction-notes")).toContainText("校验修正：原文误述 1400 亿元");
     await expectAdvisoryOrder(page);
 
-    // 刷新后角标仍在（payload 回灌幂等）
+    // 刷新后角标仍在（payload 回灌幂等，注记块同路径重建）
     await page.reload();
     await expect(badge(page)).toHaveCount(5, { timeout: 15_000 });
     await expect(banner).toBeVisible();
     await expect(page.getByTestId("disclaimer-note")).toBeVisible();
+    await expect(page.getByTestId("trust-correction-notes")).toContainText("校验修正：原文误述 1400 亿元");
 
     // 跨会话重开同验：新对话（空历史 → store 全清、角标归零）→ 切回种子会话（rebuild 重建）
     await page.getByRole("button", { name: /新对话/ }).click();
@@ -218,6 +233,7 @@ test.describe("信任溯源（MS-29）", () => {
     await page.locator("aside li").filter({ hasText: "贵州茅台" }).first().click();
     await expect(badge(page)).toHaveCount(5, { timeout: 15_000 });
     await expect(banner).toBeVisible();
+    await expect(page.getByTestId("trust-correction-notes")).toContainText("校验修正：原文误述 1400 亿元");
   });
 
   // ———— 场景 B：SSE 脚本注入（F1 事件接入 → F2 角标 → F3 横幅 + 修正原位替换 + 落库回读） ————
@@ -267,7 +283,7 @@ test.describe("信任溯源（MS-29）", () => {
         { snippet: "25%", occ: 1, state: "unverified" },
       ],
       stats: { verified: 2, sourced: 1, unverified: 1 },
-      correction: { notes: ["环比口径已按工具返回修正"] },
+      correction: { notes: ["原文误述 1741 亿元"] },
       advice: { flag: true, by: "self", text: "本回答包含未经核实的市场传闻，不构成投资建议。" },
       confidence: { signals: ["corrections:1", "unverified_ratio:0.25"] },
     };
@@ -284,7 +300,7 @@ test.describe("信任溯源（MS-29）", () => {
           snippet: "1741 亿元",
           occ: 2,
           replacement: "1708 亿元",
-          note: "环比口径已按工具返回修正",
+          note: "原文误述 1741 亿元",
         },
       },
       { type: "CUSTOM", name: "trust.anchors", value: { messageId, payload } },
@@ -319,6 +335,9 @@ test.describe("信任溯源（MS-29）", () => {
     await expect(page.locator('[data-testid="confidence-signal"][data-signal="unverified_ratio"]')).toHaveText(
       "1 处数字未溯源",
     );
+    // 修正注记（拍板 #10 注记保留，F6 修复轮）：correction 事件落 store → live 出现，
+    // 含原误述值文本；与横幅 corrections 信号并存（信号=概览，注记=逐条痕迹）
+    await expect(page.getByTestId("trust-correction-notes")).toContainText("校验修正：原文误述 1741 亿元");
     // disclaimer（by=self→自声明）
     await expect(page.getByTestId("disclaimer-note")).toContainText("不构成投资建议");
     await expect(page.getByTestId("disclaimer-by")).toHaveText("自声明");
@@ -338,7 +357,7 @@ test.describe("信任溯源（MS-29）", () => {
       )
       .toBe(true);
 
-    // 刷新后仍在（F5 回灌）：替换后文本 + 角标 + 横幅/disclaimer 全量重建
+    // 刷新后仍在（F5 回灌）：替换后文本 + 角标 + 横幅/disclaimer/注记块 全量重建
     await page.reload();
     await expect(page.getByText("环比口径 1708 亿元")).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText("环比口径 1741 亿元")).toHaveCount(0);
@@ -346,6 +365,7 @@ test.describe("信任溯源（MS-29）", () => {
     await expect(badge(page, "verified")).toHaveCount(2);
     await expect(page.getByTestId("confidence-banner")).toBeVisible();
     await expect(page.getByTestId("disclaimer-note")).toBeVisible();
+    await expect(page.getByTestId("trust-correction-notes")).toContainText("校验修正：原文误述 1741 亿元");
   });
 
   // ———— 场景 C：不误附对照（无 advice/confidence 键 → 横幅与 disclaimer 缺席，含刷新后） ————
@@ -368,7 +388,7 @@ test.describe("信任溯源（MS-29）", () => {
         },
       ],
       stats: { verified: 1, sourced: 0, unverified: 0 },
-      // 故意不带 advice / confidence（缺键 = 无信号无建议，B6/B7 缺省语义）
+      // 故意不带 advice / confidence / correction（缺键 = 无信号无建议无改写痕迹，B6/B7 缺省语义）
     };
     await stubAgentRun(page, (threadId) => [
       { type: "RUN_STARTED", threadId, runId: "e2e-plain-run" },
@@ -386,7 +406,7 @@ test.describe("信任溯源（MS-29）", () => {
     await expect(send).toBeEnabled({ timeout: 30_000 });
     await send.click();
 
-    // 角标正常而横幅/disclaimer 零渲染（对照组：同 payload 形态仅缺 advice/confidence）。
+    // 角标正常而横幅/disclaimer/注记块 零渲染（对照组：同 payload 形态仅缺 advice/confidence/correction）。
     // 断言文本取角标切分前的连续段：角标 sup 缀于「1741 亿元」后，含句号的整句不再是
     // 任何元素的连续文本（首次运行实测）
     await expect(page.getByText("贵州茅台 2024 年营收 1741 亿元")).toBeVisible({ timeout: 30_000 });
@@ -396,11 +416,13 @@ test.describe("信任溯源（MS-29）", () => {
     await expect(page.getByTestId("confidence-suggestion")).toHaveCount(0);
     await expect(page.getByTestId("disclaimer-note")).toHaveCount(0);
     await expect(page.getByTestId("disclaimer-by")).toHaveCount(0);
+    await expect(page.getByTestId("trust-correction-notes")).toHaveCount(0);
 
     // 刷新后（payload 已持久化、回灌重建）仍不误附
     await page.reload();
     await expect(badge(page, "verified")).toHaveCount(1, { timeout: 15_000 });
     await expect(page.getByTestId("confidence-banner")).toHaveCount(0);
     await expect(page.getByTestId("disclaimer-note")).toHaveCount(0);
+    await expect(page.getByTestId("trust-correction-notes")).toHaveCount(0);
   });
 });
