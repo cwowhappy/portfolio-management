@@ -35,11 +35,12 @@ describe("ConfidenceBanner（命中信号人话映射 + 核实路径静态映射
           "corrections:2",
           "correction_failed:1",
         ]}
+        stats={{ verified: 0, sourced: 0, unverified: 3 }}
       />,
     );
     const items = screen.getAllByTestId("confidence-signal");
     expect(items.map((li) => li.textContent)).toEqual([
-      "40% 数字未溯源",
+      "3 处数字未溯源",
       "数据时间戳陈旧",
       "数据时间戳陈旧",
       "数据时间戳陈旧",
@@ -51,15 +52,22 @@ describe("ConfidenceBanner（命中信号人话映射 + 核实路径静态映射
     expect(items[6].getAttribute("data-signal")).toBe("correction_failed");
   });
 
-  it("unverified_ratio value 解析为整百分比（线格式鲁棒：0.75 / 0.40 / 1.0），解析失败降级无数字文案", () => {
-    const { rerender } = render(<ConfidenceBanner signals={["unverified_ratio:0.75"]} />);
-    expect(screen.getByTestId("confidence-signal").textContent).toBe("75% 数字未溯源");
+  it("unverified_ratio 计数优先（stats.unverified → 「N 处数字未溯源」）；无 stats 回退约百分比（线格式鲁棒）", () => {
+    const { rerender } = render(
+      <ConfidenceBanner signals={["unverified_ratio:0.4"]} stats={{ verified: 0, sourced: 0, unverified: 3 }} />,
+    );
+    expect(screen.getByTestId("confidence-signal").textContent).toBe("3 处数字未溯源");
+    // 回退：stats 缺失（裸用组件）→ 约百分比（解析数字勿匹配线格式：0.75 / 0.40 / 1.0）
+    rerender(<ConfidenceBanner signals={["unverified_ratio:0.75"]} />);
+    expect(screen.getByTestId("confidence-signal").textContent).toBe("约 75% 数字未溯源");
     rerender(<ConfidenceBanner signals={["unverified_ratio:0.40"]} />);
-    expect(screen.getByTestId("confidence-signal").textContent).toBe("40% 数字未溯源");
+    expect(screen.getByTestId("confidence-signal").textContent).toBe("约 40% 数字未溯源");
     rerender(<ConfidenceBanner signals={["unverified_ratio:1.0"]} />);
-    expect(screen.getByTestId("confidence-signal").textContent).toBe("100% 数字未溯源");
-    // 值缺失/不可解析：不猜数字，降级为不带数值的文案（勿对 value 做字符串匹配）
+    expect(screen.getByTestId("confidence-signal").textContent).toBe("约 100% 数字未溯源");
+    // 值缺失/纯空白（trim 后为空）/不可解析：不猜数字，降级为不带数值的文案
     rerender(<ConfidenceBanner signals={["unverified_ratio"]} />);
+    expect(screen.getByTestId("confidence-signal").textContent).toBe("数字未溯源");
+    rerender(<ConfidenceBanner signals={["unverified_ratio: "]} />);
     expect(screen.getByTestId("confidence-signal").textContent).toBe("数字未溯源");
   });
 
@@ -128,7 +136,11 @@ describe("TrustMessageAdvisories（同消息级订阅：横幅与 disclaimer 并
       "tadv-both",
       parsePayload({
         v: 1,
-        anchors: [],
+        anchors: [
+          { snippet: "1800元", occ: 1, state: "unverified" },
+          { snippet: "1400元", occ: 1, state: "unverified" },
+          { snippet: "8%", occ: 1, state: "unverified" },
+        ],
         stats: { verified: 0, sourced: 0, unverified: 3 },
         advice: {
           flag: true,
@@ -141,7 +153,7 @@ describe("TrustMessageAdvisories（同消息级订阅：横幅与 disclaimer 并
     render(<TrustMessageAdvisories messageId="tadv-both" />);
     expect(screen.getByTestId("confidence-banner")).toBeTruthy();
     expect(screen.getAllByTestId("confidence-signal").map((li) => li.textContent)).toEqual([
-      "40% 数字未溯源",
+      "3 处数字未溯源",
       "工具调用失败",
     ]);
     expect(screen.getByTestId("confidence-suggestion").textContent).toBe(

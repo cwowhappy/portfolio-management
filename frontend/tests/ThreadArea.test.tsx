@@ -1017,7 +1017,11 @@ describe("ThreadArea", () => {
   it("F3：payload 携带 confidence/advice → 横幅与 disclaimer 落在正文与反馈条之间（并存不互斥）", async () => {
     mocks.agent.messages = [
       agentMessage({ id: "ta-f3-u", role: "user", content: "看看" }),
-      agentMessage({ id: "ta-f3-a1", role: "assistant", content: "现价1520.33元，可考虑加仓。" }),
+      agentMessage({
+        id: "ta-f3-a1",
+        role: "assistant",
+        content: "现价1520.33元，压力1800元，支撑1400元，振幅约8%，可考虑加仓。",
+      }),
     ];
     renderThread();
     await waitFor(() => expect(screen.getByText(/现价/)).toBeTruthy());
@@ -1043,14 +1047,17 @@ describe("ThreadArea", () => {
                   asOfKind: "data",
                   raw: "1520.33",
                 },
+                { snippet: "1800元", occ: 1, state: "unverified" },
+                { snippet: "1400元", occ: 1, state: "unverified" },
+                { snippet: "8%", occ: 1, state: "unverified" },
               ],
-              stats: { verified: 1, sourced: 0, unverified: 0 },
+              stats: { verified: 1, sourced: 0, unverified: 3 },
               advice: {
                 flag: true,
                 by: "lexicon",
                 text: "以上内容由 AI 生成，仅供参考，不构成任何投资建议。",
               },
-              confidence: { signals: ["unverified_ratio:0.4", "tool_failures:1"] },
+              confidence: { signals: ["unverified_ratio:0.75", "tool_failures:1"] },
             },
           },
         },
@@ -1060,7 +1067,7 @@ describe("ThreadArea", () => {
     const banner = await screen.findByTestId("confidence-banner");
     const note = screen.getByTestId("disclaimer-note");
     expect(screen.getAllByTestId("confidence-signal").map((li) => li.textContent)).toEqual([
-      "40% 数字未溯源",
+      "3 处数字未溯源",
       "工具调用失败",
     ]);
     expect(screen.getByTestId("confidence-suggestion").textContent).toBe(

@@ -1,4 +1,4 @@
-import type { TrustAdvice } from "@/lib/trustMeta";
+import type { TrustAdvice, TrustStats } from "@/lib/trustMeta";
 import { useTrustPayload } from "@/components/shared/TrustMarkdownView";
 
 // MS-29 F3：低置信横幅 + disclaimer（设计规格 §5.3，需求 F03 决策 #3/#4）。
@@ -13,21 +13,27 @@ function signalName(signal: string): string {
 }
 
 /**
- * unverified_ratio 值解析为整百分比（B7 展示值两位小数去一位尾零，如 0.4/0.75——
- * 按**解析后的数字**展示，勿对线串做字符串匹配）。值缺失/不可解析降级为无数字文案。
+ * unverified_ratio **计数优先**（需求拍板 #3 预览原文「· 3 处数字未溯源」）：
+ * `payload.stats.unverified` 恒随 anchors payload 携带，正常路径永走计数；
+ * stats 缺失（裸用组件）回退「约 X%」——按**解析后的数字**展示（B7 展示值两位小数
+ * 去一位尾零如 0.4/0.75，勿对线串做字符串匹配），值 trim 后缺失/不可解析降级无数字文案。
  */
-function unverifiedRatioText(signal: string): string {
+function unverifiedRatioText(signal: string, stats?: TrustStats | null): string {
+  const count = stats?.unverified;
+  if (typeof count === "number" && Number.isFinite(count)) {
+    return `${count} 处数字未溯源`;
+  }
   const idx = signal.indexOf(":");
-  const value = idx === -1 ? "" : signal.slice(idx + 1);
+  const value = (idx === -1 ? "" : signal.slice(idx + 1)).trim();
   const ratio = Number(value);
   if (value === "" || !Number.isFinite(ratio)) return "数字未溯源";
-  return `${Math.round(ratio * 100)}% 数字未溯源`;
+  return `约 ${Math.round(ratio * 100)}% 数字未溯源`;
 }
 
 /** 命中信号 → 人话文案（决策 #3 映射）；未知信号名返回 null（宁可少标，未来信号不误示）。 */
-function signalText(signal: string): string | null {
+function signalText(signal: string, stats?: TrustStats | null): string | null {
   const name = signalName(signal);
-  if (name === "unverified_ratio") return unverifiedRatioText(signal);
+  if (name === "unverified_ratio") return unverifiedRatioText(signal, stats);
   if (name === "stale_quotes" || name === "stale_financials" || name === "stale_macro") {
     return "数据时间戳陈旧";
   }
@@ -53,10 +59,17 @@ function suggestionFor(signals: readonly string[]): string {
 }
 
 /** 低置信横幅：列命中信号（人话）+ 核实路径建议。signals 缺/空/全未知 → 不渲染。 */
-export function ConfidenceBanner({ signals }: { signals?: readonly string[] | null }) {
+export function ConfidenceBanner({
+  signals,
+  stats,
+}: {
+  signals?: readonly string[] | null;
+  /** unverified_ratio 计数口径来源（payload 恒携带；缺失回退约百分比形态） */
+  stats?: TrustStats | null;
+}) {
   if (!signals || signals.length === 0) return null;
   const texts = signals
-    .map((signal) => ({ name: signalName(signal), text: signalText(signal) }))
+    .map((signal) => ({ name: signalName(signal), text: signalText(signal, stats) }))
     .filter((x): x is { name: string; text: string } => x.text !== null);
   if (texts.length === 0) return null;
   return (
@@ -114,7 +127,7 @@ export function TrustMessageAdvisories({ messageId }: { messageId: string }) {
   const payload = useTrustPayload(messageId);
   return (
     <>
-      <ConfidenceBanner signals={payload?.confidence?.signals} />
+      <ConfidenceBanner signals={payload?.confidence?.signals} stats={payload?.stats} />
       <DisclaimerNote advice={payload?.advice} />
     </>
   );
