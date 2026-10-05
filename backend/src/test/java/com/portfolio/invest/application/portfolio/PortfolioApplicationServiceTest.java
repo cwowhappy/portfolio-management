@@ -885,6 +885,119 @@ class PortfolioApplicationServiceTest {
         assertThat(view.slices().get(0).ratio()).isEqualByComparingTo("100");
     }
 
+    @DisplayName("行业分布含未映射桶且合计等于全部持仓市值")
+    @Test
+    void givenMappedAndUnmappedPositions_whenIndustryDistribution_thenIncludeUnmappedBucketAndSumAll() {
+        when(repo.findPositionsByPortfolioId(10L)).thenReturn(List.of(
+                Position.reconstitute(1L, 10L, 1L, "600519", "贵州茅台",
+                        new BigDecimal("100"), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                        BigDecimal.ZERO, BigDecimal.ZERO, Instant.now(), Instant.now()),
+                Position.reconstitute(2L, 10L, 1L, "000858", "五粮液",
+                        new BigDecimal("100"), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                        BigDecimal.ZERO, BigDecimal.ZERO, Instant.now(), Instant.now())));
+        when(valuation.findAllIndustryMappings()).thenReturn(List.of(
+                new ShenwanIndustryMapping("600519", "贵州茅台", "801120", "白酒")));
+        when(market.quote("600519")).thenReturn(new Quote(
+                "600519", "贵州茅台", 120, 0, 0, 0, 0, 0, 100, 0, 0, null, null, ""));
+        when(market.quote("000858")).thenReturn(new Quote(
+                "000858", "五粮液", 30, 0, 0, 0, 0, 0, 100, 0, 0, null, null, ""));
+
+        var view = service.industryDistribution(1L);
+
+        // 未映射持仓不再静默丢弃：归入「未映射」桶，合计=两持仓市值之和
+        assertThat(view.slices())
+                .extracting(IndustryDistributionView.Slice::industryName)
+                .containsExactlyInAnyOrder("白酒", "未映射");
+        var totalMarketValue = view.slices().stream()
+                .map(IndustryDistributionView.Slice::marketValue)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        assertThat(totalMarketValue).isEqualByComparingTo("15000"); // 120×100 + 30×100
+        assertThat(view.slices())
+                .anySatisfy(s -> {
+                    assertThat(s.industryName()).isEqualTo("未映射");
+                    assertThat(s.marketValue()).isEqualByComparingTo("3000");
+                });
+    }
+
+    @DisplayName("行业分布含未映射桶后占比归一到全部持仓市值")
+    @Test
+    void givenMappedAndUnmappedPositions_whenIndustryDistribution_thenUnmappedRatioAndRatiosSumToWhole() {
+        when(repo.findPositionsByPortfolioId(10L)).thenReturn(List.of(
+                Position.reconstitute(1L, 10L, 1L, "600519", "贵州茅台",
+                        new BigDecimal("100"), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                        BigDecimal.ZERO, BigDecimal.ZERO, Instant.now(), Instant.now()),
+                Position.reconstitute(2L, 10L, 1L, "000858", "五粮液",
+                        new BigDecimal("100"), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                        BigDecimal.ZERO, BigDecimal.ZERO, Instant.now(), Instant.now())));
+        when(valuation.findAllIndustryMappings()).thenReturn(List.of(
+                new ShenwanIndustryMapping("600519", "贵州茅台", "801120", "白酒")));
+        when(market.quote("600519")).thenReturn(new Quote(
+                "600519", "贵州茅台", 120, 0, 0, 0, 0, 0, 100, 0, 0, null, null, ""));
+        when(market.quote("000858")).thenReturn(new Quote(
+                "000858", "五粮液", 30, 0, 0, 0, 0, 0, 100, 0, 0, null, null, ""));
+
+        var view = service.industryDistribution(1L);
+
+        // 分母含未映射桶：白酒 80%、未映射 20%，占比合计=100（本服务 ratio 为百分制）
+        assertThat(view.slices())
+                .anySatisfy(s -> {
+                    assertThat(s.industryName()).isEqualTo("未映射");
+                    assertThat(s.ratio()).isEqualByComparingTo("20");
+                });
+        var ratioSum = view.slices().stream()
+                .map(IndustryDistributionView.Slice::ratio)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        assertThat(ratioSum).isEqualByComparingTo("100");
+    }
+
+    @DisplayName("全部持仓未映射时归入单一未映射桶且占比为100")
+    @Test
+    void givenAllUnmappedPositions_whenIndustryDistribution_thenSingleUnmappedBucketWithFullRatio() {
+        when(repo.findPositionsByPortfolioId(10L)).thenReturn(List.of(
+                Position.reconstitute(1L, 10L, 1L, "000858", "五粮液",
+                        new BigDecimal("100"), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                        BigDecimal.ZERO, BigDecimal.ZERO, Instant.now(), Instant.now()),
+                Position.reconstitute(2L, 10L, 1L, "601318", "中国平安",
+                        new BigDecimal("100"), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                        BigDecimal.ZERO, BigDecimal.ZERO, Instant.now(), Instant.now())));
+        when(valuation.findAllIndustryMappings()).thenReturn(List.of());
+        when(market.quote("000858")).thenReturn(new Quote(
+                "000858", "五粮液", 30, 0, 0, 0, 0, 0, 100, 0, 0, null, null, ""));
+        when(market.quote("601318")).thenReturn(new Quote(
+                "601318", "中国平安", 120, 0, 0, 0, 0, 0, 100, 0, 0, null, null, ""));
+
+        var view = service.industryDistribution(1L);
+
+        assertThat(view.slices()).hasSize(1);
+        assertThat(view.slices().get(0).industryName()).isEqualTo("未映射");
+        assertThat(view.slices().get(0).marketValue()).isEqualByComparingTo("15000"); // 30×100 + 120×100
+        assertThat(view.slices().get(0).ratio()).isEqualByComparingTo("100");
+    }
+
+    @DisplayName("未映射持仓无报价时与映射持仓同语义跳过不计入桶与合计")
+    @Test
+    void givenUnmappedPositionWithoutQuote_whenIndustryDistribution_thenSkipLikeMappedPositions() {
+        when(repo.findPositionsByPortfolioId(10L)).thenReturn(List.of(
+                Position.reconstitute(1L, 10L, 1L, "600519", "贵州茅台",
+                        new BigDecimal("100"), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                        BigDecimal.ZERO, BigDecimal.ZERO, Instant.now(), Instant.now()),
+                Position.reconstitute(2L, 10L, 1L, "000858", "五粮液",
+                        new BigDecimal("100"), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                        BigDecimal.ZERO, BigDecimal.ZERO, Instant.now(), Instant.now())));
+        when(valuation.findAllIndustryMappings()).thenReturn(List.of(
+                new ShenwanIndustryMapping("600519", "贵州茅台", "801120", "白酒")));
+        when(market.quote("600519")).thenReturn(new Quote(
+                "600519", "贵州茅台", 120, 0, 0, 0, 0, 0, 100, 0, 0, null, null, ""));
+        when(market.quote("000858")).thenThrow(new RuntimeException("无行情"));
+
+        var view = service.industryDistribution(1L);
+
+        // 无报价持仓不计入桶与合计（与映射持仓缺价同语义）→ 不产生「未映射」零值分片
+        assertThat(view.slices()).hasSize(1);
+        assertThat(view.slices().get(0).industryName()).isEqualTo("白酒");
+        assertThat(view.slices().get(0).marketValue()).isEqualByComparingTo("12000");
+    }
+
     @DisplayName("集中度前五与占比")
     @Test
     void givenHoldings_whenConcentration_thenReturnTopFiveAndRatios() {

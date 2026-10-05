@@ -36,6 +36,9 @@ public class PortfolioApplicationService {
 
     private static final Logger log = LoggerFactory.getLogger(PortfolioApplicationService.class);
 
+    /** 行业分布：无申万行业映射的持仓归入「未映射」桶，保证合计=全部持仓市值（MS-28 P2-B4）。 */
+    private static final String UNMAPPED_INDUSTRY = "未映射";
+
     private final PortfolioRepository repository;
     private final MarketDataService marketDataService;
     private final ValuationRepository valuationRepository;
@@ -417,12 +420,9 @@ public class PortfolioApplicationService {
 
         Map<String, BigDecimal> byIndustry = new LinkedHashMap<>();
         BigDecimal total = BigDecimal.ZERO;
-        var mappedPositions = positions.stream()
-                .filter(pos -> mapping.containsKey(pos.stockCode()))
-                .toList();
-        Map<String, Quote> quotes = batchQuotes(mappedPositions);
-        for (var pos : mappedPositions) {
-            String industry = mapping.get(pos.stockCode());
+        Map<String, Quote> quotes = batchQuotes(positions);
+        for (var pos : positions) {
+            String industry = mapping.getOrDefault(pos.stockCode(), UNMAPPED_INDUSTRY);
             var q = quotes.get(pos.stockCode());
             if (q == null) {
                 continue;
