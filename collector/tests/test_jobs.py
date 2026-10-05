@@ -47,6 +47,7 @@ def test_seed_tasks_upserts():
                 "schedule": {},
                 "enabled": True,
                 "trading_day_gated": True,
+                "depends_on": None,
                 "retry_max": 3,
                 "retry_backoff": "exponential",
             }
@@ -188,6 +189,7 @@ def _valid_task_def():
         "schedule": {},
         "enabled": True,
         "trading_day_gated": True,
+        "depends_on": None,
         "retry_max": 3,
         "retry_backoff": "exponential",
     }
@@ -202,6 +204,22 @@ def test_seed_tasks_missing_required_key_fails():
 
 def test_seed_tasks_unknown_key_fails():
     bad = {**_valid_task_def(), "bogus_key": 1}
+    with pytest.raises(ValueError, match="含未知键.*bogus_key"):
+        seed_tasks(MagicMock(), [bad])
+
+
+def test_seed_tasks_accepts_depends_on_key():
+    """C1：depends_on 进封闭键集后，声明依赖的任务定义放行。"""
+    conn = MagicMock()
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.fetchall.return_value = []  # reconcile 查询：无残留任务
+    seed_tasks(conn, [{**_valid_task_def(), "depends_on": ["tracking_index_close", "etf_close"]}])
+    conn.commit.assert_called()
+
+
+def test_seed_tasks_depends_on_does_not_open_unknown_keys():
+    """C1：登记 depends_on 不放松封闭契约——未登记键仍拒绝。"""
+    bad = {**_valid_task_def(), "depends_on": ["etf_close"], "bogus_key": 1}
     with pytest.raises(ValueError, match="含未知键.*bogus_key"):
         seed_tasks(MagicMock(), [bad])
 

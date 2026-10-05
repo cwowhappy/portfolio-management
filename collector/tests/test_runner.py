@@ -272,3 +272,73 @@ def test_unexpected_exception_finalizes_running_row_as_failed():
     rr.finish_run.assert_called_once()
     assert rr.finish_run.call_args.args[0] == 42
     assert rr.finish_run.call_args.args[1] == "failed"
+
+
+# ---------------------------------------------------------------- C1 depends_on 前置检查
+
+
+def _dep_task(deps, gated=True):
+    return Collector(
+        "t",
+        "t",
+        [],
+        MagicMock(),
+        None,
+        target_table="x",
+        schedule={},
+        trading_day_gated=gated,
+        depends_on=deps,
+    )
+
+
+def test_dependency_unmet_skips_without_executor():
+    """C1：上游当日无 success/partial → skipped 落库 + 告警留痕，不触 executor。"""
+    cal = TradingCalendar({dt.date.today()})  # 过交易日门控，聚焦依赖检查
+    ex = MagicMock()
+    alerter = MagicMock()
+    runner = TaskRunner("postgresql://u:p@localhost:5432/db", cal, ex, alerter=alerter)
+    with _patched_pg() as pg, patch("collector.scheduler.runner.RunRepository") as R:
+        pg.connect.side_effect = lambda *a, **k: _pg_ctx(acquired=True)
+        rr = R.return_value
+        rr.succeeded_on.return_value = set()  # 上游当日无 success/partial
+        res = runner.run(_dep_task(["etf_close"]))
+    assert res.status == STATUS_SKIPPED
+    assert "依赖未满足" in res.message
+    assert "etf_close" in res.message
+    ex.run.assert_not_called()
+    rr.record.assert_called_once()
+    assert rr.record.call_args.args[2] == STATUS_SKIPPED
+    assert "依赖未满足" in rr.record.call_args.kwargs["message"]
+    alerter.send.assert_called_once()
+    assert alerter.send.call_args.args[0]["status"] == STATUS_SKIPPED
+
+
+def test_dependency_met_runs_normal_path():
+    """C1：依赖满足（上游当日有 success/partial）→ 照旧走 advisory lock/executor 正常路径。"""
+    cal = TradingCalendar({dt.date.today()})
+    ex = MagicMock()
+    ex.run.return_value = MagicMock(status=STATUS_SUCCESS, task_code="t", mode="incremental")
+    runner = TaskRunner("postgresql://u:p@localhost:5432/db", cal, ex)
+    with _patched_pg() as pg, patch("collector.scheduler.runner.RunRepository") as R:
+        pg.connect.side_effect = lambda *a, **k: _pg_ctx(acquired=True)
+        rr = R.return_value
+        rr.succeeded_on.return_value = {"etf_close"}
+        res = runner.run(_dep_task(["etf_close"]))
+    assert res.status == STATUS_SUCCESS
+    rr.start_run.assert_called_once()
+    ex.run.assert_called_once()
+
+
+def test_no_dependencies_no_precheck_query():
+    """C1：depends_on 为 None/空 → 零前置查询（无依赖任务零额外开销）。"""
+    cal = TradingCalendar({dt.date.today()})
+    ex = MagicMock()
+    ex.run.return_value = MagicMock(status=STATUS_SUCCESS, task_code="t", mode="incremental")
+    runner = TaskRunner("postgresql://u:p@localhost:5432/db", cal, ex)
+    with _patched_pg() as pg, patch("collector.scheduler.runner.RunRepository") as R:
+        pg.connect.side_effect = lambda *a, **k: _pg_ctx(acquired=True)
+        rr = R.return_value
+        runner.run(_dep_task(None))
+        runner.run(_dep_task([]))
+    rr.succeeded_on.assert_not_called()
+    assert ex.run.call_count == 2

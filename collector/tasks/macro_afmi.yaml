@@ -20,5 +20,6 @@ target_table: intelligence_macro_series
 schedule: { type: cron, cron: "0 11 12-16 * *" }
 enabled: true
 trading_day_gated: false
+depends_on: null
 retry_max: 2
 retry_backoff: fixed

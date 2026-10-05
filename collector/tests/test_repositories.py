@@ -1,3 +1,4 @@
+import datetime as dt
 import json
 from unittest.mock import MagicMock
 
@@ -19,6 +20,7 @@ def test_list_all_parses_jsonb_without_enabled_filter():
             json.dumps({"type": "cron", "cron": "30 15 * * 1-5"}),
             True,
             True,
+            json.dumps(["tracking_index_close"]),
             3,
             "exponential",
         ),
@@ -33,6 +35,7 @@ def test_list_all_parses_jsonb_without_enabled_filter():
             json.dumps({"type": "interval", "days": 7}),
             False,
             False,
+            None,
             3,
             "exponential",
         ),
@@ -60,6 +63,7 @@ def test_list_enabled_parses_jsonb():
             json.dumps({"type": "cron", "cron": "30 15 * * 1-5"}),
             True,
             True,
+            None,
             3,
             "exponential",
         ),
@@ -86,6 +90,7 @@ def test_list_enabled_handles_parsed_jsonb():
             {"type": "cron", "cron": "30 15 * * 1-5"},
             True,
             True,
+            ["etf_close"],
             3,
             "exponential",
         ),
@@ -94,6 +99,7 @@ def test_list_enabled_handles_parsed_jsonb():
     assert rows[0]["source_ids"] == [{"source_id": "a"}]
     assert rows[0]["validator"] == [{"check": "min_rows", "value": 1000, "level": "hard"}]
     assert rows[0]["schedule"]["cron"] == "30 15 * * 1-5"
+    assert rows[0]["depends_on"] == ["etf_close"]
 
 
 def test_get_parses_null_jsonb_columns_as_none():
@@ -111,6 +117,7 @@ def test_get_parses_null_jsonb_columns_as_none():
         {"type": "cron", "cron": "0 9 * * *"},
         True,
         True,
+        None,  # depends_on 为 NULL
         None,
         None,
     )
@@ -142,6 +149,7 @@ def test_upsert_serializes_jsonb_and_commits():
             "schedule": {"type": "cron", "cron": "30 15 * * 1-5"},
             "enabled": True,
             "trading_day_gated": True,
+            "depends_on": ["etf_close"],
             "retry_max": 3,
             "retry_backoff": "exponential",
         }
@@ -149,6 +157,7 @@ def test_upsert_serializes_jsonb_and_commits():
     args = cur.execute.call_args.args[1]
     assert isinstance(args[2], str)  # source_ids 被 json.dumps
     assert isinstance(args[5], str)  # validator 被 json.dumps
+    assert isinstance(args[10], str)  # depends_on 被 json.dumps
     conn.commit.assert_called_once()
 
 
@@ -305,3 +314,60 @@ def test_never_succeeded_returns_codes():
     cur.fetchall.return_value = [("a",), ("b",)]
     assert RunRepository(conn).never_succeeded(["a", "b", "c"]) == {"a", "b"}
     assert RunRepository(conn).never_succeeded([]) == set()
+
+
+# ---------------------------------------------------------------- C1 depends_on 前置检查（真实 PG）
+
+
+def _seed_upstream_tasks(pg_conn, codes):
+    """直插上游任务行（collector_task_run 有 task_id FK）。"""
+    for code in codes:
+        pg_conn.execute(
+            "INSERT INTO collector_task (task_code, task_name, source_ids, converter, target_table, schedule)"
+            " VALUES (%s, %s, '[]'::jsonb, 'c', 'x', '{}'::jsonb)",
+            (code, code),
+        )
+    pg_conn.commit()
+
+
+def _insert_run(pg_conn, task_code, status, day, hour=16):
+    """直插 run 行（绕过 record——须显式控制 started_at 日期）。naive datetime 与
+    ::date 回读同走 session 时区，写入/比较口径一致，不受容器时区影响。"""
+    pg_conn.execute(
+        "INSERT INTO collector_task_run (task_id, mode, status, started_at)"
+        " SELECT id, 'incremental', %s, %s FROM collector_task WHERE task_code=%s",
+        (status, dt.datetime.combine(day, dt.time(hour, 0)), task_code),
+    )
+    pg_conn.commit()
+
+
+def test_succeeded_on_includes_success_and_partial_of_the_day(pg_conn):
+    from collector.repositories.runs import RunRepository
+
+    _seed_upstream_tasks(pg_conn, ["etf_close", "tracking_index_close"])
+    # 服务器口径的「当日」：与 started_at::date 的 session 时区换算一致，测试不随时区漂移
+    today = pg_conn.execute("SELECT current_date").fetchone()[0]
+    _insert_run(pg_conn, "etf_close", "success", today, hour=15)
+    _insert_run(pg_conn, "tracking_index_close", "partial", today, hour=15)
+    got = RunRepository(pg_conn).succeeded_on(["etf_close", "tracking_index_close"], today)
+    assert got == {"etf_close", "tracking_index_close"}
+
+
+def test_succeeded_on_excludes_failed_running_and_other_days(pg_conn):
+    from collector.repositories.runs import RunRepository
+
+    _seed_upstream_tasks(pg_conn, ["a", "b", "c"])
+    today = pg_conn.execute("SELECT current_date").fetchone()[0]
+    yesterday = today - dt.timedelta(days=1)
+    _insert_run(pg_conn, "a", "failed", today)
+    _insert_run(pg_conn, "a", "running", today)
+    _insert_run(pg_conn, "b", "success", yesterday)  # 他日 success 不算
+    _insert_run(pg_conn, "c", "success", today)  # 对照组：当日 success 算
+    got = RunRepository(pg_conn).succeeded_on(["a", "b", "c"], today)
+    assert got == {"c"}
+
+
+def test_succeeded_on_empty_codes_returns_empty_set(pg_conn):
+    from collector.repositories.runs import RunRepository
+
+    assert RunRepository(pg_conn).succeeded_on([], dt.date.today()) == set()

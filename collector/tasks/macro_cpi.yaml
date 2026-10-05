@@ -20,5 +20,6 @@ schedule: { type: cron, cron: "0 11 10-13 * *" }
 enabled: true
 # 宏观发布跨非交易日（统计局遇周末顺延），设计 §6：全部情报任务不门控
 trading_day_gated: false
+depends_on: null
 retry_max: 2
 retry_backoff: fixed

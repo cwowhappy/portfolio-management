@@ -21,5 +21,6 @@ schedule: { type: cron, cron: "40 8 * * *" }
 enabled: true
 # 政策发布跨非交易日（部委周末发文常态），设计 §6：全部情报任务不门控
 trading_day_gated: false
+depends_on: null
 retry_max: 2
 retry_backoff: fixed

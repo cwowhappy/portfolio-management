@@ -17,5 +17,6 @@ schedule: { type: cron, cron: "*/10 7-23 * * *" }
 enabled: true
 # 新闻发布跨非交易日（设计 §6：全部情报任务 trading_day_gated: false）
 trading_day_gated: false
+depends_on: null
 retry_max: 2
 retry_backoff: fixed

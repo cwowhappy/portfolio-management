@@ -20,6 +20,7 @@ def _task_def(code, enabled=True):
         "schedule": {"type": "cron", "cron": "30 15 * * 1-5"},
         "enabled": enabled,
         "trading_day_gated": True,
+        "depends_on": None,
         "retry_max": 3,
         "retry_backoff": "exponential",
     }
@@ -51,3 +52,13 @@ def test_seed_disables_task_removed_from_yaml(pg_conn):
     assert row[0] is False
     keep = pg_conn.execute("SELECT enabled FROM collector_task WHERE task_code='keep'").fetchone()
     assert keep[0] is True
+
+
+def test_seed_depends_on_idempotent(pg_conn):
+    """C1：含 depends_on 的任务 seed 两次，DB JSONB 值稳定（upsert 覆盖，不漂移）。"""
+    deps = ["tracking_index_close", "etf_close"]
+    seed_tasks(pg_conn, [_task_def("t1") | {"depends_on": deps}])
+    seed_tasks(pg_conn, [_task_def("t1") | {"depends_on": deps}])
+    row = pg_conn.execute("SELECT depends_on FROM collector_task WHERE task_code='t1'").fetchone()
+    assert row is not None
+    assert row[0] == deps

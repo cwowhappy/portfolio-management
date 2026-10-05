@@ -11,5 +11,6 @@ target_table: industry_valuation
 schedule: { type: interval, days: 7 }
 enabled: true
 trading_day_gated: false
+depends_on: null
 retry_max: 3
 retry_backoff: exponential

@@ -50,6 +50,16 @@ WHERE t.task_code = ANY(%s) AND NOT EXISTS (
   WHERE r.task_id = t.id AND r.status IN ('success', 'partial'))
 """
 
+# C1 depends_on 前置检查：join 形态照 LIST_RUNS_SQL（task_code 在 collector_task，
+# run 状态在 collector_task_run，经 task_id FK 关联）；success/partial 口径照
+# never_succeeded 先例——partial 也已落数据，视为上游已就绪。
+SUCCEEDED_ON_SQL = """
+SELECT DISTINCT t.task_code
+FROM collector_task_run r
+JOIN collector_task t ON t.id = r.task_id
+WHERE t.task_code = ANY(%s) AND r.status IN ('success', 'partial') AND r.started_at::date = %s
+"""
+
 
 class RunRepository:
     def __init__(self, conn):
@@ -137,4 +147,12 @@ class RunRepository:
             return set()
         with self.conn.cursor() as cur:
             cur.execute(NEVER_SUCCEEDED_SQL, (list(task_codes),))
+            return {r[0] for r in cur.fetchall()}
+
+    def succeeded_on(self, task_codes, day) -> set:
+        """day 当日（started_at::date）已有 success/partial run 的任务集合，供 depends_on 前置检查。"""
+        if not task_codes:
+            return set()
+        with self.conn.cursor() as cur:
+            cur.execute(SUCCEEDED_ON_SQL, (list(task_codes), day))
             return {r[0] for r in cur.fetchall()}
