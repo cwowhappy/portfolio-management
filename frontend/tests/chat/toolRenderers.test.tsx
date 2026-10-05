@@ -355,6 +355,52 @@ describe("ChartToolRenderers", () => {
     expect(getByText("共 12 条")).toBeTruthy();
   });
 
+  // ===== P2-F4：外链消毒 safeUrl——javascript:/http: 拦截渲染纯文本（无 href），https 放行 =====
+  it("search_news url=javascript: → 标题为无 href 的纯文本元素（外链消毒）", () => {
+    render(<ChartToolRenderers />);
+    const sn = renderToolConfigs.find((c) => c.name === "search_news")!;
+    const { getByText } = render(
+      sn.render({
+        status: "complete",
+        result: JSON.stringify({ items: [{ title: "恶链新闻", url: "javascript:alert(1)" }], total: 1 }),
+      }) as React.ReactElement,
+    );
+    // 标题文本仍在，但不再是链接（closest("a") 为 null，不可点击执行）
+    expect(getByText("恶链新闻").closest("a")).toBeNull();
+  });
+
+  it("search_announcements pdfUrl=http:// → 标题为无 href 的纯文本元素（外链消毒）", () => {
+    render(<ChartToolRenderers />);
+    const sa = renderToolConfigs.find((c) => c.name === "search_announcements")!;
+    const { getByText } = render(
+      sa.render({
+        status: "complete",
+        result: JSON.stringify({ items: [{ title: "明文公告", pdfUrl: "http://x.pdf" }], total: 1 }),
+      }) as React.ReactElement,
+    );
+    expect(getByText("明文公告").closest("a")).toBeNull();
+  });
+
+  it("macro_brief url=javascript: → 无 href 纯文本；url=https://ok.com → <a> 且 href 原样", () => {
+    render(<ChartToolRenderers />);
+    const mb = renderToolConfigs.find((c) => c.name === "macro_brief")!;
+    const { getByText, getByRole } = render(
+      mb.render({
+        status: "complete",
+        result: JSON.stringify({
+          indicators: [{ indicator: "CPI", value: 0.6, period: "2026-09", periodType: "MONTH", series: [] }],
+          policies: [
+            { title: "恶链政策", url: "javascript:alert(1)" },
+            { title: "合规政策", url: "https://ok.com" },
+          ],
+          missing: [],
+        }),
+      }) as React.ReactElement,
+    );
+    expect(getByText("恶链政策").closest("a")).toBeNull();
+    expect(getByRole("link", { name: "合规政策" }).getAttribute("href")).toBe("https://ok.com");
+  });
+
   it("macro_brief 空政策 → note 行且无政策列表；错误 → 降级折叠卡；inProgress → 骨架", () => {
     render(<ChartToolRenderers />);
     const mb = renderToolConfigs.find((c) => c.name === "macro_brief")!;
