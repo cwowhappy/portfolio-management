@@ -21,7 +21,7 @@ import { handleTrustCustomEvent } from "@/lib/trustMeta";
 import InterruptApprovalCard from "./InterruptApprovalCard";
 import ToolCallCard from "./ToolCallCard";
 import { ChartToolRenderers } from "./toolRenderers";
-import MarkdownView from "@/components/shared/MarkdownView";
+import { TrustMessageContent } from "@/components/shared/TrustMarkdownView";
 
 // 模块级常量：避免每次渲染新建数组触发潜在的重订阅
 const AGENT_UPDATES = [UseAgentUpdate.OnMessagesChanged, UseAgentUpdate.OnRunStatusChanged];
@@ -237,7 +237,10 @@ const AssistantMessage = memo(function AssistantMessage({
             {renderToolCall({ toolCall: tc, toolMessage: toolMessageByCallId.get(tc.id) })}
           </div>
         ))}
-        {content && <MarkdownView content={content} />}
+        {/* MS-29 F2：信任渲染入口——TrustMessageContent 独立订阅 trustStore（useSyncExternalStore
+            引用稳定契约），有锚渲染角标、无锚走原 MarkdownView；store 事件不触发本 memo 组件
+            重渲染（比较器无需 trust 项，F1 契约建议形态）。 */}
+        {content && <TrustMessageContent messageId={message.id} content={content} />}
         <FeedbackBar messageId={message.id} />
       </div>
     </div>

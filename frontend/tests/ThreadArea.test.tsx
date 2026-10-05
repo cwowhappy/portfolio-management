@@ -936,6 +936,82 @@ describe("ThreadArea", () => {
     expect(trustStore.get("ta-trust-unknown")).toBeUndefined();
   });
 
+  // ———— MS-29 F2：角标渲染接线（TrustMessageContent 独立订阅 store，AssistantMessage memo 之外）————
+
+  it("F2：anchors 落 store 后角标原位渲染（未落 store 的消息零角标）", async () => {
+    mocks.agent.messages = [
+      agentMessage({ id: "ta-f2-u", role: "user", content: "看看" }),
+      agentMessage({ id: "ta-f2-a1", role: "assistant", content: "现价1520.33元，历史估值约38倍。" }),
+    ];
+    renderThread();
+    await waitFor(() => expect(screen.getByText(/现价/)).toBeTruthy());
+    // 落地前：无角标（无 payload 走原 MarkdownView 路径）
+    expect(screen.queryAllByTestId("trust-anchor-badge")).toHaveLength(0);
+    act(() => {
+      lastTrustSubscriber().onCustomEvent({
+        event: {
+          name: TRUST_ANCHORS_EVENT,
+          value: {
+            messageId: "ta-f2-a1",
+            payload: {
+              v: 1,
+              anchors: [
+                {
+                  snippet: "1520.33元",
+                  occ: 1,
+                  state: "verified",
+                  tool: "get_quote",
+                  args: { symbol: "600519.SH" },
+                  asOf: "2026-10-05 14:59:32",
+                  asOfKind: "data",
+                  raw: "1520.33",
+                },
+                { snippet: "38倍", occ: 1, state: "unverified" },
+              ],
+              stats: { verified: 1, sourced: 0, unverified: 1 },
+            },
+          },
+        },
+        messages: [],
+      });
+    });
+    const badges = await screen.findAllByTestId("trust-anchor-badge");
+    expect(badges).toHaveLength(2);
+    expect(badges.map((b) => b.getAttribute("data-anchor-state"))).toEqual(["verified", "unverified"]);
+    // 浮层常驻 DOM（group-hover 显隐）：verified 措辞 + 来源字段
+    expect(screen.getByText("数值与工具返回一致")).toBeTruthy();
+    expect(screen.getByText("数据时间戳：2026-10-05 14:59:32")).toBeTruthy();
+  });
+
+  it("F2：correction 改写后到达的 anchors（snippet 为替换形态）对当前文本直接定位", async () => {
+    // F1 替换产物（occ=2 的 1708 亿）已写回 content，B5 终态锚定 snippet 即 replacement 形态
+    mocks.agent.messages = [
+      agentMessage({ id: "ta-f2-a2", role: "assistant", content: "A 1741 亿 B 1708 亿 C。" }),
+    ];
+    renderThread();
+    await waitFor(() => expect(screen.getByText(/1741/)).toBeTruthy());
+    act(() => {
+      lastTrustSubscriber().onCustomEvent({
+        event: {
+          name: TRUST_ANCHORS_EVENT,
+          value: {
+            messageId: "ta-f2-a2",
+            payload: {
+              v: 1,
+              anchors: [{ snippet: "1708 亿", occ: 1, state: "verified" }],
+              stats: { verified: 1, sourced: 0, unverified: 0 },
+            },
+          },
+        },
+        messages: [],
+      });
+    });
+    const badges = await screen.findAllByTestId("trust-anchor-badge");
+    expect(badges).toHaveLength(1);
+    // 角标落在替换后的 1708 亿上（包裹元素含 snippet 原文）
+    expect(badges[0].parentElement?.textContent).toContain("1708 亿");
+  });
+
   describe("Composer", () => {
     it("输入文本后点击发送", async () => {
       renderThread();
