@@ -68,7 +68,12 @@ public class AllocationApplicationService {
     public PlanView activatePlan(Long userId, Long planId) {
         AllocationPlan plan = requirePlan(userId, planId);
         repository.deactivateAllByUserId(userId);
-        return PlanView.from(repository.save(plan.activate()));
+        try {
+            return PlanView.from(repository.save(plan.activate()));
+        } catch (org.springframework.dao.DataIntegrityViolationException e) {
+            // B6：并发激活撞每用户唯一生效索引（deactivate→activate 竞态窗口），DB 兜底转译 409（照 PrincipleRule 先例）
+            throw new AllocationException(AllocationErrorCode.CONFLICT, "方案已在别处激活，请刷新");
+        }
     }
 
     @Transactional

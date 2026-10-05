@@ -11,4 +11,6 @@ public final class AllocationErrorCode {
     public static final String NO_ACTIVE_PLAN = "NO_ACTIVE_PLAN";
     /** REITs 无回测数据源——与 BacktestEngine.REITS_BACKTEST_UNSUPPORTED 同值。 */
     public static final String REITS_BACKTEST_UNSUPPORTED = "REITS_BACKTEST_UNSUPPORTED";
+    /** 并发激活撞每用户唯一生效索引（ux_allocation_plan_user_active）——409 冲突。 */
+    public static final String CONFLICT = "CONFLICT";
 }

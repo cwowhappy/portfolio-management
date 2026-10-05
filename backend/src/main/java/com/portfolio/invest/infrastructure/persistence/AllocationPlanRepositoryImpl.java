@@ -40,7 +40,9 @@ public class AllocationPlanRepositoryImpl implements AllocationPlanRepository {
 
     @Override
     public AllocationPlan save(AllocationPlan plan) {
-        AllocationPlanJpaEntity saved = planJpa.save(AllocationPlanJpaEntity.fromDomain(plan));
+        // saveAndFlush：UPDATE 延迟到 flush 才发，并发激活撞唯一偏索引时违例会推迟到事务提交、
+        // 逃出应用层 catch 冒 400；提前到 save 内抛出供应用层转译 409（照 UserRepositoryImpl 先例）
+        AllocationPlanJpaEntity saved = planJpa.saveAndFlush(AllocationPlanJpaEntity.fromDomain(plan));
         weightJpa.deleteByPlanId(saved.getId());
         plan.weights().forEach((ac, w) ->
                 weightJpa.save(AllocationPlanWeightJpaEntity.fromDomain(saved.getId(), ac, w)));
