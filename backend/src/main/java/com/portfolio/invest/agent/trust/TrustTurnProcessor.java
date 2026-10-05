@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 回合校验流水（MS-29 B5，设计规格 §4.2 步骤 1~4/9 的纯函数半边）：完整文本 + 真值池
@@ -23,6 +24,15 @@ public class TrustTurnProcessor {
 
     /** 池摘要上限（§2.2 metadata 膨胀护栏；超出保留最近条目）。 */
     static final int POOL_SUMMARY_LIMIT = 40;
+
+    /**
+     * 真值池显式排除清单（需求决策 #6 定稿，终审 Important）：回显类写工具——其返回是模型
+     * 自产数据的回显，非独立真值。排除语义：该工具的 ToolInvocation <strong>完全不进校验池
+     * （比对池与 MCP 精确配源池都不进）也不落池摘要</strong>——其数字在正文引用落 unverified
+     * （诚实语义：无独立真值可证，不压制 unverified_ratio 信号）。在 {@link #validatorPool}
+     * 建池处统一过滤（含历史 metadata 反解条目——升级前会话已落库的排除工具条目同样拦下）。
+     */
+    static final Set<String> POOL_EXCLUDED_TOOLS = Set.of("research_draft");
 
     private final ConsistencyValidator validator;
     private final AdviceDetector adviceDetector;
@@ -111,7 +121,8 @@ public class TrustTurnProcessor {
 
     /**
      * 校验器池：本回合池（resultText + emittedSpecs 合并提数，emit 图表数字同为工具真值）
-     * + 历史池摘要反解为合成调用（tool/asOf/kind 随行，B2 线名编码）。
+     * + 历史池摘要反解为合成调用（tool/asOf/kind/mcp 随行，B2 线名编码）。
+     * 排除清单（决策 #6）在此统一过滤——回显类工具不产真值。
      */
     private static List<ToolInvocation> validatorPool(
             List<ToolInvocation> currentPool, List<Map<String, Object>> historyPool) {
@@ -131,7 +142,8 @@ public class TrustTurnProcessor {
                     text.append(spec);
                 }
                 pool.add(new ToolInvocation(invocation.toolName(), invocation.args(), text.toString(),
-                        List.of(), invocation.asOf(), invocation.asOfKind(), invocation.failed()));
+                        List.of(), invocation.asOf(), invocation.asOfKind(), invocation.failed(),
+                        invocation.mcp()));
             }
         }
         if (historyPool != null) {
@@ -142,10 +154,15 @@ public class TrustTurnProcessor {
                 }
             }
         }
+        pool.removeIf(invocation -> POOL_EXCLUDED_TOOLS.contains(invocation.toolName()));
         return pool;
     }
 
-    /** 历史池条目 {v, tool, asOf, kind} → 合成 ToolInvocation（resultText 即原值片段，truths() 自然提取）。 */
+    /**
+     * 历史池条目 {v, tool, asOf, kind, mcp} → 合成 ToolInvocation（resultText 即原值片段，
+     * truths() 自然提取）。mcp 读字面标志；缺键（升级前旧条目）回退 {@code kind==CALL}——
+     * 与旧分桶行为严格等价（旧代码 CALL 即 MCP 精确配源池）。
+     */
     private static ToolInvocation fromHistoryEntry(Map<String, Object> entry) {
         if (entry == null) {
             return null;
@@ -156,20 +173,24 @@ public class TrustTurnProcessor {
             return null;
         }
         ToolInvocation.AsOfKind kind = ToolInvocation.AsOfKind.fromWireName(str(entry.get("kind")));
-        return new ToolInvocation(tool, Map.of(), value, List.of(), str(entry.get("asOf")),
-                kind == null ? ToolInvocation.AsOfKind.CALL : kind, false);
+        if (kind == null) {
+            kind = ToolInvocation.AsOfKind.CALL;
+        }
+        boolean mcp = entry.get("mcp") instanceof Boolean flag ? flag : kind == ToolInvocation.AsOfKind.CALL;
+        return new ToolInvocation(tool, Map.of(), value, List.of(), str(entry.get("asOf")), kind, false, mcp);
     }
 
     /**
      * 池摘要（§2.2 本回合「值→(tool, asOf)」映射，落 Msg metadata）：resultText+emittedSpecs
-     * 提数、failed 不入池、同值去重（后写覆盖=最近一次调用）、上限 {@link #POOL_SUMMARY_LIMIT}
-     * （超出保留最近条目）。
+     * 提数、failed 不入池、排除清单工具不入池（决策 #6：回显非真值）、同值去重（后写覆盖=
+     * 最近一次调用）、上限 {@link #POOL_SUMMARY_LIMIT}（超出保留最近条目）。mcp 随行落键，
+     * 回读分桶不依赖 kind 编码（缺键旧条目由 {@link #fromHistoryEntry} 回退兼容）。
      */
     private static List<Map<String, Object>> poolSummary(List<ToolInvocation> currentPool) {
         LinkedHashMap<String, Map<String, Object>> byValue = new LinkedHashMap<>();
         if (currentPool != null) {
             for (ToolInvocation invocation : currentPool) {
-                if (invocation.failed()) {
+                if (invocation.failed() || POOL_EXCLUDED_TOOLS.contains(invocation.toolName())) {
                     continue;
                 }
                 for (NumberToken token : NumberExtractor.extract(numbersTextOf(invocation))) {
@@ -182,6 +203,7 @@ public class TrustTurnProcessor {
                     entry.put("asOf", invocation.asOf() == null ? "" : invocation.asOf());
                     entry.put("kind", invocation.asOfKind() == null
                             ? ToolInvocation.AsOfKind.CALL.wireName() : invocation.asOfKind().wireName());
+                    entry.put("mcp", invocation.mcp());
                     byValue.put((String) entry.get("v"), entry);
                 }
             }

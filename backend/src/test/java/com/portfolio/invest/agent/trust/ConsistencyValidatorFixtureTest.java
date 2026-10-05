@@ -140,7 +140,8 @@ class ConsistencyValidatorFixtureTest {
                     entry.isFailed() ? null : "2026-10-05 14:59:32",
                     entry.isFailed() ? ToolInvocation.AsOfKind.DATA
                             : entry.isMcp() ? ToolInvocation.AsOfKind.CALL : ToolInvocation.AsOfKind.DATA,
-                    entry.isFailed()));
+                    entry.isFailed(),
+                    entry.isMcp()));
         }
         return pool;
     }

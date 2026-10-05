@@ -16,8 +16,9 @@ import java.util.List;
  *   <li><strong>verified</strong>：与内置工具真值满足 {@code |text − truth| ≤ max(relative×|truth|,
  *       量纲绝对容差)}。绝对容差选择：snippet 或命中真值原值含「元」用 price（价格语义），
  *       否则 absolute（无量纲：%、倍）。</li>
- *   <li><strong>sourced</strong>：有工具来源但未比对——MCP 真值（asOfKind=CALL）值相等只配源
- *       （不进比对池，决策 #5）；或可归因偏差（见下）在 verify() 单独调用时的显式标注态。</li>
+ *   <li><strong>sourced</strong>：有工具来源但未比对——MCP 真值（{@link ToolInvocation#mcp()}
+ *       字面标志，终审 B3-① 迁移）值相等只配源（不进比对池，决策 #5）；或可归因偏差（见下）
+ *       在 verify() 单独调用时的显式标注态。</li>
  *   <li><strong>unverified</strong>：无工具数据支撑（含失败调用——不产生可比真值）。</li>
  * </ul>
  *
@@ -255,14 +256,18 @@ public final class ConsistencyValidator {
         return truths(pool, true);
     }
 
-    /** 从调用结果文本提取真值：failed 调用不产生可比真值；CALL（MCP）单独成池（值相等配源）。 */
+    /**
+     * 从调用结果文本提取真值：failed 调用不产生可比真值；池分桶读 {@link ToolInvocation#mcp()}
+     * 字面标志（终审 B3-① 行为等价迁移）——MCP 恒精确配源池（值相等只配源，决策 #5），
+     * 内置无时点（CALL 兜底）真值进比对池（不再与 MCP 同桶）。
+     */
     private static List<Truth> truths(List<ToolInvocation> pool, boolean mcp) {
         List<Truth> out = new ArrayList<>();
         if (pool == null) {
             return out;
         }
         for (ToolInvocation invocation : pool) {
-            if (invocation.failed() || (invocation.asOfKind() == ToolInvocation.AsOfKind.CALL) != mcp) {
+            if (invocation.failed() || invocation.mcp() != mcp) {
                 continue;
             }
             for (NumberToken token : NumberExtractor.extract(invocation.resultText())) {

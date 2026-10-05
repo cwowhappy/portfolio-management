@@ -76,7 +76,7 @@ public class RecordingAgentToolDecorator extends ToolBase {
     private static final Map<String, ConcurrentLinkedQueue<String>> EMISSIONS = new ConcurrentHashMap<>();
 
     private final AgentTool delegate;
-    /** MCP 录制语义：恒 asOfKind=CALL（sourced，不入比对池，决策 #5）。 */
+    /** MCP 录制语义：恒 asOfKind=CALL 且 ToolInvocation.mcp=true（sourced，不入比对池，决策 #5）。 */
     private final boolean mcp;
     private final ObjectMapper mapper;
     private final Clock clock;
@@ -169,14 +169,14 @@ public class RecordingAgentToolDecorator extends ToolBase {
         List<String> specs = List.copyOf(emissions);
         AsOf asOf = resolveAsOf(resultText, specs, callTime);
         TrustContext.current(rc).record(new ToolInvocation(
-                delegate.getName(), args, resultText, specs, asOf.value(), asOf.kind(), false));
+                delegate.getName(), args, resultText, specs, asOf.value(), asOf.kind(), false, mcp));
     }
 
     private void recordFailure(Map<String, Object> args, ConcurrentLinkedQueue<String> emissions,
                                String callTime, RuntimeContext rc) {
         TrustContext.current(rc).record(new ToolInvocation(
                 delegate.getName(), args, "", List.copyOf(emissions), callTime,
-                ToolInvocation.AsOfKind.CALL, true));
+                ToolInvocation.AsOfKind.CALL, true, mcp));
     }
 
     /** user 级 chunkCallback 目标（装配期挂一次）：emit 块按 toolUseId 归位进在途调用。 */

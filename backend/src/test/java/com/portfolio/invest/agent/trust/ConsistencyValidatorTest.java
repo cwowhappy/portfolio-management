@@ -179,6 +179,30 @@ class ConsistencyValidatorTest {
         assertThat(result.corrections()).isEmpty();
     }
 
+    @DisplayName("分桶迁移（终审 B3-①）：内置 CALL 兜底真值（mcp=false）进比对池——同值 verified，不再与 MCP 同桶")
+    @Test
+    void givenBuiltinCallKindTruth_whenVerify_thenComparableVerified() {
+        ToolInvocation builtinCall = new ToolInvocation("get_quote", Map.of("code", "600519"),
+                "15.20元", List.of(), "2026-10-05 14:59:32",
+                ToolInvocation.AsOfKind.CALL, false, false);
+
+        AnchorBatch batch = validator.verify(NumberExtractor.extract("现价15.20元"), pool(builtinCall));
+
+        assertThat(batch.anchors().getFirst().state())
+                .as("mcp 字面标志承载分桶：内置无时点真值可参与比对")
+                .isEqualTo(TrustVerdict.VERIFIED);
+    }
+
+    @DisplayName("MCP 真值不参与可归因比对：值有偏差（15.2 vs 15.23）→ unverified（非拦截）")
+    @Test
+    void givenMcpValueWithDeviation_whenVerify_thenUnverifiedNotIntercepted() {
+        AnchorBatch batch = validator.verify(NumberExtractor.extract("现价15.2元"), pool(mcpTruth("15.23元")));
+
+        assertThat(batch.anchors().getFirst().state())
+                .as("MCP 池只做精确相等配源——偏差值不配对不拦截")
+                .isEqualTo(TrustVerdict.UNVERIFIED);
+    }
+
     @DisplayName("失败调用：failed=true 不产生可比真值 → unverified")
     @Test
     void givenFailedInvocation_whenVerify_thenUnverified() {
@@ -264,17 +288,17 @@ class ConsistencyValidatorTest {
 
     static ToolInvocation truth(String tool, String resultText) {
         return new ToolInvocation(tool, Map.of("code", "600519"), resultText, List.of(),
-                "2026-10-05 14:59:32", ToolInvocation.AsOfKind.DATA, false);
+                "2026-10-05 14:59:32", ToolInvocation.AsOfKind.DATA, false, false);
     }
 
     static ToolInvocation mcpTruth(String resultText) {
         return new ToolInvocation("mcp_tushare", Map.of(), resultText, List.of(),
-                "2026-10-05 14:59:32", ToolInvocation.AsOfKind.CALL, false);
+                "2026-10-05 14:59:32", ToolInvocation.AsOfKind.CALL, false, true);
     }
 
     static ToolInvocation failedTruth(String resultText) {
         return new ToolInvocation("get_quote", Map.of("code", "600519"), resultText, List.of(),
-                null, ToolInvocation.AsOfKind.DATA, true);
+                null, ToolInvocation.AsOfKind.DATA, true, false);
     }
 
     static List<ToolInvocation> pool(ToolInvocation... invocations) {

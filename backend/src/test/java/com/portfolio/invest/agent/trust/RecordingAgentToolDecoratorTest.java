@@ -234,6 +234,7 @@ class RecordingAgentToolDecoratorTest {
         assertThat(invocation.asOf()).as("get_quote 类 String-JSON 解析 time 字段").isEqualTo("09:30:15");
         assertThat(invocation.asOfKind()).isEqualTo(ToolInvocation.AsOfKind.DATA);
         assertThat(invocation.failed()).isFalse();
+        assertThat(invocation.mcp()).as("内置工具缺省 mcp=false（终审 B3-① 分桶标志）").isFalse();
     }
 
     @DisplayName("args 为入参快照：记录后改原 map 不影响已记真值")
@@ -398,9 +399,9 @@ class RecordingAgentToolDecoratorTest {
         assertThat(confidence.get("signals")).asList().containsExactly("stale_macro:1");
     }
 
-    @DisplayName("MCP 工具恒 sourced：结果含 time 仍记 asOfKind=CALL + 调用时刻（决策 #5，不入比对池）")
+    @DisplayName("MCP 工具恒 sourced：结果含 time 仍记 asOfKind=CALL + 调用时刻，mcp 字面标志填充 true（决策 #5，不入比对池）")
     @Test
-    void givenMcpDecorator_whenResultHasTime_thenAlwaysCallKind() {
+    void givenMcpDecorator_whenResultHasTime_thenAlwaysCallKindAndMcpFlagFilled() {
         RuntimeContext rc = RuntimeContext.empty();
         RecordingAgentToolDecorator decorator = decorated(
                 p -> Mono.just(ToolResultBlock.text("{\"time\":\"09:30:15\",\"close\":3900.5}")), true);
@@ -410,6 +411,8 @@ class RecordingAgentToolDecoratorTest {
         ToolInvocation invocation = TrustContext.current(rc).invocations().get(0);
         assertThat(invocation.asOf()).isEqualTo(CALL_TIME);
         assertThat(invocation.asOfKind()).isEqualTo(ToolInvocation.AsOfKind.CALL);
+        assertThat(invocation.mcp()).as("mcp 标志按被包装工具 MCP 语义填充（终审 B3-①，池分桶不依赖 kind 编码）")
+                .isTrue();
     }
 
     @DisplayName("工具失败：failed=true 入池供 B7 信号，异常照常向下游传播")

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.portfolio.invest.config.InvestProperties;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
@@ -21,11 +22,30 @@ class TrustTurnProcessorTest {
 
     private static ToolInvocation invocation(String resultText, String... specs) {
         return new ToolInvocation("get_quote", Map.of("code", "600519"), resultText,
-                List.of(specs), "2026-10-05 14:59:32", ToolInvocation.AsOfKind.DATA, false);
+                List.of(specs), "2026-10-05 14:59:32", ToolInvocation.AsOfKind.DATA, false, false);
     }
 
     private static Map<String, Object> historyEntry(String value, String tool, String asOf, String kind) {
         return Map.of("v", value, "tool", tool, "asOf", asOf, "kind", kind);
+    }
+
+    /** 历史池条目（带 mcp 键的新格式，终审 B3-① 分桶迁移）。 */
+    private static Map<String, Object> historyEntry(
+            String value, String tool, String asOf, String kind, boolean mcp) {
+        Map<String, Object> entry = new LinkedHashMap<>(historyEntry(value, tool, asOf, kind));
+        entry.put("mcp", mcp);
+        return entry;
+    }
+
+    /**
+     * research_draft 真实返回形态（决策 #6 排除清单锁定）：中文摘要 + ```research-draft 围栏 JSON
+     * ——整体非纯 JSON（readTree 失败），修复前靠该格式巧合落 CALL 兜底进 MCP 精确配源池。
+     */
+    private static ToolInvocation researchDraftEcho() {
+        return new ToolInvocation("research_draft", Map.of("stage", "STRATEGY"),
+                "草稿已记录：STRATEGY 阶段共 3 条要点。\n```research-draft\n"
+                        + "{\"valuationLow\":12.5,\"valuationHigh\":18.2}\n```",
+                List.of(), "2026-10-06 10:00:00", ToolInvocation.AsOfKind.CALL, false, false);
     }
 
     // ———— 豁免优先序（契约：先配真值 verified/sourced → 无匹配且用户来源 → 豁免不锚定 → 其余 unverified） ————
@@ -121,11 +141,98 @@ class TrustTurnProcessorTest {
     @Test
     void givenFailedInvocationOnly_whenProcess_thenUnverified() {
         var failed = new ToolInvocation("get_quote", Map.of("code", "600519"),
-                "{\"price\":1520.33}", List.of(), null, ToolInvocation.AsOfKind.CALL, true);
+                "{\"price\":1520.33}", List.of(), null, ToolInvocation.AsOfKind.CALL, true, false);
         var report = processor.process("现价1520.33元。", List.of(failed), List.of(), List.of());
 
         assertThat(report.anchors()).hasSize(1);
         assertThat(report.anchors().get(0).state()).isEqualTo(TrustVerdict.UNVERIFIED);
+    }
+
+    // ———— 排除清单（需求决策 #6 定稿，终审 Important）：research_draft 回显非真值 ————
+
+    @DisplayName("排除清单：research_draft 回显数字正文引用 → unverified（非 sourced/verified，不压制信号）")
+    @Test
+    void givenResearchDraftEchoOnly_whenProcess_thenUnverifiedNotSourced() {
+        var report = processor.process("估值下沿 12.5。",
+                List.of(researchDraftEcho()), List.of(), List.of());
+
+        assertThat(report.anchors()).hasSize(1);
+        var anchor = report.anchors().get(0);
+        assertThat(anchor.state()).as("回显数字不得配源（模型自产数据，无独立真值）")
+                .isEqualTo(TrustVerdict.UNVERIFIED);
+        assertThat(anchor.tool()).isNull();
+        assertThat(report.stats()).isEqualTo(new AnchorBatch.Stats(0, 0, 1));
+    }
+
+    @DisplayName("排除清单：返回长出可解析时点（纯 JSON DATA 形态）仍不入池 → unverified")
+    @Test
+    void givenResearchDraftJsonLikeReturn_whenProcess_thenStillUnverified() {
+        var jsonLike = new ToolInvocation("research_draft", Map.of(),
+                "{\"valuationLow\":12.5,\"time\":\"2026-10-06 10:00:00\"}", List.of(),
+                "2026-10-06 10:00:00", ToolInvocation.AsOfKind.DATA, false, false);
+        var report = processor.process("估值下沿 12.5。", List.of(jsonLike), List.of(), List.of());
+
+        assertThat(report.anchors().get(0).state()).isEqualTo(TrustVerdict.UNVERIFIED);
+    }
+
+    @DisplayName("排除清单：升级前已落库的历史池条目（tool=research_draft）同样拦截 → unverified")
+    @Test
+    void givenExcludedToolHistoryEntry_whenProcess_thenStillUnverified() {
+        var report = processor.process("估值下沿 12.5。", List.of(),
+                List.of(historyEntry("12.5", "research_draft", "2026-10-06 10:00:00", "data")),
+                List.of());
+
+        assertThat(report.anchors().get(0).state()).isEqualTo(TrustVerdict.UNVERIFIED);
+    }
+
+    @DisplayName("池摘要：排除工具不落摘要（决策 #6）；mcp 标志随行落键")
+    @Test
+    void givenMixedPoolWithExcludedTool_whenProcess_thenSummarySkipsExcludedAndCarriesMcp() {
+        var mcpCall = new ToolInvocation("tushare_search", Map.of(), "营收 19000亿", List.of(),
+                "2026-10-06 09:00:00", ToolInvocation.AsOfKind.CALL, false, true);
+        var report = processor.process("无数字。",
+                List.of(researchDraftEcho(), mcpCall,
+                        invocation("{\"price\":1520.33,\"time\":\"2026-10-05 14:59:32\"}")),
+                List.of(), List.of());
+
+        assertThat(report.poolSummary()).extracting(entry -> entry.get("tool"))
+                .containsExactlyInAnyOrder("get_quote", "tushare_search")
+                .doesNotContain("research_draft");
+        for (Map<String, Object> entry : report.poolSummary()) {
+            assertThat(entry.get("mcp"))
+                    .as("tool=%s 的 mcp 键随行", entry.get("tool"))
+                    .isEqualTo("tushare_search".equals(entry.get("tool")));
+        }
+    }
+
+    // ———— 池分桶迁移（终审 B3-①）：mcp 字面标志承载，内置 CALL 与 MCP 不再同桶 ————
+
+    @DisplayName("历史池 mcp 回读：新格式内置 CALL+mcp=false 进比对池同值 verified；MCP+mcp=true 精确配源 sourced")
+    @Test
+    void givenHistoryEntriesWithMcpKey_whenProcess_thenBucketedByFlag() {
+        var builtinCall = processor.process("下沿 12.5。", List.of(),
+                List.of(historyEntry("12.5", "get_quote", "2026-10-06 10:00:00", "call", false)),
+                List.of());
+        assertThat(builtinCall.anchors().get(0).state())
+                .as("内置无时点工具（CALL 兜底）真值可参与比对")
+                .isEqualTo(TrustVerdict.VERIFIED);
+
+        var mcpNew = processor.process("下沿 12.5。", List.of(),
+                List.of(historyEntry("12.5", "tushare_search", "2026-10-06 10:00:00", "call", true)),
+                List.of());
+        assertThat(mcpNew.anchors().get(0).state())
+                .as("MCP 真值精确配源，不产 verified（决策 #5）")
+                .isEqualTo(TrustVerdict.SOURCED);
+    }
+
+    @DisplayName("历史池旧格式兼容：缺 mcp 键回退 kind==call（与升级前分桶严格等价）→ sourced")
+    @Test
+    void givenLegacyHistoryEntryWithoutMcpKey_whenProcess_thenFallbackCallKindBucketsAsMcp() {
+        var report = processor.process("下沿 12.5。", List.of(),
+                List.of(historyEntry("12.5", "tushare_search", "2026-10-06 10:00:00", "call")),
+                List.of());
+
+        assertThat(report.anchors().get(0).state()).isEqualTo(TrustVerdict.SOURCED);
     }
 
     // ———— 大偏差修正（B2 契约形态） ————
@@ -163,7 +270,7 @@ class TrustTurnProcessorTest {
                         invocation("{\"price\":1520.33,\"time\":\"2026-10-05 14:59:32\"}"),
                         invocation("{\"price\":1520.33}", "{\"type\":\"bar\",\"data\":[1520.33]}"),
                         new ToolInvocation("bad_tool", Map.of(), "{\"price\":1.00}", List.of(),
-                                null, ToolInvocation.AsOfKind.CALL, true)),
+                                null, ToolInvocation.AsOfKind.CALL, true, false)),
                 List.of(),
                 List.of());
 
@@ -181,7 +288,7 @@ class TrustTurnProcessorTest {
         List<ToolInvocation> pool = new ArrayList<>();
         for (int i = 0; i < 45; i++) {
             pool.add(new ToolInvocation("get_quote", Map.of(), "{\"price\":" + (1000 + i) + ".00}",
-                    List.of(), "2026-10-05 14:59:32", ToolInvocation.AsOfKind.DATA, false));
+                    List.of(), "2026-10-05 14:59:32", ToolInvocation.AsOfKind.DATA, false, false));
         }
         var report = processor.process("无数字。", pool, List.of(), List.of());
 
@@ -245,7 +352,7 @@ class TrustTurnProcessorTest {
     @Test
     void givenGeneratedKind_whenToPayload_thenLowercaseWireName() {
         var generated = new ToolInvocation("get_market_overview", Map.of(), "{\"price\":1520.33}",
-                List.of(), "2026-10-05 15:00:00", ToolInvocation.AsOfKind.GENERATED, false);
+                List.of(), "2026-10-05 15:00:00", ToolInvocation.AsOfKind.GENERATED, false, false);
         var report = processor.process("现价1520.33元。", List.of(generated), List.of(), List.of());
 
         @SuppressWarnings("unchecked")
@@ -375,7 +482,7 @@ class TrustTurnProcessorTest {
         // 锚定携带 invocation.asOf（B3 记录字段）——JSON time 只影响装饰器解析，此处直构陈旧时点
         var stale = new ToolInvocation("get_quote", Map.of("code", "600519"),
                 "{\"price\":1520.33,\"time\":\"2026-09-01 09:30:00\"}", List.of(),
-                "2026-09-01 09:30:00", ToolInvocation.AsOfKind.DATA, false);
+                "2026-09-01 09:30:00", ToolInvocation.AsOfKind.DATA, false, false);
         var report = fixedClockProcessor().process(
                 "现价1520.33元。",
                 List.of(stale),
@@ -394,7 +501,7 @@ class TrustTurnProcessorTest {
     @Test
     void givenGeneratedAsOfAnchor_whenProcess_thenNoStaleSignal() {
         var generated = new ToolInvocation("get_market_overview", Map.of(), "{\"close\":3245.10}",
-                List.of(), "2026-01-01 12:00:00", ToolInvocation.AsOfKind.GENERATED, false);
+                List.of(), "2026-01-01 12:00:00", ToolInvocation.AsOfKind.GENERATED, false, false);
         var report = fixedClockProcessor().process(
                 "收盘点位3245.10点。", List.of(generated), List.of(), List.of());
 
@@ -406,7 +513,7 @@ class TrustTurnProcessorTest {
     @Test
     void givenFailedInvocation_whenProcess_thenToolFailuresInSignals() {
         var failed = new ToolInvocation("get_quote", Map.of("code", "600519"),
-                "{\"price\":1520.33}", List.of(), null, ToolInvocation.AsOfKind.CALL, true);
+                "{\"price\":1520.33}", List.of(), null, ToolInvocation.AsOfKind.CALL, true, false);
         var report = fixedClockProcessor().process(
                 "涨幅3.2%。", List.of(failed), List.of(), List.of());
 
