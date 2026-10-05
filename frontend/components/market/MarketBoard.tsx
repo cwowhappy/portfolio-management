@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   fetchFinancials,
   fetchKline,
@@ -49,6 +50,10 @@ export default function MarketBoard() {
   const [error, setError] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const requestSeqRef = useRef(0);
+  const searchParams = useSearchParams();
+  // 行业图表深链（/market?code=，ChainGraphCard/LandscapeChart push）挂载时消费一次；
+  // ref 守卫防 searchParams 引用变化（同页 query 变更）重复触发
+  const deepLinkedRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -120,6 +125,18 @@ export default function MarketBoard() {
       if (seq === requestSeqRef.current) setLoading(false);
     }
   }, []);
+
+  // 深链 ?code=：挂载时按代码搜一次并自动选中首个命中（无命中静默忽略，不打扰初始渲染）
+  useEffect(() => {
+    if (deepLinkedRef.current) return;
+    const code = searchParams.get("code");
+    if (!code) return;
+    deepLinkedRef.current = true;
+    void (async () => {
+      const hits = await searchStocks(code);
+      if (hits[0]) select(hits[0]);
+    })();
+  }, [searchParams, select]);
 
   const switchPeriod = useCallback(
     async (p: "day" | "week" | "month") => {

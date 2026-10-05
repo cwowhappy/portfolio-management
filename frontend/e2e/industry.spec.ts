@@ -1,4 +1,4 @@
-import { test, expect, type APIRequestContext } from "@playwright/test";
+import { test, expect, type APIRequestContext, type Locator } from "@playwright/test";
 import { registerAndApprove, TEST_PASSWORD, uniqueUsername } from "./helpers";
 
 test.describe("/industry 行业估值", () => {
@@ -248,6 +248,61 @@ test.describe("/industry 未上市与融资（MS-10）", () => {
 });
 
 /**
+ * MS-28 P2-F1 图谱节点点击深链行情台：ECharts 节点画在 canvas 上（无 DOM 可点），按 tier 色
+ * （accent/up/ink-dim，运行时取 CSS 变量——与 ChainGraphCard 取色同源）扫描 canvas 像素定位
+ * 节点；legend 同色 marker 在 canvas 底带，扫描排除底部 40px。force 布局动画期节点在动，
+ * 轮询重扫；命中像素是节点内部实色像素，悬停可出 tooltip（name｜环节·层级）。
+ */
+async function findGraphNodePixel(canvas: Locator): Promise<{ x: number; y: number }> {
+  const deadline = Date.now() + 10_000;
+  for (;;) {
+    const hit = await canvas.evaluate((el: SVGElement | HTMLElement) => {
+      const canvasEl = el as HTMLCanvasElement;
+      const style = getComputedStyle(document.documentElement);
+      const hexToRgb = (name: string) => {
+        const hex = style.getPropertyValue(name).trim();
+        return hex.length === 7
+          ? [
+              parseInt(hex.slice(1, 3), 16),
+              parseInt(hex.slice(3, 5), 16),
+              parseInt(hex.slice(5, 7), 16),
+            ]
+          : null;
+      };
+      const tierColors = ["--color-accent", "--color-up", "--color-ink-dim"]
+        .map(hexToRgb)
+        .filter((c): c is number[] => c !== null);
+      const ctx = canvasEl.getContext("2d");
+      if (!ctx || !canvasEl.clientWidth || !canvasEl.clientHeight || tierColors.length === 0) {
+        return null;
+      }
+      const dprX = canvasEl.width / canvasEl.clientWidth;
+      const dprY = canvasEl.height / canvasEl.clientHeight;
+      const img = ctx.getImageData(0, 0, canvasEl.width, canvasEl.height).data;
+      const bottom = canvasEl.height - 40 * dprY; // legend 底带同色 marker，排除
+      for (let y = 0; y < bottom; y += 2) {
+        for (let x = 0; x < canvasEl.width; x += 2) {
+          const i = (y * canvasEl.width + x) * 4;
+          const r = img[i] ?? 0;
+          const g = img[i + 1] ?? 0;
+          const b = img[i + 2] ?? 0;
+          const near = tierColors.some(
+            ([tr, tg, tb]) => Math.abs(r - tr) <= 8 && Math.abs(g - tg) <= 8 && Math.abs(b - tb) <= 8,
+          );
+          if (near) return { x: x / dprX, y: y / dprY };
+        }
+      }
+      return null;
+    });
+    if (hit) return hit;
+    if (Date.now() > deadline) {
+      throw new Error("canvas 未扫到 tier 色节点像素（force 布局未渲染或取色不符）");
+    }
+    await new Promise((r) => setTimeout(r, 400));
+  }
+}
+
+/**
  * MS-10 产业链图谱（P3）：V20 种子保证锂电池链经上市成员行业映射（300750 宁德时代 等 →
  * 801730 电力设备）派生出现在该行业下钻页；登录态全文档编辑器建链→图卡出现→删除链消失。
  */
@@ -262,6 +317,57 @@ test.describe("/industry 产业链图谱（MS-10 P3）", () => {
     await expect(card.locator("canvas")).toBeVisible({ timeout: 15_000 });
     // 链描述头在场（V20 种子描述含「动力电池全产业链」）
     await expect(card).toContainText("动力电池全产业链");
+  });
+
+  // 锂电池种子 8 成员全上市挂真实 A 股代码（V1 基线种子，原 V20）——任意节点点击都应深链
+  const CHAIN_NAME_BY_CODE: Record<string, string> = {
+    "002460": "赣锋锂业", "002466": "天齐锂业", "002812": "恩捷股份", "600884": "杉杉股份",
+    "300750": "宁德时代", "300014": "亿纬锂能", "000625": "长安汽车", "601127": "赛力斯",
+  };
+
+  test("图谱上市节点点击深链行情台：/market?code= 自动选中该股（MS-28 P2-F1）", async ({ page, request }) => {
+    // 板面数据必需：fetchIndustryStocks 对库中不存在的行业报「行业不存在」（整页走错误分支，
+    // tab 不渲染）——本地空板面库实测确认，门控口径与同组用例一致
+    test.skip(!(await boardHasData(request)), SKIP_NO_DATA);
+    test.skip(!hasAdminSeed, SKIP_NO_ADMIN);
+    test.setTimeout(120_000); // 注册审核 + 真实行情接口（超时口径照 market.spec）
+    await registerAndApprove(page, uniqueUsername("ms28f1"), TEST_PASSWORD);
+    await page.goto("/industry/801730");
+    await page.getByTestId("tab-chain").click();
+    const card = page.locator('[data-testid^="chain-card-"]').filter({ hasText: "锂电池" });
+    await expect(card).toBeVisible({ timeout: 20_000 });
+    const canvas = card.locator('[data-testid^="chain-graph-"]').locator("canvas");
+    await expect(canvas).toBeVisible({ timeout: 15_000 });
+    // force 布局动画先停一拍再扫像素，降低节点仍在漂移的概率
+    await page.waitForTimeout(1_500);
+
+    // 像素定位节点 → 悬停 tooltip 确认节点名（含 ｜ 分隔的环节信息）→ 同点位点击；
+    // 布局仍在动导致悬空时（tooltip 不出）重扫重试，最多 3 轮
+    const box = (await canvas.boundingBox())!;
+    let nodeName = "";
+    for (let attempt = 0; attempt < 3 && !nodeName; attempt++) {
+      const node = await findGraphNodePixel(canvas);
+      await page.mouse.move(box.x + node.x, box.y + node.y);
+      const tooltip = card.locator("div").filter({ hasText: /｜/ }).last();
+      try {
+        await expect(tooltip).toContainText(/｜/, { timeout: 2_000 });
+        nodeName = ((await tooltip.textContent()) ?? "").split("｜")[0]?.trim() ?? "";
+        // tooltip 已确认节点在指针下——趁布局未再漂移立即同点位点击
+        await page.mouse.click(box.x + node.x, box.y + node.y);
+      } catch {
+        // 节点漂移致悬空：重扫重试
+      }
+    }
+    expect(nodeName).not.toBe("");
+    await page.waitForURL(/\/market\?code=\d{6}/, { timeout: 15_000 });
+    const code = new URL(page.url()).searchParams.get("code") ?? "";
+    // 点击的节点与落点 URL 互证（代码→股名取自种子台账）
+    expect(nodeName).toBe(CHAIN_NAME_BY_CODE[code] ?? `<未知代码 ${code}>`);
+
+    // 深链消费：行情台自动搜索该代码并选中首个命中，搜索框文本为该股名（真实接口，放宽超时）
+    const input = page.getByPlaceholder(/输入股票名称或代码搜索/);
+    await expect(input).toHaveValue(nodeName, { timeout: 60_000 });
+    await expect(page.getByText("走势 · 前复权")).toBeVisible({ timeout: 60_000 });
   });
 
   test("登录后新建链（两环节各一上市成员）→ 图卡出现 → 编辑器删除链消失", async ({ page, request }) => {
