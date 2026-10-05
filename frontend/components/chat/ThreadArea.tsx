@@ -17,6 +17,7 @@ import {
   useChatRuntime,
 } from "./RuntimeProvider";
 import { loadMessages, newThreadId, errorStatus } from "@/lib/conversations";
+import { handleTrustCustomEvent } from "@/lib/trustMeta";
 import InterruptApprovalCard from "./InterruptApprovalCard";
 import ToolCallCard from "./ToolCallCard";
 import { ChartToolRenderers } from "./toolRenderers";
@@ -482,6 +483,11 @@ export default function ThreadArea({ llmReady, onUnauthorized }: {
   // FR-8：@ag-ui/client 0.0.59 对流内 RUN_ERROR 事件 resolve（而非 reject）runAgent 的 promise，
   // 契约错误等流内错误不会进上面 send 的 catch（那里只覆盖传输层 rejection），必须订阅 agent
   // 运行错误事件才能透出到横幅。用户主动停止会合成 code="abort" 的事件，不打扰。
+  // MS-29 F1：同一订阅挂 onCustomEvent 接入信任事件——trust.anchors 落 trustMeta store
+  // （F2 渲染数据源），trust.correction 由 handler 返回 AgentStateMutation，库管线
+  // （defaultApplyEvents → processApplyEvents）把替换写回 agent.messages（原位替换的
+  // sanctioned 路径；Custom 事件无默认应用，不须 stopPropagation）。未知 name / 解析失败
+  // 在 handler 内静默忽略（宁可少标不可断流）。
   useEffect(() => {
     if (!isReady) return;
     const { unsubscribe } = agent.subscribe({
@@ -489,6 +495,7 @@ export default function ThreadArea({ llmReady, onUnauthorized }: {
         if (event.code === "abort") return;
         setSendError(toSendErrorText(event));
       },
+      onCustomEvent: ({ event, messages }) => handleTrustCustomEvent(event, messages),
     });
     return () => unsubscribe();
   }, [agent, isReady]);

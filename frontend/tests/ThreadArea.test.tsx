@@ -4,6 +4,7 @@ import type { Message } from "@ag-ui/client";
 import ThreadArea from "@/components/chat/ThreadArea";
 import { RuntimeProvider, useChatRuntime } from "@/components/chat/RuntimeProvider";
 import { installConversationsApi } from "@/tests/mockConversationsApi";
+import { TRUST_ANCHORS_EVENT, TRUST_CORRECTION_EVENT, trustStore } from "@/lib/trustMeta";
 
 // ———— CopilotKit hooks mock ————
 
@@ -871,6 +872,68 @@ describe("ThreadArea", () => {
     await act(async () => {});
     expect(screen.queryByText(/This operation was aborted/)).toBeNull();
     expect(screen.queryByRole("button", { name: "关闭错误提示" })).toBeNull();
+  });
+
+  // ———— MS-29 F1：信任事件订阅接线（与 FR-8 同一 subscribe 调用，按 name 分派）————
+
+  function lastTrustSubscriber() {
+    const calls = mocks.agent.subscribe.mock.calls;
+    expect(calls.length).toBeGreaterThan(0);
+    return calls[calls.length - 1][0] as {
+      onCustomEvent: (params: {
+        event: { name?: unknown; value?: unknown };
+        messages: Message[];
+      }) => { messages: Message[] } | undefined;
+    };
+  }
+
+  it("trust.anchors 事件 → 全局 trustStore 落地（F2 渲染数据源）", async () => {
+    renderThread();
+    await waitFor(() => expect(mocks.agent.subscribe).toHaveBeenCalled());
+    lastTrustSubscriber().onCustomEvent({
+      event: {
+        name: TRUST_ANCHORS_EVENT,
+        value: {
+          messageId: "ta-trust-1",
+          payload: {
+            v: 1,
+            anchors: [{ snippet: "1741 亿", occ: 1, state: "verified" }],
+            stats: { verified: 1, sourced: 0, unverified: 0 },
+          },
+        },
+      },
+      messages: [],
+    });
+    expect(trustStore.get("ta-trust-1")?.stats.verified).toBe(1);
+  });
+
+  it("trust.correction 事件 → 返回 AgentStateMutation（occ 第 2 次出现原位替换）", async () => {
+    renderThread();
+    await waitFor(() => expect(mocks.agent.subscribe).toHaveBeenCalled());
+    const messages = [
+      { id: "ta-u1", role: "user", content: "看看" } as Message,
+      { id: "ta-trust-2", role: "assistant", content: "营收 1741 亿（另一处 1741 亿）。" } as Message,
+    ];
+    const mutation = lastTrustSubscriber().onCustomEvent({
+      event: {
+        name: TRUST_CORRECTION_EVENT,
+        value: { messageId: "ta-trust-2", snippet: "1741 亿", occ: 2, replacement: "1708 亿", note: "n1" },
+      },
+      messages,
+    });
+    expect(mutation?.messages?.[1].content).toBe("营收 1741 亿（另一处 1708 亿）。");
+    expect(trustStore.get("ta-trust-2")?.correction?.notes).toEqual(["n1"]);
+  });
+
+  it("未知 name 的 Custom 事件安全忽略（不写 store、不产 mutation）", async () => {
+    renderThread();
+    await waitFor(() => expect(mocks.agent.subscribe).toHaveBeenCalled());
+    const mutation = lastTrustSubscriber().onCustomEvent({
+      event: { name: "other.custom", value: { whatever: 1 } },
+      messages: [],
+    });
+    expect(mutation).toBeUndefined();
+    expect(trustStore.get("ta-trust-unknown")).toBeUndefined();
   });
 
   describe("Composer", () => {
