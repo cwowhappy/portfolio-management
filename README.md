@@ -130,6 +130,7 @@ Playwright e2e 位于 `frontend/e2e/`，配置见 `frontend/playwright.config.ts
 | POST /api/portfolio/positions/buy · /sell | 买入 / 卖出 |
 | POST /api/portfolio/positions/cash-dividend · /stock-dividend | 现金 / 股票分红 |
 | DELETE /api/portfolio/positions/{positionId} | 删除持仓 |
+| GET /api/portfolio/positions/{positionId}/delete-impact | 删除影响预检（关联交易/分红笔数与已实现盈亏） |
 | GET /api/portfolio/positions/{positionId}/trades · PUT /api/portfolio/positions/{positionId}/trades/{tradeId} | 交易列表 / 修改交易 |
 | GET /api/portfolio/positions/{positionId}/dividends | 分红记录 |
 | GET /api/portfolio/groups · POST /api/portfolio/groups | 持仓分组查询 / 新建 |

@@ -659,6 +659,36 @@ class PortfolioApplicationServiceTest {
         verify(repo).deletePosition(5L);
     }
 
+    @DisplayName("删除影响预检返回关联交易分红笔数与已实现盈亏")
+    @Test
+    void givenPositionWithTradesAndDividends_whenDeleteImpact_thenReturnCountsAndRealizedPnl() {
+        when(repo.findPositionByIdAndPortfolioId(5L, 10L)).thenReturn(Optional.of(clearedPosition(5L)));
+        when(repo.findTradesByPositionId(5L)).thenReturn(List.of(
+                new Trade(11L, 5L, TradeType.BUY, LocalDate.of(2026, 8, 27),
+                        new BigDecimal("100"), new BigDecimal("100"), BigDecimal.ZERO, Instant.now()),
+                new Trade(12L, 5L, TradeType.SELL, LocalDate.of(2026, 8, 28),
+                        new BigDecimal("120"), new BigDecimal("100"), BigDecimal.ZERO, Instant.now())));
+        when(repo.findDividendsByPositionId(5L)).thenReturn(List.of(
+                new Dividend(1L, 5L, DividendType.CASH, LocalDate.of(2026, 8, 26),
+                        new BigDecimal("1.5"), null, Instant.now())));
+
+        var view = service.deleteImpact(1L, 5L);
+
+        assertThat(view.tradeCount()).isEqualTo(2L);
+        assertThat(view.dividendCount()).isEqualTo(1L);
+        assertThat(view.realizedPnl()).isEqualByComparingTo("2000");
+    }
+
+    @DisplayName("预检他人持仓抛NOT_FOUND")
+    @Test
+    void givenOthersPosition_whenDeleteImpact_thenThrowNotFound() {
+        when(repo.findPositionByIdAndPortfolioId(5L, 10L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.deleteImpact(1L, 5L))
+                .isInstanceOfSatisfying(PortfolioException.class,
+                        e -> assertThat(e.code()).isEqualTo(PortfolioErrorCode.NOT_FOUND));
+    }
+
     @DisplayName("查询交易流水")
     @Test
     void givenPositionWithTrades_whenQueryTrades_thenReturnTradeHistory() {

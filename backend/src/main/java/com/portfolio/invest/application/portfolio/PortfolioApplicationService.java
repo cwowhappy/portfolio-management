@@ -304,6 +304,16 @@ public class PortfolioApplicationService {
         repository.deletePosition(positionId);
     }
 
+    /** 删除影响预检：deletePosition 为裸删+DB 级联，先返回将被删除的交易/分红笔数与已实现盈亏，供前端确认弹窗明示后果。 */
+    public DeleteImpactView deleteImpact(Long userId, Long positionId) {
+        Portfolio p = getOrCreatePortfolio(userId);
+        Position position = requirePosition(p.id(), positionId);
+        return new DeleteImpactView(
+                (long) repository.findTradesByPositionId(positionId).size(),
+                (long) repository.findDividendsByPositionId(positionId).size(),
+                position.realizedPnl());
+    }
+
     public List<TradeView> trades(Long userId, Long positionId) {
         Portfolio p = getOrCreatePortfolio(userId);
         requirePosition(p.id(), positionId);
