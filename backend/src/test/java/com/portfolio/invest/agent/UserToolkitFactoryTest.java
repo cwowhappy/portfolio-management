@@ -8,6 +8,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.portfolio.invest.agent.trust.RecordingAgentToolDecorator;
+import com.portfolio.invest.agent.trust.ToolInvocation;
+import com.portfolio.invest.agent.trust.TrustContext;
 import com.portfolio.invest.domain.mcp.AuthType;
 import com.portfolio.invest.domain.mcp.McpConfigRepository;
 import com.portfolio.invest.domain.mcp.McpEndpoint;
@@ -16,12 +19,18 @@ import com.portfolio.invest.domain.mcp.McpException;
 import com.portfolio.invest.domain.mcp.McpProvider;
 import com.portfolio.invest.domain.mcp.McpSecretCodec;
 import com.portfolio.invest.domain.mcp.McpUserConfig;
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.tool.AgentTool;
+import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
@@ -51,6 +60,11 @@ class UserToolkitFactoryTest {
         McpSecretCodec codec = mock(McpSecretCodec.class);
         when(codec.decrypt(any())).thenAnswer(inv -> inv.getArgument(0));
         return codec;
+    }
+
+    @AfterEach
+    void cleanTrustFallback() {
+        TrustContext.reset();
     }
 
     /** 标准装配环境：单 provider/endpoint/config，注入给定工具定义列表。 */
@@ -425,5 +439,71 @@ class UserToolkitFactoryTest {
         assertThat(elapsedMs)
                 .as("listTools 挂死端点须在 toolTimeout 内抛超时而非永久阻塞")
                 .isLessThan(10_000);
+    }
+
+    // ———— MS-29 B3：真值捕获装饰器装配 ————
+
+    @DisplayName("装配后内置与 MCP 工具均被装饰器同名覆盖注册（getTool 返回装饰器）")
+    @Test
+    void givenBuilt_whenGetTool_thenAllToolsDecorated() {
+        Toolkit toolkit = buildToolkitWith(List.of(tool("trade_cal", annotations(true))), List.of());
+
+        assertThat(toolkit.getTool("search_stock"))
+                .as("内置工具被 RecordingAgentToolDecorator 包裹").isInstanceOf(RecordingAgentToolDecorator.class);
+        assertThat(toolkit.getTool("analyze_portfolio"))
+                .as("用户态工具同样被包裹").isInstanceOf(RecordingAgentToolDecorator.class);
+        assertThat(toolkit.getTool("trade_cal"))
+                .as("MCP 工具同样被包裹").isInstanceOf(RecordingAgentToolDecorator.class);
+        assertThat(toolkit.getTool("search_stock").isReadOnly())
+                .as("装饰器透传只读语义（委托面不变形）").isTrue();
+        assertThat(toolkit.getTool("trade_cal").isReadOnly()).isTrue();
+    }
+
+    @DisplayName("MCP 工具经装饰器调用：真值池记录 sourced 语义（asOfKind=CALL 恒定，结果含 time 亦然）")
+    @Test
+    void givenMcpToolCall_whenDecorated_thenRecordedAsSourcedCall() {
+        McpClientWrapper client = mock(McpClientWrapper.class);
+        McpProvider provider = McpProvider.reconstitute(2L, "tushare", "Tushare", AuthType.BEARER, null, "token", true, null, NOW);
+        McpEndpoint endpoint = McpEndpoint.reconstitute(3L, 2L, null, "Tushare 数据", "https://api.tushare.pro/mcp/", true, NOW);
+        McpUserConfig config = McpUserConfig.reconstitute(9L, 1L, 2L, true, List.of(), 1, NOW, NOW);
+        McpConfigRepository repository = mock(McpConfigRepository.class);
+        McpClientPool clientPool = mock(McpClientPool.class);
+        InvestTools investTools = mock(InvestTools.class);
+
+        when(repository.findEnabledProviders()).thenReturn(List.of(provider));
+        when(repository.findByUserIdAndProviderId(1L, 2L)).thenReturn(Optional.of(config));
+        when(repository.findEnabledEndpointsByProviderId(2L)).thenReturn(List.of(endpoint));
+        when(clientPool.acquire(provider, endpoint, "token")).thenReturn(client);
+        when(client.listTools()).thenReturn(Mono.just(List.of(tool("trade_cal", annotations(true)))));
+        when(client.getName()).thenReturn("tushare");
+        when(client.callTool(org.mockito.ArgumentMatchers.eq("trade_cal"), any(), any()))
+                .thenReturn(Mono.just(new McpSchema.CallToolResult(
+                        List.of(new McpSchema.TextContent("{\"time\":\"09:31:00\",\"close\":3900.5}")), false)));
+
+        Toolkit toolkit = new UserToolkitFactory(investTools, repository, clientPool, passthroughCodec(),
+                mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
+                mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
+                mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
+                new com.fasterxml.jackson.databind.ObjectMapper(), TOOL_TIMEOUT).build(1L);
+
+        AgentTool tradeCal = toolkit.getTool("trade_cal");
+        assertThat(tradeCal).isInstanceOf(RecordingAgentToolDecorator.class);
+        RuntimeContext rc = RuntimeContext.empty();
+        Map<String, Object> input = Map.of("exchange", "SSE");
+        ToolUseBlock use = new ToolUseBlock("call_tc", "trade_cal", input,
+                new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(input).toString(), Map.of());
+        tradeCal.callAsync(ToolCallParam.builder()
+                .toolUseBlock(use).input(input).runtimeContext(rc).build()).block();
+
+        var pool = TrustContext.current(rc).invocations();
+        assertThat(pool).hasSize(1);
+        ToolInvocation invocation = pool.get(0);
+        assertThat(invocation.toolName()).isEqualTo("trade_cal");
+        assertThat(invocation.args()).containsEntry("exchange", "SSE");
+        assertThat(invocation.resultText()).contains("3900.5");
+        assertThat(invocation.asOfKind())
+                .as("MCP 恒 sourced（asOfKind=CALL，决策 #5：不入比对池），结果含 time 亦不升 DATA")
+                .isEqualTo(ToolInvocation.AsOfKind.CALL);
+        assertThat(invocation.failed()).isFalse();
     }
 }

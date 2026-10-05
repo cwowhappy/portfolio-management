@@ -1,6 +1,7 @@
 package com.portfolio.invest.agent;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.portfolio.invest.agent.trust.RecordingAgentToolDecorator;
 import com.portfolio.invest.application.allocation.AllocationApplicationService;
 import com.portfolio.invest.application.intelligence.IntelligenceQueryService;
 import com.portfolio.invest.application.portfolio.PortfolioApplicationService;
@@ -57,6 +58,7 @@ public class UserToolkitFactory {
                 intelligenceQueryService, mapper));
         // 预填内置工具名，防 MCP 同名工具静默覆盖内置（ToolRegistry.register 为 Map.put 后写覆盖）
         Set<String> names = new HashSet<>(toolkit.getToolNames());
+        Set<String> mcpNames = new HashSet<>();
         for (McpProvider provider : repository.findEnabledProviders()) {
             McpUserConfig config = repository.findByUserIdAndProviderId(userId, provider.id()).orElse(null);
             if (config == null || !config.enabled()) continue;
@@ -75,12 +77,28 @@ public class UserToolkitFactory {
                         String name = t.name();
                         if (config.disabledTools().contains(name) || names.contains(name)) continue;
                         names.add(name);
+                        mcpNames.add(name);
                         toolkit.registerAgentTool(mcpTool(t, client));
                     }
                 } catch (Exception e) {
                     log.warn("MCP 端点 {} 装配失败，跳过：{}", endpoint.name(), e.getMessage());
                 }
             }
+        }
+        return decorateWithRecording(toolkit, mcpNames);
+    }
+
+    /**
+     * MS-29 B3 真值捕获装配：① user 级 chunkCallback 装配期挂一次（B0 探针 1：单值替换语义，
+     * 勿按请求重设；emit 块按 toolUseId 归位进当次调用）；② 遍历既有注册集（内置 + 用户态 + MCP，
+     * getToolNames 为快照无 CME）同名覆盖注册装饰器——mcp 名单驱动 sourced 语义（asOfKind=CALL
+     * 恒定，决策 #5）。MCP 预填防覆盖在装饰前完成，内置名不被 MCP 覆盖的语义不变。
+     */
+    private Toolkit decorateWithRecording(Toolkit toolkit, Set<String> mcpNames) {
+        toolkit.setChunkCallback(RecordingAgentToolDecorator::captureEmission);
+        for (String name : toolkit.getToolNames()) {
+            toolkit.registerAgentTool(
+                    new RecordingAgentToolDecorator(toolkit.getTool(name), mcpNames.contains(name), mapper));
         }
         return toolkit;
     }
