@@ -6,6 +6,7 @@ import com.portfolio.invest.domain.user.User;
 import com.portfolio.invest.domain.user.UserErrorCode;
 import com.portfolio.invest.domain.user.UserException;
 import com.portfolio.invest.domain.user.UserRepository;
+import com.portfolio.invest.domain.user.UserSessionRegistry;
 import com.portfolio.invest.domain.user.UserStatus;
 import com.portfolio.invest.domain.user.UsernamePolicy;
 import com.portfolio.invest.domain.user.VerificationPurpose;
@@ -23,13 +24,16 @@ public class AuthApplicationService {
     private final PasswordEncoder passwordEncoder;
     private final EmailCodeService emailCodeService;
     private final RememberMeTokenStore rememberMeTokenStore;
+    private final UserSessionRegistry userSessionRegistry;
 
     public AuthApplicationService(UserRepository userRepository, PasswordEncoder passwordEncoder,
-                                  EmailCodeService emailCodeService, RememberMeTokenStore rememberMeTokenStore) {
+                                  EmailCodeService emailCodeService, RememberMeTokenStore rememberMeTokenStore,
+                                  UserSessionRegistry userSessionRegistry) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.emailCodeService = emailCodeService;
         this.rememberMeTokenStore = rememberMeTokenStore;
+        this.userSessionRegistry = userSessionRegistry;
     }
 
     @Transactional
@@ -76,5 +80,7 @@ public class AuthApplicationService {
         userRepository.save(user.withPassword(passwordEncoder.encode(newPassword)));
         // 密码已换：旧「记住我」令牌立即失效（同 UserAdminApplicationService.resetPassword 口径）
         rememberMeTokenStore.removeUserTokens(user.username());
+        // B14：同时吊销该用户全部 HTTP 会话，旧 JSESSIONID 再请求即 401
+        userSessionRegistry.expireAll(user.username());
     }
 }

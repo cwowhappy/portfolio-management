@@ -9,11 +9,13 @@ import com.portfolio.invest.domain.user.UserErrorCode;
 import com.portfolio.invest.domain.user.UserException;
 import com.portfolio.invest.domain.user.UserRepository;
 import com.portfolio.invest.domain.user.UserRole;
+import com.portfolio.invest.domain.user.UserSessionRegistry;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,17 +28,23 @@ public class UserAdminApplicationService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final RememberMeTokenStore rememberMeTokenStore;
+    private final UserSessionRegistry userSessionRegistry;
     private final EmailCodeService emailCodeService;
     private final MailSender mailSender;
+    private final ApplicationEventPublisher publisher;
 
     public UserAdminApplicationService(UserRepository userRepository, PasswordEncoder passwordEncoder,
                                        RememberMeTokenStore rememberMeTokenStore,
-                                       EmailCodeService emailCodeService, MailSender mailSender) {
+                                       UserSessionRegistry userSessionRegistry,
+                                       EmailCodeService emailCodeService, MailSender mailSender,
+                                       ApplicationEventPublisher publisher) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.rememberMeTokenStore = rememberMeTokenStore;
+        this.userSessionRegistry = userSessionRegistry;
         this.emailCodeService = emailCodeService;
         this.mailSender = mailSender;
+        this.publisher = publisher;
     }
 
     public List<UserAdminView> list() {
@@ -69,6 +77,8 @@ public class UserAdminApplicationService {
         UserAdminView view = mutate(id, u -> u.withPassword(passwordEncoder.encode(newPassword)));
         // 密码已换，该用户所有 remember-me 令牌必须失效，否则旧令牌仍可免密登录
         rememberMeTokenStore.removeUserTokens(view.username());
+        // B14：同时吊销该用户全部 HTTP 会话，旧 JSESSIONID 再请求即 401
+        userSessionRegistry.expireAll(view.username());
         return view;
     }
 
@@ -101,7 +111,13 @@ public class UserAdminApplicationService {
         if (user.role() == UserRole.ADMIN) {
             throw new UserException(UserErrorCode.FORBIDDEN, "不能对管理员账号执行此操作");
         }
-        return UserAdminView.from(userRepository.save(fn.apply(user)));
+        User updated = userRepository.save(fn.apply(user));
+        // canLogin 判定输入（status/enabled）变化才发事件：ActiveUserStatusCache 逐出重查，
+        // 密码/邮箱等不影响登录资格的写路径不发（B9）。
+        if (updated.status() != user.status() || updated.enabled() != user.enabled()) {
+            publisher.publishEvent(new UserStatusChangedEvent(updated.username()));
+        }
+        return UserAdminView.from(updated);
     }
 
     private User requireUser(Long id) {

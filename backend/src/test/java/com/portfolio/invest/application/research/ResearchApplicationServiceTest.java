@@ -65,8 +65,10 @@ import com.portfolio.invest.domain.wiki.WikiEntry;
 import com.portfolio.invest.domain.wiki.WikiEntryRepository;
 import com.portfolio.invest.domain.wiki.WikiEntryType;
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -96,9 +98,12 @@ class ResearchApplicationServiceTest {
 
     @BeforeEach
     void setUp() {
+        // 固定时钟走测试构造器（双轨注入先例：EmailCodeService/IntelligenceCleanupService）——
+        // 事件 eventDate/createdAt 与 wiki 回流 createdAt 可确定性断言
         service = new ResearchApplicationService(repository, journalRepository, entryPlanRepository,
                 checkRepository, falsifierReviewRepository, orchestration, snapshotAssembler,
-                reviewRepository, feedbackRepository, reviewComposer, wikiEntryRepository, mapper);
+                reviewRepository, feedbackRepository, reviewComposer, wikiEntryRepository, mapper,
+                Clock.fixed(NOW, ZoneId.of("Asia/Shanghai")));
     }
 
     private static ResearchProject project(Long id, Long userId, ResearchStage stage, ProjectStatus status) {
@@ -135,7 +140,9 @@ class ResearchApplicationServiceTest {
         assertThat(event.projectId()).isEqualTo(5L);
         assertThat(event.title()).isEqualTo("立项：贵州茅台");
         assertThat(event.tradeId()).isNull();
-        assertThat(event.eventDate()).isEqualTo(LocalDate.now());
+        assertThat(event.eventDate()).as("事件日期取注入时钟（Asia/Shanghai 日界）")
+                .isEqualTo(LocalDate.of(2026, 9, 28));
+        assertThat(event.createdAt()).as("创建时刻取注入时钟").isEqualTo(NOW);
     }
 
     @DisplayName("withTemplate 立项：额外写一条「模板已带入」事件")
@@ -1227,6 +1234,7 @@ class ResearchApplicationServiceTest {
         assertThat(entry.category()).isEqualTo("SOP_REVIEW");
         assertThat(entry.projectId()).isEqualTo(5L);
         assertThat(entry.content()).isEqualTo("复盘叙述：追高错误");
+        assertThat(entry.createdAt()).as("wiki 回流创建时刻取注入时钟").isEqualTo(NOW);
         // 复盘行：REFLOWN + 回填条目 id（用户确认后入库，F16）
         ArgumentCaptor<Review> reviewCaptor = ArgumentCaptor.forClass(Review.class);
         verify(reviewRepository).save(reviewCaptor.capture());

@@ -12,6 +12,7 @@ import com.portfolio.invest.domain.market.MarketDataErrorCode;
 import com.portfolio.invest.domain.market.MarketDataException;
 import com.portfolio.invest.domain.market.StockHit;
 import com.portfolio.invest.domain.user.UserRepository;
+import com.portfolio.invest.infrastructure.security.ActiveUserStatusCache;
 import com.portfolio.invest.infrastructure.security.SecurityConfig;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
@@ -30,7 +31,7 @@ import org.springframework.test.web.servlet.MockMvc;
  * 引入真实 SecurityConfig 验证 /api/market/** 匿名放行；业务由 MarketDataService 打桩。
  */
 @WebMvcTest(MarketController.class)
-@Import(SecurityConfig.class)
+@Import({SecurityConfig.class, ActiveUserStatusCache.class})
 class MarketControllerSliceTest {
 
     @Autowired

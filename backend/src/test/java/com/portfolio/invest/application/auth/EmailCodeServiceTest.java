@@ -13,6 +13,7 @@ import static org.mockito.Mockito.when;
 
 import com.portfolio.invest.config.InvestProperties;
 import com.portfolio.invest.domain.user.User;
+import com.portfolio.invest.domain.user.UserErrorCode;
 import com.portfolio.invest.domain.user.UserException;
 import com.portfolio.invest.domain.user.UserRepository;
 import com.portfolio.invest.domain.user.UserRole;
@@ -224,14 +225,29 @@ class EmailCodeServiceTest {
                 "$2a$code", 0, null, NOW.plusSeconds(300), NOW.minusSeconds(60));
     }
 
-    @DisplayName("验码成功即标记使用")
+    @DisplayName("验码成功走原子消费：tryMarkUsed 置位且不再经 save 落 used_at")
     @Test
-    void givenRightCode_whenVerify_thenMarkedUsed() {
+    void givenRightCode_whenVerify_thenAtomicMarkUsedWithoutSave() {
         when(codeRepository.findTopByEmailAndPurposeOrderByCreatedAtDesc(EMAIL, VerificationPurpose.REGISTER))
                 .thenReturn(Optional.of(freshCode()));
         when(encoder.matches("123456", "$2a$code")).thenReturn(true);
+        when(codeRepository.tryMarkUsed(1L, NOW)).thenReturn(true);
         service.verify(EMAIL, VerificationPurpose.REGISTER, "123456");
-        verify(codeRepository).save(any(VerificationCode.class)); // markUsed 落库
+        verify(codeRepository).tryMarkUsed(1L, NOW);
+        verify(codeRepository, never()).save(any()); // markUsed 路径已不走 save
+    }
+
+    @DisplayName("并发已被消费（tryMarkUsed false）按 CODE_INVALID 拒绝，文案与既有一致")
+    @Test
+    void givenConcurrentlyConsumedCode_whenVerify_thenCodeInvalid() {
+        when(codeRepository.findTopByEmailAndPurposeOrderByCreatedAtDesc(EMAIL, VerificationPurpose.REGISTER))
+                .thenReturn(Optional.of(freshCode()));
+        when(encoder.matches("123456", "$2a$code")).thenReturn(true);
+        when(codeRepository.tryMarkUsed(1L, NOW)).thenReturn(false);
+        assertThatThrownBy(() -> service.verify(EMAIL, VerificationPurpose.REGISTER, "123456"))
+                .isInstanceOfSatisfying(UserException.class,
+                        e -> assertThat(e.getCode()).isEqualTo(UserErrorCode.CODE_INVALID))
+                .hasMessageContaining("验证码错误或已失效");
     }
 
     @DisplayName("错码计数并拒绝")

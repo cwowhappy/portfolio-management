@@ -159,4 +159,33 @@ class ScreeningRepositoryImplTest {
                 .extracting(StockSearchHit::stockCode).containsExactly("600519");
         assertThat(screeningRepository.searchLatestSnapshot("茅台", 10).get(0).industryName()).isEqualTo("食品饮料");
     }
+
+    /**
+     * B7 回归：关键字未转义时字面 % / _ 是 LIKE 通配符——搜「%」命中全表。
+     * 修复后仅命中名称字面含 % 的行；_ 同理；正常关键字行为不变。
+     */
+    @DisplayName("搜索：字面 %/_ 关键字按字面匹配而非通配全表")
+    @Test
+    @Transactional
+    void givenNamesContainingLiteralWildcardChars_whenSearchByThem_thenOnlyLiteralRowsMatch() {
+        seedValuation("600001", "100%高收益", "22.5", "0.35");
+        seedValuation("600002", "A_B科技", "5.6", "0.18");
+        seedValuation("600003", "贵州茅台", "18.2", "0.62");
+
+        assertThat(screeningRepository.searchLatestSnapshot("%", 10))
+                .extracting(StockSearchHit::stockCode).containsExactly("600001");
+        assertThat(screeningRepository.searchLatestSnapshot("_", 10))
+                .extracting(StockSearchHit::stockCode).containsExactly("600002");
+        assertThat(screeningRepository.searchLatestSnapshot("茅台", 10))
+                .extracting(StockSearchHit::stockCode).containsExactly("600003");
+    }
+
+    @DisplayName("LIKE 转义辅助：先转义反斜杠再转义 % 与 _，组合串逐字符正确")
+    @Test
+    void givenWildcardOrBackslash_whenEscapeLike_thenEachCharEscapedInOrder() {
+        assertThat(ScreeningRepositoryImpl.escapeLike("%")).isEqualTo("\\%");
+        assertThat(ScreeningRepositoryImpl.escapeLike("_")).isEqualTo("\\_");
+        assertThat(ScreeningRepositoryImpl.escapeLike("\\")).isEqualTo("\\\\");
+        assertThat(ScreeningRepositoryImpl.escapeLike("50%_A\\B")).isEqualTo("50\\%\\_A\\\\B");
+    }
 }

@@ -1,6 +1,7 @@
 package com.portfolio.invest.intelligence;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.portfolio.invest.support.PostgresTestSupport;
@@ -16,7 +17,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
  * V3__intelligence.sql 迁移契约：@SpringBootTest 在真实 PG（Testcontainers）上跑全量
- * 迁移（V1+V2+V3）后断言——15 张 intelligence 表存在、业务键唯一约束与级联删除生效、
+ * 迁移（V1+V2+V3+V4）后断言——15 张 intelligence 表存在、业务键唯一约束与级联删除生效、
  * pg_trgm 扩展与 §2.2 索引齐全、research_project 加列默认 TRUE、宏观日历种子
  * （2026Q4~2027 五指标）落库。DDL 逐表对照设计规格 §2.1/§2.2。
  */
@@ -164,6 +165,28 @@ class IntelligenceMigrationTest extends PostgresTestSupport {
         assertThat(jdbc.queryForObject(
             "SELECT count(*) FROM intelligence_macro_calendar WHERE expected_date < DATE '2026-10-01'"
                 + " OR expected_date > DATE '2027-12-31'", Integer.class)).isZero();
+    }
+
+    @Test
+    @DisplayName("V4 建 push_log 幂等查重四列索引且重复执行不炸")
+    void whenV4Applied_thenIdempotentIndexOnPushLogWithExactColumnOrder() {
+        // existsAnnouncementPush 谓词四列 (push_type, ref_table, ref_id, user_id) 全命中——
+        // indexdef 断言列序恰为该序（乱序/缺列都拼不出此子串），V3 建表时仅 PK 无二级索引
+        String indexdef = jdbc.queryForObject(
+                "SELECT indexdef FROM pg_indexes WHERE indexname = 'idx_intelligence_push_log_idem'",
+                String.class);
+        assertThat(indexdef)
+                .as("V4 应建 idx_intelligence_push_log_idem，列序 (push_type, ref_table, ref_id, user_id)")
+                .contains("ON public.intelligence_push_log")
+                .contains("(push_type, ref_table, ref_id, user_id)");
+        // 幂等形态：重复执行同句 DDL（IF NOT EXISTS）不炸、仍恰一个同名索引
+        assertThatCode(() -> jdbc.execute(
+                "CREATE INDEX IF NOT EXISTS idx_intelligence_push_log_idem"
+                        + " ON intelligence_push_log(push_type, ref_table, ref_id, user_id)"))
+                .doesNotThrowAnyException();
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM pg_indexes WHERE indexname = 'idx_intelligence_push_log_idem'",
+                Integer.class)).as("重复执行不产生第二个同名索引").isEqualTo(1);
     }
 
     private Long insertUser(String username) {

@@ -15,6 +15,7 @@ import com.portfolio.invest.application.industry.UnlistedOverviewView;
 import com.portfolio.invest.application.industry.UnlistedResearchApplicationService;
 import com.portfolio.invest.domain.industry.IndustryException;
 import com.portfolio.invest.domain.user.UserRepository;
+import com.portfolio.invest.infrastructure.security.ActiveUserStatusCache;
 import com.portfolio.invest.infrastructure.security.SecurityConfig;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -37,7 +38,7 @@ import org.springframework.test.web.servlet.MockMvc;
  * 打桩。IndustryApplicationService 同控制器共存，一并打桩。
  */
 @WebMvcTest(IndustryController.class)
-@Import(SecurityConfig.class)
+@Import({SecurityConfig.class, ActiveUserStatusCache.class})
 class IndustryUnlistedReadControllerTest {
 
     @Autowired

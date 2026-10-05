@@ -18,6 +18,7 @@ import com.portfolio.invest.application.portfolio.CashDividendCommand;
 import com.portfolio.invest.application.portfolio.CashTransactionCommand;
 import com.portfolio.invest.application.portfolio.CashTransactionView;
 import com.portfolio.invest.application.portfolio.ConcentrationView;
+import com.portfolio.invest.application.portfolio.DeleteImpactView;
 import com.portfolio.invest.application.portfolio.DividendView;
 import com.portfolio.invest.application.portfolio.IndustryDistributionView;
 import com.portfolio.invest.application.portfolio.PortfolioApplicationService;
@@ -152,6 +153,19 @@ class PortfolioControllerSliceTest {
                 .andExpect(status().isNoContent());
 
         verify(service).deletePosition(1L, 5L);
+    }
+
+    @DisplayName("删除影响预检返回200且字段名恰为tradeCount/dividendCount/realizedPnl")
+    @Test
+    void givenPositionId_whenGetDeleteImpact_thenReturn200WithContractFields() throws Exception {
+        when(service.deleteImpact(1L, 5L))
+                .thenReturn(new DeleteImpactView(2L, 1L, new BigDecimal("2000")));
+
+        mvc.perform(get("/api/portfolio/positions/5/delete-impact").with(authentication(auth())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tradeCount").value(2))
+                .andExpect(jsonPath("$.dividendCount").value(1))
+                .andExpect(jsonPath("$.realizedPnl").value(2000));
     }
 
     @DisplayName("交易流水返回200")

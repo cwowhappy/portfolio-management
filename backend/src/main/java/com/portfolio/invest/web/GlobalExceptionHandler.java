@@ -107,6 +107,8 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> allocation(com.portfolio.invest.domain.allocation.AllocationException e) {
         HttpStatus status = switch (e.code()) {
             case com.portfolio.invest.domain.allocation.AllocationErrorCode.NOT_FOUND -> HttpStatus.NOT_FOUND;
+            // B6：并发激活撞每用户唯一生效索引 → 409
+            case com.portfolio.invest.domain.allocation.AllocationErrorCode.CONFLICT -> HttpStatus.CONFLICT;
             case com.portfolio.invest.domain.allocation.AllocationErrorCode.REITS_BACKTEST_UNSUPPORTED
                     -> HttpStatus.UNPROCESSABLE_CONTENT;
             default -> HttpStatus.BAD_REQUEST;

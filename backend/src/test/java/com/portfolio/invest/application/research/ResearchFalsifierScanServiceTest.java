@@ -5,12 +5,18 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.portfolio.invest.application.auth.MailSender;
+import com.portfolio.invest.config.InvestProperties;
 import com.portfolio.invest.domain.research.Falsifier;
 import com.portfolio.invest.domain.research.FalsifierHit;
 import com.portfolio.invest.domain.research.FalsifierKind;
@@ -45,12 +51,14 @@ class ResearchFalsifierScanServiceTest {
     private final ResearchCheckRepository checkRepository = mock(ResearchCheckRepository.class);
     private final MarketSnapshotAssembler snapshotAssembler = mock(MarketSnapshotAssembler.class);
     private final ResearchFalsifierNotifier notifier = mock(ResearchFalsifierNotifier.class);
+    private final MailSender mailSender = mock(MailSender.class);
+    private final InvestProperties props = new InvestProperties();
     private ResearchFalsifierScanService service;
 
     @BeforeEach
     void setUp() {
         service = new ResearchFalsifierScanService(repository, checkRepository,
-                snapshotAssembler, notifier);
+                snapshotAssembler, notifier, mailSender, props);
         when(notifier.notify(anyLong(), any(), anyList())).thenReturn(true);
     }
 
@@ -218,6 +226,77 @@ class ResearchFalsifierScanServiceTest {
 
         assertThatCode(() -> service.scan()).doesNotThrowAnyException();
         verify(checkRepository).insertHit(any(FalsifierHit.class));
+    }
+
+    @Test
+    @DisplayName("给定飞书失败且邮件可用+两个收件人，when扫描，then告警邮件降级各发一封（含项目名与条件摘要）")
+    void given飞书失败且邮件可用_when扫描_then告警邮件降级() {
+        givenHitProject();
+        when(notifier.notify(anyLong(), any(), anyList())).thenReturn(false);
+        props.getMail().setAlertMailTo(List.of("ops@x.com", "dev@x.com"));
+        when(mailSender.enabled()).thenReturn(true);
+
+        service.scan();
+
+        ArgumentCaptor<String> to = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> subject = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> text = ArgumentCaptor.forClass(String.class);
+        verify(mailSender, times(2)).send(to.capture(), subject.capture(), text.capture());
+        assertThat(to.getAllValues()).containsExactly("ops@x.com", "dev@x.com");
+        assertThat(subject.getAllValues())
+                .allSatisfy(s -> assertThat(s).contains("证伪").contains("茅台扩产研究"));
+        assertThat(text.getAllValues())
+                .allSatisfy(t -> assertThat(t).contains("茅台扩产研究").contains("价格跌破"));
+    }
+
+    @Test
+    @DisplayName("给定飞书推送成功，when扫描，then不触发邮件降级")
+    void given飞书成功_when扫描_then不发邮件() {
+        givenHitProject(); // setUp 已 stub notify=true
+        props.getMail().setAlertMailTo(List.of("ops@x.com"));
+
+        service.scan();
+
+        verifyNoInteractions(mailSender);
+    }
+
+    @Test
+    @DisplayName("给定收件人未配置，when飞书失败，then维持 WARN 不发邮件")
+    void given收件人未配置_when飞书失败_then不发邮件() {
+        givenHitProject();
+        when(notifier.notify(anyLong(), any(), anyList())).thenReturn(false);
+        when(mailSender.enabled()).thenReturn(true);
+
+        service.scan();
+
+        verify(mailSender, never()).send(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("给定 SMTP 未启用，when飞书失败，then维持 WARN 不降级发邮件")
+    void given邮件未启用_when飞书失败_then不发邮件() {
+        givenHitProject();
+        when(notifier.notify(anyLong(), any(), anyList())).thenReturn(false);
+        props.getMail().setAlertMailTo(List.of("ops@x.com"));
+        when(mailSender.enabled()).thenReturn(false);
+
+        service.scan();
+
+        verify(mailSender, never()).send(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("给定首个收件人发信抛异常，when降级，then隔离该收件人继续发其余且绝不抛")
+    void given首个收件人抛异常_when降级_then其余仍发且不抛() {
+        givenHitProject();
+        when(notifier.notify(anyLong(), any(), anyList())).thenReturn(false);
+        props.getMail().setAlertMailTo(List.of("bad@x.com", "ops@x.com"));
+        when(mailSender.enabled()).thenReturn(true);
+        doThrow(new IllegalStateException("smtp refused"))
+                .when(mailSender).send(eq("bad@x.com"), anyString(), anyString());
+
+        assertThatCode(() -> service.scan()).doesNotThrowAnyException();
+        verify(mailSender).send(eq("ops@x.com"), anyString(), anyString());
     }
 
     @Test

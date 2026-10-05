@@ -7,6 +7,7 @@ import com.portfolio.invest.application.portfolio.CashTransactionCommand;
 import com.portfolio.invest.application.portfolio.CashTransactionView;
 import com.portfolio.invest.application.portfolio.ConcentrationView;
 import com.portfolio.invest.application.portfolio.CreateGroupCommand;
+import com.portfolio.invest.application.portfolio.DeleteImpactView;
 import com.portfolio.invest.application.portfolio.DividendView;
 import com.portfolio.invest.application.portfolio.EditTradeCommand;
 import com.portfolio.invest.application.portfolio.GroupView;
@@ -114,6 +115,11 @@ public class PortfolioController {
     public ResponseEntity<Void> deletePosition(Authentication auth, @PathVariable Long positionId) {
         service.deletePosition(currentUserId(auth), positionId);
         return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/positions/{positionId}/delete-impact")
+    public DeleteImpactView deleteImpact(Authentication auth, @PathVariable Long positionId) {
+        return service.deleteImpact(currentUserId(auth), positionId);
     }
 
     @GetMapping("/positions/{positionId}/trades")

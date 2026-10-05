@@ -53,6 +53,8 @@ class AnalyticsApplicationServiceTest {
     private static final BigDecimal ONE = new BigDecimal("1");
     private static final BigDecimal NINE = new BigDecimal("9");
     private static final BigDecimal THIRTEEN = new BigDecimal("13");
+    private static final BigDecimal NINETEEN = new BigDecimal("19");
+    private static final BigDecimal TWENTY = new BigDecimal("20");
 
     private final PortfolioRepository repo = mock(PortfolioRepository.class);
     private final StockClosePort stockClose = mock(StockClosePort.class);
@@ -85,10 +87,10 @@ class AnalyticsApplicationServiceTest {
                         JAN_02, null, Instant.now())));
         Position pos = Position.create(9L, 5L, "600519", "贵州茅台", Instant.now());
         when(repo.findPositionsByPortfolioId(9L)).thenReturn(List.of(pos));
-        when(repo.findTradesByPositionId(pos.id())).thenReturn(List.of(
+        when(repo.findTradesByPortfolioId(9L)).thenReturn(List.of(
                 new Trade(1L, pos.id(), TradeType.BUY, JAN_05,
                         TEN, new BigDecimal("100"), BigDecimal.ZERO, Instant.now())));
-        when(repo.findDividendsByPositionId(pos.id())).thenReturn(List.of());
+        when(repo.findDividendsByPortfolioId(9L)).thenReturn(List.of());
         when(stockClose.closes(eq("600519"), any(), any())).thenReturn(stockCloses());
         when(indexClose.closes(anyString(), any(), any())).thenReturn(new TreeMap<>());
         when(marketData.quoteBatch(anyList())).thenReturn(Map.of());
@@ -117,10 +119,10 @@ class AnalyticsApplicationServiceTest {
         when(repo.findGroupsByPortfolioId(9L)).thenReturn(List.of());
         Position pos = Position.create(9L, null, "600519", "贵州茅台", Instant.now());
         when(repo.findPositionsByPortfolioId(9L)).thenReturn(List.of(pos));
-        when(repo.findTradesByPositionId(pos.id())).thenReturn(List.of(
+        when(repo.findTradesByPortfolioId(9L)).thenReturn(List.of(
                 new Trade(1L, pos.id(), TradeType.BUY, JAN_05,
                         TEN, new BigDecimal("100"), BigDecimal.ZERO, Instant.now())));
-        when(repo.findDividendsByPositionId(pos.id())).thenReturn(List.of());
+        when(repo.findDividendsByPortfolioId(9L)).thenReturn(List.of());
         when(stockClose.closes(eq("600519"), any(), any())).thenReturn(stockCloses());
         when(indexClose.closes(anyString(), any(), any())).thenReturn(new TreeMap<>());
         when(marketData.quoteBatch(anyList())).thenReturn(Map.of());
@@ -144,12 +146,12 @@ class AnalyticsApplicationServiceTest {
         when(repo.findGroupsByPortfolioId(9L)).thenReturn(List.of());
         Position pos = Position.create(9L, null, "600519", "贵州茅台", Instant.now());
         when(repo.findPositionsByPortfolioId(9L)).thenReturn(List.of(pos));
-        when(repo.findTradesByPositionId(pos.id())).thenReturn(List.of(
+        when(repo.findTradesByPortfolioId(9L)).thenReturn(List.of(
                 new Trade(1L, pos.id(), TradeType.BUY, JAN_05,
                         TEN, new BigDecimal("100"), BigDecimal.ZERO, Instant.now()),
                 new Trade(2L, pos.id(), TradeType.SELL, FEB_05,
                         TWELVE, new BigDecimal("100"), BigDecimal.ZERO, Instant.now())));
-        when(repo.findDividendsByPositionId(pos.id())).thenReturn(List.of(
+        when(repo.findDividendsByPortfolioId(9L)).thenReturn(List.of(
                 new Dividend(1L, pos.id(), DividendType.CASH, FEB_05, ONE, null, Instant.now())));
         when(marketData.quoteBatch(anyList())).thenReturn(Map.of());
 
@@ -181,10 +183,10 @@ class AnalyticsApplicationServiceTest {
                         JAN_02, null, Instant.now())));
         Position pos = Position.create(9L, 5L, "600519", "贵州茅台", Instant.now());
         when(repo.findPositionsByPortfolioId(9L)).thenReturn(List.of(pos));
-        when(repo.findTradesByPositionId(pos.id())).thenReturn(List.of(
+        when(repo.findTradesByPortfolioId(9L)).thenReturn(List.of(
                 new Trade(1L, pos.id(), TradeType.BUY, JAN_05,
                         TEN, new BigDecimal("100"), BigDecimal.ZERO, Instant.now())));
-        when(repo.findDividendsByPositionId(pos.id())).thenReturn(List.of());
+        when(repo.findDividendsByPortfolioId(9L)).thenReturn(List.of());
         when(stockClose.closes(eq("600519"), any(), any())).thenReturn(stockCloses());
         TreeMap<LocalDate, BigDecimal> hs300 = new TreeMap<>(Map.of(
                 LocalDate.of(2026, 1, 4), new BigDecimal("3900"),   // 窗口前——应被截掉
@@ -223,12 +225,12 @@ class AnalyticsApplicationServiceTest {
         when(repo.findCashTransactionsByGroupId(5L)).thenReturn(List.of());
         Position pos = Position.create(9L, 5L, "600519", "贵州茅台", Instant.now());
         when(repo.findPositionsByPortfolioId(9L)).thenReturn(List.of(pos));
-        when(repo.findTradesByPositionId(pos.id())).thenReturn(List.of(
+        when(repo.findTradesByPortfolioId(9L)).thenReturn(List.of(
                 new Trade(1L, pos.id(), TradeType.BUY, JAN_05,
                         TEN, new BigDecimal("100"), BigDecimal.ZERO, Instant.now()),
                 new Trade(2L, pos.id(), TradeType.SELL, JAN_08,
                         new BigDecimal("13"), new BigDecimal("40"), BigDecimal.ZERO, Instant.now())));
-        when(repo.findDividendsByPositionId(pos.id())).thenReturn(List.of());
+        when(repo.findDividendsByPortfolioId(9L)).thenReturn(List.of());
         when(marketData.quoteBatch(anyList())).thenReturn(Map.of());
 
         Optional<TradeStatsView> stats = service.tradeStats(1L);
@@ -247,6 +249,52 @@ class AnalyticsApplicationServiceTest {
         verify(stockClose, never()).closes(anyString(), any(), any());
     }
 
+    @DisplayName("批量取数分组重放：两持仓各重放各自流水（与逐持仓口径一致），不再逐持仓查库")
+    @Test
+    void givenBatchPrefetchedFlows_whenTradeStats_thenEachPositionReplaysOwnFlowsOnly() {
+        when(repo.findPortfolioByUserId(1L)).thenReturn(Optional.of(
+                Portfolio.reconstitute(9L, 1L, CostMethod.WEIGHTED_AVG, Instant.now(), Instant.now())));
+        when(repo.findGroupsByPortfolioId(9L)).thenReturn(List.of());
+        Position posA = Position.reconstitute(101L, 9L, null, "600519", "贵州茅台",
+                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                BigDecimal.ZERO, BigDecimal.ZERO, Instant.now(), Instant.now());
+        Position posB = Position.reconstitute(102L, 9L, null, "000001", "平安银行",
+                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                BigDecimal.ZERO, BigDecimal.ZERO, Instant.now(), Instant.now());
+        when(repo.findPositionsByPortfolioId(9L)).thenReturn(List.of(posA, posB));
+        // 批量一次返回两持仓流水（乱序混排，分组须按 positionId 正确分发到各持仓）：
+        // 101 买 100@10（01-05）卖 40@13（01-08）→ +120、持有 3 天；
+        // 102 买 100@20（01-06）卖 50@19（01-08）→ −50、持有 2 天。
+        // 若分组错乱（流水灌入别的持仓或丢失），sellCount/avgWin/avgLoss 均会偏离手算值。
+        when(repo.findTradesByPortfolioId(9L)).thenReturn(List.of(
+                new Trade(3L, 102L, TradeType.BUY, JAN_06,
+                        TWENTY, new BigDecimal("100"), BigDecimal.ZERO, Instant.now()),
+                new Trade(1L, 101L, TradeType.BUY, JAN_05,
+                        TEN, new BigDecimal("100"), BigDecimal.ZERO, Instant.now()),
+                new Trade(4L, 102L, TradeType.SELL, JAN_08,
+                        NINETEEN, new BigDecimal("50"), BigDecimal.ZERO, Instant.now()),
+                new Trade(2L, 101L, TradeType.SELL, JAN_08,
+                        THIRTEEN, new BigDecimal("40"), BigDecimal.ZERO, Instant.now())));
+        when(repo.findDividendsByPortfolioId(9L)).thenReturn(List.of());
+        when(marketData.quoteBatch(anyList())).thenReturn(Map.of());
+
+        Optional<TradeStatsView> stats = service.tradeStats(1L);
+        assertThat(stats).isPresent();
+        TradeStatsView v = stats.get();
+        assertThat(v.sellCount()).isEqualTo(2);
+        assertThat(v.winCount()).isEqualTo(1);
+        assertThat(v.winRate()).isEqualTo("0.5000");
+        assertThat(v.avgWin()).isEqualTo("120.0000");
+        assertThat(v.avgLoss()).isEqualTo("50.0000");
+        assertThat(v.profitFactor()).isEqualTo("2.4000");
+        assertThat(v.avgHoldingDays()).isEqualTo("2.5000");
+        assertThat(v.bestPnl()).isEqualTo("120.0000");
+        assertThat(v.worstPnl()).isEqualTo("-50.0000");
+        // N+1 已消除：重放全走批量端口，不再逐持仓查库
+        verify(repo, never()).findTradesByPositionId(any());
+        verify(repo, never()).findDividendsByPositionId(any());
+    }
+
     @DisplayName("annual：2026 行组合 20%、沪深300 21%、超额 −1%")
     @Test
     void givenBenchmarkCloses_whenAnnual_thenRowWithBenchmarkAndExcess() {
@@ -259,10 +307,10 @@ class AnalyticsApplicationServiceTest {
                         JAN_02, null, Instant.now())));
         Position pos = Position.create(9L, 5L, "600519", "贵州茅台", Instant.now());
         when(repo.findPositionsByPortfolioId(9L)).thenReturn(List.of(pos));
-        when(repo.findTradesByPositionId(pos.id())).thenReturn(List.of(
+        when(repo.findTradesByPortfolioId(9L)).thenReturn(List.of(
                 new Trade(1L, pos.id(), TradeType.BUY, JAN_05,
                         TEN, new BigDecimal("100"), BigDecimal.ZERO, Instant.now())));
-        when(repo.findDividendsByPositionId(pos.id())).thenReturn(List.of());
+        when(repo.findDividendsByPortfolioId(9L)).thenReturn(List.of());
         when(stockClose.closes(eq("600519"), any(), any())).thenReturn(stockCloses());
         when(indexClose.closes(eq("000300"), any(), any())).thenReturn(new TreeMap<>(Map.of(
                 JAN_05, new BigDecimal("4000"),
@@ -306,10 +354,10 @@ class AnalyticsApplicationServiceTest {
                         JAN_02, null, Instant.now())));
         Position pos = Position.create(9L, 5L, "600519", "贵州茅台", Instant.now());
         when(repo.findPositionsByPortfolioId(9L)).thenReturn(List.of(pos));
-        when(repo.findTradesByPositionId(pos.id())).thenReturn(List.of(
+        when(repo.findTradesByPortfolioId(9L)).thenReturn(List.of(
                 new Trade(1L, pos.id(), TradeType.BUY, JAN_05,
                         TEN, new BigDecimal("100"), BigDecimal.ZERO, Instant.now())));
-        when(repo.findDividendsByPositionId(pos.id())).thenReturn(List.of());
+        when(repo.findDividendsByPortfolioId(9L)).thenReturn(List.of());
         when(stockClose.closes(eq("600519"), any(), any())).thenReturn(vShapeCloses());
         when(marketData.quoteBatch(anyList())).thenReturn(Map.of());
         when(riskFree.oneYearSeries(JAN_05, JAN_08)).thenReturn(new TreeMap<>());
@@ -368,16 +416,19 @@ class AnalyticsApplicationServiceTest {
         when(repo.findCashTransactionsByGroupId(5L)).thenReturn(List.of(
                 new CashTransaction(1L, 5L, CashTransactionType.DEPOSIT, new BigDecimal("3000"),
                         JAN_02, null, Instant.now())));
-        Position posA = Position.create(9L, 5L, "600519", "贵州茅台", Instant.now());
-        Position posB = Position.create(9L, 5L, "000001", "平安银行", Instant.now());
+        Position posA = Position.reconstitute(101L, 9L, 5L, "600519", "贵州茅台",
+                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                BigDecimal.ZERO, BigDecimal.ZERO, Instant.now(), Instant.now());
+        Position posB = Position.reconstitute(102L, 9L, 5L, "000001", "平安银行",
+                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                BigDecimal.ZERO, BigDecimal.ZERO, Instant.now(), Instant.now());
         when(repo.findPositionsByPortfolioId(9L)).thenReturn(List.of(posA, posB));
-        when(repo.findTradesByPositionId(posA.id())).thenReturn(List.of(
+        when(repo.findTradesByPortfolioId(9L)).thenReturn(List.of(
                 new Trade(1L, posA.id(), TradeType.BUY, JAN_05,
-                        TEN, new BigDecimal("100"), BigDecimal.ZERO, Instant.now())));
-        when(repo.findTradesByPositionId(posB.id())).thenReturn(List.of(
+                        TEN, new BigDecimal("100"), BigDecimal.ZERO, Instant.now()),
                 new Trade(2L, posB.id(), TradeType.BUY, JAN_05,
                         TEN, new BigDecimal("100"), BigDecimal.ZERO, Instant.now())));
-        when(repo.findDividendsByPositionId(any())).thenReturn(List.of());
+        when(repo.findDividendsByPortfolioId(9L)).thenReturn(List.of());
         when(stockClose.closes(eq("600519"), any(), any())).thenReturn(stockCloses());
         TreeMap<LocalDate, BigDecimal> flat = new TreeMap<>();
         flat.put(JAN_05, TEN);
@@ -434,16 +485,19 @@ class AnalyticsApplicationServiceTest {
         when(repo.findCashTransactionsByGroupId(5L)).thenReturn(List.of(
                 new CashTransaction(1L, 5L, CashTransactionType.DEPOSIT, new BigDecimal("3000"),
                         JAN_02, null, Instant.now())));
-        Position posA = Position.create(9L, 5L, "600519", "贵州茅台", Instant.now());
-        Position posB = Position.create(9L, 5L, "999999", "无名股", Instant.now());
+        Position posA = Position.reconstitute(101L, 9L, 5L, "600519", "贵州茅台",
+                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                BigDecimal.ZERO, BigDecimal.ZERO, Instant.now(), Instant.now());
+        Position posB = Position.reconstitute(102L, 9L, 5L, "999999", "无名股",
+                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                BigDecimal.ZERO, BigDecimal.ZERO, Instant.now(), Instant.now());
         when(repo.findPositionsByPortfolioId(9L)).thenReturn(List.of(posA, posB));
-        when(repo.findTradesByPositionId(posA.id())).thenReturn(List.of(
+        when(repo.findTradesByPortfolioId(9L)).thenReturn(List.of(
                 new Trade(1L, posA.id(), TradeType.BUY, JAN_05,
-                        TEN, new BigDecimal("100"), BigDecimal.ZERO, Instant.now())));
-        when(repo.findTradesByPositionId(posB.id())).thenReturn(List.of(
+                        TEN, new BigDecimal("100"), BigDecimal.ZERO, Instant.now()),
                 new Trade(2L, posB.id(), TradeType.BUY, JAN_05,
                         TEN, new BigDecimal("100"), BigDecimal.ZERO, Instant.now())));
-        when(repo.findDividendsByPositionId(any())).thenReturn(List.of());
+        when(repo.findDividendsByPortfolioId(9L)).thenReturn(List.of());
         when(stockClose.closes(eq("600519"), any(), any())).thenReturn(stockCloses());
         TreeMap<LocalDate, BigDecimal> flat = new TreeMap<>();
         flat.put(JAN_05, TEN);
@@ -488,10 +542,10 @@ class AnalyticsApplicationServiceTest {
                         JAN_02, null, Instant.now())));
         Position pos = Position.create(9L, 5L, "600519", "贵州茅台", Instant.now());
         when(repo.findPositionsByPortfolioId(9L)).thenReturn(List.of(pos));
-        when(repo.findTradesByPositionId(pos.id())).thenReturn(List.of(
+        when(repo.findTradesByPortfolioId(9L)).thenReturn(List.of(
                 new Trade(1L, pos.id(), TradeType.BUY, JAN_05,
                         TEN, new BigDecimal("100"), BigDecimal.ZERO, Instant.now())));
-        when(repo.findDividendsByPositionId(any())).thenReturn(List.of());
+        when(repo.findDividendsByPortfolioId(9L)).thenReturn(List.of());
         when(stockClose.closes(eq("600519"), any(), any())).thenReturn(stockCloses());
         when(indexClose.closes(anyString(), any(), any())).thenReturn(new TreeMap<>());
         when(industryMapping.byStock()).thenReturn(Map.of(

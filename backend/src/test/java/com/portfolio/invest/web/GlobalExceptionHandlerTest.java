@@ -111,6 +111,31 @@ class GlobalExceptionHandlerTest {
         assertThat(res.getBody()).isEqualTo(new ApiError(ConversationErrorCode.INVALID_MESSAGE, "消息内容超长（上限100KB）"));
     }
 
+    /** B6：并发激活撞每用户唯一生效索引 → 409（其余错误码状态保持不变）。 */
+    @DisplayName("配置域CONFLICT映射409")
+    @Test
+    void givenAllocationConflict_whenHandlingAllocationException_thenReturn409() {
+        ResponseEntity<ApiError> res = handler.allocation(
+                new com.portfolio.invest.domain.allocation.AllocationException(
+                        com.portfolio.invest.domain.allocation.AllocationErrorCode.CONFLICT, "方案已在别处激活，请刷新"));
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(res.getBody()).isEqualTo(new ApiError(
+                com.portfolio.invest.domain.allocation.AllocationErrorCode.CONFLICT, "方案已在别处激活，请刷新"));
+    }
+
+    @DisplayName("配置域既有错误码状态不变：NOT_FOUND 404、INVALID_INPUT 400")
+    @Test
+    void givenAllocationExistingCodes_whenHandlingAllocationException_thenStatusUnchanged() {
+        ResponseEntity<ApiError> notFound = handler.allocation(
+                new com.portfolio.invest.domain.allocation.AllocationException(
+                        com.portfolio.invest.domain.allocation.AllocationErrorCode.NOT_FOUND, "方案不存在"));
+        assertThat(notFound.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        ResponseEntity<ApiError> invalid = handler.allocation(
+                new com.portfolio.invest.domain.allocation.AllocationException(
+                        com.portfolio.invest.domain.allocation.AllocationErrorCode.INVALID_INPUT, "资产类别重复"));
+        assertThat(invalid.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
     @DisplayName("数据约束违例兜底映射400")
     @Test
     void givenDataIntegrityViolation_whenHandlingDataIntegrityException_thenReturn400() {

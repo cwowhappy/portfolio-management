@@ -17,7 +17,9 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -85,18 +87,24 @@ public class JournalApplicationService {
             events.add(journalEvent(e));
         }
 
+        // 交易/分红同样日期下推：组合级区间批量各一次拉取（跨持仓），替换逐持仓全量载入 + 内存过滤
         var portfolio = portfolioRepository.findPortfolioByUserId(userId);
         if (portfolio.isPresent()) {
-            for (Position pos : portfolioRepository.findPositionsByPortfolioId(portfolio.get().id())) {
-                for (Trade t : portfolioRepository.findTradesByPositionId(pos.id())) {
-                    if (inRange(t.tradeDate(), from, to)) {
-                        events.add(tradeEvent(t, pos));
-                    }
+            Long portfolioId = portfolio.get().id();
+            Map<Long, Position> positionsById = new HashMap<>();
+            for (Position pos : portfolioRepository.findPositionsByPortfolioId(portfolioId)) {
+                positionsById.put(pos.id(), pos);
+            }
+            for (Trade t : portfolioRepository.findTradesByPortfolioIdInRange(portfolioId, from, to)) {
+                Position pos = positionsById.get(t.positionId());
+                if (pos != null) {
+                    events.add(tradeEvent(t, pos));
                 }
-                for (Dividend d : portfolioRepository.findDividendsByPositionId(pos.id())) {
-                    if (inRange(d.exDate(), from, to)) {
-                        events.add(dividendEvent(d, pos));
-                    }
+            }
+            for (Dividend d : portfolioRepository.findDividendsByPortfolioIdInRange(portfolioId, from, to)) {
+                Position pos = positionsById.get(d.positionId());
+                if (pos != null) {
+                    events.add(dividendEvent(d, pos));
                 }
             }
         }
@@ -156,16 +164,6 @@ public class JournalApplicationService {
             case REVIEW -> TimelineEventType.REVIEW;
             case RESEARCH_EVENT -> TimelineEventType.RESEARCH_EVENT;
         };
-    }
-
-    private static boolean inRange(LocalDate date, LocalDate from, LocalDate to) {
-        if (from != null && date.isBefore(from)) {
-            return false;
-        }
-        if (to != null && date.isAfter(to)) {
-            return false;
-        }
-        return true;
     }
 
     private static String truncate(String s, int max) {

@@ -539,7 +539,7 @@ class AnnouncementPushServiceTest {
 
     private static IntelligenceSubscription subscription(long userId) {
         return IntelligenceSubscription.defaults(userId)
-                .withStocks(List.of(new SubscriptionStock(STOCK, "贵州茅台")));
+                .withStocks(List.of(new SubscriptionStock(STOCK, "贵州茅台")), Instant.now());
     }
 
     private static ArgumentCaptor<PushLog> captor() {

@@ -4,12 +4,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.portfolio.invest.application.im.ImInboundMessage;
 import com.portfolio.invest.domain.intelligence.IntelligenceErrorCode;
 import com.portfolio.invest.domain.intelligence.IntelligenceException;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -19,6 +24,9 @@ import org.junit.jupiter.api.Test;
  * 两形态命中并抽取码核销；非命令文本（含 null/空白包裹/非 6 位/双空格前缀）返回 empty
  * 透传对话桥且不触碰订阅服务；三失败态（不存在/过期/已用 → BINDING_CODE_EXPIRED）
  * 与 OPEN_ID_TAKEN 映射固定话术，成功映射推送价值话术。mock SubscriptionService 驱动。
+ *
+ * <p>B10：绑定命令按 open_id 60s 冷却——同 openId 第二条命中冷却提示且不重复核销、
+ * 不同 openId 互不影响、时钟推进 61s 恢复放行（可拨动时钟注入，不等待真实墙钟）。
  */
 class BindingCommandHandlerTest {
 
@@ -27,6 +35,10 @@ class BindingCommandHandlerTest {
 
     private static ImInboundMessage msg(String text) {
         return new ImInboundMessage("oc_1", "om_1", "ou_owner", "p2p", "text", text);
+    }
+
+    private static ImInboundMessage msgFrom(String openId, String text) {
+        return new ImInboundMessage("oc_1", "om_1", openId, "p2p", "text", text);
     }
 
     // ── supports：两命令形态命中 ─────────────────────────────────────
@@ -108,11 +120,12 @@ class BindingCommandHandlerTest {
                 "绑定码无效或已过期"))
                 .when(subscriptionService).bindByCode(anyString(), anyString());
 
-        assertThat(handler.tryRoute(msg("111111")))
+        // B10 后同 openId 60s 内连发第二条命令先撞冷却——改用三个不同 openId 保住三态话术映射断言
+        assertThat(handler.tryRoute(msgFrom("ou_a", "111111")))
                 .contains("绑定码无效或已过期，请在设置页重新生成");
-        assertThat(handler.tryRoute(msg("绑定 222222")))
+        assertThat(handler.tryRoute(msgFrom("ou_b", "绑定 222222")))
                 .contains("绑定码无效或已过期，请在设置页重新生成");
-        assertThat(handler.tryRoute(msg("333333")))
+        assertThat(handler.tryRoute(msgFrom("ou_c", "333333")))
                 .contains("绑定码无效或已过期，请在设置页重新生成");
     }
 
@@ -125,5 +138,78 @@ class BindingCommandHandlerTest {
 
         assertThat(handler.tryRoute(msg("绑定 654321")))
                 .contains("该飞书账号已绑定其他用户");
+    }
+
+    // ── B10：绑定命令按 open_id 冷却 ─────────────────────────────
+
+    @Test
+    @DisplayName("给定同 openId 60s 内第二条绑定命令，when tryRoute，then回冷却提示且 bindByCode 仅调一次")
+    void given同openId60秒内第二条_whenTryRoute_then冷却提示且不重复核销() {
+        MutableClock clock = MutableClock.at("2026-10-05T01:00:00Z");
+        BindingCommandHandler cooled = new BindingCommandHandler(subscriptionService, clock);
+
+        assertThat(cooled.tryRoute(msg("111111"))).contains("绑定成功：将为你推送个性化盘前简报与重大公告提醒");
+        assertThat(cooled.tryRoute(msg("222222"))).contains("操作过于频繁，请稍后再试");
+
+        verify(subscriptionService, times(1)).bindByCode(anyString(), anyString());
+        verify(subscriptionService).bindByCode("111111", "ou_owner");
+    }
+
+    @Test
+    @DisplayName("给定不同 openId 各发一条绑定命令，when tryRoute，then互不影响各自核销")
+    void given不同openId_whenTryRoute_then互不影响() {
+        MutableClock clock = MutableClock.at("2026-10-05T01:00:00Z");
+        BindingCommandHandler cooled = new BindingCommandHandler(subscriptionService, clock);
+
+        assertThat(cooled.tryRoute(msgFrom("ou_a", "111111"))).contains("绑定成功：将为你推送个性化盘前简报与重大公告提醒");
+        assertThat(cooled.tryRoute(msgFrom("ou_b", "222222"))).contains("绑定成功：将为你推送个性化盘前简报与重大公告提醒");
+
+        verify(subscriptionService).bindByCode("111111", "ou_a");
+        verify(subscriptionService).bindByCode("222222", "ou_b");
+    }
+
+    @Test
+    @DisplayName("给定时钟推进 61s，when同 openId 再发绑定命令，then冷却期满恢复核销")
+    void given时钟推进61秒_whenTryRoute_then恢复放行() {
+        MutableClock clock = MutableClock.at("2026-10-05T01:00:00Z");
+        BindingCommandHandler cooled = new BindingCommandHandler(subscriptionService, clock);
+
+        cooled.tryRoute(msg("111111"));
+        clock.advanceSeconds(61);
+        assertThat(cooled.tryRoute(msg("222222"))).contains("绑定成功：将为你推送个性化盘前简报与重大公告提醒");
+
+        verify(subscriptionService).bindByCode("222222", "ou_owner");
+    }
+
+    /** 可拨动时钟（冷却测试避免真实墙钟等待；照 IntelligenceTokenBudgetTest 形态）。 */
+    private static final class MutableClock extends Clock {
+        private volatile long millis;
+
+        private MutableClock(long millis) {
+            this.millis = millis;
+        }
+
+        static MutableClock at(String literal) {
+            return new MutableClock(Instant.parse(literal).toEpochMilli());
+        }
+
+        void advanceSeconds(long seconds) {
+            millis += seconds * 1_000;
+        }
+
+        @Override
+        public ZoneId getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            return this;
+        }
+
+        @Override
+        public Instant instant() {
+            return Instant.ofEpochMilli(millis);
+        }
     }
 }

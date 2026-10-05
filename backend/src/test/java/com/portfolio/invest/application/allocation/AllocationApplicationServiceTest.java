@@ -93,6 +93,19 @@ class AllocationApplicationServiceTest {
         verify(repo).deactivateAllByUserId(1L);
     }
 
+    /** B6：并发激活撞 ux_allocation_plan_user_active 唯一索引时，DB 兜底异常须转译为域冲突而非 400 INVALID_DATA。 */
+    @DisplayName("激活撞唯一索引转译CONFLICT")
+    @Test
+    void givenSaveViolatesUniqueActiveIndex_whenActivatePlan_thenThrowConflict() {
+        when(repo.findByIdAndUserId(10L, 1L)).thenReturn(Optional.of(activePlan()));
+        when(repo.save(any())).thenThrow(
+                new org.springframework.dao.DataIntegrityViolationException("duplicate key"));
+
+        assertThatThrownBy(() -> service.activatePlan(1L, 10L))
+                .isInstanceOfSatisfying(AllocationException.class,
+                        e -> assertThat(e.code()).isEqualTo(AllocationErrorCode.CONFLICT));
+    }
+
     @DisplayName("重复激活已生效方案仍返回激活态且保存的是激活")
     @Test
     void givenAlreadyActivePlan_whenActivatePlanAgain_thenReturnActiveAndSaveActive() {

@@ -7,6 +7,7 @@ import com.portfolio.invest.domain.portfolio.Portfolio;
 import com.portfolio.invest.domain.portfolio.PortfolioRepository;
 import com.portfolio.invest.domain.portfolio.Position;
 import com.portfolio.invest.domain.portfolio.Trade;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.stereotype.Repository;
@@ -55,6 +56,11 @@ public class PortfolioRepositoryImpl implements PortfolioRepository {
     @Override
     public Optional<HoldingGroup> findGroupByIdAndPortfolioId(Long id, Long portfolioId) {
         return groupJpa.findByIdAndPortfolioId(id, portfolioId).map(HoldingGroupJpaEntity::toDomain);
+    }
+
+    @Override
+    public Optional<HoldingGroup> lockGroupByIdAndPortfolioId(Long id, Long portfolioId) {
+        return groupJpa.findByIdAndPortfolioIdForUpdate(id, portfolioId).map(HoldingGroupJpaEntity::toDomain);
     }
 
     @Override
@@ -107,6 +113,28 @@ public class PortfolioRepositoryImpl implements PortfolioRepository {
     }
 
     @Override
+    public List<Trade> findTradesByPortfolioId(Long portfolioId) {
+        return tradeJpa.findByPortfolioId(portfolioId).stream()
+                .map(TradeJpaEntity::toDomain).toList();
+    }
+
+    /** 日期下推四分支（可空组合照 JournalEntryRepositoryImpl 先例拆派生查询）。 */
+    @Override
+    public List<Trade> findTradesByPortfolioIdInRange(Long portfolioId, LocalDate from, LocalDate to) {
+        List<TradeJpaEntity> entities;
+        if (from != null && to != null) {
+            entities = tradeJpa.findByPortfolioIdAndTradeDateBetween(portfolioId, from, to);
+        } else if (from != null) {
+            entities = tradeJpa.findByPortfolioIdAndTradeDateGreaterThanEqual(portfolioId, from);
+        } else if (to != null) {
+            entities = tradeJpa.findByPortfolioIdAndTradeDateLessThanEqual(portfolioId, to);
+        } else {
+            entities = tradeJpa.findByPortfolioId(portfolioId);
+        }
+        return entities.stream().map(TradeJpaEntity::toDomain).toList();
+    }
+
+    @Override
     public Optional<Trade> findTradeById(Long id) {
         return tradeJpa.findById(id).map(TradeJpaEntity::toDomain);
     }
@@ -120,6 +148,28 @@ public class PortfolioRepositoryImpl implements PortfolioRepository {
     public List<Dividend> findDividendsByPositionId(Long positionId) {
         return dividendJpa.findByPositionIdOrderByIdAsc(positionId).stream()
                 .map(DividendJpaEntity::toDomain).toList();
+    }
+
+    @Override
+    public List<Dividend> findDividendsByPortfolioId(Long portfolioId) {
+        return dividendJpa.findByPortfolioId(portfolioId).stream()
+                .map(DividendJpaEntity::toDomain).toList();
+    }
+
+    /** 日期下推四分支（可空组合照 JournalEntryRepositoryImpl 先例拆派生查询）。 */
+    @Override
+    public List<Dividend> findDividendsByPortfolioIdInRange(Long portfolioId, LocalDate from, LocalDate to) {
+        List<DividendJpaEntity> entities;
+        if (from != null && to != null) {
+            entities = dividendJpa.findByPortfolioIdAndExDateBetween(portfolioId, from, to);
+        } else if (from != null) {
+            entities = dividendJpa.findByPortfolioIdAndExDateGreaterThanEqual(portfolioId, from);
+        } else if (to != null) {
+            entities = dividendJpa.findByPortfolioIdAndExDateLessThanEqual(portfolioId, to);
+        } else {
+            entities = dividendJpa.findByPortfolioId(portfolioId);
+        }
+        return entities.stream().map(DividendJpaEntity::toDomain).toList();
     }
 
     @Override

@@ -109,7 +109,7 @@ public class EmailCodeService {
         return Optional.of(user);
     }
 
-    /** 消费型验码：成功即 markUsed（用后即焚）；失败 attemptFailed 计数（5 次作废）。 */
+    /** 消费型验码：哈希比对通过后 tryMarkUsed 原子消费（并发同码双验恰一成功，B8）；失败 attemptFailed 计数（5 次作废）。 */
     public void verify(String email, VerificationPurpose purpose, String rawCode) {
         String e = normalize(email);
         Instant now = clock.instant();
@@ -123,7 +123,9 @@ public class EmailCodeService {
             codeRepository.save(code.attemptFailed());
             throw new UserException(UserErrorCode.CODE_INVALID, "验证码错误或已失效");
         }
-        codeRepository.save(code.markUsed(now));
+        if (!codeRepository.tryMarkUsed(code.id(), now)) {
+            throw new UserException(UserErrorCode.CODE_INVALID, "验证码错误或已失效");
+        }
     }
 
     /** 邮箱格式 + 未被绑定（注册与代填共用）。校验与查库均针对归一化后的邮箱。 */

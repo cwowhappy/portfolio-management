@@ -68,6 +68,71 @@ class BacktestEngineTest {
         assertThat(BacktestEngine.RebalanceMode.NEVER.tradingDays()).isEqualTo(0);
     }
 
+    /**
+     * B5 重构（retOf 预索引线性化）的 characterization 基线：2 资产 × 3 日已知收益
+     * （股 70/现 30；股 +5%/-2%/+10%，现日 +0.01%），每日与每 3 日再平衡两档。
+     * 期望值取自重构前现实现的逐点输出（toPlainString 逐字节），重构后必须逐字节一致。
+     */
+    @DisplayName("characterization：每日/每3日再平衡曲线与重构前逐字节一致")
+    @Test
+    void givenTwoAssetsThreeDays_whenRunDailyAndEvery3Days_thenCurvesMatchPreRefactor() {
+        Map<AssetClass, List<BacktestEngine.DatedReturn>> rets = Map.of(
+                AssetClass.STOCK, List.of(dr(1, "0.05"), dr(2, "-0.02"), dr(3, "0.10")),
+                AssetClass.CASH, List.of(dr(1, "0.0001"), dr(2, "0.0001"), dr(3, "0.0001")));
+        var weights = Map.of(AssetClass.STOCK, bd("70"), AssetClass.CASH, bd("30"));
+
+        assertThat(dump(BacktestEngine.run(weights, rets, 1))).containsExactly(
+                "2026-01-05=1000",
+                "2026-01-05=1035.0300000000",
+                "2026-01-06=1020.5706309000",
+                "2026-01-07=1092.0411921819");
+        assertThat(dump(BacktestEngine.run(weights, rets, 3))).containsExactly(
+                "2026-01-05=1000",
+                "2026-01-05=1035.0300000000",
+                "2026-01-06=1020.3600030000",
+                "2026-01-07=1092.4200090003");
+    }
+
+    /**
+     * 边界语义固化：① 同日重复收益点取首点（线性扫描 first-match，1035.03 对应股 0.05
+     * 而非重复点 0.99）；② 某资产独有的日期被交集剔除（01-08 无现金点位 → 不入曲线）。
+     */
+    @DisplayName("重复日期取首点、独有日期被交集剔除")
+    @Test
+    void givenDuplicateDateAndExtraDate_whenRun_thenFirstMatchWinsAndExtraDropped() {
+        Map<AssetClass, List<BacktestEngine.DatedReturn>> dup = Map.of(
+                AssetClass.STOCK, List.of(dr(1, "0.05"), dr(2, "-0.02"), dr(1, "0.99"), dr(4, "0.5")),
+                AssetClass.CASH, List.of(dr(1, "0.0001"), dr(2, "0.0001"), dr(3, "0.0001")));
+        var weights = Map.of(AssetClass.STOCK, bd("70"), AssetClass.CASH, bd("30"));
+
+        assertThat(dump(BacktestEngine.run(weights, dup, 0))).containsExactly(
+                "2026-01-05=1000",
+                "2026-01-05=1035.0300000000",
+                "2026-01-06=1020.3600030000");
+    }
+
+    /** 防御分支固化：经 run 的日期交集后本不可达，直接断言查表兜底仍为 0（语义不变）。 */
+    @DisplayName("查表兜底：缺资产或缺日期一律按 0 收益处理")
+    @Test
+    void givenMissingAssetOrMissingDate_whenRetOf_thenZero() {
+        Map<AssetClass, Map<LocalDate, BigDecimal>> idx = Map.of(
+                AssetClass.STOCK, Map.of(LocalDate.of(2026, 1, 5), bd("0.05")));
+        assertThat(BacktestEngine.retOf(idx, AssetClass.STOCK, LocalDate.of(2026, 1, 5)))
+                .isEqualByComparingTo("0.05");
+        // 缺日期 → 0
+        assertThat(BacktestEngine.retOf(idx, AssetClass.STOCK, LocalDate.of(2026, 1, 6)))
+                .isEqualByComparingTo(BigDecimal.ZERO);
+        // 缺资产 → 0
+        assertThat(BacktestEngine.retOf(idx, AssetClass.CASH, LocalDate.of(2026, 1, 5)))
+                .isEqualByComparingTo(BigDecimal.ZERO);
+    }
+
+    private static List<String> dump(BacktestEngine.BacktestCurve curve) {
+        return curve.points().stream()
+                .map(p -> p.date() + "=" + p.value().toPlainString())
+                .toList();
+    }
+
     private static BacktestEngine.DatedReturn dr(int day, String ret) {
         return new BacktestEngine.DatedReturn(LocalDate.of(2026, 1, 4 + day), new BigDecimal(ret));
     }

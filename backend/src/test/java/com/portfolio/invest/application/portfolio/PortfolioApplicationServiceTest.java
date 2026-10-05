@@ -134,7 +134,7 @@ class PortfolioApplicationServiceTest {
     @Test
     void givenNoExistingPosition_whenBuy_thenCreateNewPosition() {
         when(repo.findPositionByPortfolioIdAndGroupIdAndStockCode(10L, 1L, "600519")).thenReturn(Optional.empty());
-        when(repo.findGroupByIdAndPortfolioId(1L, 10L))
+        when(repo.lockGroupByIdAndPortfolioId(1L, 10L))
                 .thenReturn(Optional.of(HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now())));
         stubGroupCash("200000");
         when(repo.savePosition(any())).thenAnswer(inv -> {
@@ -155,6 +155,9 @@ class PortfolioApplicationServiceTest {
         assertThat(view.quantity()).isEqualByComparingTo("100");
         assertThat(view.avgCost()).isEqualByComparingTo("1500.05");
 
+        // 现金写路径必须走组行锁端口（P2-B3：锁先于现金读算，消除 TOCTOU）
+        verify(repo).lockGroupByIdAndPortfolioId(1L, 10L);
+
         ArgumentCaptor<Trade> captor = ArgumentCaptor.forClass(Trade.class);
         verify(repo).saveTrade(captor.capture());
         assertThat(captor.getValue().positionId()).isEqualTo(99L);
@@ -163,7 +166,7 @@ class PortfolioApplicationServiceTest {
     @DisplayName("现金不足买入被拒且不落任何写入（issue #45：买入校验分组现金）")
     @Test
     void givenNoCash_whenBuy_thenRejectWithInsufficientCash() {
-        when(repo.findGroupByIdAndPortfolioId(1L, 10L))
+        when(repo.lockGroupByIdAndPortfolioId(1L, 10L))
                 .thenReturn(Optional.of(HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now())));
         when(repo.findPositionByPortfolioIdAndGroupIdAndStockCode(10L, 1L, "600519")).thenReturn(Optional.empty());
         // 分组无转入流水（Mockito 集合默认空）→ 现金 0 < 1500×100+5
@@ -183,7 +186,7 @@ class PortfolioApplicationServiceTest {
     @Test
     void givenExactSufficientCash_whenBuy_thenSucceed() {
         when(repo.findPositionByPortfolioIdAndGroupIdAndStockCode(10L, 1L, "600519")).thenReturn(Optional.empty());
-        when(repo.findGroupByIdAndPortfolioId(1L, 10L))
+        when(repo.lockGroupByIdAndPortfolioId(1L, 10L))
                 .thenReturn(Optional.of(HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now())));
         stubGroupCash("150005"); // 恰好 = 1500×100+5
         when(repo.savePosition(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -494,7 +497,7 @@ class PortfolioApplicationServiceTest {
     @DisplayName("买入已有持仓累加")
     @Test
     void givenExistingPosition_whenBuy_thenAccumulateQuantity() {
-        when(repo.findGroupByIdAndPortfolioId(1L, 10L))
+        when(repo.lockGroupByIdAndPortfolioId(1L, 10L))
                 .thenReturn(Optional.of(HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now())));
         stubGroupCash("200000");
         when(repo.findPositionByPortfolioIdAndGroupIdAndStockCode(10L, 1L, "600519"))
@@ -531,7 +534,9 @@ class PortfolioApplicationServiceTest {
     @DisplayName("现金转入保存并查询")
     @Test
     void givenDepositCommand_whenAddCashTransaction_thenSaveAndQuery() {
-        when(repo.findGroupByIdAndPortfolioId(1L, 10L))
+        when(repo.lockGroupByIdAndPortfolioId(1L, 10L))
+                .thenReturn(Optional.of(HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now())));
+        when(repo.findGroupByIdAndPortfolioId(1L, 10L)) // 末尾 cashTransactions 读路径走非锁 find
                 .thenReturn(Optional.of(HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now())));
         when(repo.saveCashTransaction(any())).thenAnswer(inv -> inv.getArgument(0));
         when(repo.findCashTransactionsByGroupId(1L)).thenReturn(List.of(
@@ -543,13 +548,15 @@ class PortfolioApplicationServiceTest {
 
         assertThat(view.type()).isEqualTo(CashTransactionType.DEPOSIT);
         assertThat(view.amount()).isEqualByComparingTo("10000");
+        // 现金写路径必须走组行锁端口（P2-B3：同组现金写串行化）
+        verify(repo).lockGroupByIdAndPortfolioId(1L, 10L);
         assertThat(service.cashTransactions(1L, 1L)).hasSize(1);
     }
 
     @DisplayName("现金转出保存")
     @Test
     void givenWithdrawCommand_whenAddCashTransaction_thenSaveWithdraw() {
-        when(repo.findGroupByIdAndPortfolioId(1L, 10L))
+        when(repo.lockGroupByIdAndPortfolioId(1L, 10L))
                 .thenReturn(Optional.of(HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now())));
         when(repo.saveCashTransaction(any())).thenAnswer(inv -> inv.getArgument(0));
 
@@ -657,6 +664,36 @@ class PortfolioApplicationServiceTest {
         service.deletePosition(1L, 5L);
 
         verify(repo).deletePosition(5L);
+    }
+
+    @DisplayName("删除影响预检返回关联交易分红笔数与已实现盈亏")
+    @Test
+    void givenPositionWithTradesAndDividends_whenDeleteImpact_thenReturnCountsAndRealizedPnl() {
+        when(repo.findPositionByIdAndPortfolioId(5L, 10L)).thenReturn(Optional.of(clearedPosition(5L)));
+        when(repo.findTradesByPositionId(5L)).thenReturn(List.of(
+                new Trade(11L, 5L, TradeType.BUY, LocalDate.of(2026, 8, 27),
+                        new BigDecimal("100"), new BigDecimal("100"), BigDecimal.ZERO, Instant.now()),
+                new Trade(12L, 5L, TradeType.SELL, LocalDate.of(2026, 8, 28),
+                        new BigDecimal("120"), new BigDecimal("100"), BigDecimal.ZERO, Instant.now())));
+        when(repo.findDividendsByPositionId(5L)).thenReturn(List.of(
+                new Dividend(1L, 5L, DividendType.CASH, LocalDate.of(2026, 8, 26),
+                        new BigDecimal("1.5"), null, Instant.now())));
+
+        var view = service.deleteImpact(1L, 5L);
+
+        assertThat(view.tradeCount()).isEqualTo(2L);
+        assertThat(view.dividendCount()).isEqualTo(1L);
+        assertThat(view.realizedPnl()).isEqualByComparingTo("2000");
+    }
+
+    @DisplayName("预检他人持仓抛NOT_FOUND")
+    @Test
+    void givenOthersPosition_whenDeleteImpact_thenThrowNotFound() {
+        when(repo.findPositionByIdAndPortfolioId(5L, 10L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.deleteImpact(1L, 5L))
+                .isInstanceOfSatisfying(PortfolioException.class,
+                        e -> assertThat(e.code()).isEqualTo(PortfolioErrorCode.NOT_FOUND));
     }
 
     @DisplayName("查询交易流水")
@@ -848,6 +885,119 @@ class PortfolioApplicationServiceTest {
         assertThat(view.slices().get(0).ratio()).isEqualByComparingTo("100");
     }
 
+    @DisplayName("行业分布含未映射桶且合计等于全部持仓市值")
+    @Test
+    void givenMappedAndUnmappedPositions_whenIndustryDistribution_thenIncludeUnmappedBucketAndSumAll() {
+        when(repo.findPositionsByPortfolioId(10L)).thenReturn(List.of(
+                Position.reconstitute(1L, 10L, 1L, "600519", "贵州茅台",
+                        new BigDecimal("100"), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                        BigDecimal.ZERO, BigDecimal.ZERO, Instant.now(), Instant.now()),
+                Position.reconstitute(2L, 10L, 1L, "000858", "五粮液",
+                        new BigDecimal("100"), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                        BigDecimal.ZERO, BigDecimal.ZERO, Instant.now(), Instant.now())));
+        when(valuation.findAllIndustryMappings()).thenReturn(List.of(
+                new ShenwanIndustryMapping("600519", "贵州茅台", "801120", "白酒")));
+        when(market.quote("600519")).thenReturn(new Quote(
+                "600519", "贵州茅台", 120, 0, 0, 0, 0, 0, 100, 0, 0, null, null, ""));
+        when(market.quote("000858")).thenReturn(new Quote(
+                "000858", "五粮液", 30, 0, 0, 0, 0, 0, 100, 0, 0, null, null, ""));
+
+        var view = service.industryDistribution(1L);
+
+        // 未映射持仓不再静默丢弃：归入「未映射」桶，合计=两持仓市值之和
+        assertThat(view.slices())
+                .extracting(IndustryDistributionView.Slice::industryName)
+                .containsExactlyInAnyOrder("白酒", "未映射");
+        var totalMarketValue = view.slices().stream()
+                .map(IndustryDistributionView.Slice::marketValue)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        assertThat(totalMarketValue).isEqualByComparingTo("15000"); // 120×100 + 30×100
+        assertThat(view.slices())
+                .anySatisfy(s -> {
+                    assertThat(s.industryName()).isEqualTo("未映射");
+                    assertThat(s.marketValue()).isEqualByComparingTo("3000");
+                });
+    }
+
+    @DisplayName("行业分布含未映射桶后占比归一到全部持仓市值")
+    @Test
+    void givenMappedAndUnmappedPositions_whenIndustryDistribution_thenUnmappedRatioAndRatiosSumToWhole() {
+        when(repo.findPositionsByPortfolioId(10L)).thenReturn(List.of(
+                Position.reconstitute(1L, 10L, 1L, "600519", "贵州茅台",
+                        new BigDecimal("100"), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                        BigDecimal.ZERO, BigDecimal.ZERO, Instant.now(), Instant.now()),
+                Position.reconstitute(2L, 10L, 1L, "000858", "五粮液",
+                        new BigDecimal("100"), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                        BigDecimal.ZERO, BigDecimal.ZERO, Instant.now(), Instant.now())));
+        when(valuation.findAllIndustryMappings()).thenReturn(List.of(
+                new ShenwanIndustryMapping("600519", "贵州茅台", "801120", "白酒")));
+        when(market.quote("600519")).thenReturn(new Quote(
+                "600519", "贵州茅台", 120, 0, 0, 0, 0, 0, 100, 0, 0, null, null, ""));
+        when(market.quote("000858")).thenReturn(new Quote(
+                "000858", "五粮液", 30, 0, 0, 0, 0, 0, 100, 0, 0, null, null, ""));
+
+        var view = service.industryDistribution(1L);
+
+        // 分母含未映射桶：白酒 80%、未映射 20%，占比合计=100（本服务 ratio 为百分制）
+        assertThat(view.slices())
+                .anySatisfy(s -> {
+                    assertThat(s.industryName()).isEqualTo("未映射");
+                    assertThat(s.ratio()).isEqualByComparingTo("20");
+                });
+        var ratioSum = view.slices().stream()
+                .map(IndustryDistributionView.Slice::ratio)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        assertThat(ratioSum).isEqualByComparingTo("100");
+    }
+
+    @DisplayName("全部持仓未映射时归入单一未映射桶且占比为100")
+    @Test
+    void givenAllUnmappedPositions_whenIndustryDistribution_thenSingleUnmappedBucketWithFullRatio() {
+        when(repo.findPositionsByPortfolioId(10L)).thenReturn(List.of(
+                Position.reconstitute(1L, 10L, 1L, "000858", "五粮液",
+                        new BigDecimal("100"), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                        BigDecimal.ZERO, BigDecimal.ZERO, Instant.now(), Instant.now()),
+                Position.reconstitute(2L, 10L, 1L, "601318", "中国平安",
+                        new BigDecimal("100"), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                        BigDecimal.ZERO, BigDecimal.ZERO, Instant.now(), Instant.now())));
+        when(valuation.findAllIndustryMappings()).thenReturn(List.of());
+        when(market.quote("000858")).thenReturn(new Quote(
+                "000858", "五粮液", 30, 0, 0, 0, 0, 0, 100, 0, 0, null, null, ""));
+        when(market.quote("601318")).thenReturn(new Quote(
+                "601318", "中国平安", 120, 0, 0, 0, 0, 0, 100, 0, 0, null, null, ""));
+
+        var view = service.industryDistribution(1L);
+
+        assertThat(view.slices()).hasSize(1);
+        assertThat(view.slices().get(0).industryName()).isEqualTo("未映射");
+        assertThat(view.slices().get(0).marketValue()).isEqualByComparingTo("15000"); // 30×100 + 120×100
+        assertThat(view.slices().get(0).ratio()).isEqualByComparingTo("100");
+    }
+
+    @DisplayName("未映射持仓无报价时与映射持仓同语义跳过不计入桶与合计")
+    @Test
+    void givenUnmappedPositionWithoutQuote_whenIndustryDistribution_thenSkipLikeMappedPositions() {
+        when(repo.findPositionsByPortfolioId(10L)).thenReturn(List.of(
+                Position.reconstitute(1L, 10L, 1L, "600519", "贵州茅台",
+                        new BigDecimal("100"), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                        BigDecimal.ZERO, BigDecimal.ZERO, Instant.now(), Instant.now()),
+                Position.reconstitute(2L, 10L, 1L, "000858", "五粮液",
+                        new BigDecimal("100"), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                        BigDecimal.ZERO, BigDecimal.ZERO, Instant.now(), Instant.now())));
+        when(valuation.findAllIndustryMappings()).thenReturn(List.of(
+                new ShenwanIndustryMapping("600519", "贵州茅台", "801120", "白酒")));
+        when(market.quote("600519")).thenReturn(new Quote(
+                "600519", "贵州茅台", 120, 0, 0, 0, 0, 0, 100, 0, 0, null, null, ""));
+        when(market.quote("000858")).thenThrow(new RuntimeException("无行情"));
+
+        var view = service.industryDistribution(1L);
+
+        // 无报价持仓不计入桶与合计（与映射持仓缺价同语义）→ 不产生「未映射」零值分片
+        assertThat(view.slices()).hasSize(1);
+        assertThat(view.slices().get(0).industryName()).isEqualTo("白酒");
+        assertThat(view.slices().get(0).marketValue()).isEqualByComparingTo("12000");
+    }
+
     @DisplayName("集中度前五与占比")
     @Test
     void givenHoldings_whenConcentration_thenReturnTopFiveAndRatios() {
@@ -907,7 +1057,7 @@ class PortfolioApplicationServiceTest {
         assertThat(service.positions(1L, null)).isEmpty();
 
         // buy 仍能按 组合+分组+代码 命中已清仓行，重新买入（FR-A4：交易历史保留、可再开仓）
-        when(repo.findGroupByIdAndPortfolioId(1L, 10L))
+        when(repo.lockGroupByIdAndPortfolioId(1L, 10L))
                 .thenReturn(Optional.of(HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now())));
         stubGroupCash("200000"); // 已清仓行净现金流 +2000 亦计入分组现金，转入覆盖后买入
         when(repo.findPositionByPortfolioIdAndGroupIdAndStockCode(10L, 1L, "600519"))

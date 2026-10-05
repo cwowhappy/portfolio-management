@@ -20,8 +20,10 @@ import com.portfolio.invest.application.auth.UserView;
 import com.portfolio.invest.domain.user.User;
 import com.portfolio.invest.domain.user.UserRepository;
 import com.portfolio.invest.domain.user.UserRole;
+import com.portfolio.invest.domain.user.UserSessionRegistry;
 import com.portfolio.invest.domain.user.UserStatus;
 import com.portfolio.invest.infrastructure.security.AuthenticatedUser;
+import com.portfolio.invest.infrastructure.security.ActiveUserStatusCache;
 import com.portfolio.invest.infrastructure.security.LoginRateLimiter;
 import com.portfolio.invest.infrastructure.security.SecurityConfig;
 import jakarta.servlet.http.Cookie;
@@ -51,7 +53,7 @@ import org.springframework.test.web.servlet.MockMvc;
  * AuthenticationManager 打桩，RememberMeServices 打桩以观察 loginSuccess 调用。
  */
 @WebMvcTest(AuthController.class)
-@Import(SecurityConfig.class)
+@Import({SecurityConfig.class, ActiveUserStatusCache.class})
 class AuthControllerSliceTest {
 
     @Autowired
@@ -67,6 +69,9 @@ class AuthControllerSliceTest {
     private RememberMeServices rememberMeServices;
     @MockitoBean
     private LoginRateLimiter loginRateLimiter;
+    // B14：登录成功后会话登记端口（真实实现见 SpringSessionUserRegistryTest/集成测试）
+    @MockitoBean
+    private UserSessionRegistry userSessionRegistry;
 
     // SecurityConfig 装配所需依赖（切片内无真实实现）
     @MockitoBean

@@ -10,6 +10,7 @@ import com.portfolio.invest.application.mcp.McpConfigApplicationService;
 import com.portfolio.invest.domain.mcp.McpErrorCode;
 import com.portfolio.invest.domain.mcp.McpException;
 import com.portfolio.invest.domain.user.UserRepository;
+import com.portfolio.invest.infrastructure.security.ActiveUserStatusCache;
 import com.portfolio.invest.infrastructure.security.SecurityConfig;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -30,7 +31,7 @@ import org.springframework.test.web.servlet.MockMvc;
  * 响应体无 token 回显（NFR-1）。
  */
 @WebMvcTest(McpAdminTokenController.class)
-@Import(SecurityConfig.class)
+@Import({SecurityConfig.class, ActiveUserStatusCache.class})
 class McpAdminTokenControllerSliceTest {
 
     @Autowired

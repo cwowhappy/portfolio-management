@@ -125,18 +125,28 @@ public class ScreeningRepositoryImpl implements ScreeningRepository {
 
     @Override
     public List<StockSearchHit> searchLatestSnapshot(String keyword, int limit) {
+        // B7：关键字先字面化（%/_ 不再作通配符），LIKE 显式声明反斜杠转义符
+        String kw = escapeLike(keyword);
         String sql = """
                 SELECT d.stock_code, d.stock_name, m.industry_name, d.pe_ttm, d.pb, d.total_mv
                 FROM stock_valuation_daily d
                 LEFT JOIN shenwan_industry_mapping m ON d.stock_code = m.stock_code
                 WHERE d.trading_day = (SELECT max(trading_day) FROM stock_valuation_daily)
-                  AND (d.stock_code LIKE ? OR d.stock_name LIKE ?)
+                  AND (d.stock_code LIKE ? ESCAPE '\\' OR d.stock_name LIKE ? ESCAPE '\\')
                 ORDER BY d.stock_code LIMIT ?
                 """;
         return jdbc.query(sql, (rs, i) -> new StockSearchHit(
                         rs.getString("stock_code"), rs.getString("stock_name"), rs.getString("industry_name"),
                         rs.getBigDecimal("pe_ttm"), rs.getBigDecimal("pb"), rs.getBigDecimal("total_mv")),
-                keyword + "%", "%" + keyword + "%", limit);
+                kw + "%", "%" + kw + "%", limit);
+    }
+
+    /**
+     * LIKE 关键字字面化：先转义反斜杠本身，再转义 % 与 _（顺序不可反——
+     * 先转 %/_ 会把刚引入的转义符再翻倍）。包私有以便纯单测。
+     */
+    static String escapeLike(String kw) {
+        return kw.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
     }
 
     /** 全维度行映射（findStocks / findStocksByCodes 共用）。 */

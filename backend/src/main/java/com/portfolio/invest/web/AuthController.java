@@ -5,6 +5,7 @@ import com.portfolio.invest.application.auth.EmailCodeService;
 import com.portfolio.invest.application.auth.RegisterCommand;
 import com.portfolio.invest.application.auth.UserView;
 import com.portfolio.invest.domain.user.User;
+import com.portfolio.invest.domain.user.UserSessionRegistry;
 import com.portfolio.invest.domain.user.UserStatus;
 import com.portfolio.invest.infrastructure.security.AuthenticatedUser;
 import com.portfolio.invest.infrastructure.security.LoginRateLimiter;
@@ -44,16 +45,19 @@ public class AuthController {
     private final AuthenticationManager authenticationManager;
     private final RememberMeServices rememberMeServices;
     private final LoginRateLimiter loginRateLimiter;
+    private final UserSessionRegistry userSessionRegistry;
 
     public AuthController(AuthApplicationService auth, EmailCodeService emailCodeService,
                           AuthenticationManager authenticationManager,
                           RememberMeServices rememberMeServices,
-                          LoginRateLimiter loginRateLimiter) {
+                          LoginRateLimiter loginRateLimiter,
+                          UserSessionRegistry userSessionRegistry) {
         this.auth = auth;
         this.emailCodeService = emailCodeService;
         this.authenticationManager = authenticationManager;
         this.rememberMeServices = rememberMeServices;
         this.loginRateLimiter = loginRateLimiter;
+        this.userSessionRegistry = userSessionRegistry;
     }
 
     @PostMapping("/register")
@@ -115,6 +119,9 @@ public class AuthController {
             session.setAttribute(
                     HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY,
                     SecurityContextHolder.getContext());
+            // B14：登记会话归属（changeSessionId 之后取轮换后的 id），重置密码时按用户名吊销全部会话。
+            // 手动登录不经过过滤器内 SessionAuthenticationStrategy，不会自动登记。
+            userSessionRegistry.register(session.getId(), user.username());
             if (req.rememberMe()) {
                 rememberMeServices.loginSuccess(request, response, authn);
             }

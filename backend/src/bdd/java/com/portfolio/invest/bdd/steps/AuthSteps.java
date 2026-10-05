@@ -98,7 +98,7 @@ public class AuthSteps {
 
     @那么("该用户的下一次请求应返回未授权")
     public void 下一次请求未授权() throws Exception {
-        // ActiveUserFilter 每次请求回库校验用户状态：停用即时生效，旧会话立即 401
+        // ActiveUserStatusCache 收到停用事件逐出缓存：下次请求重查新状态，旧会话立即 401
         mockMvc.perform(get("/api/conversations").session(ctx.getUserSession()))
                 .andExpect(status().isUnauthorized());
     }
