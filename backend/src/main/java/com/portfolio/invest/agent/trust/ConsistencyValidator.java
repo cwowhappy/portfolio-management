@@ -49,8 +49,9 @@ public final class ConsistencyValidator {
 
     private static final String SENTENCE_ENDS = "。！？；!?\n";
 
-    /** 单位后缀（回写换算用；万亿两字先行匹配）。 */
-    private static final String[] UNIT_SUFFIXES = {"万亿", "万", "亿", "%", "％", "元", "手", "点", "股", "倍"};
+    /** 单位后缀（回写换算用；长后缀先行匹配：万亿元→万亿→亿元/万元→万/亿→单字，复合单位 controller 裁定 1）。 */
+    private static final String[] UNIT_SUFFIXES =
+            {"万亿元", "万亿", "亿元", "万元", "万", "亿", "%", "％", "元", "手", "点", "股", "倍"};
 
     /** 量级跨度护栏（数量级）：阻断同首有效数字的远跨度误配（如 2 vs 2.4万亿）。 */
     private static final double MAGNITUDE_SPAN_LIMIT = 4.0;
@@ -297,15 +298,20 @@ public final class ConsistencyValidator {
         return offenders;
     }
 
-    /** 回写串：snippet 带单位后缀→真值按该单位换算的数值（去尾零）+ 同后缀；无单位→真值原值。 */
+    /** 回写串：snippet 带单位后缀→按 snippet 单位（含复合 亿元/万元/万亿元）换算回写；无单位→真值原值。 */
     private static String displayForm(NumberToken token, Truth truth) {
-        String unit = trailingUnit(token.snippet());
-        if (!unit.isEmpty()) {
-            BigDecimal scaled = truth.value().divide(unitMultiplier(unit), MathContext.DECIMAL64)
-                    .stripTrailingZeros();
-            return scaled.toPlainString() + unit;
-        }
-        return truth.raw();
+        return trailingUnit(token.snippet()).isEmpty() ? truth.raw() : writeBack(truth.value(), token.snippet());
+    }
+
+    /**
+     * 同单位回写（包内可见供白盒测试）：真值按 snippet 自身单位（含复合单位）换算为数值并去尾零。
+     * 复合单位乘数：万元=10^4、亿元=10^8、万亿元=10^12。
+     */
+    static String writeBack(BigDecimal truthValue, String snippet) {
+        String unit = trailingUnit(snippet);
+        return truthValue.divide(unitMultiplier(unit), MathContext.DECIMAL64)
+                .stripTrailingZeros()
+                .toPlainString() + unit;
     }
 
     /** 尾部单位后缀（万亿两字先行；无后缀返回空串）。 */
@@ -325,9 +331,9 @@ public final class ConsistencyValidator {
 
     private static BigDecimal unitMultiplier(String unit) {
         return switch (unit) {
-            case "万亿" -> new BigDecimal("1000000000000");
-            case "亿" -> new BigDecimal("100000000");
-            case "万" -> new BigDecimal("10000");
+            case "万亿", "万亿元" -> new BigDecimal("1000000000000");
+            case "亿", "亿元" -> new BigDecimal("100000000");
+            case "万", "万元" -> new BigDecimal("10000");
             default -> BigDecimal.ONE;
         };
     }

@@ -3,6 +3,7 @@ package com.portfolio.invest.agent.trust;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.portfolio.invest.config.InvestProperties;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
@@ -228,6 +229,30 @@ class ConsistencyValidatorTest {
                 pool(truth("get_quote", "2.4万亿")));
 
         assertThat(batch.anchors().getFirst().state()).isEqualTo(TrustVerdict.UNVERIFIED);
+    }
+
+    @DisplayName("复合单位回写：snippet 带亿元/万元/万亿元后缀时按复合乘数换算（controller 裁定 1）")
+    @Test
+    void givenCompositeUnitSnippet_whenWriteBack_thenConvertedInCompositeUnit() {
+        assertThat(ConsistencyValidator.writeBack(new BigDecimal("1900000000000"), "19500亿元"))
+                .isEqualTo("19000亿元");
+        assertThat(ConsistencyValidator.writeBack(new BigDecimal("34800"), "3.4万元"))
+                .isEqualTo("3.48万元");
+        assertThat(ConsistencyValidator.writeBack(new BigDecimal("1900000000000"), "1.95万亿元"))
+                .isEqualTo("1.9万亿元");
+    }
+
+    @DisplayName("复合单位端到端：「19500亿元」文本 vs 1.9万亿 真值 → 替换后终文含「19000亿元」且 verified")
+    @Test
+    void givenCompositeYiYuanText_whenCorrect_thenRewrittenWithYiYuanIntact() {
+        CorrectionResult result = validator.correct("贵州茅台总市值19500亿元",
+                pool(truth("get_quote", "1.9万亿")));
+
+        assertThat(result.correctedText())
+                .isEqualTo("贵州茅台总市值19000亿元\n> ⚠ 校验修正：原文误述 19500亿");
+        assertThat(result.corrections().getFirst().replacement()).isEqualTo("19000亿");
+        assertThat(result.batch().anchors().getFirst().state()).isEqualTo(TrustVerdict.VERIFIED);
+        assertThat(result.batch().anchors().getFirst().raw()).isEqualTo("1.9万亿");
     }
 
     static ConsistencyValidator zeroRetryValidator() {
