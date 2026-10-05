@@ -119,8 +119,9 @@ export default function PositionActions({ position, onChanged }: { position: Pos
     setConfirmOpen(true);
     try {
       setConfirmImpact(await fetchDeleteImpact(position.id));
-    } catch {
+    } catch (e) {
       // 预检失败降级为通用确认文案：删除能力不回退，不阻塞删除流程
+      console.warn("删除预检失败，降级为通用确认", e);
       setConfirmImpact(null);
     }
   }

@@ -135,7 +135,7 @@ export default function MarketBoard() {
     void (async () => {
       const hits = await searchStocks(code);
       if (hits[0]) select(hits[0]);
-    })();
+    })().catch(() => {});
   }, [searchParams, select]);
 
   const switchPeriod = useCallback(

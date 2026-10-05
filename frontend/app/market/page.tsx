@@ -7,7 +7,7 @@ export default function MarketPage() {
   return (
     <Suspense
       fallback={
-        <div className="mx-auto max-w-[1240px] px-6 pb-16 pt-8">
+        <div className="mx-auto max-w-[1240px] px-6 pb-16 pt-8" aria-label="加载中">
           <div className="mb-8 grid grid-cols-3 gap-3">
             <div className="skeleton h-[96px]" />
             <div className="skeleton h-[96px]" />
