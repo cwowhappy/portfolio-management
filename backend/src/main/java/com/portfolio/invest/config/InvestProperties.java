@@ -1,5 +1,6 @@
 package com.portfolio.invest.config;
 
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -18,6 +19,7 @@ public class InvestProperties {
     private Im im = new Im();
     private Mail mail = new Mail();
     private Intelligence intelligence = new Intelligence();
+    private Trust trust = new Trust();
 
     public Llm getLlm() {
         return llm;
@@ -89,6 +91,14 @@ public class InvestProperties {
 
     public void setIntelligence(Intelligence intelligence) {
         this.intelligence = intelligence;
+    }
+
+    public Trust getTrust() {
+        return trust;
+    }
+
+    public void setTrust(Trust trust) {
+        this.trust = trust;
     }
 
     public static class Llm {
@@ -399,6 +409,41 @@ public class InvestProperties {
         public void setBriefMinItems(int briefMinItems) { this.briefMinItems = briefMinItems; }
         public int getBindingCodeTtlMinutes() { return bindingCodeTtlMinutes; }
         public void setBindingCodeTtlMinutes(int bindingCodeTtlMinutes) { this.bindingCodeTtlMinutes = bindingCodeTtlMinutes; }
+    }
+
+    /** 可信溯源（MS-29）：容差参数组① + 修正上限参数组⑥（设计规格 §4.6，ConsistencyValidator 消费）。 */
+    public static class Trust {
+        private ToleranceSettings tolerance =
+                new ToleranceSettings(new BigDecimal("0.02"), new BigDecimal("0.05"),
+                        new BigDecimal("0.01"), new BigDecimal("0.10"));
+        private CorrectionSettings correction = new CorrectionSettings(2);
+
+        public ToleranceSettings getTolerance() { return tolerance; }
+        public void setTolerance(ToleranceSettings tolerance) { this.tolerance = tolerance; }
+        public CorrectionSettings getCorrection() { return correction; }
+        public void setCorrection(CorrectionSettings correction) { this.correction = correction; }
+
+        /**
+         * 容差参数组①（用户拍板默认）：relative=相对 2%；absolute=无量纲绝对 0.05（%、倍）；
+         * price=价格语义绝对 0.01 元；deviation=大偏差线 10%（超出容差即拦截改写——中间带按大偏差处理，决策 #1）。
+         * 嵌套 record 走构造器绑定：部分配置时分量为 null，紧凑构造器回退默认（不产生空值）。
+         */
+        public record ToleranceSettings(BigDecimal relative, BigDecimal absolute,
+                BigDecimal price, BigDecimal deviation) {
+            public ToleranceSettings {
+                if (relative == null) relative = new BigDecimal("0.02");
+                if (absolute == null) absolute = new BigDecimal("0.05");
+                if (price == null) price = new BigDecimal("0.01");
+                if (deviation == null) deviation = new BigDecimal("0.10");
+            }
+        }
+
+        /** 修正参数组⑥：确定性替换重试上限（替换后重校验，触达降级：原文保留 + 显式标注 + 修正失败信号）。 */
+        public record CorrectionSettings(Integer maxRetries) {
+            public CorrectionSettings {
+                if (maxRetries == null) maxRetries = 2;
+            }
+        }
     }
 
     /** SMTP 发信（M01-F06，阿里云企业邮箱）。空值 = 未启用，发信入口返回「系统未配置邮件服务」。 */

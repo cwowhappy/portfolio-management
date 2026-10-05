@@ -1,0 +1,12 @@
+{
+  "id": "b1-code-dot",
+  "category": "b1_code_dot",
+  "text": "600519.SH 现价1520.33元",
+  "pool": [{"value": "1520.33", "kind": "price"}],
+  "expectedAnchors": [
+    {"snippet": "600519", "occ": 1, "state": "unverified"},
+    {"snippet": "1520.33元", "occ": 1, "state": "verified"}
+  ],
+  "expectedCorrections": [],
+  "expectedNotes": []
+}

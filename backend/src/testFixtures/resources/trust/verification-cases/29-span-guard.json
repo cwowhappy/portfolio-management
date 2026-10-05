@@ -1,0 +1,9 @@
+{
+  "id": "span-guard",
+  "category": "span_guard",
+  "text": "日产约2片，产能爬坡中",
+  "pool": [{"value": "2.4", "kind": "wanyi"}],
+  "expectedAnchors": [{"snippet": "2", "occ": 1, "state": "unverified", "wrong": true}],
+  "expectedCorrections": [],
+  "expectedNotes": []
+}

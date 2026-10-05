@@ -92,6 +92,14 @@ invest:
     brief-max-items: 25        # 决策 #21/#22：简报选取总量上限（截断）
     brief-min-items: 15        # 简报选取补足下限（各节 WATCH 候选池补足至该总量）
     binding-code-ttl-minutes: 10  # D8：设置页绑定码 TTL（6 位数字、一次性）
+  trust:                        # MS-29 可信溯源（设计规格 §4.6，用户拍板默认值）
+    tolerance:                  # 容差参数组①：|text−truth| ≤ max(relative×|truth|, 量纲绝对) 放行
+      relative: 0.02            # 相对 2%（覆盖 %.2f 舍入）
+      absolute: 0.05            # 无量纲绝对（%、倍）
+      price: 0.01               # 价格语义绝对（snippet/真值含「元」）
+      deviation: 0.10           # 大偏差线：容差外即拦截改写（中间带按大偏差处理，决策 #1）
+    correction:                 # 修正参数组⑥：确定性替换重试上限，触达降级（原文保留+显式标注）
+      max-retries: 2
   market:
     connect-timeout: 3s
     read-timeout: 5s

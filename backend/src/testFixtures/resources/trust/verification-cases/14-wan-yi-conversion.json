@@ -1,0 +1,9 @@
+{
+  "id": "wan-yi-conversion",
+  "category": "chinese_normalization",
+  "text": "市值1.9万亿",
+  "pool": [{"value": "19000", "kind": "yi"}],
+  "expectedAnchors": [{"snippet": "1.9万亿", "occ": 1, "state": "verified"}],
+  "expectedCorrections": [],
+  "expectedNotes": []
+}

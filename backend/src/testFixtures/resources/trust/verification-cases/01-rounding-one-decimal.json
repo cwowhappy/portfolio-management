@@ -1,0 +1,9 @@
+{
+  "id": "rounding-one-decimal",
+  "category": "tolerance_pass",
+  "text": "现价约15.2元",
+  "pool": [{"value": "15.23", "kind": "price"}],
+  "expectedAnchors": [{"snippet": "15.2元", "occ": 1, "state": "verified", "expectedRaw": "15.23元"}],
+  "expectedCorrections": [],
+  "expectedNotes": []
+}

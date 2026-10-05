@@ -1,0 +1,9 @@
+{
+  "id": "far-fabrication",
+  "category": "far_fabrication",
+  "text": "现价2000元",
+  "pool": [{"value": "1520.33", "kind": "price"}],
+  "expectedAnchors": [{"snippet": "2000元", "occ": 1, "state": "unverified", "wrong": true}],
+  "expectedCorrections": [],
+  "expectedNotes": []
+}

@@ -1,0 +1,10 @@
+{
+  "id": "middle-band-intercepted",
+  "category": "middle_band",
+  "text": "现价10.6元",
+  "pool": [{"value": "10.0", "kind": "price"}],
+  "expectedAnchors": [{"snippet": "10元", "occ": 1, "state": "verified", "wrong": true}],
+  "expectedCorrections": [{"snippet": "10.6元", "occ": 1}],
+  "expectedNotes": ["原文误述 10.6元"],
+  "expectedText": "现价10元\n> ⚠ 校验修正：原文误述 10.6元"
+}

@@ -1,0 +1,12 @@
+{
+  "id": "multi-truth-closest",
+  "category": "multi_truth",
+  "text": "现价15.2元",
+  "pool": [
+    {"value": "1520.33", "kind": "price"},
+    {"value": "15.23", "kind": "price"}
+  ],
+  "expectedAnchors": [{"snippet": "15.2元", "occ": 1, "state": "verified", "expectedRaw": "15.23元"}],
+  "expectedCorrections": [],
+  "expectedNotes": []
+}

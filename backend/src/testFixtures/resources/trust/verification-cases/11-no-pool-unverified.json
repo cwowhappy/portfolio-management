@@ -1,0 +1,9 @@
+{
+  "id": "no-pool-unverified",
+  "category": "no_truth",
+  "text": "可看高到1800元",
+  "pool": [],
+  "expectedAnchors": [{"snippet": "1800元", "occ": 1, "state": "unverified", "wrong": true}],
+  "expectedCorrections": [],
+  "expectedNotes": []
+}

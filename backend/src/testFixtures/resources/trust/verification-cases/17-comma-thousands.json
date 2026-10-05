@@ -1,0 +1,9 @@
+{
+  "id": "comma-thousands",
+  "category": "chinese_normalization",
+  "text": "大盘报3,400.55点",
+  "pool": [{"value": "3400.55", "kind": "plain"}],
+  "expectedAnchors": [{"snippet": "3,400.55点", "occ": 1, "state": "verified"}],
+  "expectedCorrections": [],
+  "expectedNotes": []
+}

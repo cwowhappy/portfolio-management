@@ -1,0 +1,9 @@
+{
+  "id": "b1-monthly-excluded",
+  "category": "b1_monthly",
+  "text": "该数据服务每月5元",
+  "pool": [{"value": "5", "kind": "price"}],
+  "expectedAnchors": [],
+  "expectedCorrections": [],
+  "expectedNotes": []
+}

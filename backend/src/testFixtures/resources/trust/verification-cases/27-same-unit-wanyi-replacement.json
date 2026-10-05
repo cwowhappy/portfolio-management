@@ -1,0 +1,10 @@
+{
+  "id": "same-unit-wanyi-replacement",
+  "category": "unit_style_replacement",
+  "text": "市值1.95万亿",
+  "pool": [{"value": "19000", "kind": "yi"}],
+  "expectedAnchors": [{"snippet": "1.9万亿", "occ": 1, "state": "verified", "wrong": true}],
+  "expectedCorrections": [{"snippet": "1.95万亿", "occ": 1}],
+  "expectedNotes": ["原文误述 1.95万亿"],
+  "expectedText": "市值1.9万亿\n> ⚠ 校验修正：原文误述 1.95万亿"
+}

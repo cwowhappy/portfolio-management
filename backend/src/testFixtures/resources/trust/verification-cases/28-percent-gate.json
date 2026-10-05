@@ -1,0 +1,9 @@
+{
+  "id": "percent-gate",
+  "category": "dimension_gate",
+  "text": "市盈率15.2",
+  "pool": [{"value": "15.2", "kind": "percent"}],
+  "expectedAnchors": [{"snippet": "15.2", "occ": 1, "state": "unverified", "wrong": true}],
+  "expectedCorrections": [],
+  "expectedNotes": []
+}

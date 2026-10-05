@@ -1,0 +1,9 @@
+{
+  "id": "mcp-value-equal-sourced",
+  "category": "mcp_sourced",
+  "text": "现价15.23元",
+  "pool": [{"value": "15.23", "kind": "price", "mcp": true}],
+  "expectedAnchors": [{"snippet": "15.23元", "occ": 1, "state": "sourced"}],
+  "expectedCorrections": [],
+  "expectedNotes": []
+}
