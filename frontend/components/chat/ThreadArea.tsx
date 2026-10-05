@@ -426,10 +426,12 @@ export default function ThreadArea({ llmReady, onUnauthorized }: {
   const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 防抖窗口内待写入的快照：供「运行停止立即 flush」与「卸载/切线程 best-effort flush」使用
   const pendingPersist = useRef<{ threadId: string; msgs: Message[] } | null>(null);
-  // flushPersist 并发序号（P2-F3）：每次发起 flush 自增。运行停止 flush 与防抖/keepalive
-  // flush 重叠时各自 async IIFE 并发，先发起者的 PUT 可能后完成、以旧快照覆盖新快照——
-  // 后发起的 flush 代表更新的消息快照；旧的让其自然作废（新快照会带走内容）。
-  const flushSeqRef = useRef(0);
+  // flushPersist 并发序号（P2-F3，按线程隔离）：每次发起 flush 为该线程自增。运行停止
+  // flush 与防抖/keepalive flush 重叠时各自 async IIFE 并发，先发起者的 PUT 可能后完成、
+  // 以旧快照覆盖新快照——后发起的 flush 代表更新的消息快照；旧的让其自然作废（新快照会
+  // 带走内容）。必须按 threadId 隔离：跨线程 PUT 按 URL 隔离本就安全，全局序号会误杀旧
+  // 线程在途 flush——它携带的尾部内容只有它自己能写，丢弃后切回即被服务端记录覆盖（审查发现）。
+  const flushSeqByThreadRef = useRef(new Map<string, number>());
   // 最新 currentThreadId：供防抖定时器到期 / 运行停止 flush 前校验 pending 是否已过期（双保险）
   const currentThreadIdRef = useRef(currentThreadId);
   // agent.messages 当前内容归属的线程：成功回灌某线程历史后更新。为 null 表示尚未回灌任何线程。
@@ -528,14 +530,18 @@ export default function ThreadArea({ llmReady, onUnauthorized }: {
   // 确认——本地草稿消息保持不动，刷新后以服务端为准人工合并。
   const flushPersist = useCallback(
     (threadId: string, msgs: Message[], keepalive = false) => {
-      // 并发序号守卫（P2-F3）：登记本次快照的序号，IIFE 内每个 await 之后、发起写之前校验
-      // 自己仍是最新——后发起的 flush 代表更新的消息快照；旧的让其自然作废。
-      const seq = ++flushSeqRef.current;
+      // 并发序号守卫（P2-F3）：为本线程登记快照序号，IIFE 内每个 await 之后、发起写之前
+      // 校验自己仍是该线程最新——后发起的 flush 代表更新的消息快照；旧的让其自然作废。
+      const seq = (flushSeqByThreadRef.current.get(threadId) ?? 0) + 1;
+      flushSeqByThreadRef.current.set(threadId, seq);
       (async () => {
         try {
           const view = await loadMessages(threadId);
           // 已有更新的 flush 发起：放弃本快照（新快照会带走内容），不再发起写
-          if (seq !== flushSeqRef.current) return;
+          if (seq !== (flushSeqByThreadRef.current.get(threadId) ?? 0)) {
+            console.debug("[ThreadArea] 过期 flush 丢弃", threadId, seq);
+            return;
+          }
           const saved = agentMessagesToHistory(msgs, view.messages);
           if (saved.length === 0) return;
           try {
@@ -546,7 +552,10 @@ export default function ThreadArea({ llmReady, onUnauthorized }: {
           }
           const refreshed = await loadMessages(threadId);
           // 重试 PUT 前同样校验：已有更新的 flush 发起即放弃，新快照会带走内容
-          if (seq !== flushSeqRef.current) return;
+          if (seq !== (flushSeqByThreadRef.current.get(threadId) ?? 0)) {
+            console.debug("[ThreadArea] 过期 flush 丢弃", threadId, seq);
+            return;
+          }
           const merged = agentMessagesToHistory(msgs, refreshed.messages);
           try {
             await persistMessages(threadId, merged, { keepalive, ifMatch: refreshed.updatedAt });
