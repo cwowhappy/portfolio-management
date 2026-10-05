@@ -408,6 +408,34 @@ class TrustAgentHookTest {
                         && le.getFormattedMessage().contains("trust.guardrail"));
     }
 
+    @DisplayName("留痕（B7）：命中的 confidence 信号摘要并入 trust.turn（新增 confidence 字段，既有字段不动）")
+    @Test
+    void givenFailedInvocationInPool_whenFinalRound_thenTurnLogCarriesConfidenceField() {
+        RuntimeContext rc = bound();
+        TrustContext.current(rc).record(new ToolInvocation(
+                "get_quote", Map.of("code", "600519"), "", List.of(),
+                "2026-10-05 14:59:32", ToolInvocation.AsOfKind.CALL, true));
+        ch.qos.logback.classic.Logger hookLogger =
+                (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(TrustAgentHook.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        hookLogger.addAppender(appender);
+        try {
+            hook.onEvent(new PostReasoningEvent(STUB_AGENT, "model", null, assistantMsg("今日大盘上涨。")))
+                    .block();
+        } finally {
+            hookLogger.detachAppender(appender);
+        }
+
+        // 既有 stats 字段稳定（verified=0 等），confidence 摘要字段追加在尾部
+        assertThat(appender.list)
+                .anyMatch(le -> le.getLevel() == ch.qos.logback.classic.Level.INFO
+                        && le.getFormattedMessage().contains("trust.turn")
+                        && le.getFormattedMessage().contains("verified=0")
+                        && le.getFormattedMessage().contains("confidence={tool_failures:1}"));
+    }
+
     /** 护栏用：process 恒抛错的处理器替身。 */
     static final class ThrowingProcessor extends TrustTurnProcessor {
         ThrowingProcessor() {

@@ -88,4 +88,37 @@ class InvestPropertiesTrustBindingTest {
         assertThat(props.getTrust().getAdviceLexicon()).containsExactly("买入", "持有");
         assertThat(props.getTrust().getDisclaimerText()).isEqualTo("自定义免责文案");
     }
+
+    @DisplayName("未配置时：confidence 组代码默认值生效（0.30/3/1/110/35，参数组⑤，MS-29 B7）")
+    @Test
+    void givenNoConfidenceConfig_whenBind_thenDefaultsApply() {
+        InvestProperties props = new Binder(new MapConfigurationPropertySource(Map.of()))
+                .bindOrCreate("invest", InvestProperties.class);
+
+        var confidence = props.getTrust().getConfidence();
+        assertThat(confidence.unverifiedRatio()).isEqualTo(0.30);
+        assertThat(confidence.unverifiedMin()).isEqualTo(3);
+        assertThat(confidence.staleQuoteDays()).isEqualTo(1);
+        assertThat(confidence.staleFinancialDays()).isEqualTo(110);
+        assertThat(confidence.staleMacroDays()).isEqualTo(35);
+    }
+
+    @DisplayName("全量绑定：invest.trust.confidence.* 松命名绑定覆盖（stale-financial/stale-macro-days 为 B7 补充阈值）")
+    @Test
+    void givenConfidenceConfig_whenBind_thenValuesBound() {
+        InvestProperties props = new Binder(new MapConfigurationPropertySource(Map.of(
+                "invest.trust.confidence.unverified-ratio", "0.50",
+                "invest.trust.confidence.unverified-min", "5",
+                "invest.trust.confidence.stale-quote-days", "2",
+                "invest.trust.confidence.stale-financial-days", "120",
+                "invest.trust.confidence.stale-macro-days", "40")))
+                .bindOrCreate("invest", InvestProperties.class);
+
+        var confidence = props.getTrust().getConfidence();
+        assertThat(confidence.unverifiedRatio()).isEqualTo(0.50);
+        assertThat(confidence.unverifiedMin()).isEqualTo(5);
+        assertThat(confidence.staleQuoteDays()).isEqualTo(2);
+        assertThat(confidence.staleFinancialDays()).isEqualTo(120);
+        assertThat(confidence.staleMacroDays()).isEqualTo(40);
+    }
 }

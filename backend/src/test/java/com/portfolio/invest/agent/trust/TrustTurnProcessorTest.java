@@ -317,6 +317,129 @@ class TrustTurnProcessorTest {
         assertThat(plain.toPayload()).doesNotContainKey("advice");
     }
 
+    // ———— confidence 半边（B7：四类机制信号接线 + payload.confidence 键形态/缺键） ————
+
+    /** 固定「今日」= 2026-10-06 的处理器（陈旧度判定可确定化，禁真实 sleep）。 */
+    private static TrustTurnProcessor fixedClockProcessor() {
+        return new TrustTurnProcessor(new InvestProperties().getTrust(),
+                java.time.Clock.fixed(java.time.Instant.parse("2026-10-06T04:00:00Z"),
+                        java.time.ZoneId.of("Asia/Shanghai")));
+    }
+
+    @DisplayName("payload.confidence 缺键：无信号命中 → 键缺省（v1 无加权组合，无命中不携带）")
+    @Test
+    void givenNoSignalHit_whenToPayload_thenConfidenceKeyAbsent() {
+        var report = fixedClockProcessor().process("今日大盘上涨。", List.of(), List.of(), List.of());
+
+        assertThat(report.confidence()).isEmpty();
+        assertThat(report.toPayload()).doesNotContainKey("confidence");
+    }
+
+    @DisplayName("接线·未溯源比例：3/4 unverified → confidence.signals=[unverified_ratio:0.75]")
+    @Test
+    void givenThreeOfFourUnverified_whenProcess_thenUnverifiedRatioInSignals() {
+        var report = fixedClockProcessor().process(
+                "现价1520.33元，涨幅3.2%，换手1.5%，量比2.8%。",
+                List.of(invocation("{\"price\":1520.33,\"time\":\"2026-10-06 09:30:00\"}")),
+                List.of(),
+                List.of());
+
+        assertThat(report.stats().unverified()).isEqualTo(3);
+        Map<String, Object> payload = report.toPayload();
+        assertThat(payload).containsKey("confidence");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> confidence = (Map<String, Object>) payload.get("confidence");
+        assertThat(confidence.get("signals")).asList()
+                .containsExactly("unverified_ratio:0.75");
+        assertNoNullValues(payload, "$");
+    }
+
+    @DisplayName("接线·豁免口径：用户来源数字不入比例分子分母（2 unverified < 3 不触发）")
+    @Test
+    void givenUserExemptedValue_whenProcess_thenExemptedNotCountedInRatio() {
+        // 1800.5 豁免（用户来源），仅 2 个 unverified → 不触发；若豁免计入则 3/3 必触发
+        var report = fixedClockProcessor().process(
+                "成本1800.5元，涨幅3.2%，换手1.5%。",
+                List.of(),
+                List.of(),
+                List.of("我的成本价是1800.5元"));
+
+        assertThat(report.exempted()).isEqualTo(1);
+        assertThat(report.confidence()).isEmpty();
+        assertThat(report.toPayload()).doesNotContainKey("confidence");
+    }
+
+    @DisplayName("接线·行情陈旧：quote 真值 asOf 2026-09-01（35 自然日）→ stale_quotes:1")
+    @Test
+    void givenStaleQuoteTruth_whenProcess_thenStaleQuotesInSignals() {
+        // 锚定携带 invocation.asOf（B3 记录字段）——JSON time 只影响装饰器解析，此处直构陈旧时点
+        var stale = new ToolInvocation("get_quote", Map.of("code", "600519"),
+                "{\"price\":1520.33,\"time\":\"2026-09-01 09:30:00\"}", List.of(),
+                "2026-09-01 09:30:00", ToolInvocation.AsOfKind.DATA, false);
+        var report = fixedClockProcessor().process(
+                "现价1520.33元。",
+                List.of(stale),
+                List.of(),
+                List.of());
+
+        assertThat(report.confidence())
+                .containsExactly(new ConfidenceSignal.Hit(ConfidenceSignal.STALE_QUOTES, 1));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> confidence =
+                (Map<String, Object>) report.toPayload().get("confidence");
+        assertThat(confidence.get("signals")).asList().containsExactly("stale_quotes:1");
+    }
+
+    @DisplayName("接线·GENERATED 锚定不参与陈旧度：overview 生成时刻陈旧 → 无 stale 信号")
+    @Test
+    void givenGeneratedAsOfAnchor_whenProcess_thenNoStaleSignal() {
+        var generated = new ToolInvocation("get_market_overview", Map.of(), "{\"close\":3245.10}",
+                List.of(), "2026-01-01 12:00:00", ToolInvocation.AsOfKind.GENERATED, false);
+        var report = fixedClockProcessor().process(
+                "收盘点位3245.10点。", List.of(generated), List.of(), List.of());
+
+        assertThat(report.confidence()).isEmpty();
+        assertThat(report.toPayload()).doesNotContainKey("confidence");
+    }
+
+    @DisplayName("接线·工具失败：真值池 1 次 failed=true → tool_failures:1")
+    @Test
+    void givenFailedInvocation_whenProcess_thenToolFailuresInSignals() {
+        var failed = new ToolInvocation("get_quote", Map.of("code", "600519"),
+                "{\"price\":1520.33}", List.of(), null, ToolInvocation.AsOfKind.CALL, true);
+        var report = fixedClockProcessor().process(
+                "涨幅3.2%。", List.of(failed), List.of(), List.of());
+
+        assertThat(report.confidence())
+                .containsExactly(new ConfidenceSignal.Hit(ConfidenceSignal.TOOL_FAILURES, 1));
+    }
+
+    @DisplayName("接线·修正：1 次大偏差替换 → corrections:1 随 payload 透传")
+    @Test
+    void givenCorrectionHappened_whenProcess_thenCorrectionsInSignals() {
+        var report = fixedClockProcessor().process(
+                "现价15.20元",
+                List.of(invocation("{\"price\":1520.33,\"time\":\"2026-10-06 09:30:00\"}")),
+                List.of(),
+                List.of());
+
+        assertThat(report.confidence())
+                .containsExactly(new ConfidenceSignal.Hit(ConfidenceSignal.CORRECTIONS, 1));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> confidence =
+                (Map<String, Object>) report.toPayload().get("confidence");
+        assertThat(confidence.get("signals")).asList().containsExactly("corrections:1");
+    }
+
+    @DisplayName("接线·null 文本直通：confidence 空且 payload 无键")
+    @Test
+    void givenNullText_whenProcess_thenConfidenceEmpty() {
+        var report = fixedClockProcessor().process(null, List.of(), List.of(), List.of());
+
+        assertThat(report.confidence()).isEmpty();
+        assertThat(report.toPayload()).doesNotContainKey("confidence");
+    }
+
     // ———— 护栏（null 入参直通） ————
 
     @DisplayName("护栏：null/空文本直通，零锚定零修正")

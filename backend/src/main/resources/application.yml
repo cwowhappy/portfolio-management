@@ -100,6 +100,12 @@ invest:
       deviation: 0.10           # 大偏差线：容差外即拦截改写（中间带按大偏差处理，决策 #1）
     correction:                 # 修正参数组⑥：确定性替换重试上限，触达降级（原文保留+显式标注）
       max-retries: 2
+    confidence:                 # 置信信号阈值参数组⑤（B7 ConfidenceScorer）：任一信号命中 → payload.confidence
+      unverified-ratio: 0.30    # 未溯源比例线（严格大于才触发，且未懂数达下限）
+      unverified-min: 3         # 未懂数下限（两者同时满足才触发）
+      stale-quote-days: 1       # 行情族（quote/kline/overview）自然日陈旧线
+      stale-financial-days: 110 # 财报族（financials/analyze_financials reportDate）陈旧线（季报节奏+缓冲）
+      stale-macro-days: 35      # 宏观族（macro_brief period）陈旧线（月度节奏+缓冲）
     advice-lexicon: [买入, 卖出, 加仓, 减仓, 清仓, 建仓, 补仓, 止损, 止盈, 目标价, 抄底, 逃顶, 满仓, 空仓]   # 词表参数组④（B6：词表兜底层，空表 = 仅自声明标记）
     disclaimer-text: "以上内容由 AI 生成，仅供参考，不构成任何投资建议；市场有风险，投资决策请独立判断或咨询持牌专业机构。"  # 文案参数组③（B6：advice.flag=true 时随 payload 透传，F3 渲染）
   market:

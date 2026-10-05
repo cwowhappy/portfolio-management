@@ -1,6 +1,8 @@
 package com.portfolio.invest.agent.trust;
 
 import com.portfolio.invest.config.InvestProperties;
+import java.time.Clock;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -14,7 +16,8 @@ import java.util.Map;
  *
  * <p>纯 POJO 零 agentscope 依赖（历史池以解析后的 entry 列表传入，metadata 读写归
  * {@link TrustAgentHook}）；护栏哲学：宁可少标不可断流——null 文本直通、异常由 hook 层兜底。
- * advice 半边已接入（B6，步骤 7）；类与方法非 final：B7 在此接入 confidence 半边。
+ * advice 半边已接入（B6，步骤 7），confidence 半边已接入（B7，步骤 8——陈旧度「今日」
+ * 取注入时钟，生产装配 Asia/Shanghai，与 B3 装饰器 callTime 同时区）。
  */
 public class TrustTurnProcessor {
 
@@ -23,11 +26,18 @@ public class TrustTurnProcessor {
 
     private final ConsistencyValidator validator;
     private final AdviceDetector adviceDetector;
+    private final ConfidenceScorer confidenceScorer;
     private final String disclaimerText;
 
     public TrustTurnProcessor(InvestProperties.Trust settings) {
+        this(settings, Clock.system(ZoneId.of("Asia/Shanghai")));
+    }
+
+    /** 测试构造器：注入时钟（陈旧度「今日」可确定化，禁真实 sleep）。 */
+    TrustTurnProcessor(InvestProperties.Trust settings, Clock clock) {
         this.validator = new ConsistencyValidator(settings);
         this.adviceDetector = new AdviceDetector(settings.getAdviceLexicon());
+        this.confidenceScorer = new ConfidenceScorer(settings.getConfidence(), clock);
         this.disclaimerText = settings.getDisclaimerText();
     }
 
@@ -44,7 +54,7 @@ public class TrustTurnProcessor {
         if (finalText == null || finalText.isBlank()) {
             return new TrustTurnReport(finalText, finalText, List.of(),
                     new AnchorBatch.Stats(0, 0, 0), List.of(), List.of(), List.of(), 0, 0,
-                    TrustTurnReport.Advice.NONE);
+                    TrustTurnReport.Advice.NONE, List.of());
         }
         // 步骤 7 前半（B6）：自声明标记先行检测剥离——剥离后的文本才进入校验/改写
         // （注记行附加在干净文本上），词表兜底扫描亦在干净文本上（标记本身无词表词）
@@ -71,6 +81,10 @@ public class TrustTurnProcessor {
             }
             anchors.add(anchor);
         }
+        // 步骤 8（B7）：confidence 半边——四类机制信号（豁免过滤后的锚定与 stats 口径一致）
+        List<ConfidenceSignal.Hit> confidence = confidenceScorer.score(
+                anchors, new AnchorBatch.Stats(verified, sourced, unverified), currentPool,
+                correction.corrections().size(), correction.correctionFailures());
         return new TrustTurnReport(
                 finalText,
                 correction.correctedText(),
@@ -81,7 +95,8 @@ public class TrustTurnProcessor {
                 poolSummary(currentPool),
                 exempted,
                 correction.correctionFailures(),
-                adviceOf(detection));
+                adviceOf(detection),
+                confidence);
     }
 
     /** advice 半边组装：命中时 disclaimer 文案（参数组③）随行——payload 缺键表达无建议。 */

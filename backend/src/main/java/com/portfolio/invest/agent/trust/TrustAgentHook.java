@@ -21,6 +21,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -52,7 +53,7 @@ import reactor.core.publisher.Mono;
  * <p><strong>事件契约（§4.3）：</strong>{@code trust.correction}（有大偏差修正时，每条替换一个事件，
  * 先发）value={messageId, snippet, occ, replacement, note}；{@code trust.anchors}（每 assistant
  * 末轮一次）value={messageId, payload}（payload v1 见 {@link TrustTurnReport#toPayload()}，
- * advice/confidence 键由 B6/B7 补）。messageId 取 {@link TrustWireMessageIdMiddleware} 观察到的
+ * advice（B6）/confidence（B7）键已接入）。messageId 取 {@link TrustWireMessageIdMiddleware} 观察到的
  * AG-UI 线上 id（TEXT_MESSAGE 的 replyId，观察缺席回退 {@link Msg#getId()}——线上同源）。发射经
  * {@code deferContextual → AgentEventEmitter.fromContext}（B0 探针 2），emitter 不可得时静默跳过
  * （飞书 call() 路无消费者，不报错）。
@@ -340,9 +341,15 @@ public class TrustAgentHook implements Hook, RuntimeContextAware {
 
     // ———— 留痕（MS-30 看板供数：字段名稳定） ————
 
+    /** B7 起新增字段（追加在既有字段之后，B5 字段序不动）：命中信号线名摘要，空为空集。 */
     private void logTurn(String anchor, String messageId, TrustTurnReport report) {
+        // 花括号放参数侧——SLF4J 格式串的花括号是占位符语法，字面量侧无法转义
+        String signals = "{" + report.confidence().stream()
+                .map(ConfidenceSignal.Hit::wire)
+                .collect(Collectors.joining(",")) + "}";
         log.info("trust.turn anchor={} messageId={} verified={} sourced={} unverified={} "
-                        + "exempted={} corrections={} correctionFailures={} anchors={} poolSize={} rewritten={}",
+                        + "exempted={} corrections={} correctionFailures={} anchors={} poolSize={} "
+                        + "rewritten={} confidence={}",
                 anchor,
                 messageId,
                 report.stats().verified(),
@@ -353,6 +360,7 @@ public class TrustAgentHook implements Hook, RuntimeContextAware {
                 report.correctionFailures(),
                 report.anchors().size(),
                 report.poolSummary().size(),
-                report.rewritten());
+                report.rewritten(),
+                signals);
     }
 }

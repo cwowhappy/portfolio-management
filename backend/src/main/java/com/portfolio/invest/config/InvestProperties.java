@@ -411,12 +411,15 @@ public class InvestProperties {
         public void setBindingCodeTtlMinutes(int bindingCodeTtlMinutes) { this.bindingCodeTtlMinutes = bindingCodeTtlMinutes; }
     }
 
-    /** 可信溯源（MS-29）：容差参数组① + 修正上限参数组⑥（设计规格 §4.6，ConsistencyValidator 消费）。 */
+    /** 可信溯源（MS-29）：容差参数组① + 修正上限参数组⑥ + 置信信号阈值参数组⑤（设计规格 §4.6）。 */
     public static class Trust {
         private ToleranceSettings tolerance =
                 new ToleranceSettings(new BigDecimal("0.02"), new BigDecimal("0.05"),
                         new BigDecimal("0.01"), new BigDecimal("0.10"));
         private CorrectionSettings correction = new CorrectionSettings(2);
+        /** 置信信号阈值参数组⑤（MS-29 B7，ConfidenceScorer 消费）：stale-financial/macro-days 为季报/月度节奏+缓冲的补充阈值。 */
+        private ConfidenceSettings confidence =
+                new ConfidenceSettings(0.30, 3, 1, 110, 35);
         /** 词表参数组④（MS-29 B6，决策 #4 双层井集的兜底层；空表 = 仅自声明标记生效）。 */
         private List<String> adviceLexicon = new ArrayList<>(List.of(
                 "买入", "卖出", "加仓", "减仓", "清仓", "建仓", "补仓", "止损", "止盈",
@@ -429,6 +432,8 @@ public class InvestProperties {
         public void setTolerance(ToleranceSettings tolerance) { this.tolerance = tolerance; }
         public CorrectionSettings getCorrection() { return correction; }
         public void setCorrection(CorrectionSettings correction) { this.correction = correction; }
+        public ConfidenceSettings getConfidence() { return confidence; }
+        public void setConfidence(ConfidenceSettings confidence) { this.confidence = confidence; }
         public List<String> getAdviceLexicon() { return adviceLexicon; }
         public void setAdviceLexicon(List<String> adviceLexicon) { this.adviceLexicon = adviceLexicon; }
         public String getDisclaimerText() { return disclaimerText; }
@@ -453,6 +458,23 @@ public class InvestProperties {
         public record CorrectionSettings(Integer maxRetries) {
             public CorrectionSettings {
                 if (maxRetries == null) maxRetries = 2;
+            }
+        }
+
+        /**
+         * 置信信号阈值参数组⑤（MS-29 B7）：unverified-ratio 未溯源比例线（严格大于才触发）+
+         * unverified-min 未懂数下限（两者同时满足）；stale-*-days 各数据类别陈旧度自然日阈值
+         * （行情 1 / 财报 110=季报节奏+缓冲 / 宏观 35=月度节奏+缓冲，超过即触发）。
+         * 嵌套 record 走构造器绑定：部分配置时分量为 null，紧凑构造器回退默认（不产生空值）。
+         */
+        public record ConfidenceSettings(Double unverifiedRatio, Integer unverifiedMin,
+                Integer staleQuoteDays, Integer staleFinancialDays, Integer staleMacroDays) {
+            public ConfidenceSettings {
+                if (unverifiedRatio == null) unverifiedRatio = 0.30;
+                if (unverifiedMin == null) unverifiedMin = 3;
+                if (staleQuoteDays == null) staleQuoteDays = 1;
+                if (staleFinancialDays == null) staleFinancialDays = 110;
+                if (staleMacroDays == null) staleMacroDays = 35;
             }
         }
     }

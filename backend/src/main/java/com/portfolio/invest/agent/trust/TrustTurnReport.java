@@ -8,11 +8,12 @@ import java.util.Objects;
 /**
  * 一次回合校验流水（{@link TrustTurnProcessor}）的产物（MS-29 B5，设计规格 §4.2）：
  * 修正后文本 + 豁免过滤后的锚定批次 + 池摘要（§2.2 metadata 落盘形态）与留痕计数
- * + advice 半边（B6：自声明标记 + 词表兜底井集）。
+ * + advice 半边（B6：自声明标记 + 词表兜底井集）+ confidence 半边（B7：四类机制信号命中，
+ * {@link ConfidenceScorer} 产出）。
  *
  * <p>{@link #toPayload()} 输出 payload v1（设计规格 §2.1）：无 null 用缺键——
  * unverified anchor 缺省 tool/args/asOf/asOfKind/raw；correction 键仅有注记时存在；
- * advice 键仅有命中时存在（B6），confidence 键由 B7 落地时补。
+ * advice 键仅有命中时存在（B6）；confidence 键任一信号命中才携带（B7，缺键表达无低置信信号）。
  */
 public record TrustTurnReport(
         String originalText,
@@ -24,7 +25,8 @@ public record TrustTurnReport(
         List<Map<String, Object>> poolSummary,
         int exempted,
         int correctionFailures,
-        Advice advice) {
+        Advice advice,
+        List<ConfidenceSignal.Hit> confidence) {
 
     /**
      * advice 半边（B6，§2.1）：flag=任一层命中；by=self|lexicon|both；text=disclaimer
@@ -61,6 +63,10 @@ public record TrustTurnReport(
                 adviceMap.put("text", advice.text());
             }
             payload.put("advice", adviceMap);
+        }
+        if (!confidence.isEmpty()) {
+            payload.put("confidence",
+                    Map.of("signals", confidence.stream().map(ConfidenceSignal.Hit::wire).toList()));
         }
         return payload;
     }
