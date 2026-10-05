@@ -104,4 +104,53 @@ describe("信任事件 × 真实 @ag-ui/client 管线（AgentStateMutation 原�
     expect(trustStore.get("a-trust-2")?.correction?.notes).toEqual(["环比口径已按工具返回修正"]);
     sub.unsubscribe();
   });
+
+  it("同 snippet 多条修正（F1 修复轮 I-1）：occ 对改写前原文解析，终态与后端 applyReplacements 回写一致", async () => {
+    // 后端语义（ConsistencyValidator.applyReplacements）：全部偏差区间在「同一原文」上解析
+    // （occ 定义在改写前文本），自右向左回写。原文 3 处「1741 亿」，修正 occ=1→1708 亿、
+    // occ=3→1696 亿，期望终态两处替换、中间一处保持。
+    const { agent } = makeAgent([
+      RUN_STARTED,
+      { type: "TEXT_MESSAGE_START", messageId: "a-trust-3", role: "assistant" },
+      { type: "TEXT_MESSAGE_CONTENT", messageId: "a-trust-3", delta: "A 1741 亿 B 1741 亿 C 1741 亿 D" },
+      { type: "TEXT_MESSAGE_END", messageId: "a-trust-3" },
+      {
+        type: "CUSTOM",
+        name: TRUST_CORRECTION_EVENT,
+        value: { messageId: "a-trust-3", snippet: "1741 亿", occ: 1, replacement: "1708 亿", note: "第 1 处已按工具返回修正" },
+      },
+      {
+        type: "CUSTOM",
+        name: TRUST_CORRECTION_EVENT,
+        value: { messageId: "a-trust-3", snippet: "1741 亿", occ: 3, replacement: "1696 亿", note: "第 3 处已按工具返回修正" },
+      },
+      {
+        type: "CUSTOM",
+        name: TRUST_ANCHORS_EVENT,
+        value: {
+          messageId: "a-trust-3",
+          payload: {
+            v: 1,
+            anchors: [{ snippet: "1741 亿", occ: 2, state: "verified" }],
+            stats: { verified: 1, sourced: 0, unverified: 0 },
+          },
+        },
+      },
+      RUN_FINISHED,
+    ]);
+    agent.addMessage({ id: "u-trust-3", role: "user", content: "看看年报" });
+    const sub = subscribeTrust(agent);
+
+    await agent.runAgent();
+
+    // 旧实现的分歧：第 2 条 occ=3 对「已改写文本」（只剩 2 处）解析 → -1 静默丢弃 → 刷新后
+    // 与后端落盘文本跳变。台账语义下两条均对原文解析 → 与后端一致。
+    const assistant = agent.messages.find((m) => m.id === "a-trust-3");
+    expect(assistant?.content).toBe("A 1708 亿 B 1741 亿 C 1696 亿 D");
+    expect(trustStore.get("a-trust-3")?.correction?.notes).toEqual([
+      "第 1 处已按工具返回修正",
+      "第 3 处已按工具返回修正",
+    ]);
+    sub.unsubscribe();
+  });
 });

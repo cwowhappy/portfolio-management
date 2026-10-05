@@ -94,13 +94,52 @@ describe("TrustPayloadSchema（宽松解析 + 版本门）", () => {
   });
 });
 
-describe("nthIndexOf（occ 1-based，含非数据性出现）", () => {
+describe("nthIndexOf（occ 1-based，合法边界——后端 ConsistencyValidator.occurrenceStart 同构）", () => {
   const text = "市盈率 25 倍，市净率 25 倍，又说 25 倍。";
 
   it("occ=1/2/3 定位各次出现起始位", () => {
     expect(nthIndexOf(text, "25 倍", 1)).toBe(text.indexOf("25 倍"));
     expect(nthIndexOf(text, "25 倍", 2)).toBe(text.indexOf("25 倍", text.indexOf("25 倍") + 1));
     expect(nthIndexOf(text, "25 倍", 3)).toBe(text.lastIndexOf("25 倍"));
+  });
+
+  it("嵌套数字出现不计次（前邻数字非法）：「5%」跳过「15%」内嵌套，命中独立出现", () => {
+    const t = "涨幅15%，占比5%";
+    const at = nthIndexOf(t, "5%", 1);
+    expect(at).toBe(t.lastIndexOf("5%"));
+    expect(t.slice(at, at + 2)).toBe("5%");
+  });
+
+  it("嵌套数字出现不计次：「3亿」跳过「13亿」、「741亿」跳过「1741亿」内嵌套", () => {
+    const t1 = "营收13亿，补贴3亿";
+    expect(nthIndexOf(t1, "3亿", 1)).toBe(t1.lastIndexOf("3亿"));
+    const t2 = "今年1741亿，去年741亿";
+    expect(nthIndexOf(t2, "741亿", 1)).toBe(t2.lastIndexOf("741亿"));
+  });
+
+  it("嵌套小数不计次：「0.5元」跳过「10.5元」内嵌套（前邻 '1'）", () => {
+    const t = "票价10.5元，手续费0.5元";
+    expect(nthIndexOf(t, "0.5元", 1)).toBe(t.lastIndexOf("0.5元"));
+  });
+
+  it("后邻数字非法：「174」不命中「1741亿」内的出现", () => {
+    const t = "今年1741亿，去年174亿";
+    expect(nthIndexOf(t, "174", 1)).toBe(t.lastIndexOf("174"));
+  });
+
+  it("后邻续小数非法：「1741」不命中「1741.5 亿」内的出现", () => {
+    const t = "区间1741.5 亿，均值1741 亿";
+    expect(nthIndexOf(t, "1741", 1)).toBe(t.lastIndexOf("1741"));
+  });
+
+  it("前邻千分位逗号 / 小数点非法：「741」不命中「1,741亿」「1.741亿」内的出现", () => {
+    const t = "共1,741亿或1.741亿，另有741亿";
+    expect(nthIndexOf(t, "741", 1)).toBe(t.lastIndexOf("741"));
+  });
+
+  it("符号前缀豁免前邻检查：「-2000元」在「1500-2000元」内合法", () => {
+    const t = "1500-2000元";
+    expect(nthIndexOf(t, "-2000元", 1)).toBe(t.indexOf("-2000元"));
   });
 
   it("越界 / 不存在 / 空 snippet / occ<1 返回 -1", () => {
@@ -174,7 +213,7 @@ describe("TrustStore", () => {
   });
 });
 
-describe("replaceSnippetInMessages（原位替换）", () => {
+describe("replaceSnippetInMessages（原位替换 + 修正台账）", () => {
   const content = "市盈率 25 倍，市净率 25 倍。";
   const messages: Message[] = [
     { id: "u1", role: "user", content: "看看估值" } as Message,
@@ -183,23 +222,66 @@ describe("replaceSnippetInMessages（原位替换）", () => {
   ];
 
   it("替换 occ 第 2 次出现；其余消息引用不变", () => {
-    const next = replaceSnippetInMessages(messages, "a1", "25 倍", 2, "31 倍");
+    const ledger = createTrustStore().correctionLedger("a1");
+    const next = replaceSnippetInMessages(messages, "a1", { snippet: "25 倍", occ: 2, replacement: "31 倍" }, ledger);
     expect(next).not.toBeNull();
     expect(next![1].content).toBe("市盈率 25 倍，市净率 31 倍。");
     expect(next![0]).toBe(messages[0]);
     expect(next![2]).toBe(messages[2]);
   });
 
-  it("occ 越界 / 消息不存在 / 非字符串 content 返回 null（重复事件 no-op 语义）", () => {
-    expect(replaceSnippetInMessages(messages, "a1", "25 倍", 3, "x")).toBeNull();
-    expect(replaceSnippetInMessages(messages, "nope", "25 倍", 1, "x")).toBeNull();
+  it("同 snippet 多条修正：occ 均对首条到达时的原文解析（后端 applyReplacements 单 body 语义）", () => {
+    const ledger = createTrustStore().correctionLedger("a1");
+    let msgs: readonly Message[] = [assistantMsg("a1", "A 1741 亿 B 1741 亿 C 1741 亿 D")];
+    msgs = replaceSnippetInMessages(msgs, "a1", { snippet: "1741 亿", occ: 1, replacement: "1708 亿" }, ledger)!;
+    expect(msgs[0].content).toBe("A 1708 亿 B 1741 亿 C 1741 亿 D");
+    // 第 2 条 occ=3 定义在改写前原文上（原文有 3 处）；对已改写文本顺序应用不得把 occ 当
+    // 「当前内容第 3 次」解析——否则越界丢弃、与后端落盘的改写文分歧
+    msgs = replaceSnippetInMessages(msgs, "a1", { snippet: "1741 亿", occ: 3, replacement: "1696 亿" }, ledger)!;
+    expect(msgs[0].content).toBe("A 1708 亿 B 1741 亿 C 1696 亿 D");
+  });
+
+  it("重复事件（同 snippet/occ）：对原文重解析命中同区间，幂等重建出相同内容（不误替下一次出现）", () => {
+    const ledger = createTrustStore().correctionLedger("a1");
+    let msgs: readonly Message[] = [assistantMsg("a1", "营收 1741 亿（他处 1741 亿）。")];
+    msgs = replaceSnippetInMessages(msgs, "a1", { snippet: "1741 亿", occ: 2, replacement: "1708 亿" }, ledger)!;
+    expect(msgs[0].content).toBe("营收 1741 亿（他处 1708 亿）。");
+    // 旧实现的洞：重放事件在已改写文本上只剩 1 处 → -1 丢弃；或若还有第 3 处会误替。
+    // 台账语义：occ 恒对原文解析 → 同区间 → 重建结果不变
+    const again = replaceSnippetInMessages(msgs, "a1", { snippet: "1741 亿", occ: 2, replacement: "1708 亿" }, ledger)!;
+    expect(again[0].content).toBe("营收 1741 亿（他处 1708 亿）。");
+  });
+
+  it("occ 越界 / 消息不存在 / 非字符串 content 返回 null 且台账不变", () => {
+    const store = createTrustStore();
+    const ledger = store.correctionLedger("a1");
+    expect(replaceSnippetInMessages(messages, "a1", { snippet: "25 倍", occ: 3, replacement: "x" }, ledger)).toBeNull();
+    expect(replaceSnippetInMessages(messages, "nope", { snippet: "25 倍", occ: 1, replacement: "x" }, store.correctionLedger("nope"))).toBeNull();
     const complex = [{ type: "text", text: "hi" }] as unknown as string;
-    expect(replaceSnippetInMessages([assistantMsg("a3", complex)], "a3", "hi", 1, "x")).toBeNull();
+    expect(
+      replaceSnippetInMessages([assistantMsg("a3", complex)], "a3", { snippet: "hi", occ: 1, replacement: "x" }, store.correctionLedger("a3")),
+    ).toBeNull();
+    expect(ledger.records).toHaveLength(0);
+    expect(ledger.originalContent).toBeNull();
+  });
+
+  it("外部改写（历史回灌 setMessages）后：台账基线重置，新修正对新原文解析", () => {
+    const store = createTrustStore();
+    const ledger = store.correctionLedger("a1");
+    let msgs: readonly Message[] = [assistantMsg("a1", "市盈率 25 倍。")];
+    msgs = replaceSnippetInMessages(msgs, "a1", { snippet: "25 倍", occ: 1, replacement: "31 倍" }, ledger)!;
+    expect(msgs[0].content).toBe("市盈率 31 倍。");
+    // 模拟回灌：服务端已落盘文本整体替换（与 lastContent 不一致 → 基线重置）
+    const hydrated = [assistantMsg("a1", "市盈率 41 倍。")];
+    const next = replaceSnippetInMessages(hydrated, "a1", { snippet: "41 倍", occ: 1, replacement: "39 倍" }, ledger)!;
+    expect(next[0].content).toBe("市盈率 39 倍。");
+    expect(ledger.records).toHaveLength(1);
   });
 
   it("不改入参数组与消息对象（库管线 dev/test 下深冻结 params.messages）", () => {
+    const ledger = createTrustStore().correctionLedger("a1");
     const frozen = messages.map((m) => Object.freeze(m)) as readonly Message[];
-    const next = replaceSnippetInMessages(frozen, "a1", "25 倍", 2, "31 倍");
+    const next = replaceSnippetInMessages(frozen, "a1", { snippet: "25 倍", occ: 2, replacement: "31 倍" }, ledger);
     expect(next).not.toBeNull();
     expect(messages[1].content).toBe(content);
   });
@@ -231,7 +313,7 @@ describe("handleTrustCustomEvent（事件分派）", () => {
     expect(store.get("a1")?.correction?.notes).toHaveLength(1);
   });
 
-  it("重复 correction 事件（替换目标已不存在）：返回 void，注记不重复", () => {
+  it("重复 correction 事件：对原文幂等重建（同结果不误替），注记不重复", () => {
     const store = createTrustStore();
     const messages = [assistantMsg("a1", "营收 1741 亿。")];
     const first = handleTrustCustomEvent(
@@ -245,7 +327,8 @@ describe("handleTrustCustomEvent（事件分派）", () => {
       first!.messages!,
       store,
     );
-    expect(second).toBeUndefined();
+    // 幂等：occ 对台账基线原文解析命中同区间，重建结果不变
+    expect(second?.messages?.[0].content).toBe("营收 1708 亿。");
     expect(store.get("a1")?.correction?.notes).toHaveLength(1);
   });
 

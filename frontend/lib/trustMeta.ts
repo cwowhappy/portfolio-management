@@ -106,7 +106,8 @@ const CorrectionEventValueSchema = z.object({
  * AssistantMessage 的 memo 比较器只看 message 引用（trust 数据带外，不能触发整列表重渲染），
  * 该契约让徽标子组件独立订阅、精准重渲染；也不碰 CopilotKit 两套 context 实例的坑。
  *
- * F4（快照）/F5（批量重建）后续在此扩接口：rebuild(entries) 整表替换 + snapshot() 只读导出。
+ * F4（快照）/F5（批量重建）后续在此扩接口：rebuild(entries) 整表替换 + snapshot() 只读导出；
+ * rebuild 时须同步清空修正台账（回灌文本已含后端改写，occ 基线须以回灌 content 重开）。
  */
 export interface TrustStore {
   /** 某消息的信任 payload；未落地返回 undefined。引用稳定：仅在该消息数据变更后换新引用。 */
@@ -118,6 +119,11 @@ export interface TrustStore {
   applyAnchors(messageId: string, payload: TrustPayload): void;
   /** correction 事件落地：注记并入（按文案去重幂等）；anchors 未到时先落占位条目。 */
   applyCorrection(messageId: string, note: string): void;
+  /**
+   * 某消息的修正台账（惰性创建）：分派器在原位替换时持有并更新（唯一写方），
+   * F2（差异渲染）/F4（快照）只读消费。
+   */
+  correctionLedger(messageId: string): TrustCorrectionLedger;
   /** 订阅任何变更（useSyncExternalStore 入口）；返回退订函数。 */
   subscribe(listener: () => void): () => void;
 }
@@ -129,6 +135,7 @@ function placeholderPayload(): TrustPayload {
 
 export function createTrustStore(): TrustStore {
   const payloads = new Map<string, TrustPayload>();
+  const ledgers = new Map<string, TrustCorrectionLedger>();
   const listeners = new Set<() => void>();
   return {
     get: (messageId) => payloads.get(messageId),
@@ -154,6 +161,14 @@ export function createTrustStore(): TrustStore {
       });
       listeners.forEach((l) => l());
     },
+    correctionLedger(messageId) {
+      let ledger = ledgers.get(messageId);
+      if (!ledger) {
+        ledger = { originalContent: null, lastContent: null, records: [] };
+        ledgers.set(messageId, ledger);
+      }
+      return ledger;
+    },
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -164,28 +179,107 @@ export function createTrustStore(): TrustStore {
 /** 页面级单例：ThreadArea 订阅落库、F2 渲染消费同一实例。 */
 export const trustStore: TrustStore = createTrustStore();
 
-// ———— 原位替换 ————
+// ———— 合法边界定位（后端 ConsistencyValidator.occurrenceStart / validBoundary 同构移植）————
+
+/** ASCII 数字（对齐后端 validBoundary 的 '0'..'9' 显式区间判断）。 */
+function isAsciiDigit(c: string): boolean {
+  return c >= "0" && c <= "9";
+}
+
+/** Unicode Nd 数字（对齐后端 Character.isDigit(char) 的 UTF-16 code unit 语义）。 */
+function isUnicodeDigit(c: string): boolean {
+  return /\p{Nd}/u.test(c);
+}
+
+/** snippet 是否以符号前缀开头（后端 isSignPrefixed：'-'/'+' 开头豁免前邻检查）。 */
+function isSignPrefixed(snippet: string): boolean {
+  return snippet.length > 0 && (snippet[0] === "-" || snippet[0] === "+");
+}
 
 /**
- * snippet 在 text 中第 occ 次（1-based）出现的起始位；未找到返回 -1。
- * 计数含非数据性出现——与后端 NumberExtractor 的 occ 口径一致（§2.1）。
+ * 合法边界（后端 validBoundary 同构）：非符号前缀时前邻非数字/逗号/小数点（千分位、嵌套数字
+ * 均非法）；后邻非数字、非「小数点+数字」续小数。符号前缀（如「1500-2000元」的 -2000元）
+ * 由符号切断与前数字的连续，跳过前邻检查。
+ */
+function validBoundary(text: string, start: number, length: number, signPrefixed: boolean): boolean {
+  const before = start > 0 ? text[start - 1] : "\0";
+  if (!signPrefixed && (before === "," || before === "." || isAsciiDigit(before))) {
+    return false;
+  }
+  const afterIndex = start + length;
+  const after = afterIndex < text.length ? text[afterIndex] : "\0";
+  if (isAsciiDigit(after)) {
+    return false;
+  }
+  if (after === "." && afterIndex + 1 < text.length && isUnicodeDigit(text[afterIndex + 1])) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * snippet 第 occ 次「合法出现」的起始位（1-based，含非数据性出现）；未找到返回 -1。
+ * 后端 `ConsistencyValidator.occurrenceStart`（backend .../trust/ConsistencyValidator.java
+ * :341-380）逐语义移植：边界非法的出现不计次（嵌套数字如「15%」里的「5%」被前邻 '1' 判
+ * 非法而跳过），扫描步进 `index + 1`（逐字符右移而非跳过整个 snippet）。
+ * **F2 徽标/锚定渲染定位必须复用本函数，禁用裸 indexOf 计数**——否则嵌套数字误定位。
  */
 export function nthIndexOf(text: string, snippet: string, occ: number): number {
   if (snippet === "" || occ < 1) return -1;
-  let from = 0;
-  for (let seen = 1; seen <= occ; seen++) {
-    const i = text.indexOf(snippet, from);
-    if (i === -1) return -1;
-    if (seen === occ) return i;
-    from = i + snippet.length;
+  const signPrefixed = isSignPrefixed(snippet);
+  let index = 0;
+  for (let seen = 0; seen < occ; ) {
+    index = text.indexOf(snippet, index);
+    if (index === -1) return -1;
+    if (validBoundary(text, index, snippet.length, signPrefixed)) {
+      seen++;
+      if (seen === occ) return index;
+    }
+    index += 1;
   }
   return -1;
 }
 
+// ———— 原位替换（修正台账：occ 对改写前原文解析——后端 applyReplacements 单 body 语义）————
+
+/** 一条已登记修正：snippet+occ 在台账基线原文中的定位 + 回写串。 */
+export interface TrustCorrectionRecord {
+  snippet: string;
+  occ: number;
+  replacement: string;
+  /** 在基线原文中的起始位（全部记录自右向左一次性回写） */
+  start: number;
+}
+
 /**
- * messages 中 id===messageId 的消息 content 内，把 snippet 第 occ 次出现替换为 replacement。
- * 返回新数组（只重建目标消息一个元素，其余引用原样）；消息不存在 / content 非字符串 /
- * occ 越界返回 null——重复 correction 事件因替换目标已不存在而天然 no-op（幂等）。
+ * 修正台账（store 内按 messageId 持有）：后端一轮替换的全部偏差区间在**同一原文**上解析、
+ * 自右向左回写（applyReplacements）；前端事件逐条到达，occ 又定义在改写前原文上——台账
+ * 保存首条修正到达时的原文作解析基线，每条新修正对原文解析后全量重建，语义等价后端。
+ */
+export interface TrustCorrectionLedger {
+  /** 首条修正到达时的消息原文（occ 解析基线）；null = 尚无修正 */
+  originalContent: string | null;
+  /** 最近一次重建产物；与实际 content 不一致（历史回灌等外部改写）即基线重置 */
+  lastContent: string | null;
+  /** 已登记修正（同 snippet+occ 后到覆盖）；含各自原文区间 */
+  records: TrustCorrectionRecord[];
+}
+
+/** 后端 applyReplacements 同构：全部区间对同一基线原文、自右向左回写（左侧偏移不漂移）。 */
+function applyCorrectionRecords(baseline: string, records: readonly TrustCorrectionRecord[]): string {
+  let out = baseline;
+  for (const r of [...records].sort((a, b) => b.start - a.start)) {
+    out = out.slice(0, r.start) + r.replacement + out.slice(r.start + r.snippet.length);
+  }
+  return out;
+}
+
+/**
+ * messages 中 id===messageId 的消息按修正台账做原位替换：新修正的 occ 对台账基线原文解析
+ * （合法边界语义，见 nthIndexOf），登记后全部记录自右向左一次性回写重建 content。
+ * 消息不存在 / content 非字符串 / occ 越界（对原文）返回 null 且台账不变。
+ * 重复事件天然幂等：同 snippet+occ 对原文命中同区间，重建出相同内容——不会把 occ 顺延到
+ * 下一次出现上。
  *
  * 不改入参：@ag-ui/client 管线在 dev/test 下深冻结 params.messages，原位改写会抛 TypeError
  * （库控制台明示须以 AgentStateMutation 返回而非直接改写）。
@@ -193,22 +287,33 @@ export function nthIndexOf(text: string, snippet: string, occ: number): number {
 export function replaceSnippetInMessages(
   messages: readonly Message[],
   messageId: string,
-  snippet: string,
-  occ: number,
-  replacement: string,
+  correction: { snippet: string; occ: number; replacement: string },
+  ledger: TrustCorrectionLedger,
 ): Message[] | null {
   const idx = messages.findIndex((m) => m.id === messageId);
   if (idx === -1) return null;
   const target = messages[idx];
   if (typeof target.content !== "string") return null;
-  const start = nthIndexOf(target.content, snippet, occ);
+  // 基线维护：已有基线且 content 与最近重建一致 → 沿用（occ 恒对原文解析）；否则（首条修正、
+  // 或历史回灌 setMessages / 流中续写等外部改写）以当前 content 为基线重开。命中前不落账。
+  const reusable = ledger.originalContent !== null && ledger.lastContent === target.content;
+  // 非空收窄经 reusable 布尔传导不了（TS 控制流限制），此处 ! 由 reusable 定义保证
+  const baseline = reusable ? ledger.originalContent! : target.content;
+  const priorRecords = reusable ? ledger.records : [];
+  const start = nthIndexOf(baseline, correction.snippet, correction.occ);
   if (start === -1) return null;
+  const record: TrustCorrectionRecord = { ...correction, start };
+  const records = [
+    ...priorRecords.filter((r) => !(r.snippet === correction.snippet && r.occ === correction.occ)),
+    record,
+  ];
+  const rebuilt = applyCorrectionRecords(baseline, records);
+  ledger.originalContent = baseline;
+  ledger.records = records;
+  ledger.lastContent = rebuilt;
   const next = [...messages];
   // as Message：content 已守卫为 string；联合各成员展开后回赋 content 的收窄 TS 表达不了
-  next[idx] = {
-    ...target,
-    content: target.content.slice(0, start) + replacement + target.content.slice(start + snippet.length),
-  } as Message;
+  next[idx] = { ...target, content: rebuilt } as Message;
   return next;
 }
 
@@ -248,7 +353,12 @@ export function handleTrustCustomEvent(
     if (!parsed.success) return;
     const { messageId, snippet, occ, replacement, note } = parsed.data;
     store.applyCorrection(messageId, note);
-    const next = replaceSnippetInMessages(messages, messageId, snippet, occ, replacement);
+    const next = replaceSnippetInMessages(
+      messages,
+      messageId,
+      { snippet, occ, replacement },
+      store.correctionLedger(messageId),
+    );
     return next ? { messages: next } : undefined;
   }
 }
