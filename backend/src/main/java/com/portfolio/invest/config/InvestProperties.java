@@ -427,6 +427,11 @@ public class InvestProperties {
         /** 文案参数组③（MS-29 B6）：advice.flag=true 时随 trust.anchors payload 透传（F3 前端 DisclaimerNote 消费）。 */
         private String disclaimerText = "以上内容由 AI 生成，仅供参考，不构成任何投资建议；"
                 + "市场有风险，投资决策请独立判断或咨询持牌专业机构。";
+        /** payload 单条字节上限（MS-29 B8，UTF-8 字节口径）：PUT 时超限单条降级置 null，防滥用。 */
+        private int payloadMaxBytes = 65536;
+
+        public int getPayloadMaxBytes() { return payloadMaxBytes; }
+        public void setPayloadMaxBytes(int payloadMaxBytes) { this.payloadMaxBytes = payloadMaxBytes; }
 
         public ToleranceSettings getTolerance() { return tolerance; }
         public void setTolerance(ToleranceSettings tolerance) { this.tolerance = tolerance; }
