@@ -77,7 +77,8 @@ public class IndustryApplicationService {
                     WindowedPercentile.of(row.pb(), pbBy.get(row.industryCode())),
                     prosperity,
                     snap == null ? null : new IndustryBoardView.ProsperityInputs(
-                            snap.roeDeltaMedian(), snap.revenueYoyMedian(), snap.sampleSize()));
+                            snap.roeDeltaMedian(), snap.revenueYoyMedian(), snap.sampleSize()),
+                    row.tradingDay());
         }).toList();
     }
 

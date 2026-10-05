@@ -9,6 +9,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.portfolio.invest.application.industry.IndustryApplicationService;
 import com.portfolio.invest.application.industry.IndustryBoardView;
 import com.portfolio.invest.application.industry.IndustryChainApplicationService;
@@ -20,11 +23,17 @@ import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 /** 行业研究 REST 控制器：HTTP 绑定（path/query 默认值）与状态码。 */
 class IndustryControllerTest {
+
+    /** 复刻 Spring Boot 对 ObjectMapper 的配置（InvestToolsTest 同款）：LocalDate 序列化为 ISO 串。 */
+    private static final ObjectMapper BOOT_LIKE_MAPPER = new ObjectMapper()
+            .registerModule(new JavaTimeModule())
+            .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
     private final IndustryApplicationService service = mock(IndustryApplicationService.class);
     // MS-10 P2 起控制器共存注入未上市读服务、P3 注入链服务（各自端点切片见对应 *ControllerTest）
@@ -37,6 +46,7 @@ class IndustryControllerTest {
     @BeforeEach
     void setUp() {
         mvc = MockMvcBuilders.standaloneSetup(new IndustryController(service, unlistedService, chainService))
+                .setMessageConverters(new MappingJackson2HttpMessageConverter(BOOT_LIKE_MAPPER))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
     }
@@ -46,7 +56,8 @@ class IndustryControllerTest {
     void whenGetBoard_thenReturnBoardViews() throws Exception {
         when(service.board()).thenReturn(List.of(new IndustryBoardView(
                 "801780", "银行", new BigDecimal("5.5"), null, null, null, null, null, Prosperity.UP,
-                new IndustryBoardView.ProsperityInputs(new BigDecimal("1"), new BigDecimal("10"), 2))));
+                new IndustryBoardView.ProsperityInputs(new BigDecimal("1"), new BigDecimal("10"), 2),
+                java.time.LocalDate.of(2026, 1, 2))));
 
         mvc.perform(get("/api/industry/board"))
                 .andExpect(status().isOk())
@@ -54,7 +65,9 @@ class IndustryControllerTest {
                 .andExpect(jsonPath("$[0].prosperity").value("UP"))
                 .andExpect(jsonPath("$[0].prosperityInputs.roeDeltaMedian").value(1))
                 .andExpect(jsonPath("$[0].prosperityInputs.revenueYoyMedian").value(10))
-                .andExpect(jsonPath("$[0].prosperityInputs.sampleSize").value(2));
+                .andExpect(jsonPath("$[0].prosperityInputs.sampleSize").value(2))
+                // B4 时点透出：底层快照交易日随 REST 视图透出（ISO 字符串）
+                .andExpect(jsonPath("$[0].tradingDay").value("2026-01-02"));
     }
 
     @DisplayName("stocks缺省参数默认total_mv/DESC/1000")

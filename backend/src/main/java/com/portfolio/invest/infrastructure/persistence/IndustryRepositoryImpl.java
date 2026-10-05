@@ -46,12 +46,13 @@ public class IndustryRepositoryImpl implements IndustryRepository {
     @Override
     public List<IndustryValuationRow> findLatestIndustries() {
         var sql = """
-                SELECT industry_code, industry_name, pe, pb, roe, dividend_yield
+                SELECT industry_code, industry_name, trading_day, pe, pb, roe, dividend_yield
                 FROM industry_valuation
                 WHERE trading_day = (SELECT max(trading_day) FROM industry_valuation)
                 """;
         return jdbc.query(sql, (rs, i) -> new IndustryValuationRow(
                 rs.getString("industry_code"), rs.getString("industry_name"),
+                rs.getDate("trading_day") == null ? null : rs.getDate("trading_day").toLocalDate(),
                 rs.getBigDecimal("pe"), rs.getBigDecimal("pb"),
                 rs.getBigDecimal("roe"), rs.getBigDecimal("dividend_yield")));
     }

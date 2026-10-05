@@ -20,6 +20,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import reactor.core.publisher.Mono;
@@ -42,6 +43,7 @@ import reactor.core.publisher.Mono;
  * 时点字段（time/tradeDate/tradingDay/reportDate/date/asOf/updatedAt）→ DATA；generatedAt →
  * GENERATED；emit spec（ChartSpec JSON）顶层与 Table 首行同序扫描（B4 透出 DTO 侧字段后自然命中）；
  * 无可解析时点 → 调用时刻 CALL。MCP 工具恒 CALL（决策 #5：sourced 语义，真值不入比对池）。
+ * {@code get_market_overview} 特例（§6.1）：time 为本机生成时刻，解析到的时点归 GENERATED 而非 DATA。
  */
 public class RecordingAgentToolDecorator extends ToolBase {
 
@@ -52,6 +54,13 @@ public class RecordingAgentToolDecorator extends ToolBase {
     private static final String[] DATA_TIME_KEYS =
             {"time", "tradeDate", "tradingDay", "reportDate", "date", "asOf", "updatedAt"};
     private static final String GENERATED_TIME_KEY = "generatedAt";
+
+    /**
+     * time 语义为本机生成时刻的工具（设计规格 §6.1，MS-29 B4）：其 time 字段三条解析路径全为
+     * 本机 now（MarketDataParser）——同值不同义，解析到的时点降格 GENERATED（值不变）；无可解析
+     * 时点仍走 CALL 兜底（best-effort 阶梯不变）。
+     */
+    private static final Set<String> GENERATED_TIME_TOOLS = Set.of("get_market_overview");
 
     /** 在途调用的 emit 收集走廊：toolUseId → 该调用已 emit 的块文本（跨线程安全，doFinally 摘除）。 */
     private static final Map<String, ConcurrentLinkedQueue<String>> EMISSIONS = new ConcurrentHashMap<>();
@@ -186,7 +195,13 @@ public class RecordingAgentToolDecorator extends ToolBase {
                 }
             }
         }
-        return parsed != null ? parsed : new AsOf(callTime, ToolInvocation.AsOfKind.CALL);
+        if (parsed == null) {
+            return new AsOf(callTime, ToolInvocation.AsOfKind.CALL);
+        }
+        // 生成时刻语义工具（§6.1）：time 为本机 now 而非数据自带时点——值保留、kind 降格 GENERATED
+        return GENERATED_TIME_TOOLS.contains(delegate.getName())
+                ? new AsOf(parsed.value(), ToolInvocation.AsOfKind.GENERATED)
+                : parsed;
     }
 
     /** 单个 JSON 文档扫描：顶层时点字段 → Table 首行时点字段。 */

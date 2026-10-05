@@ -293,6 +293,40 @@ class RecordingAgentToolDecoratorTest {
         assertThat(callInvocation.asOfKind()).isEqualTo(ToolInvocation.AsOfKind.CALL);
     }
 
+    @DisplayName("get_market_overview 生成时刻语义：解析到的 time 归 GENERATED 而非 DATA（值不变）")
+    @Test
+    void givenOverviewToolWithParsedTime_whenCallAsync_thenGeneratedKindNotData() {
+        RuntimeContext rc = RuntimeContext.empty();
+        // MarketOverview.time 三条解析路径全为本机 now（设计规格 §6.1）——同值不同义，须降格 GENERATED
+        RecordingAgentToolDecorator decorator = new RecordingAgentToolDecorator(
+                new StubTool("get_market_overview",
+                        p -> Mono.just(ToolResultBlock.text("{\"time\":\"2026-10-05 09:30\",\"indices\":[]}"))),
+                false, MAPPER, CLOCK);
+
+        decorator.callAsync(param(use("call_ov", "get_market_overview", Map.of()), rc)).block();
+
+        ToolInvocation invocation = TrustContext.current(rc).invocations().get(0);
+        assertThat(invocation.asOf()).as("时间仍取解析到的 time，不退调用时刻").isEqualTo("2026-10-05 09:30");
+        assertThat(invocation.asOfKind()).isEqualTo(ToolInvocation.AsOfKind.GENERATED);
+    }
+
+    @DisplayName("get_market_overview 无可解析时点：GENERATED 特例不改 best-effort 阶梯，仍 CALL 兜底")
+    @Test
+    void givenOverviewToolWithoutParsableTime_whenCallAsync_thenCallFallbackUnchanged() {
+        RuntimeContext rc = RuntimeContext.empty();
+        // 生产形态：overviewSummary 纯文本 + bar spec 均无 JSON 时点字段——特例只改归类不改解析来源
+        RecordingAgentToolDecorator decorator = new RecordingAgentToolDecorator(
+                new StubTool("get_market_overview",
+                        p -> Mono.just(ToolResultBlock.text("大盘速览(2026-10-05 09:30)：上证指数 3990.30"))),
+                false, MAPPER, CLOCK);
+
+        decorator.callAsync(param(use("call_ov2", "get_market_overview", Map.of()), rc)).block();
+
+        ToolInvocation invocation = TrustContext.current(rc).invocations().get(0);
+        assertThat(invocation.asOf()).isEqualTo(CALL_TIME);
+        assertThat(invocation.asOfKind()).isEqualTo(ToolInvocation.AsOfKind.CALL);
+    }
+
     @DisplayName("MCP 工具恒 sourced：结果含 time 仍记 asOfKind=CALL + 调用时刻（决策 #5，不入比对池）")
     @Test
     void givenMcpDecorator_whenResultHasTime_thenAlwaysCallKind() {

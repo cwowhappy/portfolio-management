@@ -45,11 +45,27 @@ class IndustryApplicationServiceTest {
         return history;
     }
 
+    @DisplayName("board 透出底层快照交易日：视图 tradingDay 取最新估值行 trading_day（B4 时点透出）")
+    @Test
+    void givenLatestRowWithTradingDay_whenBoard_thenViewCarriesTradingDay() {
+        when(repository.findLatestIndustries()).thenReturn(List.of(
+                new IndustryValuationRow("801780", "银行", LocalDate.of(2026, 1, 2),
+                        new BigDecimal("5.5"), new BigDecimal("0.8"),
+                        new BigDecimal("12"), new BigDecimal("4"))));
+        when(repository.findValuationHistorySince(any())).thenReturn(List.of());
+        when(repository.findIndustryProsperity()).thenReturn(List.of());
+
+        List<IndustryBoardView> board = service.board();
+
+        assertThat(board).hasSize(1);
+        assertThat(board.get(0).tradingDay()).as("tradingDay 即底层估值快照的 trading_day").isEqualTo(LocalDate.of(2026, 1, 2));
+    }
+
     @DisplayName("board 组装 5 年窗口分位与景气标注")
     @Test
     void givenLatestHistoryAndProsperity_whenBoard_thenComposePercentileAndProsperity() {
         when(repository.findLatestIndustries()).thenReturn(List.of(
-                new IndustryValuationRow("801780", "银行", new BigDecimal("5.5"), new BigDecimal("0.8"),
+                new IndustryValuationRow("801780", "银行", null, new BigDecimal("5.5"), new BigDecimal("0.8"),
                         new BigDecimal("12"), new BigDecimal("4"))));
         when(repository.findValuationHistorySince(any())).thenReturn(peWindow("801780"));
         when(repository.findIndustryProsperity()).thenReturn(List.of(
@@ -73,9 +89,9 @@ class IndustryApplicationServiceTest {
     @Test
     void givenDegenerateSnapshot_whenBoard_thenProsperityNullButInputsPresent() {
         when(repository.findLatestIndustries()).thenReturn(List.of(
-                new IndustryValuationRow("801780", "银行", new BigDecimal("5.5"), new BigDecimal("0.8"),
+                new IndustryValuationRow("801780", "银行", null, new BigDecimal("5.5"), new BigDecimal("0.8"),
                         new BigDecimal("12"), new BigDecimal("4")),
-                new IndustryValuationRow("801010", "食品饮料", new BigDecimal("25"), new BigDecimal("5"),
+                new IndustryValuationRow("801010", "食品饮料", null, new BigDecimal("25"), new BigDecimal("5"),
                         new BigDecimal("15"), new BigDecimal("1"))));
         when(repository.findValuationHistorySince(any())).thenReturn(List.of());
         // 801780：快照存在但双中位数 null 且 sampleSize=0（成分聚合无样本）；801010：无快照
@@ -99,7 +115,7 @@ class IndustryApplicationServiceTest {
     @Test
     void givenBoardCached_whenBoardTwice_thenSkipRepository() {
         when(repository.findLatestIndustries()).thenReturn(List.of(
-                new IndustryValuationRow("801780", "银行", new BigDecimal("5.5"), new BigDecimal("0.8"),
+                new IndustryValuationRow("801780", "银行", null, new BigDecimal("5.5"), new BigDecimal("0.8"),
                         new BigDecimal("12"), new BigDecimal("4"))));
         when(repository.findValuationHistorySince(any())).thenReturn(List.of());
         when(repository.findIndustryProsperity()).thenReturn(List.of());

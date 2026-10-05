@@ -46,6 +46,8 @@ class IndustryRepositoryImplTest {
         assertThat(latest).extracting("industryCode").containsExactlyInAnyOrder("801780", "801010");
         var bank = latest.stream().filter(r -> r.industryCode().equals("801780")).findFirst().orElseThrow();
         assertThat(bank.pe()).isEqualByComparingTo("5.5");
+        // B4 时点透出：最新估值行携带底层 trading_day（max 日），供板面视图/摘要消费
+        assertThat(bank.tradingDay()).isEqualTo(LocalDate.of(2026, 1, 2));
 
         var history = repository.findValuationHistorySince(LocalDate.of(2025, 1, 1));
         assertThat(history).hasSize(3); // 3 行 ≥ since：两行业最新日 + 银行前一日（brief 误写 2）
