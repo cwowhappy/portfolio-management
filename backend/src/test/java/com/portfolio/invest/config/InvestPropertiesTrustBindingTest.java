@@ -121,4 +121,23 @@ class InvestPropertiesTrustBindingTest {
         assertThat(confidence.staleFinancialDays()).isEqualTo(120);
         assertThat(confidence.staleMacroDays()).isEqualTo(40);
     }
+
+    @DisplayName("未配置时：payload-max-bytes 代码默认值生效（65536，MS-29 B8）")
+    @Test
+    void givenNoPayloadConfig_whenBind_thenDefaultMaxBytesApplies() {
+        InvestProperties props = new Binder(new MapConfigurationPropertySource(Map.of()))
+                .bindOrCreate("invest", InvestProperties.class);
+
+        assertThat(props.getTrust().getPayloadMaxBytes()).isEqualTo(65536);
+    }
+
+    @DisplayName("invest.trust.payload-max-bytes 松命名绑定覆盖（distinct 值区分绑定成功与静默回退默认）")
+    @Test
+    void givenPayloadMaxBytesConfig_whenBind_thenValueBound() {
+        InvestProperties props = new Binder(new MapConfigurationPropertySource(Map.of(
+                "invest.trust.payload-max-bytes", "12345")))
+                .bindOrCreate("invest", InvestProperties.class);
+
+        assertThat(props.getTrust().getPayloadMaxBytes()).isEqualTo(12345);
+    }
 }
