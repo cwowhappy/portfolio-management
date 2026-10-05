@@ -227,3 +227,148 @@ describe("ThreadArea 流中断与错误场景", () => {
     expect(getByText('{"code":')).toBeTruthy();
   });
 });
+
+// ———— P2-F3：flushPersist 并发序号守卫 ————
+// 运行停止 flush 与防抖/keepalive flush 重叠时，各自 async IIFE 并发：先发起者的 PUT 可能
+// 后完成，用旧快照覆盖新快照。守卫语义：后发起的 flush 代表更新的消息快照；旧的让其自然作废。
+// 两个用例都用闸门式 fetch mock 精确控制 resolve 顺序，以 mock 收集的 PUT 调用序列为准断言。
+// 注意：mock 刻意不做 If-Match 校验——隔离验证序号守卫本身（若同时启用乐观锁，
+// 409+union 兜底会掩盖过期写，断言焦点就不再是守卫行为）。
+
+describe("ThreadArea flushPersist 并发序号守卫（P2-F3）", () => {
+  const json = (status: number, body: unknown) =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { "Content-Type": "application/json" },
+    });
+
+  it("两次 flush 重叠：后发起的新快照先落库，先发起者的过期写被丢弃", async () => {
+    let getMsgCount = 0;
+    let releaseFlush1Load!: (r: Response) => void;
+    const flush1LoadGate = new Promise<Response>((res) => {
+      releaseFlush1Load = res;
+    });
+    const puts: Array<{ status: number; ids: string[] }> = [];
+    let serverIds: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        if (url === "/api/conversations" && method === "GET")
+          return json(200, [{ id: "t1", title: "会话", updatedAt: 2 }]);
+        if (url === "/api/conversations/t1/messages" && method === "GET") {
+          getMsgCount += 1;
+          if (getMsgCount === 1) return json(200, { updatedAt: "2026-10-04T00:00:00.000Z", messages: [] }); // 历史回灌
+          if (getMsgCount === 2) return flush1LoadGate; // flush #1 的 loadMessages：挂起等放行
+          return json(200, { updatedAt: "2026-10-04T00:00:02.000Z", messages: [] });
+        }
+        if (url === "/api/conversations/t1/messages" && method === "PUT") {
+          const ids = (JSON.parse(String(init?.body)) as Array<{ id: string }>).map((m) => m.id);
+          puts.push({ status: 200, ids });
+          serverIds = ids; // mock 不校验 If-Match：后完成的 PUT 直接整体覆盖内存态
+          return json(200, { updatedAt: "2026-10-04T00:00:03.000Z" });
+        }
+        return json(404, { message: "not found" });
+      }),
+    );
+
+    mocks.agent.isRunning = true;
+    mocks.agent.messages = [agentMessage({ id: "u1", role: "user", content: "问题" })];
+    const view = renderThread();
+    await waitFor(() => expect(mocks.agent.setMessages).toHaveBeenCalled());
+    // 运行停止（isRunning true→false）：立即 flush 旧快照 [u1]（flush #1），其 loadMessages 挂起
+    mocks.agent.isRunning = false;
+    view.rerender(
+      <RuntimeProvider>
+        <ThreadArea llmReady={null} />
+      </RuntimeProvider>,
+    );
+    await waitFor(() => expect(getMsgCount).toBe(2));
+    // 消息更新（新快照 [u1, a1]）→ 400ms 防抖发起 flush #2，先完成落库
+    mocks.agent.messages = [
+      agentMessage({ id: "u1", role: "user", content: "问题" }),
+      agentMessage({ id: "a1", role: "assistant", content: "回答" }),
+    ];
+    view.rerender(
+      <RuntimeProvider>
+        <ThreadArea llmReady={null} />
+      </RuntimeProvider>,
+    );
+    await waitFor(() => expect(puts).toHaveLength(1));
+    expect(puts[0]).toEqual({ status: 200, ids: ["u1", "a1"] });
+    // 放行 flush #1 的 loadMessages（拿到的是早于 flush #2 落库的旧 view）：
+    // 它已过期，不得再发起 PUT——否则 [u1] 旧快照整体覆盖 [u1, a1]
+    releaseFlush1Load(json(200, { updatedAt: "2026-10-04T00:00:00.000Z", messages: [] }));
+    await new Promise((r) => setTimeout(r, 300));
+    expect(puts).toHaveLength(1);
+    expect(serverIds).toEqual(["u1", "a1"]);
+  });
+
+  it("409 重试路径同样受守卫：重读期间新 flush 已发起 → 不再发起重试 PUT", async () => {
+    let getMsgCount = 0;
+    let releaseFlush1Reload!: (r: Response) => void;
+    const flush1ReloadGate = new Promise<Response>((res) => {
+      releaseFlush1Reload = res;
+    });
+    const puts: Array<{ status: number; ids: string[] }> = [];
+    let serverIds: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        if (url === "/api/conversations" && method === "GET")
+          return json(200, [{ id: "t1", title: "会话", updatedAt: 2 }]);
+        if (url === "/api/conversations/t1/messages" && method === "GET") {
+          getMsgCount += 1;
+          if (getMsgCount === 1) return json(200, { updatedAt: "2026-10-04T00:00:00.000Z", messages: [] }); // 历史回灌
+          if (getMsgCount === 2) return json(200, { updatedAt: "2026-10-04T00:00:00.000Z", messages: [] }); // flush #1 首次 load
+          if (getMsgCount === 3) return flush1ReloadGate; // flush #1 撞 409 后的重读：挂起等放行
+          return json(200, { updatedAt: "2026-10-04T00:00:02.000Z", messages: [] }); // flush #2 的 load
+        }
+        if (url === "/api/conversations/t1/messages" && method === "PUT") {
+          const ids = (JSON.parse(String(init?.body)) as Array<{ id: string }>).map((m) => m.id);
+          const status = puts.length === 0 ? 409 : 200; // 首次 PUT 撞 409（并发冲突），此后放行
+          puts.push({ status, ids });
+          if (status === 200) serverIds = ids;
+          return status === 409
+            ? json(409, { message: "会话已被其他窗口修改" })
+            : json(200, { updatedAt: "2026-10-04T00:00:03.000Z" });
+        }
+        return json(404, { message: "not found" });
+      }),
+    );
+
+    mocks.agent.isRunning = true;
+    mocks.agent.messages = [agentMessage({ id: "u1", role: "user", content: "问题" })];
+    const view = renderThread();
+    await waitFor(() => expect(mocks.agent.setMessages).toHaveBeenCalled());
+    // 运行停止：flush #1（[u1]）→ load → 首次 PUT 409 → 进入「重读 → 合并 → 重试」，重读挂起
+    mocks.agent.isRunning = false;
+    view.rerender(
+      <RuntimeProvider>
+        <ThreadArea llmReady={null} />
+      </RuntimeProvider>,
+    );
+    await waitFor(() => expect(getMsgCount).toBe(3)); // flush #1 已到达（且停在了）重读步骤
+    expect(puts).toEqual([{ status: 409, ids: ["u1"] }]);
+    // 重读挂起期间消息更新：400ms 防抖发起 flush #2（[u1, a1]）并先完成落库
+    mocks.agent.messages = [
+      agentMessage({ id: "u1", role: "user", content: "问题" }),
+      agentMessage({ id: "a1", role: "assistant", content: "回答" }),
+    ];
+    view.rerender(
+      <RuntimeProvider>
+        <ThreadArea llmReady={null} />
+      </RuntimeProvider>,
+    );
+    await waitFor(() => expect(puts).toHaveLength(2));
+    expect(puts[1]).toEqual({ status: 200, ids: ["u1", "a1"] });
+    // 放行 flush #1 的重读（响应早于 flush #2 落库生成）：已过期，不得再发起重试 PUT
+    releaseFlush1Reload(json(200, { updatedAt: "2026-10-04T00:00:02.000Z", messages: [] }));
+    await new Promise((r) => setTimeout(r, 300));
+    expect(puts).toHaveLength(2);
+    expect(serverIds).toEqual(["u1", "a1"]);
+  });
+});
