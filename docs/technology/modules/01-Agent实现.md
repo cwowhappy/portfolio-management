@@ -197,3 +197,19 @@ invest:
 | `advice-lexicon` / `disclaimer-text` | 14 词词表 / 固定文案 | 参数组④/③（B6）：词表兜底层与 `advice.flag=true` 时随 payload 透传的免责文案 |
 | `payload-max-bytes` | 65536 | B8：PUT 单条 payload UTF-8 字节上限，超限降级置 null |
 | `draft-json-max-bytes` | 32768 | B9：`research_draft` 工具入参 draftJson 上限（超限友好报错） |
+
+### 7.5 前端消费（MS-29 F1~F6，`frontend/`）
+
+> 带外数据通道：payload 不入 AG-UI `Message.metadata`，前端以独立 store 承接（设计 §5.4）——live 事件与持久化回灌（§7.3 持久化通道的 GET 侧）汇入同一数据源，渲染层零感知来源。
+
+| 环节 | 位置 | 要点 |
+|---|---|---|
+| 带外接入 | `lib/trustMeta.ts`（纯 TS，零 React/CopilotKit 依赖） | zod 宽松解析（未知键 strip）+ `v: z.literal(1)` 版本门（v≠1 整事件忽略，不猜结构）；`createTrustStore`（`:164`）引用稳定快照——get 无变更返回同引用，订阅方精准重渲染；`nthIndexOf`（`:264`）合法边界定位与后端 `ConsistencyValidator.occurrenceStart` 逐语义同构（**角标/替换定位必须复用本函数，禁裸 indexOf**——嵌套数字误定位）；`handleTrustCustomEvent`（`:376`）唯一分派口：anchors 落 store，correction 注记落 store + 原位替换（修正台账 occ 对改写前原文解析、自右向左回写，后端 applyReplacements 同构）经 `AgentStateMutation` sanctioned 路径写回 |
+| 事件接线 | `components/chat/ThreadArea.tsx:506` | 同一 `agent.subscribe` 挂 `onCustomEvent`；未知 name / 解析失败 / v≠1 静默忽略（宁可少标不可断流，与后端护栏同语） |
+| 角标浮层 | `components/shared/TrustMarkdownView.tsx:137` + `lib/trustAnchorsRemark.ts:144` + `components/shared/AnchorBadge.tsx:32` | `TrustMessageContent` **独立子组件订阅**（`useSyncExternalStore`，AssistantMessage memo 比较器不带 trust 项——store 事件不触发整列表重渲染）；有锚走 remark 插件对**原始 markdown 全文**定位切分 text 节点盖 sup（禁按单 text 节点独立计次）→ 三态角标（决策 #9 弱样式：verified 中性绿 / sourced 灰 / unverified 弱灰）+ group-hover 浮层（#13：verified 仅承诺「数值与工具返回一致」，不出现「已核实」；asOfKind 按数据时点/生成/调用时刻标注，#17）；无锚/空数组零开销回落共用 `MarkdownView`；occ 越界 / 跨节点 / code 子树 / 转义漂移安全跳过该锚不渲染 |
+| 注记可见化 | `TrustMarkdownView.tsx:114` `CorrectionNotes` | 拍板 #10「注记保留」：后端 stateStore 文本自带注记行而前端实时文本无、防抖 PUT 会以实时文本覆盖——注记从 `payload.correction.notes` 在正文尾部重建（与后端注记行同形「⚠ 校验修正：…」），live 与回灌同一订阅路径 |
+| 横幅 / disclaimer | `components/shared/TrustAdvisories.tsx:126` | `ConfidenceBanner`：命中信号人话映射（未知信号名不渲染）+ unverified **计数优先**措辞（拍板 #3：`stats.unverified` 恒随 payload 携带走「N 处数字未溯源」，stats 缺失回退约百分比）+ 核实路径建议静态映射（决策 #3）；`DisclaimerNote`（决策 #4）：文案为后端 `invest.trust.disclaimer-text` 经 `advice.text` 透传，前端不内置常量；与角标注记并存不互斥（信号是低置信概览、注记是逐条改写痕迹） |
+| 持久化携带 | `components/chat/RuntimeProvider.tsx:121` `agentMessagesToHistory` | F4：assistant 消息自 `trustStore.snapshot()`（副本 Map，防外泄写）按 id 取 payload 序列化携带、user 恒不带；union 合并共有 id 时 payload **非空优先**（本地非空覆盖远端、本地空保留 GET 侧；content/createdAt 服务端优先不变）——字段契约见 [03-接口设计.md](03-接口设计.md) §3 |
+| 回灌重建 | `RuntimeProvider.tsx:89` `rebuildTrustFromHistory` | F5：回灌成功同点位把 GET 侧 assistant payload 经 `parseTrustPayload` 入 `store.rebuild`（整表替换 + 修正台账随清——回灌 content 已含后端改写，occ 基线须重开）；user / 非法 JSON / schema 不符 / v≠1 行级跳过不炸整批；空历史全清（切会话语义，store 不残留上一会话）；回灌失败不 rebuild；旧消息无 payload → 角标自然降级不报错 |
+
+真浏览器验收：`e2e/trust-provenance.spec.ts`（F6）。
