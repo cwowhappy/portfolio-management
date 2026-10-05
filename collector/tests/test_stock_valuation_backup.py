@@ -7,12 +7,13 @@ supports_range=False：spot 是实时快照，只救当日增量；指定历史 
 """
 
 import datetime as dt
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
 
 from collector.sources.base import SourceError
-from collector.sources.plugins import StockValuationDailyBackupSource
+from collector.sources.plugins import StockValuationDailyBackupSource, make_open_day_check
 
 EXPECTED_COLUMNS = [
     "trading_day",
@@ -112,3 +113,57 @@ def test_yaml_declares_backup_source():
         defs = yaml.safe_load(f)
     classes = [s.get("class") for s in defs["source_ids"]]
     assert classes == ["stock_valuation_daily", "stock_valuation_daily_backup"]
+
+
+# ---- MS-28 P2-C5 节假日空帧保护 ----
+
+
+def test_holiday_empty_frame_and_spot_not_fetched():
+    """非开市日：返回空帧（照 EtfCloseSource 语义——空帧 0 行，不写非交易日行），
+    spot_fetch 不被消费。"""
+    calls = []
+
+    def _spot():
+        calls.append(1)
+        return _spot_frame()
+
+    src = StockValuationDailyBackupSource(
+        "stock_valuation_daily_backup", spot_fetch=_spot, is_open_day=lambda day: False
+    )
+    df = src.fetch({"date": dt.date.today().isoformat()})
+    assert df.empty
+    assert list(df.columns) == EXPECTED_COLUMNS
+    assert calls == []
+
+
+def test_open_day_injection_keeps_behavior():
+    """开市日：注入判定为开市 → 现行为照旧（拉快照、写今天行）。"""
+    src = StockValuationDailyBackupSource(
+        "stock_valuation_daily_backup", spot_fetch=lambda: _spot_frame(), is_open_day=lambda day: True
+    )
+    df = src.fetch({})
+    assert set(df["trading_day"]) == {dt.date.today().strftime("%Y%m%d")}
+    assert set(df["stock_code"]) == {"600519", "000001", "002594"}
+
+
+def test_make_open_day_check_calendar():
+    """开市判定 wiring：trade_cal 单日 is_open 0/1 → True/False。"""
+
+    def fake_pro(is_open):
+        return SimpleNamespace(
+            trade_cal=lambda **kw: pd.DataFrame({"cal_date": [kw["start_date"]], "is_open": [is_open]})
+        )
+
+    assert make_open_day_check(lambda: fake_pro(1))("20261009")  # 开市日
+    assert not make_open_day_check(lambda: fake_pro(0))("20261001")  # 国庆闭市
+
+
+def test_make_open_day_check_unavailable_proceeds():
+    """日历不可得（tushare 故障/空响应）→ 视为开市照常快照：备源本为 tushare 故障兜底，
+    不能因 trade_cal 失败自废（退回注入前行为）。"""
+
+    def _boom():
+        raise RuntimeError("tushare down")
+
+    assert make_open_day_check(_boom)("20261001")
+    assert make_open_day_check(lambda: SimpleNamespace(trade_cal=lambda **kw: pd.DataFrame()))("20261001")

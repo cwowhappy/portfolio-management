@@ -1006,15 +1006,20 @@ class StockValuationDailyBackupSource(Source):
     # 沪主板 60 / 深主板 00 / 中小板 002(00 前缀覆盖) / 创业板 30 / 科创板 68——北交所 43/83/87/920 段自然排除
     _MAIN_BOARD_PREFIXES = ("60", "00", "30", "68")
 
-    def __init__(self, source_id, spot_fetch=None):
+    def __init__(self, source_id, spot_fetch=None, is_open_day=None):
         self.source_id = source_id
         self.spot_fetch = spot_fetch or (lambda: ak.stock_zh_a_spot_em())
+        # 节假日空帧保护（MS-28 P2-C5）：开市判定（YYYYMMDD → bool），None 保持原行为不查日历
+        self.is_open_day = is_open_day
 
     def fetch(self, params):
         target_day = params.get("date")
         if target_day and normalize_date(target_day, "date") != dt.date.today().strftime("%Y%m%d"):
             raise SourceError(f"{self.source_id}: 备源为实时快照，仅支持当日增量（date={target_day} 不支持）")
         day = dt.date.today().strftime("%Y%m%d")
+        # 节假日空帧保护（照 EtfCloseSource 语义）：非开市日返回空帧——0 行、不写非交易日行
+        if self.is_open_day and not self.is_open_day(day):
+            return pd.DataFrame(columns=self._COLUMNS)
         df = self.spot_fetch()
         df = df[df["代码"].astype(str).str.startswith(self._MAIN_BOARD_PREFIXES)]
         df = df[~df["名称"].astype(str).str.contains("ST|退", na=False)]
@@ -1041,6 +1046,27 @@ class StockValuationDailyBackupSource(Source):
                 f"{self.source_id}: 总市值中位数 {median_mv:.3g} 超出元口径量级（1e8~1e12），疑似上游单位变更"
             )
         return out[self._COLUMNS]
+
+
+def make_open_day_check(pro_factory):
+    """构造单日开市判定（YYYYMMDD → bool）：trade_cal 查询，供 spot 快照类备源做
+    节假日空帧保护（MS-28 P2-C5，registry 装配处注入 StockValuationDailyBackupSource）。
+
+    日历访问沿 AllASpotBackupSource/_open_days_desc 的 trade_cal 方式；日历不可得
+    （tushare 故障/空响应）视为开市照常快照——备源本为 tushare 故障兜底，不能因
+    trade_cal 失败自废，退回注入前行为。
+    """
+
+    def is_open_day(day_ymd):
+        try:
+            cal = pro_factory().trade_cal(exchange="SSE", start_date=day_ymd, end_date=day_ymd)
+        except Exception:
+            return True
+        if cal is None or cal.empty:
+            return True
+        return bool((cal["is_open"] == 1).any())
+
+    return is_open_day
 
 
 def _last_n_periods(n):

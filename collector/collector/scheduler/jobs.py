@@ -50,6 +50,7 @@ from collector.sources.plugins import (
     TrackingIndexCloseSource,
     TreasuryCurveSource,
     make_index_dividend_fetch,
+    make_open_day_check,
 )
 from collector.sources.policy import POLICY_SOURCE_SPECS, PolicySiteSource
 from collector.sources.registry import SourceRegistry
@@ -413,7 +414,10 @@ def build_registries(config):
             "index_constituent": IndexConstituentSource("index_constituent", pro_factory=pro),
             "all_a_spot_backup": AllASpotBackupSource("all_a_spot_backup", pro_factory=pro),
             "stock_valuation_daily": StockValuationDailySource("stock_valuation_daily", pro_factory=pro),
-            "stock_valuation_daily_backup": StockValuationDailyBackupSource("stock_valuation_daily_backup"),
+            # MS-28 P2-C5：备源注入开市判定（trade_cal 单日），节假日空帧保护
+            "stock_valuation_daily_backup": StockValuationDailyBackupSource(
+                "stock_valuation_daily_backup", is_open_day=make_open_day_check(pro)
+            ),
             "stock_financial": StockFinancialSource("stock_financial", pro_factory=pro),
             "index_close": IndexCloseSource("index_close", pro_factory=pro),
             "industry_index_close": IndustryIndexCloseSource("industry_index_close"),
