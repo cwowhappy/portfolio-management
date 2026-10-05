@@ -5,6 +5,7 @@ import java.math.MathContext;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeSet;
@@ -69,6 +70,9 @@ public final class BacktestEngine {
             value.put(a, INITIAL_CAPITAL.multiply(weights.get(a), MC)
                     .divide(BigDecimal.valueOf(100), MC));
         }
+        // 返回值预索引（B5）：原逐日逐资产线性扫描 retOf 整体 O(assets×days×series)，
+        // 入口一次性建「资产→日期→收益」索引后查表 O(1)，整体降为 O(assets×days)。
+        Map<AssetClass, Map<LocalDate, BigDecimal>> returnIdx = indexReturns(returns, assets);
         List<CurvePoint> points = new ArrayList<>();
         // 首点=期初本金（标签 dates.first()，视为该日开盘前；当日收益在循环内计入）——
         // 因此首日会出现两个同日期点（期初 1000 + 收盘 1060），是本引擎的既定输出约定
@@ -77,7 +81,7 @@ public final class BacktestEngine {
         for (LocalDate d : dates) {
             for (AssetClass a : assets) {
                 value.put(a, value.get(a).multiply(
-                        BigDecimal.ONE.add(retOf(returns.get(a), d), MC), MC));
+                        BigDecimal.ONE.add(retOf(returnIdx, a, d), MC), MC));
             }
             day++;
             if (rebalanceEveryTradingDays > 0 && day % rebalanceEveryTradingDays == 0) {
@@ -92,13 +96,23 @@ public final class BacktestEngine {
         return new BacktestCurve(points);
     }
 
-    private static BigDecimal retOf(List<DatedReturn> series, LocalDate d) {
-        for (DatedReturn r : series) {
-            if (r.date().equals(d)) {
-                return r.ret();
+    /** 序列预索引：重复日期首点优先（对齐原线性扫描的 first-match 语义）。 */
+    private static Map<AssetClass, Map<LocalDate, BigDecimal>> indexReturns(
+            Map<AssetClass, List<DatedReturn>> returns, List<AssetClass> assets) {
+        Map<AssetClass, Map<LocalDate, BigDecimal>> idx = new HashMap<>();
+        for (AssetClass a : assets) {
+            Map<LocalDate, BigDecimal> byDate = new HashMap<>();
+            for (DatedReturn r : returns.get(a)) {
+                byDate.putIfAbsent(r.date(), r.ret());
             }
+            idx.put(a, byDate);
         }
-        return BigDecimal.ZERO;  // 交集已保证存在，防御
+        return idx;
+    }
+
+    /** 查表取某资产某日收益；交集已保证存在，缺资产/缺日期一律 0（防御语义与原实现一致）。 */
+    static BigDecimal retOf(Map<AssetClass, Map<LocalDate, BigDecimal>> idx, AssetClass a, LocalDate d) {
+        return idx.getOrDefault(a, Map.of()).getOrDefault(d, BigDecimal.ZERO);
     }
 
     private static BigDecimal sum(Map<AssetClass, BigDecimal> value) {
