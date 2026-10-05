@@ -1,5 +1,6 @@
 package com.portfolio.invest.application.alert;
 
+import com.portfolio.invest.application.auth.MailSender;
 import com.portfolio.invest.config.InvestProperties;
 import com.portfolio.invest.domain.portfolio.PortfolioRepository;
 import com.portfolio.invest.domain.user.UserRepository;
@@ -36,6 +37,7 @@ public class PrincipleAlertService {
     private final ValuationRepository valuationRepo;
     private final ValuationDailyPort valDaily;
     private final AlertNotifier notifier;
+    private final MailSender mailSender;
     private final UserRepository userRepo;
     private final PrincipleAlertEvaluator evaluator;
     private final InvestProperties props;
@@ -46,21 +48,23 @@ public class PrincipleAlertService {
     @Autowired
     public PrincipleAlertService(PrincipleRuleRepository ruleRepo, PortfolioRepository portfolioRepo,
                                  ValuationRepository valuationRepo, ValuationDailyPort valDaily,
-                                 AlertNotifier notifier, UserRepository userRepo, InvestProperties props) {
-        this(ruleRepo, portfolioRepo, valuationRepo, valDaily, notifier, userRepo,
+                                 AlertNotifier notifier, MailSender mailSender,
+                                 UserRepository userRepo, InvestProperties props) {
+        this(ruleRepo, portfolioRepo, valuationRepo, valDaily, notifier, mailSender, userRepo,
                 new PrincipleAlertEvaluator(), props, Clock.system(ZoneId.of("Asia/Shanghai")));
     }
 
     /** 测试构造器：注入时钟。 */
     PrincipleAlertService(PrincipleRuleRepository ruleRepo, PortfolioRepository portfolioRepo,
                           ValuationRepository valuationRepo, ValuationDailyPort valDaily,
-                          AlertNotifier notifier, UserRepository userRepo,
+                          AlertNotifier notifier, MailSender mailSender, UserRepository userRepo,
                           PrincipleAlertEvaluator evaluator, InvestProperties props, Clock clock) {
         this.ruleRepo = ruleRepo;
         this.portfolioRepo = portfolioRepo;
         this.valuationRepo = valuationRepo;
         this.valDaily = valDaily;
         this.notifier = notifier;
+        this.mailSender = mailSender;
         this.userRepo = userRepo;
         this.evaluator = evaluator;
         this.props = props;
@@ -133,6 +137,24 @@ public class PrincipleAlertService {
         boolean ok = notifier.send("⚠️ 投资原则预警", "red", lines);
         if (!ok) {
             log.warn("原则预警推送失败（{} 条违规）", violations.size());
+            sendAlertMail("⚠️ 投资原则预警", lines);
+        }
+    }
+
+    /** 飞书告警失败的邮件降级（B13）：SMTP 可用且配置了收件人才发；降级自身尽力而为绝不抛。 */
+    private void sendAlertMail(String title, List<String> bodyLines) {
+        List<String> tos = props.getMail().getAlertMailTo();
+        if (!mailSender.enabled() || tos.isEmpty()) {
+            return;
+        }
+        String subject = "[invest 告警] " + title;
+        String text = title + "\n" + String.join("\n", bodyLines);
+        for (String to : tos) {
+            try {
+                mailSender.send(to, subject, text);
+            } catch (Exception e) { // 单个收件人失败不阻断其余，也绝不反向拖垮调度
+                log.error("告警邮件降级失败 to={}", to, e);
+            }
         }
     }
 }

@@ -7,13 +7,16 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.portfolio.invest.application.auth.MailSender;
 import com.portfolio.invest.application.intelligence.CollectorRunInspectPort.TaskRunSummary;
+import com.portfolio.invest.config.InvestProperties;
 import com.portfolio.invest.domain.intelligence.MacroRepository;
 import com.portfolio.invest.domain.intelligence.SourceSwitch;
 import java.time.Instant;
@@ -41,11 +44,13 @@ class MacroHealthServiceTest {
     private final CollectorRunInspectPort runInspect = mock(CollectorRunInspectPort.class);
     private final MacroRepository macroRepository = mock(MacroRepository.class);
     private final IntelligencePushPort pushPort = mock(IntelligencePushPort.class);
+    private final MailSender mailSender = mock(MailSender.class);
+    private final InvestProperties props = new InvestProperties();
     private MacroHealthService service;
 
     @BeforeEach
     void setUp() {
-        service = new MacroHealthService(runInspect, macroRepository, pushPort);
+        service = new MacroHealthService(runInspect, macroRepository, pushPort, mailSender, props);
         when(runInspect.runsOf(anyString(), anyInt())).thenReturn(List.of());
         when(macroRepository.findLatestSwitch(anyString())).thenReturn(Optional.empty());
         when(pushPort.sendToGroup(anyString(), anyString(), anyList())).thenReturn(true);
@@ -162,6 +167,76 @@ class MacroHealthServiceTest {
         verify(macroRepository).insertSourceSwitch(eq("AFMI"), eq("socfin"), eq("m2"),
                 contains("2026-09"));
         verify(pushPort).sendToGroup(anyString(), eq("red"), anyList());
+    }
+
+    // ---- B13 告警邮件降级（仅降级告警面；情报推送面不降级——契约决策 #8）----
+
+    @Test
+    @DisplayName("给定降级告警飞书失败且邮件可用+两个收件人，when巡检，then告警邮件降级各发一封（含两月与 M2 口径）")
+    void given降级告警飞书失败_whenCheck_then告警邮件降级() {
+        when(runInspect.runsOf(anyString(), anyInt())).thenReturn(twoConsecutiveFailedMonths());
+        when(pushPort.sendToGroup(anyString(), anyString(), anyList())).thenReturn(false);
+        props.getMail().setAlertMailTo(List.of("ops@x.com", "dev@x.com"));
+        when(mailSender.enabled()).thenReturn(true);
+
+        service.check();
+
+        verify(mailSender).send(eq("ops@x.com"), contains("社融数据源降级"),
+                contains("2026-08、2026-09"));
+        verify(mailSender).send(eq("dev@x.com"), contains("社融数据源降级"),
+                contains("2026-08、2026-09"));
+        verify(mailSender).send(eq("dev@x.com"), contains("社融数据源降级"), contains("M2"));
+    }
+
+    @Test
+    @DisplayName("给定降级告警飞书成功，when巡检，then不触发邮件降级")
+    void given降级告警飞书成功_whenCheck_then不发邮件() {
+        when(runInspect.runsOf(anyString(), anyInt())).thenReturn(twoConsecutiveFailedMonths());
+        // setUp 已 stub sendToGroup=true
+        props.getMail().setAlertMailTo(List.of("ops@x.com"));
+
+        service.check();
+
+        verifyNoInteractions(mailSender);
+    }
+
+    @Test
+    @DisplayName("给定收件人未配置，when降级告警飞书失败，then维持 WARN 不发邮件")
+    void given收件人未配置_when降级告警飞书失败_then不发邮件() {
+        when(runInspect.runsOf(anyString(), anyInt())).thenReturn(twoConsecutiveFailedMonths());
+        when(pushPort.sendToGroup(anyString(), anyString(), anyList())).thenReturn(false);
+        when(mailSender.enabled()).thenReturn(true);
+
+        service.check();
+
+        verify(mailSender, never()).send(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("给定 SMTP 未启用，when降级告警飞书失败，then维持 WARN 不降级发邮件")
+    void given邮件未启用_when降级告警飞书失败_then不发邮件() {
+        when(runInspect.runsOf(anyString(), anyInt())).thenReturn(twoConsecutiveFailedMonths());
+        when(pushPort.sendToGroup(anyString(), anyString(), anyList())).thenReturn(false);
+        props.getMail().setAlertMailTo(List.of("ops@x.com"));
+        when(mailSender.enabled()).thenReturn(false);
+
+        service.check();
+
+        verify(mailSender, never()).send(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("给定首个收件人发信抛异常，when降级，then隔离该收件人继续发其余且绝不抛")
+    void given首个收件人抛异常_when降级_then其余仍发且不抛() {
+        when(runInspect.runsOf(anyString(), anyInt())).thenReturn(twoConsecutiveFailedMonths());
+        when(pushPort.sendToGroup(anyString(), anyString(), anyList())).thenReturn(false);
+        props.getMail().setAlertMailTo(List.of("bad@x.com", "ops@x.com"));
+        when(mailSender.enabled()).thenReturn(true);
+        doThrow(new IllegalStateException("smtp refused"))
+                .when(mailSender).send(eq("bad@x.com"), anyString(), anyString());
+
+        assertThatCode(service::check).doesNotThrowAnyException();
+        verify(mailSender).send(eq("ops@x.com"), anyString(), anyString());
     }
 
     @Test

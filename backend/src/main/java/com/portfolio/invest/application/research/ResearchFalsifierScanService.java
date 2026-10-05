@@ -1,5 +1,7 @@
 package com.portfolio.invest.application.research;
 
+import com.portfolio.invest.application.auth.MailSender;
+import com.portfolio.invest.config.InvestProperties;
 import com.portfolio.invest.domain.research.Falsifier;
 import com.portfolio.invest.domain.research.FalsifierEvaluator;
 import com.portfolio.invest.domain.research.FalsifierHit;
@@ -40,15 +42,20 @@ public class ResearchFalsifierScanService {
     private final ResearchCheckRepository checkRepository;
     private final MarketSnapshotAssembler snapshotAssembler;
     private final ResearchFalsifierNotifier notifier;
+    private final MailSender mailSender;
+    private final InvestProperties props;
 
     public ResearchFalsifierScanService(ResearchProjectRepository repository,
                                         ResearchCheckRepository checkRepository,
                                         MarketSnapshotAssembler snapshotAssembler,
-                                        ResearchFalsifierNotifier notifier) {
+                                        ResearchFalsifierNotifier notifier,
+                                        MailSender mailSender, InvestProperties props) {
         this.repository = repository;
         this.checkRepository = checkRepository;
         this.snapshotAssembler = snapshotAssembler;
         this.notifier = notifier;
+        this.mailSender = mailSender;
+        this.props = props;
     }
 
     @Scheduled(cron = "0 43 18 * * MON-FRI", zone = "Asia/Shanghai")
@@ -92,9 +99,29 @@ public class ResearchFalsifierScanService {
         if (conditionNames.isEmpty()) {
             return;
         }
-        boolean ok = notifier.notify(project.userId(), project.title(), conditionNames.stream().distinct().toList());
+        List<String> distinct = conditionNames.stream().distinct().toList();
+        boolean ok = notifier.notify(project.userId(), project.title(), distinct);
         if (!ok) {
             log.warn("证伪提醒推送失败（projectId={}，{} 条新增命中）", project.id(), conditionNames.size());
+            sendAlertMail("证伪命中提醒：" + project.title(), distinct);
+        }
+    }
+
+    /** 飞书告警失败的邮件降级（B13）：SMTP 可用且配置了收件人才发；降级自身尽力而为绝不抛。
+     * 文案沿用 D15 口径——仅项目名与条件名，不含数字。 */
+    private void sendAlertMail(String title, List<String> bodyLines) {
+        List<String> tos = props.getMail().getAlertMailTo();
+        if (!mailSender.enabled() || tos.isEmpty()) {
+            return;
+        }
+        String subject = "[invest 告警] " + title;
+        String text = title + "\n" + String.join("\n", bodyLines);
+        for (String to : tos) {
+            try {
+                mailSender.send(to, subject, text);
+            } catch (Exception e) { // 单个收件人失败不阻断其余，也绝不反向拖垮扫描
+                log.error("告警邮件降级失败 to={}", to, e);
+            }
         }
     }
 

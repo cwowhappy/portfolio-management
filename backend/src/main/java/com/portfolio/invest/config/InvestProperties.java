@@ -1,6 +1,8 @@
 package com.portfolio.invest.config;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /** 业务配置（invest.*），详见 application.yml。 */
@@ -410,6 +412,8 @@ public class InvestProperties {
         private String testFixedCode = "";
         /** 固定码开关（MAIL_TEST_MODE）：test-fixed-code 非空但本开关未开时启动即失败——防固定码泄入生产 env。 */
         private boolean testMode = false;
+        /** 告警降级收件人（ALERT_MAIL_TO，逗号分隔，B13）：飞书调度告警失败时的邮件兜底；空 = 不降级。 */
+        private List<String> alertMailTo = new ArrayList<>();
 
         public boolean configured() {
             return !smtpHost.isBlank() && !smtpUsername.isBlank()
@@ -430,5 +434,7 @@ public class InvestProperties {
         public void setTestFixedCode(String testFixedCode) { this.testFixedCode = testFixedCode; }
         public boolean isTestMode() { return testMode; }
         public void setTestMode(boolean testMode) { this.testMode = testMode; }
+        public List<String> getAlertMailTo() { return alertMailTo; }
+        public void setAlertMailTo(List<String> alertMailTo) { this.alertMailTo = alertMailTo; }
     }
 }

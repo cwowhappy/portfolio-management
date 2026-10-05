@@ -81,6 +81,7 @@ invest:
     smtp-username: ${MAIL_SMTP_USERNAME:}
     smtp-password: ${MAIL_SMTP_PASSWORD:}
     from: ${MAIL_FROM:}
+    alert-mail-to: ${ALERT_MAIL_TO:}   # 告警降级收件人（逗号分隔，B13）：飞书告警失败时的邮件兜底
     test-fixed-code: ${MAIL_TEST_FIXED_CODE:}
     test-mode: ${MAIL_TEST_MODE:false}
   intelligence:

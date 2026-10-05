@@ -1,5 +1,6 @@
 package com.portfolio.invest.application.alert;
 
+import com.portfolio.invest.application.auth.MailSender;
 import com.portfolio.invest.config.InvestProperties;
 import com.portfolio.invest.domain.portfolio.Portfolio;
 import com.portfolio.invest.domain.portfolio.PortfolioRepository;
@@ -30,9 +31,13 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class PrincipleAlertServiceTest {
@@ -42,6 +47,7 @@ class PrincipleAlertServiceTest {
     private final ValuationRepository valuationRepo = mock(ValuationRepository.class);
     private final ValuationDailyPort valDaily = mock(ValuationDailyPort.class);
     private final AlertNotifier notifier = mock(AlertNotifier.class);
+    private final MailSender mailSender = mock(MailSender.class);
     private final UserRepository userRepo = mock(UserRepository.class);
     private final PrincipleAlertEvaluator evaluator = new PrincipleAlertEvaluator();
     private InvestProperties props;
@@ -57,7 +63,7 @@ class PrincipleAlertServiceTest {
 
     private PrincipleAlertService service(Clock clock) {
         return new PrincipleAlertService(ruleRepo, portfolioRepo, valuationRepo, valDaily, notifier,
-                userRepo, evaluator, props, clock);
+                mailSender, userRepo, evaluator, props, clock);
     }
 
     private void givenOwnerAndPortfolio() {
@@ -107,11 +113,9 @@ class PrincipleAlertServiceTest {
         verify(notifier, never()).send(anyString(), anyString(), anyList());
     }
 
-    @Test
-    @DisplayName("给定超限持仓，when巡检，then组装卡片行并推送")
-    void given超限持仓_when巡检_then推送卡片() {
+    /** 双持仓超限夹具（单票上限 0.20 → 违规行含 600519 与阈值 0.20）+ 当日快照就绪。 */
+    private void givenViolatingPositions(LocalDate today) {
         givenOwnerAndPortfolio();
-        LocalDate today = LocalDate.parse("2026-09-25");
         Position p1 = mock(Position.class);
         when(p1.stockCode()).thenReturn("600519");
         when(p1.stockName()).thenReturn("贵州茅台");
@@ -128,10 +132,92 @@ class PrincipleAlertServiceTest {
         when(ruleRepo.findByUserId(7L)).thenReturn(List.of(
                 PrincipleRule.create(7L, PrincipleMetric.SINGLE_POSITION_RATIO, new BigDecimal("0.20"),
                         true, "单票上限", Instant.now())));
+    }
+
+    @Test
+    @DisplayName("给定超限持仓，when巡检，then组装卡片行并推送")
+    void given超限持仓_when巡检_then推送卡片() {
+        LocalDate today = LocalDate.parse("2026-09-25");
+        givenViolatingPositions(today);
         service(fixedClock(today)).patrol();
         ArgumentCaptor<List<String>> lines = ArgumentCaptor.forClass(List.class);
         verify(notifier).send(anyString(), anyString(), lines.capture());
         assertThat(String.join("\n", lines.getValue())).contains("600519").contains("0.2");
+    }
+
+    @Test
+    @DisplayName("给定飞书失败且邮件可用+两个收件人，when巡检，then告警邮件降级各发一封（含标题与违规摘要）")
+    void given飞书失败且邮件可用_when巡检_then告警邮件降级() {
+        LocalDate today = LocalDate.parse("2026-09-25");
+        givenViolatingPositions(today);
+        props.getMail().setAlertMailTo(List.of("ops@x.com", "dev@x.com"));
+        when(mailSender.enabled()).thenReturn(true);
+        when(notifier.send(anyString(), anyString(), anyList())).thenReturn(false);
+
+        service(fixedClock(today)).patrol();
+
+        ArgumentCaptor<String> to = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> subject = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> text = ArgumentCaptor.forClass(String.class);
+        verify(mailSender, times(2)).send(to.capture(), subject.capture(), text.capture());
+        assertThat(to.getAllValues()).containsExactly("ops@x.com", "dev@x.com");
+        assertThat(subject.getAllValues()).allSatisfy(s -> assertThat(s).contains("投资原则预警"));
+        assertThat(text.getAllValues()).allSatisfy(t -> assertThat(t).contains("600519").contains("0.2"));
+    }
+
+    @Test
+    @DisplayName("给定飞书推送成功，when巡检，then不触发邮件降级")
+    void given飞书成功_when巡检_then不发邮件() {
+        LocalDate today = LocalDate.parse("2026-09-25");
+        givenViolatingPositions(today);
+        props.getMail().setAlertMailTo(List.of("ops@x.com"));
+        when(notifier.send(anyString(), anyString(), anyList())).thenReturn(true);
+
+        service(fixedClock(today)).patrol();
+
+        verifyNoInteractions(mailSender);
+    }
+
+    @Test
+    @DisplayName("给定收件人未配置，when飞书失败，then维持 WARN 不发邮件")
+    void given收件人未配置_when飞书失败_then不发邮件() {
+        LocalDate today = LocalDate.parse("2026-09-25");
+        givenViolatingPositions(today);
+        when(mailSender.enabled()).thenReturn(true);
+        when(notifier.send(anyString(), anyString(), anyList())).thenReturn(false);
+
+        service(fixedClock(today)).patrol();
+
+        verify(mailSender, never()).send(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("给定 SMTP 未启用，when飞书失败，then维持 WARN 不降级发邮件")
+    void given邮件未启用_when飞书失败_then不发邮件() {
+        LocalDate today = LocalDate.parse("2026-09-25");
+        givenViolatingPositions(today);
+        props.getMail().setAlertMailTo(List.of("ops@x.com"));
+        when(mailSender.enabled()).thenReturn(false);
+        when(notifier.send(anyString(), anyString(), anyList())).thenReturn(false);
+
+        service(fixedClock(today)).patrol();
+
+        verify(mailSender, never()).send(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("给定首个收件人发信抛异常，when降级，then隔离该收件人继续发其余且绝不抛")
+    void given首个收件人抛异常_when降级_then其余仍发且不抛() {
+        LocalDate today = LocalDate.parse("2026-09-25");
+        givenViolatingPositions(today);
+        props.getMail().setAlertMailTo(List.of("bad@x.com", "ops@x.com"));
+        when(mailSender.enabled()).thenReturn(true);
+        when(notifier.send(anyString(), anyString(), anyList())).thenReturn(false);
+        doThrow(new IllegalStateException("smtp refused"))
+                .when(mailSender).send(eq("bad@x.com"), anyString(), anyString());
+
+        assertThatCode(() -> service(fixedClock(today)).patrol()).doesNotThrowAnyException();
+        verify(mailSender).send(eq("ops@x.com"), anyString(), anyString());
     }
 
     @Test

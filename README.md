@@ -222,6 +222,7 @@ scripts/    smoke.sh 冒烟（6 段：健康/上游漂移/行情/反代/AI 对�
 | MAIL_SMTP_HOST / MAIL_SMTP_PORT | - / 465 | 邮箱验证码/找回密码 SMTP（opt-in：HOST/USERNAME/PASSWORD/FROM 四要素配齐才启用，未配时注册/找回返回「系统未配置邮件服务」；阿里云企业邮箱 `smtp.qiye.aliyun.com:465` SSL） |
 | MAIL_SMTP_USERNAME / MAIL_SMTP_PASSWORD | - | SMTP 登录凭证 |
 | MAIL_FROM | - | 发件人地址（同时是 smoke §6 真发冒烟的收件人） |
+| ALERT_MAIL_TO | - | 告警降级收件人（逗号分隔，MS-28 P2-B13）：飞书调度告警（原则预警/证伪提醒/社融源降级）推送失败时的邮件兜底；留空不降级（需 SMTP 四要素配齐） |
 | MAIL_TEST_FIXED_CODE / MAIL_TEST_MODE | - / false | **e2e 固定码专用，生产严禁设置**：固定码设了而未开测试模式时后端拒绝启动；开了则发码短路、恒为约定值 |
 | COLLECTOR_ALERT_WEBHOOK | - | 采集告警通用 JSON POST webhook（opt-in 逃生通道；仅在未配置 FEISHU_BOT_WEBHOOK 时生效） |
 | MCP_SECRET_KEY | - | MCP 系统 Token 的 AES-256-GCM 主密钥（base64 32 字节，生成：`openssl rand -base64 32`）。**已实现（P1-10，2026-10-03）**：管理员经 `/admin` 页设置 token，服务端加密落库（`v1:` 前缀密文）；缺失不阻断启动、设置 token 时报 503；库内存量明文仍可直读（warn 提示经 admin 覆写） |
