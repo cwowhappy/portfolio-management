@@ -60,8 +60,10 @@ import com.portfolio.invest.domain.wiki.WikiEntryType;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
@@ -72,6 +74,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -94,6 +97,9 @@ public class ResearchApplicationService {
 
     /** 回流 wiki 条目 category 标记（F16：复用 RESEARCH_NOTE 三类型不扩枚举，S2 与 SOP_TEMPLATE 同法）。 */
     static final String SOP_REVIEW_CATEGORY = "SOP_REVIEW";
+
+    /** 市场时区（与 EmailCodeService 同 zone：事件 eventDate 走业务日历而非系统缺省）。 */
+    private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
 
     /** PATCH 手动标记项：state 取 StageCompletionService.ManualState（NULL=清除覆盖）。 */
     public record ManualMark(@NotNull ResearchStage stage, @NotNull ManualState state) {}
@@ -154,7 +160,10 @@ public class ResearchApplicationService {
     private final ReviewSnapshotComposer reviewComposer;
     private final WikiEntryRepository wikiEntryRepository;
     private final ObjectMapper mapper;
+    private final Clock clock;
 
+    /** 主构造器（@Autowired：存在测试专用重载构造器时需显式指定注入入口）。 */
+    @Autowired
     public ResearchApplicationService(ResearchProjectRepository repository,
                                       JournalEntryRepository journalRepository,
                                       ResearchEntryPlanRepository entryPlanRepository,
@@ -167,6 +176,24 @@ public class ResearchApplicationService {
                                       ReviewSnapshotComposer reviewComposer,
                                       WikiEntryRepository wikiEntryRepository,
                                       ObjectMapper mapper) {
+        this(repository, journalRepository, entryPlanRepository, checkRepository,
+                falsifierReviewRepository, orchestration, snapshotAssembler, reviewRepository,
+                feedbackRepository, reviewComposer, wikiEntryRepository, mapper, Clock.system(ZONE));
+    }
+
+    /** 测试构造器：注入时钟（事件/wiki 打点时间确定性断言）。 */
+    ResearchApplicationService(ResearchProjectRepository repository,
+                               JournalEntryRepository journalRepository,
+                               ResearchEntryPlanRepository entryPlanRepository,
+                               ResearchCheckRepository checkRepository,
+                               FalsifierReviewRepository falsifierReviewRepository,
+                               CheckOrchestration orchestration,
+                               MarketSnapshotAssembler snapshotAssembler,
+                               ReviewRepository reviewRepository,
+                               ResearchFeedbackRepository feedbackRepository,
+                               ReviewSnapshotComposer reviewComposer,
+                               WikiEntryRepository wikiEntryRepository,
+                               ObjectMapper mapper, Clock clock) {
         this.repository = repository;
         this.journalRepository = journalRepository;
         this.entryPlanRepository = entryPlanRepository;
@@ -179,6 +206,7 @@ public class ResearchApplicationService {
         this.reviewComposer = reviewComposer;
         this.wikiEntryRepository = wikiEntryRepository;
         this.mapper = mapper;
+        this.clock = clock;
     }
 
     /**
@@ -505,7 +533,7 @@ public class ResearchApplicationService {
         try {
             entry = wikiEntryRepository.save(WikiEntry.create(userId, WikiEntryType.RESEARCH_NOTE,
                     "复盘·" + project.title() + "·" + review.periodStart() + "~" + review.periodEnd(),
-                    review.narrative(), SOP_REVIEW_CATEGORY, null, Instant.now(), projectId));
+                    review.narrative(), SOP_REVIEW_CATEGORY, null, clock.instant(), projectId));
         } catch (RuntimeException e) {
             // 降级根因留痕（ResearchException 无 cause 构造器，异常经日志链接——照 UserAdminApplicationService 先例）
             log.warn("回流 wiki 写入失败（projectId={}，reviewId={}），降级保持 PENDING", projectId, reviewId, e);
@@ -618,11 +646,11 @@ public class ResearchApplicationService {
         return counts;
     }
 
-    /** 研究事件写入（S3）。 */
+    /** 研究事件写入（S3）；打点时间取注入时钟（eventDate 按业务时区日历）。 */
     private void writeEvent(ResearchProject project, String title, String content) {
         journalRepository.save(JournalEntry.create(project.userId(), JournalEntryType.RESEARCH_EVENT,
                 project.stockCode(), project.stockName(), null, title, content,
-                null, null, null, null, null, LocalDate.now(), Instant.now(), project.id()));
+                null, null, null, null, null, LocalDate.now(clock), clock.instant(), project.id()));
     }
 
     private EntryPlan requireEntryPlan(Long projectId) {

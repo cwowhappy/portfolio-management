@@ -17,6 +17,9 @@ import org.junit.jupiter.api.Test;
  */
 class IntelligenceSubscriptionTest {
 
+    /** wither 打点入参（固定值断言：时间由调用方注入，域不自取时钟）。 */
+    private static final Instant UPDATED_AT = Instant.parse("2026-10-05T00:00:00Z");
+
     @Test
     @DisplayName("给定任意用户，when构造缺省实例，then pushEnabled=true 且行业/标的均为空集、无更新时间")
     void givenAnyUser_whenDefaults_thenPushEnabledWithEmptyCollections() {
@@ -30,35 +33,40 @@ class IntelligenceSubscriptionTest {
     }
 
     @Test
-    @DisplayName("给定缺省实例，when切换推送开关，then返回新实例且原实例不变")
-    void givenDefaults_whenTogglePush_thenNewInstanceAndOriginalUntouched() {
+    @DisplayName("给定缺省实例，when切换推送开关，then返回新实例且打点时间取入参、原实例不变")
+    void givenDefaults_whenTogglePush_thenNewInstanceWithInjectedTimestampAndOriginalUntouched() {
         IntelligenceSubscription original = IntelligenceSubscription.defaults(42L);
 
-        IntelligenceSubscription disabled = original.togglePush(false);
+        IntelligenceSubscription disabled = original.togglePush(false, UPDATED_AT);
 
         assertThat(disabled.pushEnabled()).isFalse();
         assertThat(disabled).isNotSameAs(original);
         assertThat(original.pushEnabled()).as("wither 不可变：原实例保持缺省").isTrue();
-        assertThat(disabled.updatedAt()).as("变更打点更新时间").isNotNull();
+        assertThat(disabled.updatedAt()).as("打点时间取入参而非域内自取时钟").isEqualTo(UPDATED_AT);
     }
 
     @Test
     @DisplayName("给定已是目标开关状态的实例，when再次togglePush同值，then原样返回自身（幂等）")
     void givenAlreadyDisabled_whenTogglePushSameValue_thenSameInstance() {
-        IntelligenceSubscription disabled = IntelligenceSubscription.defaults(42L).togglePush(false);
+        IntelligenceSubscription disabled =
+                IntelligenceSubscription.defaults(42L).togglePush(false, UPDATED_AT);
 
-        assertThat(disabled.togglePush(false)).isSameAs(disabled);
+        assertThat(disabled.togglePush(false, UPDATED_AT)).isSameAs(disabled);
     }
 
     @Test
-    @DisplayName("给定缺省实例，when替换行业与标的集合，then新实例持有新集合且原实例集合不变")
-    void givenDefaults_whenWithIndustriesAndStocks_thenNewInstanceWithReplacedCollections() {
+    @DisplayName("给定缺省实例，when替换行业与标的集合，then新实例持有新集合且打点时间各取入参、原实例集合不变")
+    void givenDefaults_whenWithIndustriesAndStocks_thenNewInstanceWithInjectedTimestamps() {
         IntelligenceSubscription original = IntelligenceSubscription.defaults(42L);
 
-        IntelligenceSubscription updated = original
-                .withIndustries(List.of("801010", "801780"))
+        IntelligenceSubscription withIndustries = original
+                .withIndustries(List.of("801010", "801780"), UPDATED_AT);
+        IntelligenceSubscription updated = withIndustries
                 .withStocks(List.of(new SubscriptionStock("600519", "贵州茅台"),
-                        new SubscriptionStock("300750", "宁德时代")));
+                        new SubscriptionStock("300750", "宁德时代")), UPDATED_AT.plusSeconds(60));
+
+        assertThat(withIndustries.updatedAt()).as("withIndustries 打点时间取入参").isEqualTo(UPDATED_AT);
+        assertThat(updated.updatedAt()).as("withStocks 打点时间取入参").isEqualTo(UPDATED_AT.plusSeconds(60));
 
         assertThat(updated.industries()).containsExactly("801010", "801780");
         assertThat(updated.stocks()).extracting(SubscriptionStock::stockCode)
@@ -73,10 +81,11 @@ class IntelligenceSubscriptionTest {
     @DisplayName("给定已替换集合的实例，when空集合整体替换，then清空对应集合（全量替换语义）")
     void givenPopulatedInstance_whenReplaceWithEmpty_thenCollectionsCleared() {
         IntelligenceSubscription populated = IntelligenceSubscription.defaults(42L)
-                .withIndustries(List.of("801010"))
-                .withStocks(List.of(new SubscriptionStock("600519", "贵州茅台")));
+                .withIndustries(List.of("801010"), UPDATED_AT)
+                .withStocks(List.of(new SubscriptionStock("600519", "贵州茅台")), UPDATED_AT);
 
-        IntelligenceSubscription emptied = populated.withIndustries(List.of()).withStocks(List.of());
+        IntelligenceSubscription emptied = populated
+                .withIndustries(List.of(), UPDATED_AT).withStocks(List.of(), UPDATED_AT);
 
         assertThat(emptied.industries()).isEmpty();
         assertThat(emptied.stocks()).isEmpty();
@@ -86,7 +95,7 @@ class IntelligenceSubscriptionTest {
     @DisplayName("给定null集合入参，when替换，then归一为空集而非抛错（缺字段宽容）")
     void givenNullCollections_whenReplace_thenNormalizedToEmpty() {
         IntelligenceSubscription updated = IntelligenceSubscription.defaults(42L)
-                .withIndustries(null).withStocks(null);
+                .withIndustries(null, UPDATED_AT).withStocks(null, UPDATED_AT);
 
         assertThat(updated.industries()).isEmpty();
         assertThat(updated.stocks()).isEmpty();
@@ -99,7 +108,7 @@ class IntelligenceSubscriptionTest {
         Set<SubscriptionStock> stocks =
                 new LinkedHashSet<>(List.of(new SubscriptionStock("600519", "贵州茅台")));
         IntelligenceSubscription updated = IntelligenceSubscription.defaults(42L)
-                .withIndustries(industries).withStocks(stocks);
+                .withIndustries(industries, UPDATED_AT).withStocks(stocks, UPDATED_AT);
 
         industries.add("801780");
         stocks.add(new SubscriptionStock("300750", "宁德时代"));

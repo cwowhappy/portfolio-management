@@ -99,10 +99,11 @@ class SubscriptionServiceTest {
         assertThat(saved.pushEnabled()).isFalse();
         assertThat(saved.industries()).containsExactly("801010");
         assertThat(saved.stocks()).containsExactly(new SubscriptionStock("600519", "贵州茅台"));
+        assertThat(saved.updatedAt()).as("聚合打点时间取服务注入时钟").isEqualTo(NOW);
         assertThat(view.pushEnabled()).isFalse();
         assertThat(view.industries()).containsExactly("801010");
         assertThat(view.stocks()).extracting(s -> s.code()).containsExactly("600519");
-        assertThat(view.updatedAt()).as("保存后视图带打点时间").isNotNull();
+        assertThat(view.updatedAt()).as("保存后视图带打点时间（=固定时钟值）").isEqualTo(NOW);
     }
 
     @Test

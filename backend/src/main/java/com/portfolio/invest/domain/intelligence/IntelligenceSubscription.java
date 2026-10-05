@@ -60,24 +60,24 @@ public final class IntelligenceSubscription {
                 copyOf(industries), copyOfStocks(stocks), updatedAt);
     }
 
-    /** 切换推送开关；同值幂等原样返回。 */
-    public IntelligenceSubscription togglePush(boolean enabled) {
+    /** 切换推送开关（打点时间取入参，A3 业务时间可注入）；同值幂等原样返回。 */
+    public IntelligenceSubscription togglePush(boolean enabled, Instant now) {
         if (enabled == pushEnabled) {
             return this;
         }
-        return new IntelligenceSubscription(userId, enabled, industries, stocks, Instant.now());
+        return new IntelligenceSubscription(userId, enabled, industries, stocks, now);
     }
 
-    /** 整体替换行业码集合（null 归一为空集）。 */
-    public IntelligenceSubscription withIndustries(Collection<String> newIndustries) {
+    /** 整体替换行业码集合（null 归一为空集）；打点时间取入参。 */
+    public IntelligenceSubscription withIndustries(Collection<String> newIndustries, Instant now) {
         return new IntelligenceSubscription(userId, pushEnabled,
-                copyOf(newIndustries), stocks, Instant.now());
+                copyOf(newIndustries), stocks, now);
     }
 
-    /** 整体替换标的集合（null 归一为空集）；同名代码去重保留首见。 */
-    public IntelligenceSubscription withStocks(Collection<SubscriptionStock> newStocks) {
+    /** 整体替换标的集合（null 归一为空集）；同名代码去重保留首见；打点时间取入参。 */
+    public IntelligenceSubscription withStocks(Collection<SubscriptionStock> newStocks, Instant now) {
         return new IntelligenceSubscription(userId, pushEnabled,
-                industries, copyOfStocks(newStocks), Instant.now());
+                industries, copyOfStocks(newStocks), now);
     }
 
     public Long userId() { return userId; }

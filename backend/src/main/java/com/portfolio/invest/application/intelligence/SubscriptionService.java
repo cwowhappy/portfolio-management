@@ -84,11 +84,12 @@ public class SubscriptionService {
      */
     @Transactional
     public SubscriptionView update(Long userId, UpdateSubscriptionCommand cmd) {
+        Instant now = clock.instant();
         IntelligenceSubscription saved = repository.save(currentOf(userId)
-                .togglePush(cmd.pushEnabled())
-                .withIndustries(cmd.industries())
+                .togglePush(cmd.pushEnabled(), now)
+                .withIndustries(cmd.industries(), now)
                 .withStocks(cmd.stocks() == null ? List.of() : cmd.stocks().stream()
-                        .map(item -> new SubscriptionStock(item.code(), item.name())).toList()));
+                        .map(item -> new SubscriptionStock(item.code(), item.name())).toList(), now));
         return toView(saved);
     }
 

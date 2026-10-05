@@ -6,6 +6,7 @@ import com.portfolio.invest.domain.intelligence.IntelligenceSubscription;
 import com.portfolio.invest.domain.intelligence.SubscriptionRepository;
 import com.portfolio.invest.domain.intelligence.SubscriptionStock;
 import com.portfolio.invest.support.PostgresTestSupport;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
@@ -66,10 +67,10 @@ class SubscriptionRepositoryTest extends PostgresTestSupport {
         Long userId = insertUser("sub_it_save");
 
         repository.save(IntelligenceSubscription.defaults(userId)
-                .togglePush(false)
-                .withIndustries(List.of("801010", "801780"))
+                .togglePush(false, Instant.now())
+                .withIndustries(List.of("801010", "801780"), Instant.now())
                 .withStocks(List.of(new SubscriptionStock("600519", "贵州茅台"),
-                        new SubscriptionStock("300750", "宁德时代"))));
+                        new SubscriptionStock("300750", "宁德时代")), Instant.now()));
 
         IntelligenceSubscription loaded = repository.findByUserId(userId).orElseThrow();
         assertThat(loaded.userId()).isEqualTo(userId);
@@ -89,13 +90,13 @@ class SubscriptionRepositoryTest extends PostgresTestSupport {
         repository.save(IntelligenceSubscription.defaults(userId).withStocks(List.of(
                 new SubscriptionStock("600519", "茅台"),
                 new SubscriptionStock("300750", "宁德时代"),
-                new SubscriptionStock("000001", "平安银行"))));
+                new SubscriptionStock("000001", "平安银行")), Instant.now()));
         OffsetDateTime keptAddedAt = stockAddedAt(userId, "600519");
 
         repository.save(IntelligenceSubscription.defaults(userId).withStocks(List.of(
                 new SubscriptionStock("600519", "贵州茅台"),   // 保留 + 改名
                 new SubscriptionStock("000001", "平安银行"),   // 原样保留
-                new SubscriptionStock("601318", "中国平安")))); // 新增；300750 移除
+                new SubscriptionStock("601318", "中国平安")), Instant.now())); // 新增；300750 移除
 
         assertThat(stockCodesOf(userId)).containsExactlyInAnyOrder("600519", "000001", "601318");
         assertThat(stockNameOf(userId, "600519")).isEqualTo("贵州茅台");
@@ -110,9 +111,9 @@ class SubscriptionRepositoryTest extends PostgresTestSupport {
     void givenExistingStocks_whenSaveEmptySet_thenChildRowsAllDeleted() {
         Long userId = insertUser("sub_it_clear");
         repository.save(IntelligenceSubscription.defaults(userId).withStocks(List.of(
-                new SubscriptionStock("600519", "贵州茅台"))));
+                new SubscriptionStock("600519", "贵州茅台")), Instant.now()));
 
-        repository.save(IntelligenceSubscription.defaults(userId).withStocks(List.of()));
+        repository.save(IntelligenceSubscription.defaults(userId).withStocks(List.of(), Instant.now()));
 
         assertThat(stockCodesOf(userId)).isEmpty();
         assertThat(countSubscriptions(userId)).as("主表行保留").isEqualTo(1);
@@ -128,7 +129,7 @@ class SubscriptionRepositoryTest extends PostgresTestSupport {
         Long pendingRowOn = insertUser("sub_it_pend_row", "PENDING", true);    // 待审 + 行开
         Long suspended = insertUser("sub_it_susp", "APPROVED", false);         // 已停用 + 行开
         repository.save(IntelligenceSubscription.defaults(enabled));
-        repository.save(IntelligenceSubscription.defaults(disabled).togglePush(false));
+        repository.save(IntelligenceSubscription.defaults(disabled).togglePush(false, Instant.now()));
         repository.save(IntelligenceSubscription.defaults(pendingRowOn));
         repository.save(IntelligenceSubscription.defaults(suspended));
 
@@ -146,13 +147,13 @@ class SubscriptionRepositoryTest extends PostgresTestSupport {
         Long mutedHolder = insertUser("sub_it_mute");
         Long otherStockHolder = insertUser("sub_it_other");
         repository.save(IntelligenceSubscription.defaults(holder)
-                .withIndustries(List.of("801010"))
+                .withIndustries(List.of("801010"), Instant.now())
                 .withStocks(List.of(new SubscriptionStock("600519", "贵州茅台"),
-                        new SubscriptionStock("300750", "宁德时代"))));
-        repository.save(IntelligenceSubscription.defaults(mutedHolder).togglePush(false)
-                .withStocks(List.of(new SubscriptionStock("600519", "贵州茅台"))));
+                        new SubscriptionStock("300750", "宁德时代")), Instant.now()));
+        repository.save(IntelligenceSubscription.defaults(mutedHolder).togglePush(false, Instant.now())
+                .withStocks(List.of(new SubscriptionStock("600519", "贵州茅台")), Instant.now()));
         repository.save(IntelligenceSubscription.defaults(otherStockHolder)
-                .withStocks(List.of(new SubscriptionStock("300750", "宁德时代"))));
+                .withStocks(List.of(new SubscriptionStock("300750", "宁德时代")), Instant.now()));
 
         List<IntelligenceSubscription> matched = repository.findAllWithStock("600519");
 

@@ -270,7 +270,7 @@ class BriefPushServiceTest {
         when(subscriptionService.findOpenId(7L)).thenReturn(Optional.of("ou-7"));
         when(subscriptionRepository.findByUserId(7L)).thenReturn(Optional.of(
                 IntelligenceSubscription.defaults(7L)
-                        .withStocks(List.of(new SubscriptionStock("600519", "贵州茅台")))));
+                        .withStocks(List.of(new SubscriptionStock("600519", "贵州茅台")), Instant.now())));
         when(newsRepository.findMajorSince(WINDOW_START, 80)).thenReturn(List.of(
                 news(1L, "贵州茅台中标", List.of("600519"), List.of()),
                 news(2L, "宁德时代新品", List.of("300750"), List.of())));
@@ -302,7 +302,7 @@ class BriefPushServiceTest {
         when(subscriptionService.findOpenId(7L)).thenReturn(Optional.of("ou-7"));
         when(subscriptionRepository.findByUserId(7L)).thenReturn(Optional.of(
                 IntelligenceSubscription.defaults(7L)
-                        .withStocks(List.of(new SubscriptionStock("600519", "贵州茅台")))));
+                        .withStocks(List.of(new SubscriptionStock("600519", "贵州茅台")), Instant.now())));
         when(newsRepository.findMajorSince(any(), anyInt())).thenReturn(List.of(
                 news(2L, "宁德时代新品", List.of("300750"), List.of())));
 
@@ -379,8 +379,8 @@ class BriefPushServiceTest {
         when(subscriptionService.findOpenId(7L)).thenReturn(Optional.of("ou-7"));
         when(subscriptionRepository.findByUserId(7L)).thenReturn(Optional.of(
                 IntelligenceSubscription.defaults(7L)
-                        .withStocks(List.of(new SubscriptionStock("600519", "贵州茅台")))
-                        .withIndustries(List.of("801010"))));
+                        .withStocks(List.of(new SubscriptionStock("600519", "贵州茅台")), Instant.now())
+                        .withIndustries(List.of("801010"), Instant.now())));
         when(newsRepository.findMajorSince(any(), anyInt())).thenReturn(List.of(
                 news(1L, "行业政策落地", List.of(), List.of("801010")),
                 news(2L, "无关条目", List.of("000001"), List.of("801020")),
@@ -405,7 +405,7 @@ class BriefPushServiceTest {
         when(subscriptionService.findOpenId(7L)).thenReturn(Optional.of("ou-7"));
         when(subscriptionRepository.findByUserId(7L)).thenReturn(Optional.of(
                 IntelligenceSubscription.defaults(7L)
-                        .withStocks(List.of(new SubscriptionStock("600519", "贵州茅台")))));
+                        .withStocks(List.of(new SubscriptionStock("600519", "贵州茅台")), Instant.now())));
         List<NewsRecord> twelveHits = java.util.stream.LongStream.rangeClosed(1, 12)
                 .mapToObj(id -> news(id, "命中" + id, List.of("600519"), List.of()))
                 .toList();
@@ -496,7 +496,7 @@ class BriefPushServiceTest {
         when(subscriptionService.findOpenId(7L)).thenReturn(Optional.of("ou-7"));
         when(subscriptionRepository.findByUserId(7L)).thenReturn(Optional.of(
                 IntelligenceSubscription.defaults(7L)
-                        .withStocks(List.of(new SubscriptionStock("600519", "贵州茅台")))));
+                        .withStocks(List.of(new SubscriptionStock("600519", "贵州茅台")), Instant.now())));
         when(newsRepository.findMajorSince(any(), anyInt()))
                 .thenThrow(new IllegalStateException("db down"));
 
