@@ -25,7 +25,7 @@ import {
   type ConversationMeta,
 } from "@/lib/conversations";
 import type { ChatMessage } from "@/lib/types";
-import { trustStore, type TrustStore } from "@/lib/trustMeta";
+import { parseTrustPayload, trustStore, type TrustPayload, type TrustStore } from "@/lib/trustMeta";
 
 export const AGENT_ID = "invest";
 
@@ -75,6 +75,29 @@ export function historyToAgentMessages(msgs: ChatMessage[]): Message[] {
         ? { id: m.id, role: "user", content: m.content }
         : { id: m.id, role: "assistant", content: m.content },
   );
+}
+
+/**
+ * MS-29 F5：信任锚定回灌重建——GET 侧 assistant payload（JSON 文本，F4 携带的逆路径）
+ * 经 parseTrustPayload 解析入 trustStore.rebuild（整表替换，与 agentMessagesToHistory
+ * 的携带路径对称，选点同在历史格式转换层）。设计 §5.4：payload 走独立 TrustMeta store，
+ * 不塞 AG-UI Message.metadata（避免污染消息通道）。
+ * - user 消息 payload（null / 缺键）忽略（user 恒无锚定）；
+ * - 解析失败行（非法 JSON / schema 不符 / v≠1 / 空串）跳过该行不炸整批；
+ * - 空历史即 rebuild 空表全清（切会话语义：store 不残留上一会话数据，台账随清）。
+ */
+export function rebuildTrustFromHistory(
+  msgs: ChatMessage[],
+  trust: Pick<TrustStore, "rebuild"> = trustStore,
+): void {
+  const entries: [string, TrustPayload][] = [];
+  for (const m of msgs) {
+    if (m.role !== "assistant") continue;
+    if (typeof m.payload !== "string" || m.payload === "") continue;
+    const payload = parseTrustPayload(m.payload);
+    if (payload) entries.push([m.id, payload]);
+  }
+  trust.rebuild(entries);
 }
 
 /**

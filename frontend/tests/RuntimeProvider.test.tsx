@@ -5,6 +5,7 @@ import {
   AGENT_ID,
   agentMessagesToHistory,
   historyToAgentMessages,
+  rebuildTrustFromHistory,
   RuntimeProvider,
   useChatRuntime,
 } from "@/components/chat/RuntimeProvider";
@@ -228,6 +229,89 @@ describe("agentMessagesToHistory 信任 payload 携带（F4）", () => {
       { id: "f4-singleton-a1", role: "assistant", content: "答" },
     ]);
     expect(JSON.parse(out[0].payload!)).toEqual(tp());
+  });
+});
+
+// MS-29 F5：信任锚定回灌重建——GET 侧 assistant payload（JSON 文本）解析入
+// trustStore.rebuild（整表替换），与 F4 携带路径（agentMessagesToHistory）对称的逆路径。
+// user payload（null/缺键）忽略；解析失败行（非法 JSON / schema 不符 / v≠1 / 空串）跳过
+// 不炸整批；空历史即全清（切会话语义：store 不残留上一会话数据）。
+describe("rebuildTrustFromHistory（F5 回灌重建）", () => {
+  /** 最小合法 payload v1（占位形态即合法 TrustPayload）。 */
+  function tp5(verified = 1): TrustPayload {
+    return { v: 1, anchors: [], stats: { verified, sourced: 0, unverified: 0 } };
+  }
+
+  /** GET 侧 ChatMessage 夹具：payload 传 undefined 即缺键（旧记录形态）。 */
+  function historyMsg(
+    role: "user" | "assistant",
+    id: string,
+    payload?: string | null,
+  ): ChatMessage {
+    return {
+      id,
+      role,
+      content: `${id}-content`,
+      createdAt: 1,
+      ...(payload !== undefined ? { payload } : {}),
+    };
+  }
+
+  it("assistant payload 批量入 store；user payload（null）忽略；上一会话旧数据整表清除", () => {
+    const store = createTrustStore();
+    store.applyAnchors("stale", tp5()); // 模块级单例跨会话的残留形态
+    rebuildTrustFromHistory(
+      [
+        historyMsg("user", "u1", null), // B8 契约 GET 回带 user 消息 payload:null
+        historyMsg("assistant", "a1", JSON.stringify(tp5())),
+        historyMsg("assistant", "a2", JSON.stringify(tp5(2))),
+      ],
+      store,
+    );
+    expect(store.get("stale")).toBeUndefined();
+    expect(store.get("u1")).toBeUndefined();
+    expect(store.get("a1")?.stats.verified).toBe(1);
+    expect(store.get("a2")?.stats.verified).toBe(2);
+  });
+
+  it("解析失败行（非法 JSON / v≠1 / schema 不符 / 空串）跳过该行不炸整批", () => {
+    const store = createTrustStore();
+    expect(() =>
+      rebuildTrustFromHistory(
+        [
+          historyMsg("assistant", "bad-json", "{broken"),
+          historyMsg("assistant", "bad-v", JSON.stringify({ ...tp5(), v: 2 })),
+          historyMsg("assistant", "bad-schema", JSON.stringify({ v: 1, anchors: [] })),
+          historyMsg("assistant", "bad-empty", ""),
+          historyMsg("assistant", "ok", JSON.stringify(tp5())),
+        ],
+        store,
+      ),
+    ).not.toThrow();
+    expect(store.get("ok")?.stats.verified).toBe(1);
+    for (const id of ["bad-json", "bad-v", "bad-schema", "bad-empty"]) {
+      expect(store.get(id)).toBeUndefined();
+    }
+  });
+
+  it("空历史（切会话 / 新会话）→ rebuild 空表全清（store 不残留上一会话数据）", () => {
+    const store = createTrustStore();
+    store.applyAnchors("prev", tp5());
+    rebuildTrustFromHistory([], store);
+    expect(store.snapshot().size).toBe(0);
+  });
+
+  it("旧消息无 payload（缺键）→ store 无记录（角标自然降级不报错的前提）", () => {
+    const store = createTrustStore();
+    rebuildTrustFromHistory([historyMsg("assistant", "legacy")], store);
+    expect(store.get("legacy")).toBeUndefined();
+    expect(store.snapshot().size).toBe(0);
+  });
+
+  it("缺省 trust 参数取页面级单例 trustStore（ThreadArea 回灌接线形态）", () => {
+    // rebuild 整表替换自含：本用例自身写入即断言，不依赖其他用例的既有键
+    rebuildTrustFromHistory([historyMsg("assistant", "f5-singleton-a1", JSON.stringify(tp5(3)))]);
+    expect(trustStore.get("f5-singleton-a1")?.stats.verified).toBe(3);
   });
 });
 

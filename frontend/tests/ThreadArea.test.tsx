@@ -1110,6 +1110,104 @@ describe("ThreadArea", () => {
     expect(screen.queryByTestId("disclaimer-note")).toBeNull();
   });
 
+  // ———— MS-29 F5：信任锚定回灌重建（回灌 effect 内 GET payload → trustStore.rebuild）————
+
+  /** F5 接线夹具：带 payload 的 assistant 历史（形态 = F4 携带侧 JSON.stringify 产物）。 */
+  function f5Payload(verified: number): string {
+    return JSON.stringify({
+      v: 1,
+      anchors: [
+        {
+          snippet: "1520.33元",
+          occ: 1,
+          state: "verified",
+          tool: "get_quote",
+          asOf: "2026-10-05 14:59:32",
+          asOfKind: "data",
+          raw: "1520.33",
+        },
+      ],
+      stats: { verified, sourced: 0, unverified: 0 },
+    });
+  }
+
+  it("F5：回灌带 payload 历史 → trustStore 重建 → 角标原位渲染（useTrustPayload 读到回灌数据）", async () => {
+    api = installConversationsApi({
+      list: [{ id: "t5", title: "信任会话", updatedAt: 2 }],
+      messages: {
+        t5: [
+          { id: "f5-u1", role: "user", content: "看看", createdAt: 1 },
+          { id: "f5-a1", role: "assistant", content: "现价1520.33元。", createdAt: 2, payload: f5Payload(1) },
+        ],
+      },
+    });
+    // setMessages 是 mock（不回写 mocks.agent.messages）：预置同形消息模拟回灌落地后的渲染态
+    mocks.agent.messages = [agentMessage({ id: "f5-a1", role: "assistant", content: "现价1520.33元。" })];
+    renderThread();
+    await waitFor(() => expect(mocks.agent.setMessages).toHaveBeenCalled());
+    // 回灌 rebuild 落地 → F2 渲染链（useTrustPayload）读到 store 数据 → 角标出现
+    const badges = await screen.findAllByTestId("trust-anchor-badge");
+    expect(badges).toHaveLength(1);
+    expect(badges[0].getAttribute("data-anchor-state")).toBe("verified");
+    expect(badges[0].parentElement?.textContent).toContain("1520.33元");
+    expect(trustStore.get("f5-a1")?.stats.verified).toBe(1);
+  });
+
+  it("F5：切会话 → 空历史 rebuild 全清（store 不残留上一会话数据，角标随 store 清空消失不报错）", async () => {
+    api = installConversationsApi({
+      list: [
+        { id: "t5a", title: "会话一", updatedAt: 2 },
+        { id: "t5b", title: "会话二", updatedAt: 1 },
+      ],
+      messages: {
+        t5a: [{ id: "f5-sw-a1", role: "assistant", content: "现价1520.33元。", createdAt: 1, payload: f5Payload(1) }],
+        t5b: [],
+      },
+    });
+    mocks.agent.messages = [agentMessage({ id: "f5-sw-a1", role: "assistant", content: "现价1520.33元。" })];
+    render(
+      <RuntimeProvider>
+        <ThreadSwitchHarness targetId="t5b" />
+      </RuntimeProvider>,
+    );
+    // t5a 回灌完成：store 有数据、角标渲染
+    await waitFor(() => expect(trustStore.get("f5-sw-a1")?.stats.verified).toBe(1));
+    expect(await screen.findAllByTestId("trust-anchor-badge")).toHaveLength(1);
+    // 切到 t5b（空历史）→ rebuild([]) 全清
+    fireEvent.click(screen.getByText("切到 t5b"));
+    await waitFor(() => expect(trustStore.get("f5-sw-a1")).toBeUndefined());
+    expect(trustStore.snapshot().size).toBe(0);
+    // store 无记录 → 角标零渲染零报错（mock setMessages 不回写，消息文本仍在——
+    // 即「消息在而 payload 无」的降级形态对照组）
+    expect(screen.queryAllByTestId("trust-anchor-badge")).toHaveLength(0);
+  });
+
+  it("F5：回灌历史含解析失败 payload → 该行跳过不炸整批（合法行照常重建，无回灌错误卡）", async () => {
+    api = installConversationsApi({
+      list: [{ id: "t5c", title: "混合会话", updatedAt: 2 }],
+      messages: {
+        t5c: [
+          { id: "f5-bad-json", role: "assistant", content: "坏JSON", createdAt: 1, payload: "{broken" },
+          {
+            id: "f5-bad-v",
+            role: "assistant",
+            content: "坏版本",
+            createdAt: 2,
+            payload: JSON.stringify({ v: 2, anchors: [], stats: { verified: 0, sourced: 0, unverified: 0 } }),
+          },
+          { id: "f5-good", role: "assistant", content: "好的", createdAt: 3, payload: f5Payload(1) },
+        ],
+      },
+    });
+    renderThread();
+    await waitFor(() => expect(mocks.agent.setMessages).toHaveBeenCalled());
+    expect(trustStore.get("f5-good")?.stats.verified).toBe(1);
+    expect(trustStore.get("f5-bad-json")).toBeUndefined();
+    expect(trustStore.get("f5-bad-v")).toBeUndefined();
+    // 不炸整批：回灌成功落地（无 hydrate 错误卡）
+    expect(screen.queryByTestId("hydrate-error")).toBeNull();
+  });
+
   describe("Composer", () => {
     it("输入文本后点击发送", async () => {
       renderThread();

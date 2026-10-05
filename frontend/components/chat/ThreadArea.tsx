@@ -14,6 +14,7 @@ import {
   AGENT_ID,
   agentMessagesToHistory,
   historyToAgentMessages,
+  rebuildTrustFromHistory,
   useChatRuntime,
 } from "./RuntimeProvider";
 import { loadMessages, newThreadId, errorStatus } from "@/lib/conversations";
@@ -510,6 +511,10 @@ export default function ThreadArea({ llmReady, onUnauthorized }: {
   // 历史回灌：真实 agent 就绪后，把服务端历史种回去（后端 server-side-memory=false）。
   // 仅在回灌成功后把 hydratedThreadIdRef 指向当前线程：此前 agent.messages 仍属于旧线程，
   // 防抖持久化必须等回灌完成（或至少不把旧线程内容写进新线程）后再启动。
+  // MS-29 F5：回灌成功同点位把 GET 侧 payload 重建进 trustStore（整表替换）——空历史即
+  // 全清，切会话后 store 不残留上一会话数据；回灌失败不 rebuild（消息流与 store 同留旧
+  // 线程态，重试成功后以新基线整表替换）。旧消息无 payload → store 无记录 → F2 角标
+  // 自然降级（不渲染不报错）。
   useEffect(() => {
     if (!isReady) return;
     let cancelled = false;
@@ -520,6 +525,7 @@ export default function ThreadArea({ llmReady, onUnauthorized }: {
         if (cancelled) return;
         if (agent.isRunning) agent.abortRun(); // 切换线程时停止旧流，避免跨线程串写
         agent.setMessages(historyToAgentMessages(history));
+        rebuildTrustFromHistory(history);
         hydratedThreadIdRef.current = threadId;
         setHydratedThreadId(threadId);
         setHydrateError(null);

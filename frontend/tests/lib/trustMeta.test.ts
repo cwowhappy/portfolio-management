@@ -7,6 +7,7 @@ import {
   createTrustStore,
   handleTrustCustomEvent,
   nthIndexOf,
+  parseTrustPayload,
   replaceSnippetInMessages,
 } from "@/lib/trustMeta";
 import type { TrustPayload } from "@/lib/trustMeta";
@@ -225,6 +226,96 @@ describe("TrustStore", () => {
     (snap as Map<string, TrustPayload>).clear();
     expect(store.get("m1")?.stats.verified).toBe(1);
     expect(store.snapshot().size).toBe(2);
+  });
+
+  // MS-29 F5：rebuild（历史回灌整表重建）——F1 报告契约：整表替换 + 一次 notify +
+  // 同步清修正台账（回灌文本已含后端改写，occ 基线以回灌 content 重开）；空表即全清。
+  describe("rebuild（F5 历史回灌整表重建）", () => {
+    it("带 payload 批量入：整表替换旧数据、传入引用原样落地、订阅一次通知", () => {
+      const store = createTrustStore();
+      store.applyAnchors("old-1", anchorsPayload());
+      store.applyCorrection("old-2", "note");
+      const listener = vi.fn();
+      store.subscribe(listener);
+      const e1 = anchorsPayload();
+      const e2 = anchorsPayload({
+        stats: { verified: 0, sourced: 2, unverified: 0 },
+        correction: { notes: ["note-x"] },
+      });
+      store.rebuild([
+        ["m1", e1],
+        ["m2", e2],
+      ]);
+      // 整表替换：上一会话（或回灌前）数据清除
+      expect(store.get("old-1")).toBeUndefined();
+      expect(store.get("old-2")).toBeUndefined();
+      // 条目写入：传入引用原样落地（rebuild 后同引用契约，F2 useSyncExternalStore 依赖）
+      expect(store.get("m1")).toBe(e1);
+      expect(store.get("m2")?.correction).toEqual({ notes: ["note-x"] });
+      expect(store.snapshot().size).toBe(2);
+      // 一次 notify（整批通知，非逐条）
+      expect(listener).toHaveBeenCalledTimes(1);
+    });
+
+    it("空表全清：payloads 与修正台账同步清（rebuild 语义 = 新基线）", () => {
+      const store = createTrustStore();
+      // 先落 payload + 台账（correction 分派器为台账唯一写方，直接构造已登记形态）
+      store.applyCorrection("m1", "note-1");
+      const ledger = store.correctionLedger("m1");
+      ledger.originalContent = "营收 1741 亿。";
+      ledger.lastContent = "营收 1708 亿。";
+      ledger.records = [{ snippet: "1741 亿", occ: 1, replacement: "1708 亿", start: 3 }];
+      const listener = vi.fn();
+      store.subscribe(listener);
+      store.rebuild([]);
+      expect(store.get("m1")).toBeUndefined();
+      expect(store.snapshot().size).toBe(0);
+      expect(listener).toHaveBeenCalledTimes(1);
+      // 台账已清：再次取的是全新空台账（旧引用不再被 store 持有，occ 解析基线重开）
+      const fresh = store.correctionLedger("m1");
+      expect(fresh).not.toBe(ledger);
+      expect(fresh).toEqual({ originalContent: null, lastContent: null, records: [] });
+    });
+
+    it("rebuild 后事件写入照常：applyAnchors 幂等覆盖语义在新基线上不变", () => {
+      const store = createTrustStore();
+      store.rebuild([["m1", anchorsPayload()]]);
+      store.applyAnchors("m1", anchorsPayload({ stats: { verified: 5, sourced: 0, unverified: 0 } }));
+      expect(store.get("m1")?.stats.verified).toBe(5);
+    });
+  });
+});
+
+// MS-29 F5：持久化 payload 文本（JSON 文本）→ TrustPayload 宽松解析。
+// 回灌侧行级守卫：非法 JSON / schema 不符 / v≠1 返回 null（跳过该行不炸整批）。
+describe("parseTrustPayload（F5 持久化 payload 文本解析）", () => {
+  it("合法 JSON 文本 → TrustPayload（未知键 strip、可选半边保留）", () => {
+    const text = JSON.stringify({
+      ...anchorsPayload(),
+      correction: { notes: ["n"] },
+      extraTop: "x",
+    });
+    const parsed = parseTrustPayload(text);
+    expect(parsed).not.toBeNull();
+    expect(parsed).not.toHaveProperty("extraTop");
+    expect(parsed?.stats.verified).toBe(1);
+    expect(parsed?.correction).toEqual({ notes: ["n"] });
+  });
+
+  it("非法 JSON / 空串 → null（回灌行级跳过）", () => {
+    expect(parseTrustPayload("{broken")).toBeNull();
+    expect(parseTrustPayload("")).toBeNull();
+  });
+
+  it("schema 不符（缺 stats）/ v≠1 → null（版本门：不猜未来结构）", () => {
+    expect(parseTrustPayload(JSON.stringify({ v: 1, anchors: [] }))).toBeNull();
+    expect(parseTrustPayload(JSON.stringify({ ...anchorsPayload(), v: 2 }))).toBeNull();
+  });
+
+  it("非对象 JSON（数字 / 字符串 / null）→ null", () => {
+    expect(parseTrustPayload("42")).toBeNull();
+    expect(parseTrustPayload('"文本"')).toBeNull();
+    expect(parseTrustPayload("null")).toBeNull();
   });
 });
 

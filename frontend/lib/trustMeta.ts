@@ -81,6 +81,22 @@ export const TrustPayloadSchema = z.object({
   confidence: z.object({ signals: z.array(z.string()) }).optional(),
 });
 
+/**
+ * F5：持久化 payload 文本（F4 携带 / GET 回带的 JSON 文本）→ TrustPayload。
+ * 宽松解析：非法 JSON / schema 不符 / v≠1 均返回 null（回灌侧行级跳过，不炸整批——
+ * 宁可少标不可断流）。zod 默认 strip 未知键，产物即干净 TrustPayload。
+ */
+export function parseTrustPayload(text: string): TrustPayload | null {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  const parsed = TrustPayloadSchema.safeParse(raw);
+  return parsed.success ? parsed.data : null;
+}
+
 /** trust.anchors 事件 value 信封。 */
 const AnchorsEventValueSchema = z.object({
   messageId: z.string().min(1),
@@ -106,8 +122,8 @@ const CorrectionEventValueSchema = z.object({
  * AssistantMessage 的 memo 比较器只看 message 引用（trust 数据带外，不能触发整列表重渲染），
  * 该契约让徽标子组件独立订阅、精准重渲染；也不碰 CopilotKit 两套 context 实例的坑。
  *
- * F4（快照）/F5（批量重建）后续在此扩接口：rebuild(entries) 整表替换 + snapshot() 只读导出；
- * rebuild 时须同步清空修正台账（回灌文本已含后端改写，occ 基线须以回灌 content 重开）。
+ * F4（快照）/F5（批量重建）扩展位已落地：snapshot() 只读导出 + rebuild(entries) 整表替换
+ * （rebuild 同步清空修正台账——回灌文本已含后端改写，occ 基线须以回灌 content 重开）。
  */
 export interface TrustStore {
   /** 某消息的信任 payload；未落地返回 undefined。引用稳定：仅在该消息数据变更后换新引用。 */
@@ -129,6 +145,13 @@ export interface TrustStore {
    * 持久化携带（agentMessagesToHistory）在此一次性取数，避免逐消息 get。
    */
   snapshot(): ReadonlyMap<string, TrustPayload>;
+  /**
+   * F5 批量重建（历史回灌）：整表替换——清空既有 payloads 与**修正台账**后写入 entries，
+   * 一次 notify。回灌文本已含后端改写，occ 解析基线必须以回灌 content 重开（整表替换 =
+   * 新基线），故台账随 payloads 同步清。空 entries 即全清（切会话语义：新会话无历史
+   * 锚定，store 不残留上一会话数据）。rebuild 后 get/引用稳定契约不变（传入引用原样落地）。
+   */
+  rebuild(entries: Iterable<[string, TrustPayload]>): void;
   /** 订阅任何变更（useSyncExternalStore 入口）；返回退订函数。 */
   subscribe(listener: () => void): () => void;
 }
@@ -175,6 +198,14 @@ export function createTrustStore(): TrustStore {
       return ledger;
     },
     snapshot: () => new Map(payloads),
+    rebuild(entries) {
+      // 整表替换（先清 payloads 与台账再写入）：F1 契约——rebuild 语义 = 新基线，
+      // 台账须同步清（occ 恒对原文解析，回灌 content 已含后端改写，旧基线作废）
+      payloads.clear();
+      ledgers.clear();
+      for (const [messageId, payload] of entries) payloads.set(messageId, payload);
+      listeners.forEach((l) => l());
+    },
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
