@@ -354,6 +354,54 @@ export function replaceSnippetInMessages(
   return next;
 }
 
+// ———— advice 标记行剥离（MS-29 后续①：后端 AdviceDetector.MARKER 同语义） ————
+
+/** 自声明 advice 标记（与后端 AdviceDetector.MARKER 同值：提示词约束模型文末单独一行输出）。 */
+export const ADVICE_MARKER = "<!--advice-->";
+
+/**
+ * 标记行剥离（后端 AdviceDetector.detect 同语义）：只匹配**独立成行**的
+ * `<!--advice-->`（trim 后整行相等）——行内出现（前后有正文文字）不动；有剥离时保留行
+ * join 后去尾随空白（后端 stripTrailing 同构，标记常在文末故同时清掉标记前的空行）；
+ * 无标记返回原串（幂等直通）。markdown 渲染本就不可见，剥的是裸文本/复制源残留。
+ */
+export function stripAdviceMarker(text: string): string {
+  let stripped = false;
+  const kept: string[] = [];
+  for (const line of text.split("\n")) {
+    if (line.trim() === ADVICE_MARKER) {
+      stripped = true;
+      continue;
+    }
+    kept.push(line);
+  }
+  return stripped ? kept.join("\n").trimEnd() : text;
+}
+
+/**
+ * anchors 事件到达时对目标消息 content 做标记行剥离（后端 stateStore 副本已在 processor
+ * 步骤 0 剥离，本变换补齐前端 live 文本与防抖 PUT 持久化的同语义）。与 correction 替换
+ * 同一返回形态（AgentStateMutation 通道）；correction 先到先替换，剥离在替换后的现值
+ * content 上做。独立轻量变换：不改数字、不触发台账定位重建（标记在文末，数字位次不受
+ * 影响；correction 按契约先于 anchors，无「剥离后再替换」路径）。幂等：无标记 / 消息
+ * 不存在 / 非字符串 content → null（不产 mutation）。
+ */
+function stripAdviceMarkerFromMessages(
+  messages: readonly Message[],
+  messageId: string,
+): Message[] | null {
+  const idx = messages.findIndex((m) => m.id === messageId);
+  if (idx === -1) return null;
+  const target = messages[idx];
+  if (typeof target.content !== "string") return null;
+  const cleaned = stripAdviceMarker(target.content);
+  if (cleaned === target.content) return null;
+  const next = [...messages];
+  // as Message：content 已守卫为 string（与 replaceSnippetInMessages 同款收窄处理）
+  next[idx] = { ...target, content: cleaned } as Message;
+  return next;
+}
+
 // ———— 事件分派 ————
 
 /** 入参宽松形态：线上 CustomEvent 的 name/value（裸对象即可，不依赖 @ag-ui/core 构造器）。 */
@@ -364,7 +412,9 @@ export interface TrustCustomEventLike {
 
 /**
  * Custom 事件分派（ThreadArea onCustomEvent 唯一转接口）：
- * - `trust.anchors` → store.applyAnchors，返回 void（不产 messages 变更）
+ * - `trust.anchors` → store.applyAnchors + 标记行剥离（MS-29 后续①：live 文本与后端
+ *   stateStore 剥离语义对齐）；剥离产生新 content 时返回 `{messages}`（与 correction
+ *   替换同一 sanctioned 通道），无标记直通返回 void
  * - `trust.correction` → store.applyCorrection + 原位替换；替换命中才返回
  *   `{messages}`（AgentStateMutation 的 sanctioned 路径，defaultApplyEvents 会克隆合并、
  *   processApplyEvents 写回 agent.messages）。Custom 事件在管线内无默认应用，
@@ -383,7 +433,8 @@ export function handleTrustCustomEvent(
     const parsed = AnchorsEventValueSchema.safeParse(event.value);
     if (!parsed.success) return;
     store.applyAnchors(parsed.data.messageId, parsed.data.payload);
-    return;
+    const stripped = stripAdviceMarkerFromMessages(messages, parsed.data.messageId);
+    return stripped ? { messages: stripped } : undefined;
   }
   if (event.name === TRUST_CORRECTION_EVENT) {
     const parsed = CorrectionEventValueSchema.safeParse(event.value);

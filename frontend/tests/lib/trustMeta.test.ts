@@ -463,3 +463,91 @@ describe("handleTrustCustomEvent（事件分派）", () => {
     expect(store.get("m1")).toBeUndefined();
   });
 });
+
+// ———— MS-29 后续①：anchors 到达时剥离自声明 advice 标记行（后端 AdviceDetector 同语义） ————
+
+describe("advice 标记剥离（trust.anchors 分支接线）", () => {
+  it("无标记直通：不产 mutation，content 原样（幂等零变换）", () => {
+    const store = createTrustStore();
+    const messages = [assistantMsg("a1", "茅台现价1520.33元。")];
+    const result = handleTrustCustomEvent(
+      { name: TRUST_ANCHORS_EVENT, value: anchorsValue("a1") },
+      messages,
+      store,
+    );
+    expect(result).toBeUndefined();
+    expect(messages[0].content).toBe("茅台现价1520.33元。");
+    expect(store.get("a1")?.stats.verified).toBe(1);
+  });
+
+  it("文末标记行被剥离：返回 AgentStateMutation，content 为干净文本", () => {
+    const store = createTrustStore();
+    const result = handleTrustCustomEvent(
+      { name: TRUST_ANCHORS_EVENT, value: anchorsValue("a1") },
+      [assistantMsg("a1", "茅台现价1520.33元。\n<!--advice-->")],
+      store,
+    );
+    expect(result).toEqual({
+      messages: [expect.objectContaining({ id: "a1", content: "茅台现价1520.33元。" })],
+    });
+  });
+
+  it("标记行前后空行清理与后端 stripTrailing 同构：「正文\\n\\n标记」→「正文」", () => {
+    const store = createTrustStore();
+    const result = handleTrustCustomEvent(
+      { name: TRUST_ANCHORS_EVENT, value: anchorsValue("a1") },
+      [assistantMsg("a1", "正文\n\n<!--advice-->")],
+      store,
+    );
+    expect(result?.messages?.[0].content).toBe("正文");
+  });
+
+  it("行内非独立同形字符串不动：前后有正文文字的行不剥离、零 mutation", () => {
+    const store = createTrustStore();
+    const inline = [assistantMsg("a1", "说明见 <!--advice--> 标记。\n前置文字<!--advice-->")];
+    const result = handleTrustCustomEvent(
+      { name: TRUST_ANCHORS_EVENT, value: anchorsValue("a1") },
+      inline,
+      store,
+    );
+    expect(result).toBeUndefined();
+    expect(inline[0].content).toBe("说明见 <!--advice--> 标记。\n前置文字<!--advice-->");
+  });
+
+  it("与 correction 组合：替换先落位，anchors 剥离在替换后的现值 content 上做", () => {
+    const store = createTrustStore();
+    let messages: readonly Message[] = [assistantMsg("a1", "茅台现价15.20元。\n<!--advice-->")];
+    messages = handleTrustCustomEvent(
+      { name: TRUST_CORRECTION_EVENT, value: correctionValue("a1", "15.20元", 1, "1520.33元") },
+      messages,
+      store,
+    )!.messages!;
+    expect(messages[0].content).toBe("茅台现价1520.33元。\n<!--advice-->");
+    const result = handleTrustCustomEvent(
+      { name: TRUST_ANCHORS_EVENT, value: anchorsValue("a1") },
+      messages,
+      store,
+    );
+    expect(result?.messages?.[0].content).toBe("茅台现价1520.33元。");
+  });
+
+  it("消息不存在 / 非字符串 content：store 照常落地，不产 mutation", () => {
+    const store = createTrustStore();
+    expect(
+      handleTrustCustomEvent(
+        { name: TRUST_ANCHORS_EVENT, value: anchorsValue("ghost") },
+        [assistantMsg("a1", "带标记\n<!--advice-->")],
+        store,
+      ),
+    ).toBeUndefined();
+    expect(store.get("ghost")?.stats.verified).toBe(1);
+    const complex = [{ type: "text", text: "hi" }] as unknown as string;
+    expect(
+      handleTrustCustomEvent(
+        { name: TRUST_ANCHORS_EVENT, value: anchorsValue("a3") },
+        [assistantMsg("a3", complex)],
+        store,
+      ),
+    ).toBeUndefined();
+  });
+});
