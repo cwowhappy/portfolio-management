@@ -1,0 +1,9 @@
+{
+  "id": "micro-price-absolute",
+  "category": "tolerance_boundary",
+  "text": "手续费0.06元",
+  "pool": [{"value": "0.05", "kind": "price"}],
+  "expectedAnchors": [{"snippet": "0.06元", "occ": 1, "state": "verified"}],
+  "expectedCorrections": [],
+  "expectedNotes": []
+}

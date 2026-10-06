@@ -38,7 +38,8 @@ class InvestToolsResearchDraftTest {
                 mock(FinancialQueryService.class),
                 mock(IndustryApplicationService.class),
                 mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
-                mapper);
+                mapper,
+                new com.portfolio.invest.config.InvestProperties());
     }
 
     /** 从返回文本中切出围栏内的 spec JSON（剥掉摘要与围栏标记）。 */
@@ -214,5 +215,50 @@ class InvestToolsResearchDraftTest {
     void givenNumericValueForStringField_whenResearchDraft_thenReturnsErrorText() {
         assertThat(tools.researchDraft("REVIEW", "{\"tier\":1,\"narrative\":\"x\"}"))
                 .startsWith("[research_draft] 参数错误").contains("tier");
+    }
+
+    // ── draftJson 字节上限（MS-29 B9-②，invest.trust.draft-json-max-bytes）──
+
+    /** 以指定 draftJson 字节上限构造工具（B9-② 用例专用）。 */
+    private InvestTools toolsWithDraftLimit(int maxBytes) {
+        com.portfolio.invest.config.InvestProperties props = new com.portfolio.invest.config.InvestProperties();
+        props.getTrust().setDraftJsonMaxBytes(maxBytes);
+        return new InvestTools(
+                mock(MarketDataService.class),
+                mock(ValuationApplicationService.class),
+                mock(ScreeningApplicationService.class),
+                mock(FinancialQueryService.class),
+                mock(IndustryApplicationService.class),
+                mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
+                mapper, props);
+    }
+
+    @DisplayName("draftJson 超过字节上限：返回 {\"error\",\"hint\"} 友好错误信封，不带围栏（B9-②）")
+    @Test
+    void givenOversizedDraftJson_whenResearchDraft_thenReturnsFriendlyErrorEnvelope() throws Exception {
+        InvestTools limited = toolsWithDraftLimit(100);
+        String oversized = "{\"thesis\":\"" + "a".repeat(88) + "\"}"; // 101 UTF-8 字节 > 100
+
+        String out = limited.researchDraft("STRATEGY", oversized);
+
+        // 整体能解析为 JSON 对象 = 走错误信封而非围栏回显（回显含中文摘要与围栏标记）
+        JsonNode envelope = mapper.readTree(out);
+        assertThat(envelope.get("error").asText()).contains("上限").contains("100");
+        assertThat(envelope.get("hint").asText()).isNotBlank();
+        assertThat(out).doesNotContain("```");
+    }
+
+    @DisplayName("draftJson 恰达字节上限：边界含，正常回显（B9-②）")
+    @Test
+    void givenDraftJsonExactlyAtLimit_whenResearchDraft_thenEchoesNormally() throws Exception {
+        InvestTools limited = toolsWithDraftLimit(100);
+        String atLimit = "{\"thesis\":\"" + "a".repeat(87) + "\"}"; // 恰 100 UTF-8 字节
+        org.junit.jupiter.api.Assertions.assertEquals(100,
+                atLimit.getBytes(java.nio.charset.StandardCharsets.UTF_8).length, "前置自证：恰 100 字节");
+
+        String out = limited.researchDraft("STRATEGY", atLimit);
+
+        assertThat(out).contains(FENCE_START).endsWith("```");
+        assertThat(fencedSpec(out).get("thesis").asText()).isEqualTo("a".repeat(87));
     }
 }

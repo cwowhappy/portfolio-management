@@ -73,9 +73,10 @@ class ScreeningApplicationServiceTest {
         when(repo.findStocks(c)).thenReturn(List.of(
                 new StockScreeningResult("601398", "工商银行", "801780", "银行",
                         new BigDecimal("5.6"), new BigDecimal("0.62"), new BigDecimal("5.4"),
-                        new BigDecimal("11.8"), null, null, null, null, null, null, null, null)));
+                        new BigDecimal("11.8"), null, null, null, null, null, null, null, null, "2026-09-30")));
         var results = service.screen(c);
         assertThat(results).hasSize(1);
+        assertThat(results.get(0).tradeDate()).as("B4：底层快照日期随结果透出").isEqualTo("2026-09-30");
         verify(repo).findStocks(c);
     }
 
@@ -86,7 +87,7 @@ class ScreeningApplicationServiceTest {
         var results = List.of(
                 new StockScreeningResult("601398", "工商银行", "801780", "银行",
                         new BigDecimal("5.6"), new BigDecimal("0.62"), new BigDecimal("5.4"),
-                        new BigDecimal("11.8"), null, null, null, null, null, null, null, null));
+                        new BigDecimal("11.8"), null, null, null, null, null, null, null, null, null));
         when(repo.findStocks(c)).thenReturn(results);
         when(cache.get(anyString())).thenReturn(null).thenReturn(results);
 

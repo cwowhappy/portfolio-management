@@ -23,6 +23,7 @@ import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolEmitter;
 import io.agentscope.core.tool.ToolParam;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -56,6 +57,8 @@ public class InvestTools {
     private final com.portfolio.invest.application.industry.IndustryApplicationService industry;
     private final IntelligenceQueryService intelligenceQuery;
     private final ObjectMapper mapper;
+    /** invest.trust 配置组（research_draft draftJson 字节上限等，B9-②）。 */
+    private final com.portfolio.invest.config.InvestProperties properties;
 
     public InvestTools(
             MarketDataService market,
@@ -64,7 +67,8 @@ public class InvestTools {
             com.portfolio.invest.application.market.FinancialQueryService financialQuery,
             com.portfolio.invest.application.industry.IndustryApplicationService industry,
             IntelligenceQueryService intelligenceQuery,
-            ObjectMapper mapper) {
+            ObjectMapper mapper,
+            com.portfolio.invest.config.InvestProperties properties) {
         this.market = market;
         this.valuationApplicationService = valuationApplicationService;
         this.screening = screening;
@@ -73,6 +77,7 @@ public class InvestTools {
         this.intelligenceQuery = intelligenceQuery;
         // 注入 Spring Boot 已配置的 ObjectMapper（统一序列化行为；日期已在 ChartSpecs 预转为 ISO 字符串）。
         this.mapper = mapper;
+        this.properties = properties;
     }
 
     @Tool(
@@ -451,6 +456,16 @@ public class InvestTools {
     public String researchDraft(
             @ToolParam(name = "stage", description = "草稿阶段：NEW_ANALYSIS / STRATEGY / POSITION / REVIEW") String stage,
             @ToolParam(name = "draftJson", description = "该阶段草稿字段的 JSON 对象，字段名与阶段对应，如 {\"thesis\":\"核心逻辑\",\"valuationLow\":12.5}") String draftJson) {
+        // 入参字节上限（B9-②，invest.trust.draft-json-max-bytes，UTF-8 字节口径）：超大草稿
+        // 会打满会话上下文——超限直接走 {"error","hint"} 信封（不进 buildDraftSpec 的参数错误文本路径）
+        int draftJsonBytes = draftJson == null ? 0 : draftJson.getBytes(StandardCharsets.UTF_8).length;
+        int maxBytes = properties.getTrust().getDraftJsonMaxBytes();
+        if (draftJsonBytes > maxBytes) {
+            log.warn("research_draft draftJson 超限: {} 字节 > 上限 {}", draftJsonBytes, maxBytes);
+            return ToolResultBlocks.toError(mapper,
+                    "draftJson 超过大小上限（上限 " + maxBytes + " 字节，实际 " + draftJsonBytes + " 字节）",
+                    "请精简草稿内容（如截断长文本、只保留关键字段）后重试");
+        }
         try {
             ResearchDraftSpec spec = buildDraftSpec(stage, draftJson);
             return draftSummary(spec) + "\n```research-draft\n" + mapper.writeValueAsString(spec) + "\n```";

@@ -5,6 +5,7 @@ import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.LongSupplier;
+import java.util.function.Supplier;
 
 /**
  * 极简本地 TTL 缓存：读时惰性过期 + 有界 LRU 淘汰。
@@ -58,6 +59,26 @@ public class TtlCache implements ApplicationCache {
     @Override
     public synchronized void put(String key, Object value, Duration ttl) {
         map.put(key, new CacheEntry(value, nowMillis.getAsLong() + ttl.toMillis()));
+    }
+
+    /**
+     * 缺失/过期时原子加载（computeIfAbsent 形态，MS-29 B9-④）：整段持锁，同 key 并发惊群
+     * 仅一次 loader 执行；TTL 语义不变（未过期命中直接返回，过期视为缺失重载并按新 TTL 回写）。
+     * loader 返回 null 不缓存（下次仍会重载）；loader 抛异常原样传播且不写入条目。
+     * 注意：loader 在缓存锁内执行——调用方（如行情源加载）的耗时会让其他键的读写排队，
+     * 这正是惊群收敛的代价与目的（上游行情源本身限流，重复加载比串行更贵）。
+     */
+    @SuppressWarnings("unchecked")
+    public synchronized <T> T getOrLoad(String key, Duration ttl, Supplier<T> loader) {
+        CacheEntry e = map.get(key);
+        if (e != null && nowMillis.getAsLong() <= e.expiresAt()) {
+            return (T) e.value();
+        }
+        T value = loader.get();
+        if (value != null) {
+            map.put(key, new CacheEntry(value, nowMillis.getAsLong() + ttl.toMillis()));
+        }
+        return value;
     }
 
     /** 当前条目数（测试/诊断用）。 */

@@ -1,0 +1,10 @@
+{
+  "id": "b1-interval-with-truth",
+  "category": "b1_interval",
+  "text": "支撑位1500-2000元",
+  "pool": [{"value": "1500", "kind": "price"}, {"value": "2000", "kind": "price"}],
+  "expectedAnchors": [{"snippet": "15002000元", "occ": 1, "state": "unverified", "wrong": true}],
+  "expectedCorrections": [{"snippet": "-2000元", "occ": 1}],
+  "expectedNotes": ["原文误述 -2000元"],
+  "expectedText": "支撑位15002000元\n> ⚠ 校验修正：原文误述 -2000元"
+}

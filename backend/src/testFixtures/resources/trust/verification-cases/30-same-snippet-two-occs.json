@@ -1,0 +1,12 @@
+{
+  "id": "same-snippet-two-occs",
+  "category": "occ_multiplicity",
+  "text": "现价15.2元，压力位也在15.2元",
+  "pool": [{"value": "15.23", "kind": "price"}],
+  "expectedAnchors": [
+    {"snippet": "15.2元", "occ": 1, "state": "verified"},
+    {"snippet": "15.2元", "occ": 2, "state": "verified"}
+  ],
+  "expectedCorrections": [],
+  "expectedNotes": []
+}

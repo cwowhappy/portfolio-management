@@ -5,7 +5,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.portfolio.invest.domain.intelligence.FeishuBindingRepository;
 import com.portfolio.invest.support.PostgresTestSupport;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.util.TimeZone;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -99,6 +101,43 @@ class FeishuBindingRepositoryTest extends PostgresTestSupport {
         Long userId = insertUser("bind_it_at_none");
 
         assertThat(repository.findBoundAtByUserId(userId)).isEmpty();
+    }
+
+    // ── DST 边界守护（MS-29 B9-⑥：timestamptz 显式时区读取，instant 读写往返无损）──
+
+    /**
+     * 非 UTC 默认 JVM 时区下的往返守护：写入与读取都在 {@code zone} 生效期间执行。
+     * bound_at 为 TIMESTAMPTZ（V3），正确实现读出同一绝对 instant；若退化为按默认时区
+     * 解释墙钟（naive timestamp 语义），DST 边界时刻会偏移一小时——本用例即红。
+     */
+    private void assertBoundAtRoundTripUnderZone(ZoneId zone, Instant written) {
+        Long userId = insertUser("bind_it_dst_" + zone.getId().replace('/', '_'));
+        TimeZone original = TimeZone.getDefault();
+        try {
+            TimeZone.setDefault(TimeZone.getTimeZone(zone.getId()));
+            repository.upsert(userId, "ou-dst", written); // 真实写入路径（atOffset(UTC)）
+            assertThat(repository.findBoundAtByUserId(userId))
+                    .as("默认时区 %s 下 DST 边界 instant 读写往返无损", zone)
+                    .contains(written);
+        } finally {
+            TimeZone.setDefault(original);
+        }
+    }
+
+    @Test
+    @DisplayName("美国春令时跳变时刻（墙钟 02:30 不存在）：非 UTC 默认时区下读出 instant 无损（B9-⑥）")
+    void givenSpringForwardGapInstant_whenFindBoundAtByUserId_thenInstantPreserved() {
+        // 2026-03-08 07:30Z = America/New_York 02:30 EST（跳变空档墙钟，naive 解释最易偏移）
+        assertBoundAtRoundTripUnderZone(
+                ZoneId.of("America/New_York"), Instant.parse("2026-03-08T07:30:00Z"));
+    }
+
+    @Test
+    @DisplayName("美国秋令时回拨时刻（墙钟 01:30 歧义）：非 UTC 默认时区下读出 instant 无损（B9-⑥）")
+    void givenFallBackAmbiguousInstant_whenFindBoundAtByUserId_thenInstantPreserved() {
+        // 2026-11-01 05:30Z = America/New_York 01:30 EDT（与 01:30 EST 歧义墙钟）
+        assertBoundAtRoundTripUnderZone(
+                ZoneId.of("America/New_York"), Instant.parse("2026-11-01T05:30:00Z"));
     }
 
     // ── fixture 助手 ───────────────────────────────────────────────

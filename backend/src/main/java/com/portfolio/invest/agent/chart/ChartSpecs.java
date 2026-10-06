@@ -120,11 +120,12 @@ public final class ChartSpecs {
 
   public static ChartSpec overviewBar(MarketOverview overview) {
     List<IndexQuote> idx = overview.indices();
+    // time 进 spec 顶层（MS-29 B4 ruling）：装饰器据此归 GENERATED（§6.1 生成时刻语义）
     return new ChartSpec.Bar(SPEC_VERSION, "bar", "主要指数涨跌幅", null,
             idx.stream().map(IndexQuote::name).toList(),
             List.of(new ChartSpec.Series("涨跌幅",
                     idx.stream().map(i -> (Double) i.changePct()).toList(), null)),
-            null, "%");
+            null, "%", overview.time());
   }
 
   public static String overviewSummary(MarketOverview overview) {
@@ -298,7 +299,8 @@ public final class ChartSpecs {
 
     // ===== MS-12（F08/F11/F12）=====
 
-    /** F08 筛选结果表：8 列，市值/亿 = 元/1e8 一位小数（与前端 fmtMv 口径一致）。 */
+    /** F08 筛选结果表：8 列，市值/亿 = 元/1e8 一位小数（与前端 fmtMv 口径一致）。
+     *  行数据另带 tradeDate 键（无对应列，前端按列渲染不显示）——B3 装饰器 Table 首行扫描的 DATA 时点命中位。 */
     public static ChartSpec screeningTable(List<StockScreeningResult> results) {
         List<ChartSpec.Column> columns = List.of(
                 new ChartSpec.Column("stockCode", "代码", null, null),
@@ -321,6 +323,7 @@ public final class ChartSpecs {
             row.put("dividendYield", r.dividendYield());
             row.put("totalMvYi", r.totalMv() == null ? null
                     : Math.round(r.totalMv().doubleValue() / 1e8 * 10) / 10.0);
+            row.put("tradeDate", r.tradeDate());
             rows.add(row);
         }
         return new ChartSpec.Table(SPEC_VERSION, "table", "筛选结果（%d 只）".formatted(results.size()),
@@ -335,8 +338,12 @@ public final class ChartSpecs {
             sb.append(i == 0 ? "" : "；").append("%s(%s PE %s ROE %s%%)"
                     .formatted(r.stockName(), r.stockCode(), r.peTtm(), r.roe()));
         }
-        if (results.size() > 5) sb.append("；其余见附表。");
-        return sb.toString();
+        if (results.size() > 5) sb.append("；其余见附表");
+        // B4 时点透出：摘要携带底层快照日期供 LLM 引用（纯文本追加不动数字；日期缺失安全省略）
+        if (results.get(0).tradeDate() != null) {
+            sb.append("；快照日期 ").append(results.get(0).tradeDate());
+        }
+        return sb.append("。").toString();
     }
 
     /** F11 12 季趋势表（报告期降序）。 */
@@ -382,7 +389,7 @@ public final class ChartSpecs {
         return sb.toString();
     }
 
-    /** F12 全行业估值板面表。 */
+    /** F12 全行业估值板面表。行数据另带 tradingDay 键（无对应列）——B3 装饰器首行扫描 DATA 时点命中位。 */
     public static ChartSpec industryBoardTable(List<IndustryBoardView> board) {
         List<ChartSpec.Column> columns = List.of(
                 new ChartSpec.Column("industryName", "行业", null, null),
@@ -402,6 +409,7 @@ public final class ChartSpecs {
             row.put("dividendYield", b.dividendYield());
             row.put("pePercentile", b.pePercentile());
             row.put("pbPercentile", b.pbPercentile());
+            row.put("tradingDay", b.tradingDay() == null ? null : b.tradingDay().toString());
             rows.add(row);
         }
         return new ChartSpec.Table(SPEC_VERSION, "table", "行业估值板面（%d 个一级行业）"
@@ -419,8 +427,12 @@ public final class ChartSpecs {
                 .formatted(lowest.industryName(), lowest.pePercentile()));
         if (highest != null) sb.append("；最高：%s（PE分位 %s%%）"
                 .formatted(highest.industryName(), highest.pePercentile()));
-        sb.append("。明细见附表；指定行业可传行业码下钻头部企业。");
-        return sb.toString();
+        sb.append("。明细见附表；指定行业可传行业码下钻头部企业");
+        // B4 时点透出：摘要携带底层快照交易日供 LLM 引用（日期缺失安全省略）
+        if (board.get(0).tradingDay() != null) {
+            sb.append("；截至 ").append(board.get(0).tradingDay());
+        }
+        return sb.append("。").toString();
     }
 
     /** F12 行业头部企业表。 */

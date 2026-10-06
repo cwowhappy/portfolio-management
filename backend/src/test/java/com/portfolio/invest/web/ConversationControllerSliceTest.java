@@ -1,24 +1,31 @@
 package com.portfolio.invest.web;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.portfolio.invest.application.conversation.ChatMessageWire;
 import com.portfolio.invest.application.conversation.ConversationApplicationService;
+import com.portfolio.invest.application.conversation.ConversationMessagesView;
 import com.portfolio.invest.application.conversation.ConversationSaveResult;
 import com.portfolio.invest.domain.user.User;
 import com.portfolio.invest.domain.user.UserRole;
 import com.portfolio.invest.domain.user.UserStatus;
 import com.portfolio.invest.infrastructure.security.AuthenticatedUser;
 import java.time.Instant;
+import java.util.List;
 import org.junit.jupiter.api.DisplayName;
+import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -110,5 +117,51 @@ class ConversationControllerSliceTest {
                         .content(message(null, "user")))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+    }
+
+    @DisplayName("B8：PUT 消息含 payload 字段时绑定到 wire.payload，缺省时为 null")
+    @Test
+    void givenPayloadFieldInPutBody_whenSaveMessages_thenBindsToWire() throws Exception {
+        when(service.saveMessages(any(), any(), any(), any()))
+                .thenReturn(new ConversationSaveResult(Instant.parse("2026-08-21T00:00:00Z")));
+
+        mvc.perform(put("/api/conversations/t-1/messages").with(authentication(auth())).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("[{\"id\":\"m-1\",\"role\":\"assistant\",\"content\":\"hi\","
+                                + "\"payload\":\"{\\\"v\\\":1}\",\"createdAt\":1}]"))
+                .andExpect(status().isOk());
+        ArgumentCaptor<List<ChatMessageWire>> withPayload = ArgumentCaptor.captor();
+        verify(service).saveMessages(eq(1L), eq("t-1"), withPayload.capture(), isNull());
+        assertThat(withPayload.getValue().get(0).payload()).isEqualTo("{\"v\":1}");
+
+        mvc.perform(put("/api/conversations/t-1/messages").with(authentication(auth())).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(message("m-1", "assistant")))
+                .andExpect(status().isOk());
+        ArgumentCaptor<List<ChatMessageWire>> withoutPayload = ArgumentCaptor.captor();
+        verify(service, times(2)).saveMessages(eq(1L), eq("t-1"), withoutPayload.capture(), isNull());
+        assertThat(withoutPayload.getValue().get(0).payload()).isNull();
+    }
+
+    @DisplayName("B8：GET 消息视图序列化 payload 字段（携带原样、缺省为 null）")
+    @Test
+    void givenMessagesViewWithPayload_whenGetMessages_thenPayloadSerialized() throws Exception {
+        var withPayload = new ConversationMessagesView(
+                Instant.parse("2026-08-21T00:00:00Z"),
+                List.of(new ChatMessageWire("m-1", "assistant", "hi", "{\"v\":1}", 1L)));
+        when(service.messages(any(), eq("t-1"))).thenReturn(withPayload);
+
+        mvc.perform(get("/api/conversations/t-1/messages").with(authentication(auth())).with(csrf()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.messages[0].payload").value("{\"v\":1}"));
+
+        var withoutPayload = new ConversationMessagesView(
+                Instant.parse("2026-08-21T00:00:00Z"),
+                List.of(new ChatMessageWire("m-2", "user", "hi", 1L)));
+        when(service.messages(any(), eq("t-1"))).thenReturn(withoutPayload);
+
+        mvc.perform(get("/api/conversations/t-1/messages").with(authentication(auth())).with(csrf()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.messages[0].payload").value(org.hamcrest.Matchers.nullValue()));
     }
 }

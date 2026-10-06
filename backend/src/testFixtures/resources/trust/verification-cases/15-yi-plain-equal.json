@@ -1,0 +1,9 @@
+{
+  "id": "yi-plain-equal",
+  "category": "chinese_normalization",
+  "text": "全年营收100亿",
+  "pool": [{"value": "10000000000", "kind": "plain"}],
+  "expectedAnchors": [{"snippet": "100亿", "occ": 1, "state": "verified"}],
+  "expectedCorrections": [],
+  "expectedNotes": []
+}

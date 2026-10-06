@@ -1,0 +1,9 @@
+{
+  "id": "rounding-percent-abs",
+  "category": "tolerance_pass",
+  "text": "今日涨幅0.8%",
+  "pool": [{"value": "0.83", "kind": "percent"}],
+  "expectedAnchors": [{"snippet": "0.8%", "occ": 1, "state": "verified"}],
+  "expectedCorrections": [],
+  "expectedNotes": []
+}

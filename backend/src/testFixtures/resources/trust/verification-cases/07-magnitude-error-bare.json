@@ -1,0 +1,10 @@
+{
+  "id": "magnitude-error-bare",
+  "category": "magnitude_error",
+  "text": "对应市盈率15.20",
+  "pool": [{"value": "1520.33", "kind": "plain"}],
+  "expectedAnchors": [{"snippet": "1520.33", "occ": 1, "state": "verified", "wrong": true, "expectedRaw": "1520.33"}],
+  "expectedCorrections": [{"snippet": "15.20", "occ": 1}],
+  "expectedNotes": ["原文误述 15.20"],
+  "expectedText": "对应市盈率1520.33\n> ⚠ 校验修正：原文误述 15.20"
+}

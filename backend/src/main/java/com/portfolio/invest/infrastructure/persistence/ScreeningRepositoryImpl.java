@@ -34,7 +34,8 @@ public class ScreeningRepositoryImpl implements ScreeningRepository {
             SELECT d.stock_code, d.stock_name, m.industry_code, m.industry_name,
                    d.pe_ttm, d.pb, d.dividend_yield,
                    f.roe, f.roa, f.gross_margin, f.debt_to_assets, f.current_ratio,
-                   f.revenue_yoy, f.netprofit_yoy, d.total_mv, d.turnover_rate
+                   f.revenue_yoy, f.netprofit_yoy, d.total_mv, d.turnover_rate,
+                   d.trading_day
             FROM stock_valuation_daily d
             LEFT JOIN (
                 SELECT DISTINCT ON (stock_code) stock_code, roe, roa, gross_margin,
@@ -158,7 +159,14 @@ public class ScreeningRepositoryImpl implements ScreeningRepository {
                     rs.getBigDecimal("roe"), rs.getBigDecimal("roa"), rs.getBigDecimal("gross_margin"),
                     rs.getBigDecimal("debt_to_assets"), rs.getBigDecimal("current_ratio"),
                     rs.getBigDecimal("revenue_yoy"), rs.getBigDecimal("netprofit_yoy"),
-                    rs.getBigDecimal("total_mv"), rs.getBigDecimal("turnover_rate"));
+                    rs.getBigDecimal("total_mv"), rs.getBigDecimal("turnover_rate"),
+                    isoDate(rs, "trading_day"));
+
+    /** DATE 列 → ISO yyyy-MM-dd 字符串（null 透传；LocalDate.toString 恒 ISO）。 */
+    private static String isoDate(java.sql.ResultSet rs, String column) throws java.sql.SQLException {
+        java.sql.Date date = rs.getDate(column);
+        return date == null ? null : date.toLocalDate().toString();
+    }
 
     /** ETF 目录行映射（findFunds 专用）。 */
     private static final org.springframework.jdbc.core.RowMapper<FundScreeningResult> FUND_ROW_MAPPER = (rs, i) ->

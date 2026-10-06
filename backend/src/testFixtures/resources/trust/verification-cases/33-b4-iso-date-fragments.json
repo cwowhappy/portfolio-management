@@ -1,0 +1,15 @@
+{
+  "id": "b4-iso-date-fragments-nondata",
+  "category": "b4_iso_fragment",
+  "text": "共筛出 12 只标的，快照日期 2026-08-27；其中贵州茅台 PE 25.0。",
+  "pool": [
+    {"value": "25.0", "kind": "plain"},
+    {"value": "12", "kind": "plain"}
+  ],
+  "expectedAnchors": [
+    {"snippet": "12", "occ": 1, "state": "verified"},
+    {"snippet": "25.0", "occ": 1, "state": "verified"}
+  ],
+  "expectedCorrections": [],
+  "expectedNotes": []
+}

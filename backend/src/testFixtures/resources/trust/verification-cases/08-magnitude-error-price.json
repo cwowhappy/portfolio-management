@@ -1,0 +1,10 @@
+{
+  "id": "magnitude-error-price",
+  "category": "magnitude_error",
+  "text": "现价152元",
+  "pool": [{"value": "1520.33", "kind": "price"}],
+  "expectedAnchors": [{"snippet": "1520.33元", "occ": 1, "state": "verified", "wrong": true, "expectedRaw": "1520.33元"}],
+  "expectedCorrections": [{"snippet": "152元", "occ": 1}],
+  "expectedNotes": ["原文误述 152元"],
+  "expectedText": "现价1520.33元\n> ⚠ 校验修正：原文误述 152元"
+}

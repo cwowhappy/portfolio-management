@@ -59,7 +59,8 @@ class InvestToolsTest {
         mapper.registerModule(new JavaTimeModule());
         mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
         tools = new InvestTools(market, valuationService, screening, financialQuery, industry,
-                mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class), mapper);
+                mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class), mapper,
+                new com.portfolio.invest.config.InvestProperties());
     }
 
     private static Quote quote(String code, Double pe, Double pb) {
@@ -242,7 +243,8 @@ class InvestToolsTest {
         String emittedText = ((TextBlock) emitted[0].getOutput().get(0)).getText();
         assertThat(emittedText)
                 .contains("\"type\":\"bar\"").contains("\"unit\":\"%\"")
-                .doesNotContain("3000.1");
+                .doesNotContain("3000.1")
+                .contains("\"time\":\"2026-09-11 15:00\""); // MS-29 B4 ruling：生成时刻进 spec 顶层
         // ② 返回摘要：指数名与点位进 LLM/stateStore
         assertThat(result.getState().toString()).isEqualTo("RUNNING");
         assertThat(result.getOutput().get(0).toString())
@@ -352,7 +354,7 @@ class InvestToolsTest {
                 "600519", "贵州茅台", "801140", "白酒",
                 new BigDecimal("25.0"), new BigDecimal("8.0"), null,
                 new BigDecimal("32.0"), null, null, null, null, null, null,
-                new BigDecimal("2.1E12"), null);
+                new BigDecimal("2.1E12"), null, "2026-09-30");
         when(screening.screen(any())).thenReturn(List.of(result));
         ToolResultBlock[] emitted = new ToolResultBlock[1];
 
@@ -363,8 +365,10 @@ class InvestToolsTest {
         assertThat(emitted[0]).as("emit 全量 spec").isNotNull();
         String emitText = emitted[0].getOutput().get(0).toString();
         assertThat(emitText).contains("\"type\":\"table\"").contains("筛选结果（1 只）");
+        // B4 时点透出：表行带 tradeDate（B3 装饰器首行扫描命中位）、摘要带快照日期子句（LLM 可引用）
+        assertThat(emitText).contains("\"tradeDate\":\"2026-09-30\"");
         assertThat(out).isNotNull();
-        assertThat(out.getOutput().get(0).toString()).contains("贵州茅台");
+        assertThat(out.getOutput().get(0).toString()).contains("贵州茅台").contains("快照日期 2026-09-30");
         verify(screening).screen(org.mockito.ArgumentMatchers.argThat(c ->
                 c.peTtmMax().compareTo(new BigDecimal("20")) == 0
                         && c.roeMin().compareTo(new BigDecimal("15")) == 0 && c.limit() == 10
@@ -400,7 +404,7 @@ class InvestToolsTest {
                 "600519", "贵州茅台", "801140", "白酒",
                 new BigDecimal("25.0"), new BigDecimal("8.0"), null,
                 new BigDecimal("32.0"), null, null, null, null, null, null,
-                new BigDecimal("2.1E12"), null);
+                new BigDecimal("2.1E12"), null, null);
         when(screening.screen(any())).thenReturn(List.of(result));
 
         // e2e 实录：LLM 对未提及指数的提问会幻觉传 indexCode="." 与 ""，domain 白名单构造器直接抛异常致整查询失败
@@ -483,23 +487,31 @@ class InvestToolsTest {
 
     private static com.portfolio.invest.application.industry.IndustryBoardView boardRow(String code, String name,
                                                                                         String pePct) {
+        return boardRow(code, name, pePct, null);
+    }
+
+    private static com.portfolio.invest.application.industry.IndustryBoardView boardRow(String code, String name,
+                                                                                        String pePct, LocalDate tradingDay) {
         return new com.portfolio.invest.application.industry.IndustryBoardView(code, name,
                 new BigDecimal("6.5"), new BigDecimal("0.6"), new BigDecimal("11.0"),
                 new BigDecimal("5.0"), pePct == null ? null : new BigDecimal(pePct),
-                new BigDecimal("8.0"), null, null);
+                new BigDecimal("8.0"), null, null, tradingDay);
     }
 
     @DisplayName("analyze_industry 无参：emit 全行业板面表")
     @Test
     void givenBoard_whenAnalyzeIndustryNoCode_thenEmitsBoard() {
-        when(industry.board()).thenReturn(List.of(boardRow("801780", "银行", "15.0")));
+        when(industry.board()).thenReturn(List.of(
+                boardRow("801780", "银行", "15.0", LocalDate.parse("2026-01-02"))));
         ToolResultBlock[] emitted = new ToolResultBlock[1];
 
         ToolResultBlock out = tools.analyzeIndustry(null, block -> emitted[0] = block);
 
         assertThat(emitted[0]).as("emit 板面表").isNotNull();
-        assertThat(emitted[0].getOutput().get(0).toString()).contains("行业估值板面");
-        assertThat(out.getOutput().get(0).toString()).contains("银行");
+        assertThat(emitted[0].getOutput().get(0).toString()).contains("行业估值板面")
+                // B4 时点透出：表行带 tradingDay（列不变）、摘要带截至子句
+                .contains("\"tradingDay\":\"2026-01-02\"");
+        assertThat(out.getOutput().get(0).toString()).contains("银行").contains("截至 2026-01-02");
     }
 
     @DisplayName("analyze_industry 带码：emit 头部企业表，摘要含估值位")

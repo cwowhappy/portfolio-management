@@ -104,11 +104,8 @@ public class CachedMarketDataService implements MarketDataService {
         return delegate.probeQuoteLatencyMs();
     }
 
+    /** 原子 get-or-load（B9-④）：get-then-put 改经 {@link TtlCache#getOrLoad}，同 key 惊群仅一次上游加载。 */
     private <T> T cached(String key, Supplier<T> loader, Duration ttl) {
-        T v = cache.get(key);
-        if (v != null) return v;
-        v = loader.get();
-        cache.put(key, v, ttl);
-        return v;
+        return cache.getOrLoad(key, ttl, loader);
     }
 }

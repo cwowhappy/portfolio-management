@@ -1,0 +1,9 @@
+{
+  "id": "exact-relative-boundary",
+  "category": "tolerance_boundary",
+  "text": "现价10.2元",
+  "pool": [{"value": "10.0", "kind": "price"}],
+  "expectedAnchors": [{"snippet": "10.2元", "occ": 1, "state": "verified"}],
+  "expectedCorrections": [],
+  "expectedNotes": []
+}

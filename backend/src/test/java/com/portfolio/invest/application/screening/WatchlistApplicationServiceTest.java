@@ -36,7 +36,7 @@ class WatchlistApplicationServiceTest {
     private static StockScreeningResult row(String code, String name, String industry) {
         return new StockScreeningResult(code, name, "801780", industry,
                 new BigDecimal("5.6"), new BigDecimal("0.62"), new BigDecimal("5.4"),
-                null, null, null, null, null, null, null, new BigDecimal("1000000000000"), null);
+                null, null, null, null, null, null, null, new BigDecimal("1000000000000"), null, null);
     }
 
     private static Quote quote(String code, double price) {

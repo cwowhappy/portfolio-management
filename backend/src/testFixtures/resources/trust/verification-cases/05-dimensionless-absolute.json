@@ -1,0 +1,9 @@
+{
+  "id": "dimensionless-absolute",
+  "category": "tolerance_boundary",
+  "text": "涨幅0.87%",
+  "pool": [{"value": "0.83", "kind": "percent"}],
+  "expectedAnchors": [{"snippet": "0.87%", "occ": 1, "state": "verified"}],
+  "expectedCorrections": [],
+  "expectedNotes": []
+}

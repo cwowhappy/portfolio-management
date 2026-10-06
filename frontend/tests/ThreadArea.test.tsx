@@ -4,6 +4,7 @@ import type { Message } from "@ag-ui/client";
 import ThreadArea from "@/components/chat/ThreadArea";
 import { RuntimeProvider, useChatRuntime } from "@/components/chat/RuntimeProvider";
 import { installConversationsApi } from "@/tests/mockConversationsApi";
+import { TRUST_ANCHORS_EVENT, TRUST_CORRECTION_EVENT, trustStore } from "@/lib/trustMeta";
 
 // ———— CopilotKit hooks mock ————
 
@@ -871,6 +872,376 @@ describe("ThreadArea", () => {
     await act(async () => {});
     expect(screen.queryByText(/This operation was aborted/)).toBeNull();
     expect(screen.queryByRole("button", { name: "关闭错误提示" })).toBeNull();
+  });
+
+  // ———— MS-29 F1：信任事件订阅接线（与 FR-8 同一 subscribe 调用，按 name 分派）————
+
+  function lastTrustSubscriber() {
+    const calls = mocks.agent.subscribe.mock.calls;
+    expect(calls.length).toBeGreaterThan(0);
+    return calls[calls.length - 1][0] as {
+      onCustomEvent: (params: {
+        event: { name?: unknown; value?: unknown };
+        messages: Message[];
+      }) => { messages: Message[] } | undefined;
+    };
+  }
+
+  it("trust.anchors 事件 → 全局 trustStore 落地（F2 渲染数据源）", async () => {
+    renderThread();
+    await waitFor(() => expect(mocks.agent.subscribe).toHaveBeenCalled());
+    lastTrustSubscriber().onCustomEvent({
+      event: {
+        name: TRUST_ANCHORS_EVENT,
+        value: {
+          messageId: "ta-trust-1",
+          payload: {
+            v: 1,
+            anchors: [{ snippet: "1741 亿", occ: 1, state: "verified" }],
+            stats: { verified: 1, sourced: 0, unverified: 0 },
+          },
+        },
+      },
+      messages: [],
+    });
+    expect(trustStore.get("ta-trust-1")?.stats.verified).toBe(1);
+  });
+
+  it("trust.correction 事件 → 返回 AgentStateMutation（occ 第 2 次出现原位替换）", async () => {
+    renderThread();
+    await waitFor(() => expect(mocks.agent.subscribe).toHaveBeenCalled());
+    const messages = [
+      { id: "ta-u1", role: "user", content: "看看" } as Message,
+      { id: "ta-trust-2", role: "assistant", content: "营收 1741 亿（另一处 1741 亿）。" } as Message,
+    ];
+    const mutation = lastTrustSubscriber().onCustomEvent({
+      event: {
+        name: TRUST_CORRECTION_EVENT,
+        value: { messageId: "ta-trust-2", snippet: "1741 亿", occ: 2, replacement: "1708 亿", note: "n1" },
+      },
+      messages,
+    });
+    expect(mutation?.messages?.[1].content).toBe("营收 1741 亿（另一处 1708 亿）。");
+    expect(trustStore.get("ta-trust-2")?.correction?.notes).toEqual(["n1"]);
+  });
+
+  it("未知 name 的 Custom 事件安全忽略（不写 store、不产 mutation）", async () => {
+    renderThread();
+    await waitFor(() => expect(mocks.agent.subscribe).toHaveBeenCalled());
+    const mutation = lastTrustSubscriber().onCustomEvent({
+      event: { name: "other.custom", value: { whatever: 1 } },
+      messages: [],
+    });
+    expect(mutation).toBeUndefined();
+    expect(trustStore.get("ta-trust-unknown")).toBeUndefined();
+  });
+
+  // ———— MS-29 F2：角标渲染接线（TrustMessageContent 独立订阅 store，AssistantMessage memo 之外）————
+
+  it("F2：anchors 落 store 后角标原位渲染（未落 store 的消息零角标）", async () => {
+    mocks.agent.messages = [
+      agentMessage({ id: "ta-f2-u", role: "user", content: "看看" }),
+      agentMessage({ id: "ta-f2-a1", role: "assistant", content: "现价1520.33元，历史估值约38倍。" }),
+    ];
+    renderThread();
+    await waitFor(() => expect(screen.getByText(/现价/)).toBeTruthy());
+    // 落地前：无角标（无 payload 走原 MarkdownView 路径）
+    expect(screen.queryAllByTestId("trust-anchor-badge")).toHaveLength(0);
+    act(() => {
+      lastTrustSubscriber().onCustomEvent({
+        event: {
+          name: TRUST_ANCHORS_EVENT,
+          value: {
+            messageId: "ta-f2-a1",
+            payload: {
+              v: 1,
+              anchors: [
+                {
+                  snippet: "1520.33元",
+                  occ: 1,
+                  state: "verified",
+                  tool: "get_quote",
+                  args: { symbol: "600519.SH" },
+                  asOf: "2026-10-05 14:59:32",
+                  asOfKind: "data",
+                  raw: "1520.33",
+                },
+                { snippet: "38倍", occ: 1, state: "unverified" },
+              ],
+              stats: { verified: 1, sourced: 0, unverified: 1 },
+            },
+          },
+        },
+        messages: [],
+      });
+    });
+    const badges = await screen.findAllByTestId("trust-anchor-badge");
+    expect(badges).toHaveLength(2);
+    expect(badges.map((b) => b.getAttribute("data-anchor-state"))).toEqual(["verified", "unverified"]);
+    // 浮层常驻 DOM（group-hover 显隐）：verified 措辞 + 来源字段
+    expect(screen.getByText("数值与工具返回一致")).toBeTruthy();
+    expect(screen.getByText("数据时间戳：2026-10-05 14:59:32")).toBeTruthy();
+  });
+
+  it("F2：correction 改写后到达的 anchors（snippet 为替换形态）对当前文本直接定位", async () => {
+    // F1 替换产物（occ=2 的 1708 亿）已写回 content，B5 终态锚定 snippet 即 replacement 形态
+    mocks.agent.messages = [
+      agentMessage({ id: "ta-f2-a2", role: "assistant", content: "A 1741 亿 B 1708 亿 C。" }),
+    ];
+    renderThread();
+    await waitFor(() => expect(screen.getByText(/1741/)).toBeTruthy());
+    act(() => {
+      lastTrustSubscriber().onCustomEvent({
+        event: {
+          name: TRUST_ANCHORS_EVENT,
+          value: {
+            messageId: "ta-f2-a2",
+            payload: {
+              v: 1,
+              anchors: [{ snippet: "1708 亿", occ: 1, state: "verified" }],
+              stats: { verified: 1, sourced: 0, unverified: 0 },
+            },
+          },
+        },
+        messages: [],
+      });
+    });
+    const badges = await screen.findAllByTestId("trust-anchor-badge");
+    expect(badges).toHaveLength(1);
+    // 角标落在替换后的 1708 亿上（包裹元素含 snippet 原文）
+    expect(badges[0].parentElement?.textContent).toContain("1708 亿");
+  });
+
+  // ———— F6 修复轮：修正注记 live 可见（拍板 #10 注记保留——correction 事件落 store 即渲染）————
+
+  it("F6：correction 事件落地 → 注记引用块 live 出现（anchors 未到也渲染，正文与横幅之间）", async () => {
+    mocks.agent.messages = [
+      agentMessage({ id: "ta-f6-u", role: "user", content: "看看" }),
+      agentMessage({ id: "ta-f6-a1", role: "assistant", content: "现价1520.33元。" }),
+    ];
+    renderThread();
+    await waitFor(() => expect(screen.getByText(/现价/)).toBeTruthy());
+    // 事件落地前：无注记块
+    expect(screen.queryByTestId("trust-correction-notes")).toBeNull();
+    act(() => {
+      lastTrustSubscriber().onCustomEvent({
+        event: {
+          name: TRUST_CORRECTION_EVENT,
+          value: {
+            messageId: "ta-f6-a1",
+            snippet: "15.20元",
+            occ: 1,
+            replacement: "1520.33元",
+            note: "原文误述 15.20元",
+          },
+        },
+        messages: mocks.agent.messages,
+      });
+    });
+    // 占位 payload（anchors 未到）即携带 correction.notes → 注记块 live 出现
+    const block = await screen.findByTestId("trust-correction-notes");
+    expect(block.textContent).toContain("校验修正：原文误述 15.20元");
+    // 注记块在正文之后（内容尾部挂点）
+    const content = screen.getByText(/现价/);
+    expect(
+      (content.compareDocumentPosition(block) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
+    ).toBe(true);
+  });
+
+  // ———— MS-29 F3：低置信横幅 + disclaimer 接线（TrustMessageAdvisories 同消息级订阅，正文与反馈条之间）————
+
+  it("F3：payload 携带 confidence/advice → 横幅与 disclaimer 落在正文与反馈条之间（并存不互斥）", async () => {
+    mocks.agent.messages = [
+      agentMessage({ id: "ta-f3-u", role: "user", content: "看看" }),
+      agentMessage({
+        id: "ta-f3-a1",
+        role: "assistant",
+        content: "现价1520.33元，压力1800元，支撑1400元，振幅约8%，可考虑加仓。",
+      }),
+    ];
+    renderThread();
+    await waitFor(() => expect(screen.getByText(/现价/)).toBeTruthy());
+    // 落地前：零渲染（无 confidence/advice 键）
+    expect(screen.queryByTestId("confidence-banner")).toBeNull();
+    expect(screen.queryByTestId("disclaimer-note")).toBeNull();
+    act(() => {
+      lastTrustSubscriber().onCustomEvent({
+        event: {
+          name: TRUST_ANCHORS_EVENT,
+          value: {
+            messageId: "ta-f3-a1",
+            payload: {
+              v: 1,
+              anchors: [
+                {
+                  snippet: "1520.33元",
+                  occ: 1,
+                  state: "verified",
+                  tool: "get_quote",
+                  args: { symbol: "600519.SH" },
+                  asOf: "2026-10-05 14:59:32",
+                  asOfKind: "data",
+                  raw: "1520.33",
+                },
+                { snippet: "1800元", occ: 1, state: "unverified" },
+                { snippet: "1400元", occ: 1, state: "unverified" },
+                { snippet: "8%", occ: 1, state: "unverified" },
+              ],
+              stats: { verified: 1, sourced: 0, unverified: 3 },
+              advice: {
+                flag: true,
+                by: "lexicon",
+                text: "以上内容由 AI 生成，仅供参考，不构成任何投资建议。",
+              },
+              confidence: { signals: ["unverified_ratio:0.75", "tool_failures:1"] },
+            },
+          },
+        },
+        messages: [],
+      });
+    });
+    const banner = await screen.findByTestId("confidence-banner");
+    const note = screen.getByTestId("disclaimer-note");
+    expect(screen.getAllByTestId("confidence-signal").map((li) => li.textContent)).toEqual([
+      "3 处数字未溯源",
+      "工具调用失败",
+    ]);
+    expect(screen.getByTestId("confidence-suggestion").textContent).toBe(
+      "建议重问最新价或查看东方财富行情页",
+    );
+    expect(screen.getByText("以上内容由 AI 生成，仅供参考，不构成任何投资建议。")).toBeTruthy();
+    // 落位链：正文段落 → 横幅 → disclaimer → 反馈条（设计规格 §5.3：插 MarkdownView 与 FeedbackBar 之间）
+    const para = screen.getByText(/现价/);
+    const up = screen.getByRole("button", { name: "回答有帮助" });
+    expect(para.compareDocumentPosition(banner) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(banner.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(note.compareDocumentPosition(up) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("F3：payload 无 confidence/advice 键 → 横幅与 disclaimer 零渲染（角标对照组正常）", async () => {
+    mocks.agent.messages = [
+      agentMessage({ id: "ta-f3-a2", role: "assistant", content: "现价1520.33元。" }),
+    ];
+    renderThread();
+    await waitFor(() => expect(screen.getByText(/现价/)).toBeTruthy());
+    act(() => {
+      lastTrustSubscriber().onCustomEvent({
+        event: {
+          name: TRUST_ANCHORS_EVENT,
+          value: {
+            messageId: "ta-f3-a2",
+            payload: {
+              v: 1,
+              anchors: [{ snippet: "1520.33元", occ: 1, state: "verified" }],
+              stats: { verified: 1, sourced: 0, unverified: 0 },
+            },
+          },
+        },
+        messages: [],
+      });
+    });
+    // anchors 正常落地（对照组：同 payload 无 confidence/advice 不影响角标）
+    expect(await screen.findAllByTestId("trust-anchor-badge")).toHaveLength(1);
+    expect(screen.queryByTestId("confidence-banner")).toBeNull();
+    expect(screen.queryByTestId("disclaimer-note")).toBeNull();
+  });
+
+  // ———— MS-29 F5：信任锚定回灌重建（回灌 effect 内 GET payload → trustStore.rebuild）————
+
+  /** F5 接线夹具：带 payload 的 assistant 历史（形态 = F4 携带侧 JSON.stringify 产物）。 */
+  function f5Payload(verified: number): string {
+    return JSON.stringify({
+      v: 1,
+      anchors: [
+        {
+          snippet: "1520.33元",
+          occ: 1,
+          state: "verified",
+          tool: "get_quote",
+          asOf: "2026-10-05 14:59:32",
+          asOfKind: "data",
+          raw: "1520.33",
+        },
+      ],
+      stats: { verified, sourced: 0, unverified: 0 },
+    });
+  }
+
+  it("F5：回灌带 payload 历史 → trustStore 重建 → 角标原位渲染（useTrustPayload 读到回灌数据）", async () => {
+    api = installConversationsApi({
+      list: [{ id: "t5", title: "信任会话", updatedAt: 2 }],
+      messages: {
+        t5: [
+          { id: "f5-u1", role: "user", content: "看看", createdAt: 1 },
+          { id: "f5-a1", role: "assistant", content: "现价1520.33元。", createdAt: 2, payload: f5Payload(1) },
+        ],
+      },
+    });
+    // setMessages 是 mock（不回写 mocks.agent.messages）：预置同形消息模拟回灌落地后的渲染态
+    mocks.agent.messages = [agentMessage({ id: "f5-a1", role: "assistant", content: "现价1520.33元。" })];
+    renderThread();
+    await waitFor(() => expect(mocks.agent.setMessages).toHaveBeenCalled());
+    // 回灌 rebuild 落地 → F2 渲染链（useTrustPayload）读到 store 数据 → 角标出现
+    const badges = await screen.findAllByTestId("trust-anchor-badge");
+    expect(badges).toHaveLength(1);
+    expect(badges[0].getAttribute("data-anchor-state")).toBe("verified");
+    expect(badges[0].parentElement?.textContent).toContain("1520.33元");
+    expect(trustStore.get("f5-a1")?.stats.verified).toBe(1);
+  });
+
+  it("F5：切会话 → 空历史 rebuild 全清（store 不残留上一会话数据，角标随 store 清空消失不报错）", async () => {
+    api = installConversationsApi({
+      list: [
+        { id: "t5a", title: "会话一", updatedAt: 2 },
+        { id: "t5b", title: "会话二", updatedAt: 1 },
+      ],
+      messages: {
+        t5a: [{ id: "f5-sw-a1", role: "assistant", content: "现价1520.33元。", createdAt: 1, payload: f5Payload(1) }],
+        t5b: [],
+      },
+    });
+    mocks.agent.messages = [agentMessage({ id: "f5-sw-a1", role: "assistant", content: "现价1520.33元。" })];
+    render(
+      <RuntimeProvider>
+        <ThreadSwitchHarness targetId="t5b" />
+      </RuntimeProvider>,
+    );
+    // t5a 回灌完成：store 有数据、角标渲染
+    await waitFor(() => expect(trustStore.get("f5-sw-a1")?.stats.verified).toBe(1));
+    expect(await screen.findAllByTestId("trust-anchor-badge")).toHaveLength(1);
+    // 切到 t5b（空历史）→ rebuild([]) 全清
+    fireEvent.click(screen.getByText("切到 t5b"));
+    await waitFor(() => expect(trustStore.get("f5-sw-a1")).toBeUndefined());
+    expect(trustStore.snapshot().size).toBe(0);
+    // store 无记录 → 角标零渲染零报错（mock setMessages 不回写，消息文本仍在——
+    // 即「消息在而 payload 无」的降级形态对照组）
+    expect(screen.queryAllByTestId("trust-anchor-badge")).toHaveLength(0);
+  });
+
+  it("F5：回灌历史含解析失败 payload → 该行跳过不炸整批（合法行照常重建，无回灌错误卡）", async () => {
+    api = installConversationsApi({
+      list: [{ id: "t5c", title: "混合会话", updatedAt: 2 }],
+      messages: {
+        t5c: [
+          { id: "f5-bad-json", role: "assistant", content: "坏JSON", createdAt: 1, payload: "{broken" },
+          {
+            id: "f5-bad-v",
+            role: "assistant",
+            content: "坏版本",
+            createdAt: 2,
+            payload: JSON.stringify({ v: 2, anchors: [], stats: { verified: 0, sourced: 0, unverified: 0 } }),
+          },
+          { id: "f5-good", role: "assistant", content: "好的", createdAt: 3, payload: f5Payload(1) },
+        ],
+      },
+    });
+    renderThread();
+    await waitFor(() => expect(mocks.agent.setMessages).toHaveBeenCalled());
+    expect(trustStore.get("f5-good")?.stats.verified).toBe(1);
+    expect(trustStore.get("f5-bad-json")).toBeUndefined();
+    expect(trustStore.get("f5-bad-v")).toBeUndefined();
+    // 不炸整批：回灌成功落地（无 hydrate 错误卡）
+    expect(screen.queryByTestId("hydrate-error")).toBeNull();
   });
 
   describe("Composer", () => {

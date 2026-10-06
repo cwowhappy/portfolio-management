@@ -15,7 +15,7 @@ class ScreeningCsvTest {
         return new StockScreeningResult(code, name, "801780", "银行",
                 pe == null ? null : new BigDecimal(pe), new BigDecimal("0.62"), new BigDecimal("5.4"),
                 null, null, null, null, null, null, null,
-                mv == null ? null : new BigDecimal(mv), null);
+                mv == null ? null : new BigDecimal(mv), null, "2026-09-30");
     }
 
     @DisplayName("BOM 首字节 + 中文表头 + CRLF + 总市值换算亿元")

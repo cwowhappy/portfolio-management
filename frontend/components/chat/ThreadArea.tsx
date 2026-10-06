@@ -14,13 +14,16 @@ import {
   AGENT_ID,
   agentMessagesToHistory,
   historyToAgentMessages,
+  rebuildTrustFromHistory,
   useChatRuntime,
 } from "./RuntimeProvider";
 import { loadMessages, newThreadId, errorStatus } from "@/lib/conversations";
+import { handleTrustCustomEvent } from "@/lib/trustMeta";
 import InterruptApprovalCard from "./InterruptApprovalCard";
 import ToolCallCard from "./ToolCallCard";
 import { ChartToolRenderers } from "./toolRenderers";
-import MarkdownView from "@/components/shared/MarkdownView";
+import { TrustMessageContent } from "@/components/shared/TrustMarkdownView";
+import { TrustMessageAdvisories } from "@/components/shared/TrustAdvisories";
 
 // 模块级常量：避免每次渲染新建数组触发潜在的重订阅
 const AGENT_UPDATES = [UseAgentUpdate.OnMessagesChanged, UseAgentUpdate.OnRunStatusChanged];
@@ -236,7 +239,13 @@ const AssistantMessage = memo(function AssistantMessage({
             {renderToolCall({ toolCall: tc, toolMessage: toolMessageByCallId.get(tc.id) })}
           </div>
         ))}
-        {content && <MarkdownView content={content} />}
+        {/* MS-29 F2：信任渲染入口——TrustMessageContent 独立订阅 trustStore（useSyncExternalStore
+            引用稳定契约），有锚渲染角标、无锚走原 MarkdownView；store 事件不触发本 memo 组件
+            重渲染（比较器无需 trust 项，F1 契约建议形态）。 */}
+        {content && <TrustMessageContent messageId={message.id} content={content} />}
+        {/* MS-29 F3：低置信横幅 + disclaimer——TrustMessageAdvisories 与 F2 同消息级独立订阅，
+            插在正文与反馈条之间；两组件并存不互斥，payload 无 confidence/advice 键零渲染。 */}
+        <TrustMessageAdvisories messageId={message.id} />
         <FeedbackBar messageId={message.id} />
       </div>
     </div>
@@ -482,6 +491,11 @@ export default function ThreadArea({ llmReady, onUnauthorized }: {
   // FR-8：@ag-ui/client 0.0.59 对流内 RUN_ERROR 事件 resolve（而非 reject）runAgent 的 promise，
   // 契约错误等流内错误不会进上面 send 的 catch（那里只覆盖传输层 rejection），必须订阅 agent
   // 运行错误事件才能透出到横幅。用户主动停止会合成 code="abort" 的事件，不打扰。
+  // MS-29 F1：同一订阅挂 onCustomEvent 接入信任事件——trust.anchors 落 trustMeta store
+  // （F2 渲染数据源），trust.correction 由 handler 返回 AgentStateMutation，库管线
+  // （defaultApplyEvents → processApplyEvents）把替换写回 agent.messages（原位替换的
+  // sanctioned 路径；Custom 事件无默认应用，不须 stopPropagation）。未知 name / 解析失败
+  // 在 handler 内静默忽略（宁可少标不可断流）。
   useEffect(() => {
     if (!isReady) return;
     const { unsubscribe } = agent.subscribe({
@@ -489,6 +503,7 @@ export default function ThreadArea({ llmReady, onUnauthorized }: {
         if (event.code === "abort") return;
         setSendError(toSendErrorText(event));
       },
+      onCustomEvent: ({ event, messages }) => handleTrustCustomEvent(event, messages),
     });
     return () => unsubscribe();
   }, [agent, isReady]);
@@ -496,6 +511,10 @@ export default function ThreadArea({ llmReady, onUnauthorized }: {
   // 历史回灌：真实 agent 就绪后，把服务端历史种回去（后端 server-side-memory=false）。
   // 仅在回灌成功后把 hydratedThreadIdRef 指向当前线程：此前 agent.messages 仍属于旧线程，
   // 防抖持久化必须等回灌完成（或至少不把旧线程内容写进新线程）后再启动。
+  // MS-29 F5：回灌成功同点位把 GET 侧 payload 重建进 trustStore（整表替换）——空历史即
+  // 全清，切会话后 store 不残留上一会话数据；回灌失败不 rebuild（消息流与 store 同留旧
+  // 线程态，重试成功后以新基线整表替换）。旧消息无 payload → store 无记录 → F2 角标
+  // 自然降级（不渲染不报错）。
   useEffect(() => {
     if (!isReady) return;
     let cancelled = false;
@@ -506,6 +525,7 @@ export default function ThreadArea({ llmReady, onUnauthorized }: {
         if (cancelled) return;
         if (agent.isRunning) agent.abortRun(); // 切换线程时停止旧流，避免跨线程串写
         agent.setMessages(historyToAgentMessages(history));
+        rebuildTrustFromHistory(history);
         hydratedThreadIdRef.current = threadId;
         setHydratedThreadId(threadId);
         setHydrateError(null);

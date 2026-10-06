@@ -22,9 +22,13 @@ public sealed interface ChartSpec {
   @JsonInclude(JsonInclude.Include.NON_NULL)
   record Series(String name, List<Double> data, Boolean area) {}   // data 允许 null 元素（缺口）
 
+  /**
+   * time：数据/生成时点（MS-29 B4 ruling，仅 overview 使用——本机生成时刻语义）；前端 zod
+   * 对象按缺省解析（未知键剥除），无契约破坏。NON_NULL：无时点的 Bar 不发该键。
+   */
   @JsonInclude(JsonInclude.Include.NON_NULL)
   record Bar(int specVersion, String type, String title, String subtitle,
-             List<String> categories, List<Series> series, Boolean horizontal, String unit)
+             List<String> categories, List<Series> series, Boolean horizontal, String unit, String time)
           implements ChartSpec {}
 
   @JsonInclude(JsonInclude.Include.NON_NULL)

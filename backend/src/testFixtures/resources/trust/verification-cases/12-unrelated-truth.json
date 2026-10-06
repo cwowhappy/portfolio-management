@@ -1,0 +1,9 @@
+{
+  "id": "unrelated-truth",
+  "category": "no_truth",
+  "text": "目标价2000元",
+  "pool": [{"value": "15.23", "kind": "price"}],
+  "expectedAnchors": [{"snippet": "2000元", "occ": 1, "state": "unverified", "wrong": true}],
+  "expectedCorrections": [],
+  "expectedNotes": []
+}

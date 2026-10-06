@@ -41,8 +41,12 @@ class ScreeningRepositoryImplTest {
     private JdbcTemplate jdbcTemplate;
 
     private void seedValuation(String code, String name, String pe, String turnover) {
+        seedValuation(code, name, pe, turnover, "2026-08-27");
+    }
+
+    private void seedValuation(String code, String name, String pe, String turnover, String day) {
         jdbcTemplate.update("INSERT INTO stock_valuation_daily(trading_day, stock_code, stock_name, pe_ttm, pb, dividend_yield, total_mv, circ_mv, turnover_rate) VALUES (?,?,?,?,?,?,?,?,?)",
-                Date.valueOf("2026-08-27"), code, name, new BigDecimal(pe), new BigDecimal("1.0"),
+                Date.valueOf(day), code, name, new BigDecimal(pe), new BigDecimal("1.0"),
                 new BigDecimal("2.0"), new BigDecimal("1000000000"), new BigDecimal("1000000000"),
                 new BigDecimal(turnover));
     }
@@ -143,6 +147,24 @@ class ScreeningRepositoryImplTest {
         var results = screeningRepository.findStocksByCodes(List.of("600519", "999999"));
         assertThat(results).extracting(StockScreeningResult::stockCode).containsExactly("600519");
         assertThat(screeningRepository.findStocksByCodes(List.of())).isEmpty();
+    }
+
+    @DisplayName("B4 时点透出：tradeDate 为底层最新快照日（非历史日），findStocks 与 findStocksByCodes 同口径")
+    @Test
+    @Transactional
+    void givenValuationsAcrossDays_whenFindStocks_thenTradeDateIsLatestSnapshotDay() {
+        seedValuation("600519", "贵州茅台", "22.5", "0.35", "2026-08-26"); // 历史日，应被过滤
+        seedValuation("601398", "工商银行", "5.6", "0.18");               // 默认 2026-08-27 = max(trading_day)
+
+        var criteria = new ScreeningCriteria(new BigDecimal("30"), null, null, null, null, null,
+                null, null, null, null, null, null, null, null, "pe_ttm", SortDirection.ASC, 200);
+
+        var results = screeningRepository.findStocks(criteria);
+        assertThat(results).extracting(StockScreeningResult::stockCode).containsExactly("601398");
+        assertThat(results.get(0).tradeDate()).as("tradeDate = max(trading_day) 底层快照日")
+                .isEqualTo("2026-08-27");
+        assertThat(screeningRepository.findStocksByCodes(List.of("601398")).get(0).tradeDate())
+                .isEqualTo("2026-08-27");
     }
 
     @DisplayName("搜索：代码前缀与名称包含")

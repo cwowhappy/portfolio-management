@@ -58,7 +58,8 @@ class MacroBriefToolTest {
                 mock(FinancialQueryService.class),
                 mock(IndustryApplicationService.class),
                 intelligenceQuery,
-                mapper);
+                mapper,
+                new com.portfolio.invest.config.InvestProperties());
     }
 
     /** 月度指标条目（近 5 期序列最新在前）。 */

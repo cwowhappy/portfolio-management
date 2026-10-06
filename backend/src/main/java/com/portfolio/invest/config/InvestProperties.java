@@ -1,5 +1,6 @@
 package com.portfolio.invest.config;
 
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -18,6 +19,7 @@ public class InvestProperties {
     private Im im = new Im();
     private Mail mail = new Mail();
     private Intelligence intelligence = new Intelligence();
+    private Trust trust = new Trust();
 
     public Llm getLlm() {
         return llm;
@@ -89,6 +91,14 @@ public class InvestProperties {
 
     public void setIntelligence(Intelligence intelligence) {
         this.intelligence = intelligence;
+    }
+
+    public Trust getTrust() {
+        return trust;
+    }
+
+    public void setTrust(Trust trust) {
+        this.trust = trust;
     }
 
     public static class Llm {
@@ -399,6 +409,83 @@ public class InvestProperties {
         public void setBriefMinItems(int briefMinItems) { this.briefMinItems = briefMinItems; }
         public int getBindingCodeTtlMinutes() { return bindingCodeTtlMinutes; }
         public void setBindingCodeTtlMinutes(int bindingCodeTtlMinutes) { this.bindingCodeTtlMinutes = bindingCodeTtlMinutes; }
+    }
+
+    /** 可信溯源（MS-29）：容差参数组① + 修正上限参数组⑥ + 置信信号阈值参数组⑤（设计规格 §4.6）。 */
+    public static class Trust {
+        private ToleranceSettings tolerance =
+                new ToleranceSettings(new BigDecimal("0.02"), new BigDecimal("0.05"),
+                        new BigDecimal("0.01"), new BigDecimal("0.10"));
+        private CorrectionSettings correction = new CorrectionSettings(2);
+        /** 置信信号阈值参数组⑤（MS-29 B7，ConfidenceScorer 消费）：stale-financial/macro-days 为季报/月度节奏+缓冲的补充阈值。 */
+        private ConfidenceSettings confidence =
+                new ConfidenceSettings(0.30, 3, 1, 110, 35);
+        /** 词表参数组④（MS-29 B6，决策 #4 双层井集的兜底层；空表 = 仅自声明标记生效）。 */
+        private List<String> adviceLexicon = new ArrayList<>(List.of(
+                "买入", "卖出", "加仓", "减仓", "清仓", "建仓", "补仓", "止损", "止盈",
+                "目标价", "抄底", "逃顶", "满仓", "空仓"));
+        /** 文案参数组③（MS-29 B6）：advice.flag=true 时随 trust.anchors payload 透传（F3 前端 DisclaimerNote 消费）。 */
+        private String disclaimerText = "以上内容由 AI 生成，仅供参考，不构成任何投资建议；"
+                + "市场有风险，投资决策请独立判断或咨询持牌专业机构。";
+        /** payload 单条字节上限（MS-29 B8，UTF-8 字节口径）：PUT 时超限单条降级置 null，防滥用。 */
+        private int payloadMaxBytes = 65536;
+        /** research_draft 入参 draftJson 字节上限（MS-29 B9-②，UTF-8 字节口径）：超限返回友好错误，防超大草稿打满上下文。 */
+        private int draftJsonMaxBytes = 32768;
+
+        public int getPayloadMaxBytes() { return payloadMaxBytes; }
+        public void setPayloadMaxBytes(int payloadMaxBytes) { this.payloadMaxBytes = payloadMaxBytes; }
+        public int getDraftJsonMaxBytes() { return draftJsonMaxBytes; }
+        public void setDraftJsonMaxBytes(int draftJsonMaxBytes) { this.draftJsonMaxBytes = draftJsonMaxBytes; }
+
+        public ToleranceSettings getTolerance() { return tolerance; }
+        public void setTolerance(ToleranceSettings tolerance) { this.tolerance = tolerance; }
+        public CorrectionSettings getCorrection() { return correction; }
+        public void setCorrection(CorrectionSettings correction) { this.correction = correction; }
+        public ConfidenceSettings getConfidence() { return confidence; }
+        public void setConfidence(ConfidenceSettings confidence) { this.confidence = confidence; }
+        public List<String> getAdviceLexicon() { return adviceLexicon; }
+        public void setAdviceLexicon(List<String> adviceLexicon) { this.adviceLexicon = adviceLexicon; }
+        public String getDisclaimerText() { return disclaimerText; }
+        public void setDisclaimerText(String disclaimerText) { this.disclaimerText = disclaimerText; }
+
+        /**
+         * 容差参数组①（用户拍板默认）：relative=相对 2%；absolute=无量纲绝对 0.05（%、倍）；
+         * price=价格语义绝对 0.01 元；deviation=大偏差线 10%（超出容差即拦截改写——中间带按大偏差处理，决策 #1）。
+         * 嵌套 record 走构造器绑定：部分配置时分量为 null，紧凑构造器回退默认（不产生空值）。
+         */
+        public record ToleranceSettings(BigDecimal relative, BigDecimal absolute,
+                BigDecimal price, BigDecimal deviation) {
+            public ToleranceSettings {
+                if (relative == null) relative = new BigDecimal("0.02");
+                if (absolute == null) absolute = new BigDecimal("0.05");
+                if (price == null) price = new BigDecimal("0.01");
+                if (deviation == null) deviation = new BigDecimal("0.10");
+            }
+        }
+
+        /** 修正参数组⑥：确定性替换重试上限（替换后重校验，触达降级：原文保留 + 显式标注 + 修正失败信号）。 */
+        public record CorrectionSettings(Integer maxRetries) {
+            public CorrectionSettings {
+                if (maxRetries == null) maxRetries = 2;
+            }
+        }
+
+        /**
+         * 置信信号阈值参数组⑤（MS-29 B7）：unverified-ratio 未溯源比例线（严格大于才触发）+
+         * unverified-min 未懂数下限（两者同时满足）；stale-*-days 各数据类别陈旧度自然日阈值
+         * （行情 1 / 财报 110=季报节奏+缓冲 / 宏观 35=月度节奏+缓冲，超过即触发）。
+         * 嵌套 record 走构造器绑定：部分配置时分量为 null，紧凑构造器回退默认（不产生空值）。
+         */
+        public record ConfidenceSettings(Double unverifiedRatio, Integer unverifiedMin,
+                Integer staleQuoteDays, Integer staleFinancialDays, Integer staleMacroDays) {
+            public ConfidenceSettings {
+                if (unverifiedRatio == null) unverifiedRatio = 0.30;
+                if (unverifiedMin == null) unverifiedMin = 3;
+                if (staleQuoteDays == null) staleQuoteDays = 1;
+                if (staleFinancialDays == null) staleFinancialDays = 110;
+                if (staleMacroDays == null) staleMacroDays = 35;
+            }
+        }
     }
 
     /** SMTP 发信（M01-F06，阿里云企业邮箱）。空值 = 未启用，发信入口返回「系统未配置邮件服务」。 */

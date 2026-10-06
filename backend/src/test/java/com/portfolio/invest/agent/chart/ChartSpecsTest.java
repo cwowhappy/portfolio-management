@@ -75,6 +75,8 @@ class ChartSpecsTest {
         assertThat(json).contains("\"categories\":[\"上证指数\",\"深证成指\"]");
         assertThat(json).contains("\"data\":[0.79,-0.31]");
         assertThat(json).doesNotContain("3200.5"); // 点位不进图
+        // MS-29 B4 ruling：overview 的 time 为本机生成时刻，透进 spec 顶层供装饰器归 GENERATED
+        assertThat(json).contains("\"time\":\"2026-09-11 15:00\"");
     }
 
     @DisplayName("financialsTable 列与行映射，金额转亿")
@@ -100,12 +102,35 @@ class ChartSpecsTest {
                 new BigDecimal("32.0"), new BigDecimal("21.0"), new BigDecimal("91.0"),
                 new BigDecimal("32.0"), new BigDecimal("4.0"),
                 new BigDecimal("10.0"), new BigDecimal("12.0"),
-                new BigDecimal("2.1E12"), new BigDecimal("0.5"));
+                new BigDecimal("2.1E12"), new BigDecimal("0.5"), null);
         String json = mapper.writeValueAsString(ChartSpecs.screeningTable(List.of(r)));
         assertThat(json).contains("\"type\":\"table\"");
         assertThat(json).contains("\"label\":\"总市值(亿)\"");
         assertThat(json).contains("21000.0"); // 2.1E12 元 → 21000 亿
         assertThat(ChartSpecs.screeningSummary(List.of(r))).contains("1 只").contains("贵州茅台");
+    }
+
+    @DisplayName("B4 时点透出：表行携带 tradeDate（列不变）+ 摘要含快照日期子句；日期缺失安全省略")
+    @Test
+    void givenSnapshotDatedResults_whenScreening_thenRowCarriesTradeDateAndSummaryHasClause() throws Exception {
+        var dated = new com.portfolio.invest.domain.screening.StockScreeningResult(
+                "600519", "贵州茅台", "801140", "白酒",
+                new BigDecimal("25.0"), new BigDecimal("8.0"), null,
+                new BigDecimal("32.0"), null, null, null, null, null, null,
+                new BigDecimal("2.1E12"), null, "2026-09-30");
+        String json = mapper.writeValueAsString(ChartSpecs.screeningTable(List.of(dated)));
+        // 行数据键（无对应列）：B3 装饰器 Table 首行扫描命中位 → DATA 时点；列集合不变
+        assertThat(json).contains("\"tradeDate\":\"2026-09-30\"");
+        assertThat(json).doesNotContain("\"label\":\"快照日期\"");
+        assertThat(ChartSpecs.screeningSummary(List.of(dated)))
+                .contains("快照日期 2026-09-30").contains("贵州茅台");
+
+        var undated = new com.portfolio.invest.domain.screening.StockScreeningResult(
+                "600519", "贵州茅台", "801140", "白酒",
+                new BigDecimal("25.0"), new BigDecimal("8.0"), null,
+                new BigDecimal("32.0"), null, null, null, null, null, null,
+                new BigDecimal("2.1E12"), null, null);
+        assertThat(ChartSpecs.screeningSummary(List.of(undated))).doesNotContain("快照日期");
     }
 
     @DisplayName("财报趋势表：报告期降序列 + 营收亿元换算")
@@ -126,12 +151,22 @@ class ChartSpecsTest {
     void givenIndustryViews_whenTables_thenSerialize() throws Exception {
         var boardRow = new com.portfolio.invest.application.industry.IndustryBoardView(
                 "801780", "银行", new BigDecimal("6.5"), new BigDecimal("0.6"), new BigDecimal("11.0"),
-                new BigDecimal("5.0"), new BigDecimal("15.0"), new BigDecimal("8.0"), null, null);
+                new BigDecimal("5.0"), new BigDecimal("15.0"), new BigDecimal("8.0"), null, null, null);
         String boardJson = mapper.writeValueAsString(ChartSpecs.industryBoardTable(List.of(boardRow)));
         assertThat(boardJson).contains("\"type\":\"table\"").contains("银行").contains("PE分位%");
         assertThat(ChartSpecs.industryBoardSummary(List.of(boardRow)))
                 .contains("银行").contains("估值分位最低：银行（PE分位 15.0%）")
                 .doesNotContain("%s"); // formatted 占位符必须已替换
+
+        var datedRow = new com.portfolio.invest.application.industry.IndustryBoardView(
+                "801780", "银行", new BigDecimal("6.5"), new BigDecimal("0.6"), new BigDecimal("11.0"),
+                new BigDecimal("5.0"), new BigDecimal("15.0"), new BigDecimal("8.0"), null, null,
+                java.time.LocalDate.of(2026, 1, 2));
+        assertThat(mapper.writeValueAsString(ChartSpecs.industryBoardTable(List.of(datedRow))))
+                .contains("\"tradingDay\":\"2026-01-02\"");
+        assertThat(ChartSpecs.industryBoardSummary(List.of(datedRow))).contains("截至 2026-01-02");
+        assertThat(ChartSpecs.industryBoardSummary(List.of(datedRow))).doesNotContain("截至 null");
+        assertThat(ChartSpecs.industryBoardSummary(List.of(boardRow))).doesNotContain("截至");
 
         var stock = new com.portfolio.invest.domain.industry.IndustryStock(
                 "600036", "招商银行", new BigDecimal("8.0E11"), new BigDecimal("3.2E11"),

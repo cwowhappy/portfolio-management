@@ -93,7 +93,7 @@ Playwright e2e 位于 `frontend/e2e/`，配置见 `frontend/playwright.config.ts
 |---|---|
 | GET /api/conversations | 我的会话列表 |
 | POST /api/conversations | 新建会话（`{id}` = threadId） |
-| GET /api/conversations/{id}/messages | 加载消息（200 `{updatedAt, messages}`） |
+| GET /api/conversations/{id}/messages | 加载消息（200 `{updatedAt, messages}`；MS-29：assistant 消息可选携带 `payload` 信任锚定 JSON 文本，user 恒 null——结构见 `docs/technology/modules/01-Agent实现.md` §7） |
 | PUT /api/conversations/{id}/messages | 全量替换保存消息（200 `{updatedAt}`；可选 `If-Match` 乐观校验，冲突 409） |
 | DELETE /api/conversations/{id} | 删除会话 |
 

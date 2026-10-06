@@ -68,6 +68,22 @@ class HarnessAgentFactoryTest {
         assertThat(agent).isNotNull();
     }
 
+    @DisplayName("MS-29 B5 挂载：build() 装配 TrustAgentHook 与线上 messageId 观察中间件")
+    @Test
+    void givenBuild_whenAssemble_thenTrustHookAndMiddlewareMounted() throws IOException {
+        UserToolkitFactory toolkitFactory = mock(UserToolkitFactory.class);
+        SkillApplicationService skillApplicationService = mock(SkillApplicationService.class);
+        when(skillApplicationService.enabledSkillCodes(1L)).thenReturn(List.of());
+        when(toolkitFactory.build(1L)).thenReturn(new Toolkit());
+
+        HarnessAgent agent = factory(toolkitFactory, skillApplicationService).build(1L);
+
+        assertThat(agent.getDelegate().getHooks())
+                .anyMatch(h -> h instanceof com.portfolio.invest.agent.trust.TrustAgentHook);
+        assertThat(agent.getDelegate().getMiddlewares())
+                .anyMatch(m -> m instanceof com.portfolio.invest.agent.trust.TrustWireMessageIdMiddleware);
+    }
+
     /** 真实 InvestProperties（Harness 嵌套 POJO 有默认值），workspace/stateRoot 指向 @TempDir，避免触碰仓库工作目录。 */
     private InvestProperties tempDirProperties() throws IOException {
         // 预建目录：WorkspaceManager 对不存在的 workspace 会告警（测试脚手架，非生产改动）

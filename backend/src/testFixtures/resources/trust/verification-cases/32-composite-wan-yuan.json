@@ -1,0 +1,10 @@
+{
+  "id": "composite-wan-yuan",
+  "category": "composite_unit",
+  "text": "该基金起投金额3.4万元",
+  "pool": [{"value": "34800", "kind": "plain"}],
+  "expectedAnchors": [{"snippet": "3.48万", "occ": 1, "state": "verified", "wrong": true, "expectedRaw": "34800"}],
+  "expectedCorrections": [{"snippet": "3.4万", "occ": 1}],
+  "expectedNotes": ["原文误述 3.4万"],
+  "expectedText": "该基金起投金额3.48万元\n> ⚠ 校验修正：原文误述 3.4万"
+}

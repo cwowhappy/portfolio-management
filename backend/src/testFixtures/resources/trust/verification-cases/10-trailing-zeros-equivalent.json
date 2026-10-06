@@ -1,0 +1,9 @@
+{
+  "id": "trailing-zeros-equivalent",
+  "category": "tolerance_pass",
+  "text": "大盘报1520.00点",
+  "pool": [{"value": "1520.33", "kind": "plain"}],
+  "expectedAnchors": [{"snippet": "1520.00点", "occ": 1, "state": "verified"}],
+  "expectedCorrections": [],
+  "expectedNotes": []
+}

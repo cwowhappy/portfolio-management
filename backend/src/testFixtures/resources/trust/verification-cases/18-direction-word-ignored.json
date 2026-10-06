@@ -1,0 +1,9 @@
+{
+  "id": "direction-word-ignored",
+  "category": "direction_trap",
+  "text": "今日下跌0.8%",
+  "pool": [{"value": "0.8", "kind": "percent"}],
+  "expectedAnchors": [{"snippet": "0.8%", "occ": 1, "state": "verified"}],
+  "expectedCorrections": [],
+  "expectedNotes": []
+}

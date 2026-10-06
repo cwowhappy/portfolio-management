@@ -2,6 +2,7 @@ package com.portfolio.invest.infrastructure.persistence.intelligence;
 
 import com.portfolio.invest.domain.intelligence.FeishuBindingRepository;
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
@@ -34,7 +35,10 @@ public class FeishuBindingRepositoryImpl implements FeishuBindingRepository {
     public Optional<Instant> findBoundAtByUserId(Long userId) {
         List<Instant> found = jdbc.query(
                 "SELECT bound_at FROM intelligence_feishu_binding WHERE user_id = ?",
-                (rs, i) -> rs.getTimestamp("bound_at").toInstant(), userId);
+                // TIMESTAMPTZ 显式时区读取（B9-⑥）：getTimestamp 按 JVM 默认时区折算墙钟，
+                // getObject(OffsetDateTime) 带 offset 语义直达绝对 instant——与写入侧
+                // atOffset(UTC) 对偶，读出值不变（DST 边界往返见 FeishuBindingRepositoryTest）
+                (rs, i) -> rs.getObject("bound_at", OffsetDateTime.class).toInstant(), userId);
         return found.stream().findFirst();
     }
 

@@ -286,6 +286,74 @@ class ConversationControllerIntegrationTest extends PostgresTestSupport {
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
     }
 
+    @DisplayName("B8：payload 通道——合法 JSON 落 jsonb 回灌语义等价，非法/超限/user 带载三降级且content保留")
+    @Test
+    void givenMessagesWithPayload_whenSaveAndFetch_thenRoundTripAndPerMessageDegrade() throws Exception {
+        register("conv_payload", "abc12345");
+        approve("conv_payload");
+        MockHttpSession session = login("conv_payload", "abc12345");
+        String convId = UUID.randomUUID().toString();
+        mockMvc.perform(post("/api/conversations").session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"id\":\"" + convId + "\"}"))
+                .andExpect(status().isCreated());
+
+        // 合法 payload（trust v1 形态，嵌套+CJK）：PUT → GET 往返。jsonb 落库会规范化文本（键序/空白），
+        // 断言按 JSON 树语义等价而非字节相等
+        com.fasterxml.jackson.databind.ObjectMapper om = new com.fasterxml.jackson.databind.ObjectMapper();
+        String payload = "{\"v\":1,\"anchors\":[{\"snippet\":\"贵州茅台收盘价\",\"occ\":1,"
+                + "\"tool\":\"quote\",\"state\":\"verified\"}],\"stats\":{\"digits\":2,\"unverified\":0}}";
+        String putBody = om.writeValueAsString(java.util.List.of(
+                java.util.Map.of("id", "m-1", "role", "user", "content", "问", "createdAt", 1),
+                java.util.Map.of("id", "m-2", "role", "assistant", "content", "答",
+                        "payload", payload, "createdAt", 2)));
+        mockMvc.perform(put("/api/conversations/{id}/messages", convId).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(putBody))
+                .andExpect(status().isOk());
+
+        MvcResult fetched = mockMvc.perform(get("/api/conversations/{id}/messages", convId).session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.messages[0].payload").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.messages[1].id").value("m-2"))
+                .andReturn();
+        String roundTripped = com.jayway.jsonpath.JsonPath.read(
+                fetched.getResponse().getContentAsString(), "$.messages[1].payload");
+        org.assertj.core.api.Assertions.assertThat(om.readTree(roundTripped)).isEqualTo(om.readTree(payload));
+
+        // 三降级（默认上限 65536 字节）：user 带载拒收 / 非法 JSON / 超限——单条降级不整批拒，content 全保留
+        String oversize = "[\"" + "x".repeat(65540) + "\"]"; // 65544 字节合法 JSON，超 64KB 上限
+        String degradeBody = om.writeValueAsString(java.util.List.of(
+                java.util.Map.of("id", "m-3", "role", "user", "content", "用户问",
+                        "payload", "{\"v\":1}", "createdAt", 3),
+                java.util.Map.of("id", "m-4", "role", "assistant", "content", "坏JSON",
+                        "payload", "not-json{", "createdAt", 4),
+                java.util.Map.of("id", "m-5", "role", "assistant", "content", "超限",
+                        "payload", oversize, "createdAt", 5),
+                java.util.Map.of("id", "m-6", "role", "assistant", "content", "好条",
+                        "payload", "{\"v\":1}", "createdAt", 6)));
+        mockMvc.perform(put("/api/conversations/{id}/messages", convId).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(degradeBody))
+                .andExpect(status().isOk());
+
+        MvcResult degraded = mockMvc.perform(get("/api/conversations/{id}/messages", convId).session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.messages.length()").value(4))
+                .andExpect(jsonPath("$.messages[0].payload").value(org.hamcrest.Matchers.nullValue())) // user 拒收
+                .andExpect(jsonPath("$.messages[0].content").value("用户问"))
+                .andExpect(jsonPath("$.messages[1].payload").value(org.hamcrest.Matchers.nullValue())) // 非法 JSON
+                .andExpect(jsonPath("$.messages[1].content").value("坏JSON"))
+                .andExpect(jsonPath("$.messages[2].payload").value(org.hamcrest.Matchers.nullValue())) // 超限
+                .andExpect(jsonPath("$.messages[2].content").value("超限"))
+                .andExpect(jsonPath("$.messages[3].content").value("好条"))
+                .andReturn();
+        // 同批合法条不受影响（jsonb 落库规范化文本，树比较）
+        org.assertj.core.api.Assertions.assertThat(om.readTree((String) com.jayway.jsonpath.JsonPath.read(
+                degraded.getResponse().getContentAsString(), "$.messages[3].payload")))
+                .isEqualTo(om.readTree("{\"v\":1}"));
+    }
+
     /** 三段式注册：发码（邮件桩取码）→ 携码注册；邮箱由用户名派生保证类内唯一。 */
     private void register(String username, String password) throws Exception {
         String email = username + "@test.local";

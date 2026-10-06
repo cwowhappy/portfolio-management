@@ -11,25 +11,30 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.portfolio.invest.config.InvestProperties;
+import com.portfolio.invest.domain.conversation.ChatMessage;
 import com.portfolio.invest.domain.conversation.Conversation;
 import com.portfolio.invest.domain.conversation.ConversationException;
 import com.portfolio.invest.domain.conversation.ConversationRepository;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import com.portfolio.invest.domain.conversation.ConversationErrorCode;
 
 class ConversationApplicationServiceTest {
 
     private final ConversationRepository repo = mock(ConversationRepository.class);
+    private final InvestProperties properties = new InvestProperties();
     private ConversationApplicationService service;
 
     @BeforeEach
     void setUp() {
-        service = new ConversationApplicationService(repo);
+        service = new ConversationApplicationService(repo, properties);
     }
 
     private Conversation owned(String id) {
@@ -238,6 +243,96 @@ class ConversationApplicationServiceTest {
                 .isInstanceOf(ConversationException.class)
                 .satisfies(e -> assertThat(((ConversationException) e).getCode()).isEqualTo(ConversationErrorCode.INVALID_MESSAGE));
         verify(repo, never()).replaceMessages(anyString(), any());
+    }
+
+    @DisplayName("B8：assistant 消息带合法 JSON payload 时原样落库")
+    @Test
+    void givenAssistantMessageWithValidPayload_whenSaveMessages_thenPersistedAsIs() {
+        when(repo.findByIdAndUserId("t-1", 1L)).thenReturn(Optional.of(owned("t-1")));
+        String payload = "{\"v\":1,\"anchors\":[{\"snippet\":\"600519\",\"state\":\"verified\"}]}";
+
+        service.saveMessages(1L, "t-1", List.of(
+                new ChatMessageWire("m-1", "assistant", "茅台……", payload, 1700000000000L)), null);
+
+        ArgumentCaptor<List<ChatMessage>> captor = ArgumentCaptor.captor();
+        verify(repo).replaceMessages(eq("t-1"), captor.capture());
+        assertThat(captor.getValue()).hasSize(1)
+                .first().satisfies(m -> assertThat(m.payload()).isEqualTo(payload));
+    }
+
+    @DisplayName("B8：user 消息带 payload 拒收——payload 置 null、消息本身保留")
+    @Test
+    void givenUserMessageWithPayload_whenSaveMessages_thenPayloadNulledMessageKept() {
+        when(repo.findByIdAndUserId("t-1", 1L)).thenReturn(Optional.of(owned("t-1")));
+
+        service.saveMessages(1L, "t-1", List.of(
+                new ChatMessageWire("m-1", "user", "hi", "{\"v\":1}", 1700000000000L)), null);
+
+        ArgumentCaptor<List<ChatMessage>> captor = ArgumentCaptor.captor();
+        verify(repo).replaceMessages(eq("t-1"), captor.capture());
+        assertThat(captor.getValue()).hasSize(1)
+                .first().satisfies(m -> {
+                    assertThat(m.payload()).isNull();
+                    assertThat(m.content()).isEqualTo("hi"); // 拒的是 payload，不是消息
+                });
+    }
+
+    @DisplayName("B8：非法 JSON payload 单条降级——同批其余消息不受影响")
+    @Test
+    void givenIllegalJsonPayloadOnOneMessage_whenSaveMessages_thenOnlyThatPayloadNulled() {
+        when(repo.findByIdAndUserId("t-1", 1L)).thenReturn(Optional.of(owned("t-1")));
+
+        service.saveMessages(1L, "t-1", List.of(
+                new ChatMessageWire("m-bad", "assistant", "坏条", "not-json{", 1700000000000L),
+                new ChatMessageWire("m-blank", "assistant", "空条", "   ", 1700000000001L),
+                new ChatMessageWire("m-trail", "assistant", "尾随", "{\"v\":1}尾随垃圾", 1700000000003L),
+                new ChatMessageWire("m-ok", "assistant", "好条", "{\"v\":1}", 1700000000002L)), null);
+
+        ArgumentCaptor<List<ChatMessage>> captor = ArgumentCaptor.captor();
+        verify(repo).replaceMessages(eq("t-1"), captor.capture());
+        assertThat(captor.getValue()).extracting(ChatMessage::id, ChatMessage::payload)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("m-bad", null),
+                        org.assertj.core.groups.Tuple.tuple("m-blank", null),
+                        org.assertj.core.groups.Tuple.tuple("m-trail", null), // 尾随垃圾与 PG jsonb 口径对齐
+                        org.assertj.core.groups.Tuple.tuple("m-ok", "{\"v\":1}"));
+    }
+
+    @DisplayName("B8：payload 超 payload-max-bytes 字节上限降级（UTF-8 字节口径，恰好达限保留）")
+    @Test
+    void givenOversizePayload_whenSaveMessages_thenNulledAtConfiguredByteLimit() {
+        when(repo.findByIdAndUserId("t-1", 1L)).thenReturn(Optional.of(owned("t-1")));
+        properties.getTrust().setPayloadMaxBytes(8); // 小上限便于构造边界
+
+        service.saveMessages(1L, "t-1", List.of(
+                // [1,2]=5 字节：限内保留；"你好"=8 字节（2 引号+2×3）恰好达限保留；"你你好"=11 字节超限降级
+                new ChatMessageWire("m-5", "assistant", "a", "[1,2]", 1700000000000L),
+                new ChatMessageWire("m-8", "assistant", "a", "\"你好\"", 1700000000001L),
+                new ChatMessageWire("m-11", "assistant", "a", "\"你你好\"", 1700000000002L)), null);
+
+        ArgumentCaptor<List<ChatMessage>> captor = ArgumentCaptor.captor();
+        verify(repo).replaceMessages(eq("t-1"), captor.capture());
+        assertThat(captor.getValue()).extracting(ChatMessage::id, ChatMessage::payload)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("m-5", "[1,2]"),
+                        org.assertj.core.groups.Tuple.tuple("m-8", "\"你好\""),
+                        org.assertj.core.groups.Tuple.tuple("m-11", null)); // 11 字节 > 8 字节
+        assertThat("\"你好\"".getBytes(StandardCharsets.UTF_8)).hasSize(8); // 字节口径自证
+        assertThat("\"你你好\"".getBytes(StandardCharsets.UTF_8)).hasSize(11);
+    }
+
+    @DisplayName("B8：GET 消息视图回灌 payload")
+    @Test
+    void givenMessageWithPayload_whenMessages_thenViewCarriesPayload() {
+        Conversation conv = Conversation.create("t-1", 1L, Instant.parse("2026-08-21T00:00:00Z"));
+        when(repo.findByIdAndUserId("t-1", 1L)).thenReturn(Optional.of(conv));
+        when(repo.findMessages("t-1")).thenReturn(List.of(
+                ChatMessage.create(null, "m-1", com.portfolio.invest.domain.conversation.ChatMessageRole.ASSISTANT,
+                        "hi", "{\"v\":1}", 1700000000000L)));
+
+        var view = service.messages(1L, "t-1");
+
+        assertThat(view.messages().get(0).payload()).isEqualTo("{\"v\":1}");
     }
 
     @DisplayName("删除非本人会话抛NOT_FOUND")

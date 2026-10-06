@@ -25,6 +25,7 @@ import {
   type ConversationMeta,
 } from "@/lib/conversations";
 import type { ChatMessage } from "@/lib/types";
+import { parseTrustPayload, trustStore, type TrustPayload, type TrustStore } from "@/lib/trustMeta";
 
 export const AGENT_ID = "invest";
 
@@ -77,6 +78,29 @@ export function historyToAgentMessages(msgs: ChatMessage[]): Message[] {
 }
 
 /**
+ * MS-29 F5：信任锚定回灌重建——GET 侧 assistant payload（JSON 文本，F4 携带的逆路径）
+ * 经 parseTrustPayload 解析入 trustStore.rebuild（整表替换，与 agentMessagesToHistory
+ * 的携带路径对称，选点同在历史格式转换层）。设计 §5.4：payload 走独立 TrustMeta store，
+ * 不塞 AG-UI Message.metadata（避免污染消息通道）。
+ * - user 消息 payload（null / 缺键）忽略（user 恒无锚定）；
+ * - 解析失败行（非法 JSON / schema 不符 / v≠1 / 空串）跳过该行不炸整批；
+ * - 空历史即 rebuild 空表全清（切会话语义：store 不残留上一会话数据，台账随清）。
+ */
+export function rebuildTrustFromHistory(
+  msgs: ChatMessage[],
+  trust: Pick<TrustStore, "rebuild"> = trustStore,
+): void {
+  const entries: [string, TrustPayload][] = [];
+  for (const m of msgs) {
+    if (m.role !== "assistant") continue;
+    if (typeof m.payload !== "string" || m.payload === "") continue;
+    const payload = parseTrustPayload(m.payload);
+    if (payload) entries.push([m.id, payload]);
+  }
+  trust.rebuild(entries);
+}
+
+/**
  * AG-UI Message → 本地历史（ChatMessage）。
  * 注意（有意为之）：仅持久化 user/assistant 的纯文本，丢弃 toolCalls 与 reasoning。
  * 依据 ADR-0004 前端只保留精简历史以控制体积；代价是跨会话重灌后多轮上下文不含工具调用轨迹。
@@ -86,10 +110,18 @@ export function historyToAgentMessages(msgs: ChatMessage[]): Message[] {
  * flushPersist 以本地快照整体 PUT 前会带上服务端既有记录做并集——多标签页并发写时，
  * 其他窗口落库的消息不在本窗口快照里，不合并会把它们从服务端抹掉（互删）。
  * 共有 id 以服务端记录为准（保留其 createdAt 与原文），本地新增消息无 createdAt 时取 Date.now()。
+ *
+ * 信任 payload 携带（MS-29 F4）：assistant 消息自 trustStore 按 id 取 payload（TrustPayload v1
+ * 序列化为 JSON 文本）携带，user 恒不带。correction 原位替换后 store 内是后端终态锚定
+ * （B5 在 correction 后发 anchors）、文本同为替换后——携带即 content/payload 一致。
+ * 共有 id 的 payload 合并规则：**非空优先**——本地（本回合事件）非空即覆盖远端（双侧非空取
+ * 本地：最新回合事件先于远端 GET 快照，本地即最新）；本地空（回灌消息重 PUT 场景，trustStore
+ * 无该 id）则保留 GET 侧 payload；双侧都空则不带。content/createdAt 的服务端优先语义不变。
  */
 export function agentMessagesToHistory(
   messages: Message[],
   existing: ChatMessage[] = [],
+  trust: Pick<TrustStore, "snapshot"> = trustStore,
 ): ChatMessage[] {
   const out: ChatMessage[] = [];
   const seen = new Set<string>();
@@ -99,16 +131,33 @@ export function agentMessagesToHistory(
     out.push(m);
   }
   const prevCreatedAt = new Map(existing.map((m) => [m.id, m.createdAt]));
+  // 一次性快照取数（副本 Map）：循环内 store 不会再变更，携带口径稳定
+  const trustSnapshot = trust.snapshot();
+  const payloadFor = (m: Message): string | undefined => {
+    if (m.role !== "assistant") return undefined;
+    const p = trustSnapshot.get(m.id);
+    return p === undefined ? undefined : JSON.stringify(p);
+  };
   for (const m of messages) {
     if (m.role !== "user" && m.role !== "assistant") continue;
     const content = typeof m.content === "string" ? m.content.trim() : "";
-    if (!content || seen.has(m.id)) continue;
+    if (!content) continue;
+    const localPayload = payloadFor(m);
+    if (seen.has(m.id)) {
+      // 共有 id：content/createdAt 服务端优先（上方原样保留），仅 payload 按「本地非空即覆盖」
+      if (localPayload !== undefined) {
+        const idx = out.findIndex((e) => e.id === m.id);
+        if (idx !== -1) out[idx] = { ...out[idx], payload: localPayload };
+      }
+      continue;
+    }
     seen.add(m.id);
     out.push({
       id: m.id,
       role: m.role,
       content,
       createdAt: prevCreatedAt.get(m.id) ?? Date.now(),
+      ...(localPayload !== undefined ? { payload: localPayload } : {}),
     });
   }
   return out;

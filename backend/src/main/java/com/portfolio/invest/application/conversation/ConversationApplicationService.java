@@ -1,25 +1,41 @@
 package com.portfolio.invest.application.conversation;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.portfolio.invest.config.InvestProperties;
+import com.portfolio.invest.domain.conversation.ChatMessage;
 import com.portfolio.invest.domain.conversation.Conversation;
 import com.portfolio.invest.domain.conversation.ConversationConflictException;
 import com.portfolio.invest.domain.conversation.ConversationErrorCode;
 import com.portfolio.invest.domain.conversation.ConversationException;
 import com.portfolio.invest.domain.conversation.ConversationRepository;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class ConversationApplicationService {
 
+    private static final Logger log = LoggerFactory.getLogger(ConversationApplicationService.class);
+
     private static final int ID_MAX_LENGTH = 64; // 与 V1 基线 conversation.id VARCHAR(64) 对齐
     private static final int MAX_MESSAGES_PER_REQUEST = 500; // 单次保存条数上限，防存储滥用
 
-    private final ConversationRepository repository;
+    /** payload 合法性轻量树解析（无 schema 校验）；尾随垃圾也视为非法——与 PG jsonb 落库口径对齐，避免 DB 500。 */
+    private final ObjectMapper payloadJson = new ObjectMapper()
+            .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 
-    public ConversationApplicationService(ConversationRepository repository) {
+    private final ConversationRepository repository;
+    private final InvestProperties properties;
+
+    public ConversationApplicationService(ConversationRepository repository, InvestProperties properties) {
         this.repository = repository;
+        this.properties = properties;
     }
 
     public List<ConversationView> list(Long userId) {
@@ -64,8 +80,8 @@ public class ConversationApplicationService {
         String firstUser = wires.stream()
                 .filter(w -> "user".equals(w.role()))
                 .findFirst().map(ChatMessageWire::content).orElse(null);
-        // toDomain 内做逐条边界校验（role 白名单/id/content 长度），先校验再落库
-        var messages = wires.stream().map(ChatMessageWire::toDomain).toList();
+        // toDomain 内做逐条边界校验（role 白名单/id/content 长度），payload 守卫逐条降级，先校验再落库
+        var messages = wires.stream().map(this::toDomainWithPayloadGuard).toList();
         Instant now = Instant.now();
         Conversation renamed = conv.renameIfDefault(firstUser).touch(now);
         if (expectedUpdatedAt == null) {
@@ -90,6 +106,45 @@ public class ConversationApplicationService {
     private Conversation requireOwned(Long userId, String conversationId) {
         return repository.findByIdAndUserId(conversationId, userId)
                 .orElseThrow(() -> new ConversationException(ConversationErrorCode.NOT_FOUND, "会话不存在"));
+    }
+
+    /**
+     * B8 payload 守卫：单条降级不整批拒——user 消息带 payload 拒收、超 {@code invest.trust.payload-max-bytes}
+     * （UTF-8 字节口径）、非法 JSON 三者皆置 null 存文本；id/role/content 结构性校验仍由 {@code toDomain} 抛出。
+     */
+    private ChatMessage toDomainWithPayloadGuard(ChatMessageWire w) {
+        String payload = sanitizePayload(w);
+        return new ChatMessageWire(w.id(), w.role(), w.content(), payload, w.createdAt()).toDomain();
+    }
+
+    /** 降级时打一条结构化告警（messageId 可关联到具体消息），消息本体照常保存。 */
+    private String sanitizePayload(ChatMessageWire w) {
+        String payload = w.payload();
+        if (payload == null || payload.isBlank()) {
+            return null; // 空白载荷无信息量，静默归一为 null（空串进 PG jsonb 会触发解析错误）
+        }
+        String reason;
+        if (!"assistant".equals(w.role())) {
+            reason = "user-role"; // payload 仅 assistant 消息携带（设计规格 §4.4），user 恒 null
+        } else if (payload.getBytes(StandardCharsets.UTF_8).length > properties.getTrust().getPayloadMaxBytes()) {
+            reason = "oversize";
+        } else if (!isLegalJson(payload)) {
+            reason = "invalid-json";
+        } else {
+            return payload;
+        }
+        log.warn("消息 payload 已降级置空（messageId={}，reason={}，payloadBytes={}）",
+                w.id(), reason, payload.getBytes(StandardCharsets.UTF_8).length);
+        return null;
+    }
+
+    private boolean isLegalJson(String payload) {
+        try {
+            payloadJson.readTree(payload);
+            return true;
+        } catch (JsonProcessingException e) {
+            return false;
+        }
     }
 
     /**

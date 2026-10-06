@@ -3,6 +3,7 @@ package com.portfolio.invest.application.conversation;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.portfolio.invest.domain.conversation.ChatMessage;
 import com.portfolio.invest.domain.conversation.ChatMessageRole;
 import com.portfolio.invest.domain.conversation.ConversationException;
 import jakarta.validation.ConstraintViolation;
@@ -30,6 +31,32 @@ class ChatMessageWireTest {
         assertThat(m.role()).isEqualTo(ChatMessageRole.ASSISTANT);
         assertThat(m.content()).isEqualTo("你好");
         assertThat(m.createdAtMs()).isEqualTo(1700000000000L);
+    }
+
+    @DisplayName("B8：assistant 消息带 payload 时 toDomain 透传")
+    @Test
+    void givenAssistantPayload_whenToDomain_thenPassThrough() {
+        var m = new ChatMessageWire("m-1", "assistant", "你好", "{\"v\":1}", 1700000000000L).toDomain();
+
+        assertThat(m.payload()).isEqualTo("{\"v\":1}");
+    }
+
+    @DisplayName("B8：旧四参构造形态 payload 默认 null（存量调用方零改动兼容）")
+    @Test
+    void givenLegacyFourArgConstructor_whenCreate_thenPayloadNull() {
+        var w = new ChatMessageWire("m-1", "user", "hi", 1700000000000L);
+
+        assertThat(w.payload()).isNull();
+        assertThat(w.toDomain().payload()).isNull();
+    }
+
+    @DisplayName("B8：from 构造时携带 domain payload（GET 回灌）")
+    @Test
+    void givenDomainWithPayload_whenFrom_thenWireCarriesPayload() {
+        var domain = ChatMessage.create(null, "m-1", ChatMessageRole.ASSISTANT, "你好",
+                "{\"v\":1}", 1700000000000L);
+
+        assertThat(ChatMessageWire.from(domain).payload()).isEqualTo("{\"v\":1}");
     }
 
     @DisplayName("wire空id被BeanValidation拦截")

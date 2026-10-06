@@ -1,0 +1,10 @@
+{
+  "id": "composite-yi-yuan",
+  "category": "composite_unit",
+  "text": "贵州茅台总市值19500亿元",
+  "pool": [{"value": "1.9", "kind": "wanyi"}],
+  "expectedAnchors": [{"snippet": "19000亿", "occ": 1, "state": "verified", "wrong": true, "expectedRaw": "1.9万亿"}],
+  "expectedCorrections": [{"snippet": "19500亿", "occ": 1}],
+  "expectedNotes": ["原文误述 19500亿"],
+  "expectedText": "贵州茅台总市值19000亿元\n> ⚠ 校验修正：原文误述 19500亿"
+}
