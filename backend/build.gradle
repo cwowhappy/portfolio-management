@@ -390,6 +390,22 @@ tasks.register('evalExtraction', JavaExec) { t ->
     injectDeepseekEnv(t)
 }
 
+// eval 产物 Boot fat jar（MS-30 B1）：把 eval 源集（EvalRunner + 题库/eval questions/rubric 资源
+// + main 产物与依赖）打成可独立分发的 jar（classifier 'eval'），供部署机/CI 无 Gradle 环境以
+// `java -jar` 跑评测——与 evalAgent（JavaExec 直跑）同源不同形态，classpath 同为
+// sourceSets.eval.runtimeClasspath（eval 单向依赖 main 的边界不变）。与 evalAgent/evalExtraction
+// 同定位：不挂 check、无门槛。
+tasks.register('evalBootJar', org.springframework.boot.gradle.tasks.bundling.BootJar) {
+    group = 'verification'
+    description = '评测源集 Boot fat jar（classifier eval，main=EvalRunner，无 Gradle 环境分发用）'
+    archiveClassifier = 'eval'
+    mainClass = 'com.portfolio.invest.eval.EvalRunner'
+    classpath = sourceSets.eval.runtimeClasspath
+    // Boot 插件只给自建的具名 bootJar 任务挂 targetJavaVersion 约定，手工注册的 BootJar
+    // 不会自动继承——不显式指定，打包时查询该属性即抛「no value available」
+    targetJavaVersion = JavaVersion.VERSION_21
+}
+
 // test 单任务报告：供聚焦测试（--tests X）快速查看，不触发其他 suite
 jacocoTestReport {
     dependsOn test
