@@ -245,6 +245,50 @@ class TrustHookIntegrationTest extends PostgresTestSupport {
         assertThat(eventOfTypeOrNull(first, "RUN_ERROR")).isNull();
     }
 
+    // ———— MS-29 后续③：真实二回合 stateStore 序列化往返（跨轮回溯此前仅合成测试覆盖） ————
+
+    @DisplayName("跨轮回溯真实往返：回合 1 落盘 _trust_pool，新 agent 实例回合 2 无工具仍配对且 asOf 为原始 DATA 时点")
+    @Test
+    void givenPoolPersistedInTurnOne_whenSecondRunOnFreshAgent_thenRetroPairingWithOriginalDataAsOf() throws Exception {
+        // 回合 1：stub 工具真值 + 正文正确引用（无修正，纯池落盘路径）
+        MODEL.script(
+                List.of(toolCall("call_rt_1", "test_quote", "{\"code\":\"600519\"}")),
+                List.of(TextBlock.builder().text("茅台现价1520.33元。").build()));
+        MockHttpSession session = registerApproveAndLogin(mockMvc, userRepository, "trust_hook_carol");
+        String threadId = "trust-" + UUID.randomUUID();
+
+        run(mockMvc, session, runRequest(threadId, "rt-1", "查茅台现价"));
+
+        // 回合 1 断言：池摘要经 JsonFileAgentStateStore 落盘（agent_state.json）
+        String state = stateContentOf(threadId);
+        assertThat(state).contains("_trust_pool");
+        assertThat(state).contains("1520.33");
+
+        // 回合 2：换 script（本轮无工具调用），同一 threadId 再次 run——HTTP 路每请求经
+        // HarnessAgentFactory 重建 agent（新实例），state 由磁盘 agent_state.json 回灌，
+        // 跨轮池只能经真实序列化往返到达 historyPool()
+        MODEL.script(List.of(TextBlock.builder().text("茅台现价1520.33元。").build()));
+        String second = run(mockMvc, session, runRequest(threadId, "rt-2", "再报一次现价"));
+
+        assertThat(second).contains("\"name\":\"trust.anchors\"");
+        // 数值正确：无修正事件（本回合不应产生替换）
+        assertThat(second).doesNotContain("\"name\":\"trust.correction\"");
+
+        JsonNode anchors = customEvent(second, "trust.anchors");
+        assertThat(anchors).isNotNull();
+        JsonNode payload = anchors.path("value").path("payload");
+        assertThat(payload.path("stats").path("verified").asInt()).isEqualTo(1);
+        JsonNode anchor = payload.path("anchors").path(0);
+        // 回溯配对来源 = 回合 1 工具（非本回合调用——本回合零工具）
+        assertThat(anchor.path("state").asText()).isEqualTo("verified");
+        assertThat(anchor.path("tool").asText()).isEqualTo("test_quote");
+        // asOf 为回合 1 的原始 DATA 时点（stub 固定 2026-10-05 14:59:32）：非 CALL、
+        // 非本回合时刻（回合 2 实际发生在此之后）
+        assertThat(anchor.path("asOf").asText()).isEqualTo("2026-10-05 14:59:32");
+        assertThat(anchor.path("asOfKind").asText()).isEqualTo("data");
+        assertThat(anchor.path("raw").asText()).isEqualTo("1520.33");
+    }
+
     @DisplayName("飞书路：HarnessAgentFactory.build().call() 改写生效且无事件爆炸")
     @Test
     void givenFeishuFunnelCall_whenCall_thenRewriteEffectiveAndNoError() throws Exception {
