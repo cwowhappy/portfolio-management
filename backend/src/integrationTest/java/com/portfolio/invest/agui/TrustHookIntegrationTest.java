@@ -37,6 +37,7 @@ import io.agentscope.core.permission.PermissionDecision;
 import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.spring.boot.agui.common.ThreadSessionManager;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -106,6 +107,10 @@ class TrustHookIntegrationTest extends PostgresTestSupport {
 
     @Autowired
     HarnessAgentFactory harnessAgentFactory;
+
+    /** server-side-memory 的会话缓存（后续③用例在两回合间驱逐，强制磁盘回灌路径）。 */
+    @Autowired
+    ThreadSessionManager threadSessionManager;
 
     @TestBean(methodName = "scriptedModel")
     Model investModel;
@@ -247,7 +252,7 @@ class TrustHookIntegrationTest extends PostgresTestSupport {
 
     // ———— MS-29 后续③：真实二回合 stateStore 序列化往返（跨轮回溯此前仅合成测试覆盖） ————
 
-    @DisplayName("跨轮回溯真实往返：回合 1 落盘 _trust_pool，新 agent 实例回合 2 无工具仍配对且 asOf 为原始 DATA 时点")
+    @DisplayName("跨轮回溯真实往返：回合 1 落盘 _trust_pool，驱逐会话缓存后回合 2 无工具仍配对且 asOf 为原始 DATA 时点")
     @Test
     void givenPoolPersistedInTurnOne_whenSecondRunOnFreshAgent_thenRetroPairingWithOriginalDataAsOf() throws Exception {
         // 回合 1：stub 工具真值 + 正文正确引用（无修正，纯池落盘路径）
@@ -264,9 +269,18 @@ class TrustHookIntegrationTest extends PostgresTestSupport {
         assertThat(state).contains("_trust_pool");
         assertThat(state).contains("1520.33");
 
-        // 回合 2：换 script（本轮无工具调用），同一 threadId 再次 run——HTTP 路每请求经
-        // HarnessAgentFactory 重建 agent（新实例），state 由磁盘 agent_state.json 回灌，
-        // 跨轮池只能经真实序列化往返到达 historyPool()
+        // 驱逐内存会话缓存（server-side-memory: true 下 ThreadSessionManager 按
+        // (userId, threadId) 缓存 agent 实例——已存在会话只续期返回同实例，工厂不触发，
+        // historyPool 读的是回合 1 的内存 context；字节码核实 upsertSession 仅建会话分支
+        // 调 Supplier.get）。removeSession 命中同一 sessionKey，强制回合 2 重新走
+        // HarnessAgentFactory.build + 空 stateCache——跨轮池只能经磁盘 agent_state.json
+        // 序列化往返到达 historyPool()，这正是本用例要证的全链路
+        Long userId = userRepository.findByUsername("trust_hook_carol").orElseThrow().id();
+        assertThat(threadSessionManager.removeSession(userId.toString(), threadId))
+                .as("回合 1 的会话缓存应存在并被驱逐")
+                .isTrue();
+
+        // 回合 2：换 script（本轮无工具调用），同一 threadId 再次 run
         MODEL.script(List.of(TextBlock.builder().text("茅台现价1520.33元。").build()));
         String second = run(mockMvc, session, runRequest(threadId, "rt-2", "再报一次现价"));
 
