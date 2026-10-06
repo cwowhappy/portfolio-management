@@ -229,6 +229,16 @@ body::after {
   50% { opacity: 0.35; transform: scale(0.8); }
 }
 
+/* MS-29 后续④：修正替换落位一次性高亮（新鲜窗口内挂类，动画播一次即静止；视觉细节不测） */
+.trust-correction-flash {
+  border-radius: 3px;
+  animation: trust-correction-flash 1.2s ease-out 1 both;
+}
+@keyframes trust-correction-flash {
+  0% { background-color: color-mix(in srgb, var(--color-accent) 45%, transparent); }
+  100% { background-color: transparent; }
+}
+
 /* 输入框 */
 .composer {
   border: 1px solid var(--color-line);

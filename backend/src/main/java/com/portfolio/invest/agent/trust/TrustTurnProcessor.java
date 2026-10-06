@@ -204,7 +204,13 @@ public class TrustTurnProcessor {
                     entry.put("kind", invocation.asOfKind() == null
                             ? ToolInvocation.AsOfKind.CALL.wireName() : invocation.asOfKind().wireName());
                     entry.put("mcp", invocation.mcp());
-                    byValue.put((String) entry.get("v"), entry);
+                    // 覆盖序（MS-29 后续②）：更新既有键须 remove+put 移到尾部——LinkedHashMap
+                    // 重 put 保留原插入位，会破坏「保留最近条目」的 40-cap 逐出意图（早插入
+                    // 但刚更新的值可能被逐）；移尾后截断语义 = 逐出「最久未更新」的键，
+                    // 与「后写覆盖=最近一次调用」一致
+                    String key = (String) entry.get("v");
+                    byValue.remove(key);
+                    byValue.put(key, entry);
                 }
             }
         }

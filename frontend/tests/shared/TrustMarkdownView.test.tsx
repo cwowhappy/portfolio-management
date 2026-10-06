@@ -1,7 +1,15 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import TrustMarkdownView, { CorrectionNotes } from "@/components/shared/TrustMarkdownView";
-import { TrustPayloadSchema, type TrustPayload } from "@/lib/trustMeta";
+import TrustMarkdownView, { CorrectionNotes, TrustMessageContent } from "@/components/shared/TrustMarkdownView";
+import {
+  TRUST_ANCHORS_EVENT,
+  TRUST_CORRECTION_EVENT,
+  TrustPayloadSchema,
+  handleTrustCustomEvent,
+  trustStore,
+  type TrustPayload,
+} from "@/lib/trustMeta";
+import type { Message } from "@ag-ui/client";
 
 afterEach(() => cleanup());
 
@@ -217,5 +225,129 @@ describe("CorrectionNotes（修正注记引用块）", () => {
     const block = screen.getByTestId("trust-correction-notes");
     expect(block.textContent).toContain("校验修正失败：原文误述 15.20元");
     expect(block.textContent!.match(/校验修正/g)).toHaveLength(1);
+  });
+});
+
+// ———— MS-29 后续④：瞬时高亮（拍板 #10 另一半：替换落位数字一次性视觉反馈） ————
+
+describe("TrustMarkdownView flashSnippets（替换落位一次性高亮）", () => {
+  it("命中替换串的锚定数字带高亮标记 span，其余锚定不带", () => {
+    render(
+      <TrustMarkdownView
+        content={"现价1520.33元，目标38倍。"}
+        anchors={[
+          { snippet: "1520.33元", occ: 1, state: "verified" },
+          { snippet: "38倍", occ: 1, state: "unverified" },
+        ]}
+        flashSnippets={new Set(["1520.33元"])}
+      />,
+    );
+    const flashes = screen.getAllByTestId("trust-correction-flash");
+    expect(flashes).toHaveLength(1);
+    expect(flashes[0].textContent).toBe("1520.33元");
+    // 高亮 span 带动画类（一次性 CSS 动画由 globals.css 定义，视觉本身不测）
+    expect(flashes[0].className).toContain("trust-correction-flash");
+    // 未替换锚定的包裹元素（38倍）内无高亮 span
+    const badges = screen.getAllByTestId("trust-anchor-badge");
+    expect(badges[1].parentElement?.querySelector('[data-testid="trust-correction-flash"]')).toBeNull();
+  });
+
+  it("缺省 flashSnippets（无新鲜修正）：零高亮标记，渲染不受影响", () => {
+    render(
+      <TrustMarkdownView
+        content={"现价1520.33元。"}
+        anchors={[{ snippet: "1520.33元", occ: 1, state: "verified" }]}
+      />,
+    );
+    expect(screen.queryAllByTestId("trust-correction-flash")).toHaveLength(0);
+    expect(screen.getAllByTestId("trust-anchor-badge")).toHaveLength(1);
+  });
+});
+
+describe("TrustMessageContent 修正新鲜窗口（可控时钟）", () => {
+  const MSG_ID = "flash-m1";
+
+  function assistantMsg(id: string, content: string): Message {
+    return { id, role: "assistant", content } as Message;
+  }
+
+  /** live 路径夹具：correction 替换 15.20元→1520.33元 + anchors 终态（替换后形态锚定）。 */
+  function dispatchLiveCorrectionAndAnchors() {
+    const messages = [assistantMsg(MSG_ID, "现价15.20元，目标38倍。")];
+    const corrected = handleTrustCustomEvent(
+      {
+        name: TRUST_CORRECTION_EVENT,
+        value: { messageId: MSG_ID, snippet: "15.20元", occ: 1, replacement: "1520.33元", note: "原文误述 15.20元" },
+      },
+      messages,
+      trustStore,
+    )!.messages!;
+    handleTrustCustomEvent(
+      {
+        name: TRUST_ANCHORS_EVENT,
+        value: {
+          messageId: MSG_ID,
+          payload: {
+            v: 1,
+            anchors: [
+              { snippet: "1520.33元", occ: 1, state: "verified", tool: "get_quote", asOf: "2026-10-05 14:59:32", asOfKind: "data", raw: "1520.33" },
+              { snippet: "38倍", occ: 1, state: "unverified" },
+            ],
+            stats: { verified: 1, sourced: 0, unverified: 1 },
+          },
+        },
+      },
+      corrected,
+      trustStore,
+    );
+    return corrected;
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    trustStore.rebuild([]);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    cleanup();
+    trustStore.rebuild([]);
+  });
+
+  it("新鲜窗口内：替换落位锚定带高亮标记；窗口过期后重渲染不再带（不重放）", () => {
+    const corrected = dispatchLiveCorrectionAndAnchors();
+    const view = render(
+      <TrustMessageContent messageId={MSG_ID} content={corrected[0].content as string} />,
+    );
+    const flashes = screen.getAllByTestId("trust-correction-flash");
+    expect(flashes).toHaveLength(1);
+    expect(flashes[0].textContent).toBe("1520.33元");
+
+    // 窗口过期（>3s）后重渲染（如其他 store 事件）：新鲜判定失效，高亮不重放
+    vi.advanceTimersByTime(3_500);
+    view.rerender(<TrustMessageContent messageId={MSG_ID} content={corrected[0].content as string} />);
+    expect(screen.queryAllByTestId("trust-correction-flash")).toHaveLength(0);
+    // 角标渲染不受窗口过期影响
+    expect(screen.getAllByTestId("trust-anchor-badge")).toHaveLength(2);
+  });
+
+  it("回灌路径（rebuild）无新鲜时间戳：不挂高亮", () => {
+    const corrected = dispatchLiveCorrectionAndAnchors();
+    // 历史回灌：整表重建（payload 来自持久化，correction 打点随 rebuild 清）
+    trustStore.rebuild([
+      [
+        MSG_ID,
+        TrustPayloadSchema.parse({
+          v: 1,
+          anchors: [{ snippet: "1520.33元", occ: 1, state: "verified" }],
+          stats: { verified: 1, sourced: 0, unverified: 0 },
+          correction: { notes: ["原文误述 15.20元"] },
+        }),
+      ],
+    ]);
+    render(<TrustMessageContent messageId={MSG_ID} content={corrected[0].content as string} />);
+    expect(screen.queryAllByTestId("trust-correction-flash")).toHaveLength(0);
+    // 回灌后角标与注记照常渲染（高亮是唯一差异面）
+    expect(screen.getAllByTestId("trust-anchor-badge")).toHaveLength(1);
+    expect(screen.getByTestId("trust-correction-notes").textContent).toContain("15.20元");
   });
 });
