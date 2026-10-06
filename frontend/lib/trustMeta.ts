@@ -136,6 +136,19 @@ export interface TrustStore {
   /** correction 事件落地：注记并入（按文案去重幂等）；anchors 未到时先落占位条目。 */
   applyCorrection(messageId: string, note: string): void;
   /**
+   * 该消息最近一次 live correction 到达时刻（epoch ms；MS-29 后续④瞬时高亮数据源）。
+   * 注记真正落地时打点（重复事件幂等 no-op 不重打）；rebuild（历史回灌）清空——
+   * 回灌路径无新鲜时间戳，高亮不重放。无 correction 返回 undefined。
+   */
+  correctionFreshAt(messageId: string): number | undefined;
+  /**
+   * 新鲜窗口内的替换落位 snippet 集合（渲染期判定入口，useSyncExternalStore 快照源）：
+   * live correction 打点后 {@link CORRECTION_FRESH_WINDOW_MS} 内，返回台账 records 的
+   * replacement 集合（**引用稳定**：同打点时刻缓存同 Set 实例）；窗口外 / 回灌 /
+   * 无记录返回 undefined。时间读取在 store 侧完成——组件渲染体保持纯净（react-hooks/purity）。
+   */
+  correctionFlash(messageId: string): ReadonlySet<string> | undefined;
+  /**
    * 某消息的修正台账（惰性创建）：分派器在原位替换时持有并更新（唯一写方），
    * F2（差异渲染）/F4（快照）只读消费。
    */
@@ -164,6 +177,9 @@ function placeholderPayload(): TrustPayload {
 export function createTrustStore(): TrustStore {
   const payloads = new Map<string, TrustPayload>();
   const ledgers = new Map<string, TrustCorrectionLedger>();
+  const freshCorrections = new Map<string, number>();
+  /** correctionFlash 的 Set 缓存（key=messageId）：同打点时刻复用同实例——快照引用稳定契约。 */
+  const flashCache = new Map<string, { at: number; flash: ReadonlySet<string> | undefined }>();
   const listeners = new Set<() => void>();
   return {
     get: (messageId) => payloads.get(messageId),
@@ -182,12 +198,29 @@ export function createTrustStore(): TrustStore {
     applyCorrection(messageId, note) {
       const existing = payloads.get(messageId);
       const notes = existing?.correction?.notes ?? [];
-      if (notes.includes(note)) return; // 重复 correction 事件：注记幂等
+      if (notes.includes(note)) return; // 重复 correction 事件：注记幂等（新鲜打点不重打）
       payloads.set(messageId, {
         ...(existing ?? placeholderPayload()),
         correction: { notes: [...notes, note] },
       });
+      freshCorrections.set(messageId, Date.now());
       listeners.forEach((l) => l());
+    },
+    correctionFreshAt: (messageId) => freshCorrections.get(messageId),
+    correctionFlash(messageId) {
+      const at = freshCorrections.get(messageId);
+      if (at === undefined || Date.now() - at >= CORRECTION_FRESH_WINDOW_MS) {
+        return undefined;
+      }
+      // 同打点时刻缓存同 Set 实例（新 correction 重打点即换新缓存；台账 records 与打点
+      // 同一事件内同步写，先渲染后写不发生）：useSyncExternalStore 快照引用稳定
+      let cached = flashCache.get(messageId);
+      if (!cached || cached.at !== at) {
+        const records = ledgers.get(messageId)?.records ?? [];
+        cached = { at, flash: records.length > 0 ? new Set(records.map((r) => r.replacement)) : undefined };
+        flashCache.set(messageId, cached);
+      }
+      return cached.flash;
     },
     correctionLedger(messageId) {
       let ledger = ledgers.get(messageId);
@@ -200,9 +233,12 @@ export function createTrustStore(): TrustStore {
     snapshot: () => new Map(payloads),
     rebuild(entries) {
       // 整表替换（先清 payloads 与台账再写入）：F1 契约——rebuild 语义 = 新基线，
-      // 台账须同步清（occ 恒对原文解析，回灌 content 已含后端改写，旧基线作废）
+      // 台账须同步清（occ 恒对原文解析，回灌 content 已含后端改写，旧基线作废）；
+      // 新鲜修正打点与高亮缓存一并清（MS-29 后续④：回灌不重放高亮）
       payloads.clear();
       ledgers.clear();
+      freshCorrections.clear();
+      flashCache.clear();
       for (const [messageId, payload] of entries) payloads.set(messageId, payload);
       listeners.forEach((l) => l());
     },
@@ -215,6 +251,12 @@ export function createTrustStore(): TrustStore {
 
 /** 页面级单例：ThreadArea 订阅落库、F2 渲染消费同一实例。 */
 export const trustStore: TrustStore = createTrustStore();
+
+/**
+ * 修正新鲜窗口（MS-29 后续④瞬时高亮）：live correction 到达后该毫秒数内，替换落位的
+ * 锚定数字挂一次性 CSS 动画类；窗口过期或回灌（无新鲜时间戳）不重放。
+ */
+export const CORRECTION_FRESH_WINDOW_MS = 3_000;
 
 // ———— 合法边界定位（后端 ConsistencyValidator.occurrenceStart / validBoundary 同构移植）————
 

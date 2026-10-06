@@ -4,8 +4,16 @@ import remarkGfm from "remark-gfm";
 import { CodeBlock, InlineCode } from "@/components/chat/CodeHighlight";
 import MarkdownView from "@/components/shared/MarkdownView";
 import { AnchorBadge } from "@/components/shared/AnchorBadge";
-import { remarkTrustAnchors, TRUST_ANCHOR_IDX_PROP } from "@/lib/trustAnchorsRemark";
-import { trustStore, type TrustAnchor, type TrustPayload } from "@/lib/trustMeta";
+import {
+  remarkTrustAnchors,
+  TRUST_ANCHOR_FLASH_PROP,
+  TRUST_ANCHOR_IDX_PROP,
+} from "@/lib/trustAnchorsRemark";
+import {
+  trustStore,
+  type TrustAnchor,
+  type TrustPayload,
+} from "@/lib/trustMeta";
 
 // MS-29 F2：带溯源角标的 markdown 渲染（设计规格 §5.2）。
 // MarkdownView 零改动约束：角标路径在本组件内自持一份同集 components/urlTransform
@@ -18,14 +26,31 @@ export function useTrustPayload(messageId: string): TrustPayload | undefined {
   return useSyncExternalStore(trustStore.subscribe, () => trustStore.get(messageId));
 }
 
+/**
+ * MS-29 后续④瞬时高亮数据源：新鲜窗口内的替换落位 snippet 集合。
+ * live correction 到达时 store 打点，窗口判定与快照引用稳定都在 store 侧
+ * （correctionFlash——渲染体不触 Date.now()，react-hooks/purity）；窗口过期 / 回灌
+ * （rebuild 后无打点）返回 undefined（高亮不重放）。不设过期定时器：窗口内一次性动画
+ * 播完即静止，类在下次重渲染时自然摘除，不引入持久 DOM 状态。
+ */
+function useCorrectionFlashSnippets(messageId: string): ReadonlySet<string> | undefined {
+  return useSyncExternalStore(
+    trustStore.subscribe,
+    () => trustStore.correctionFlash(messageId),
+  );
+}
+
 function TrustMarkdownView({
   content,
   anchors,
+  flashSnippets,
   className = DEFAULT_CLASS,
 }: {
   content: string;
   /** 无 / 空数组 → 原样走 MarkdownView（零开销路径） */
   anchors?: readonly TrustAnchor[] | null;
+  /** 替换落位 snippet 集合（新鲜窗口内的修正）：对应锚定数字挂一次性高亮（后续④） */
+  flashSnippets?: ReadonlySet<string>;
   className?: string;
 }) {
   if (!anchors || anchors.length === 0) {
@@ -72,10 +97,18 @@ function TrustMarkdownView({
       const raw = (props as Record<string, unknown>)[TRUST_ANCHOR_IDX_PROP];
       const idx = typeof raw === "string" || typeof raw === "number" ? Number(raw) : NaN;
       const anchor = Number.isInteger(idx) ? anchors[idx] : undefined;
+      // 替换落位高亮（后续④）：新鲜窗口内的修正，其落位数字包一层一次性动画 span
+      const flash = (props as Record<string, unknown>)[TRUST_ANCHOR_FLASH_PROP] !== undefined;
       // 无对应锚（防御，正常不可达）：还原普通 sup，宁可少标不可崩
       return anchor ? (
         <AnchorBadge anchor={anchor} label={idx + 1}>
-          {props.children}
+          {flash ? (
+            <span data-testid="trust-correction-flash" className="trust-correction-flash">
+              {props.children}
+            </span>
+          ) : (
+            props.children
+          )}
         </AnchorBadge>
       ) : (
         <sup>{props.children}</sup>
@@ -85,7 +118,7 @@ function TrustMarkdownView({
   return (
     <div className={className}>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, [remarkTrustAnchors, { content, anchors }]]}
+        remarkPlugins={[remarkGfm, [remarkTrustAnchors, { content, anchors, flashSnippets }]]}
         urlTransform={(url) => {
           // 与 MarkdownView 同款：默认 transform 已拦 javascript:/data:；再拦明文 http。
           if (url.startsWith("/") || url.startsWith("https://")) return url;
@@ -133,12 +166,15 @@ export function CorrectionNotes({ notes }: { notes?: readonly string[] | null })
  * memo 比较器只看 message/toolMessage 引用，trust 数据带外——store 事件只重渲染本
  * 组件，不触发整列表重渲染，也绕开 CopilotKit 两套 context 实例的坑。
  * 内容尾部挂 CorrectionNotes（拍板 #10 注记保留）：live 与回灌同一订阅路径。
+ * 新鲜窗口内对替换落位锚定挂一次性高亮（后续④，拍板 #10「瞬时高亮」半边——替换可见性
+ * 的主通道仍是注记块 + 横幅信号，高亮仅为 live 到达时的一次性视觉反馈）。
  */
 export function TrustMessageContent({ messageId, content }: { messageId: string; content: string }) {
   const payload = useTrustPayload(messageId);
+  const flashSnippets = useCorrectionFlashSnippets(messageId);
   return (
     <>
-      <TrustMarkdownView content={content} anchors={payload?.anchors} />
+      <TrustMarkdownView content={content} anchors={payload?.anchors} flashSnippets={flashSnippets} />
       <CorrectionNotes notes={payload?.correction?.notes} />
     </>
   );

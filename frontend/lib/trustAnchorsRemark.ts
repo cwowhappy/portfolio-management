@@ -29,11 +29,17 @@ const SKIPPED_SUBTREES = new Set(["code", "inlineCode", "math", "inlineMath", "h
 export const TRUST_ANCHOR_MARK = "trustAnchorMark";
 /** sup 元素上回传 anchors 数组序的属性名（components.sup 映射据此取 anchor）。 */
 export const TRUST_ANCHOR_IDX_PROP = "data-anchor-idx";
+/** sup 元素上的瞬时高亮标记属性名（MS-29 后续④：替换落位锚定，components.sup 据此挂动画类）。 */
+export const TRUST_ANCHOR_FLASH_PROP = "data-trust-flash";
 
-function anchorMarkNode(idx: number, snippet: string): MdastNode {
+function anchorMarkNode(idx: number, snippet: string, flash: boolean): MdastNode {
+  const hProperties: Record<string, string> = { [TRUST_ANCHOR_IDX_PROP]: String(idx) };
+  if (flash) {
+    hProperties[TRUST_ANCHOR_FLASH_PROP] = "1";
+  }
   return {
     type: TRUST_ANCHOR_MARK,
-    data: { hName: "sup", hProperties: { [TRUST_ANCHOR_IDX_PROP]: String(idx) } },
+    data: { hName: "sup", hProperties },
     children: [{ type: "text", value: snippet }],
   };
 }
@@ -69,6 +75,12 @@ export interface TrustAnchorsPluginOptions {
   /** ReactMarkdown 渲染的原始 markdown 全文（occ 定位基线，与 correction 替换同一字符串）。 */
   content: string;
   anchors: readonly TrustAnchor[];
+  /**
+   * 替换落位 snippet 集合（MS-29 后续④瞬时高亮）：处于新鲜窗口内的修正，其 replacement
+   * 落位锚定携带 flash 标记属性（components.sup 据此给数字挂一次性动画类）。
+   * 缺省/空集 = 无新鲜修正，零标记。
+   */
+  flashSnippets?: ReadonlySet<string>;
 }
 
 /**
@@ -79,6 +91,7 @@ export function applyTrustAnchors(
   tree: MdastNode,
   content: string,
   anchors: readonly TrustAnchor[],
+  flashSnippets?: ReadonlySet<string>,
 ): void {
   if (anchors.length === 0) return;
   const textNodes: TextNodeRef[] = [];
@@ -127,7 +140,7 @@ export function applyTrustAnchors(
       // value 与源文漂移（同节点内含转义/实体改写）：区间对不上即跳过该锚
       if (value.slice(relStart, relEnd) !== hit.anchor.snippet) continue;
       if (relStart > cursor) parts.push(plainText(value.slice(cursor, relStart)));
-      parts.push(anchorMarkNode(hit.idx, hit.anchor.snippet));
+      parts.push(anchorMarkNode(hit.idx, hit.anchor.snippet, flashSnippets?.has(hit.anchor.snippet) === true));
       cursor = relEnd;
       landed = true;
     }
@@ -140,8 +153,8 @@ export function applyTrustAnchors(
   }
 }
 
-/** remark 插件形态：`remarkPlugins={[[remarkTrustAnchors, { content, anchors }]]}`。 */
+/** remark 插件形态：`remarkPlugins={[[remarkTrustAnchors, { content, anchors, flashSnippets? }]]}`。 */
 export function remarkTrustAnchors(options: TrustAnchorsPluginOptions) {
-  const { content, anchors } = options;
-  return (tree: MdastNode) => applyTrustAnchors(tree, content, anchors);
+  const { content, anchors, flashSnippets } = options;
+  return (tree: MdastNode) => applyTrustAnchors(tree, content, anchors, flashSnippets);
 }

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Message } from "@ag-ui/client";
 import {
   TRUST_ANCHORS_EVENT,
@@ -211,6 +211,34 @@ describe("TrustStore", () => {
     unsubscribe();
     store.applyCorrection("m1", "n");
     expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  // ———— MS-29 后续④：新鲜修正时间戳（瞬时高亮数据源：live 打点 / 回灌清零） ————
+
+  describe("correctionFreshAt（新鲜修正时间戳）", () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    it("live correction 落注记时打点；重复注记（幂等 no-op）不重打，新注记重打", () => {
+      const store = createTrustStore();
+      expect(store.correctionFreshAt("m1")).toBeUndefined();
+      store.applyCorrection("m1", "n1");
+      const stampedAt = Date.now();
+      expect(store.correctionFreshAt("m1")).toBe(stampedAt);
+      vi.advanceTimersByTime(1_000);
+      store.applyCorrection("m1", "n1"); // 重复事件：注记幂等，不打点
+      expect(store.correctionFreshAt("m1")).toBe(stampedAt);
+      store.applyCorrection("m1", "n2"); // 新修正：以到达时刻重打
+      expect(store.correctionFreshAt("m1")).toBe(Date.now());
+    });
+
+    it("rebuild（历史回灌）清空打点——回灌路径无新鲜时间戳，高亮不重放", () => {
+      const store = createTrustStore();
+      store.applyCorrection("m1", "n1");
+      expect(store.correctionFreshAt("m1")).toBeDefined();
+      store.rebuild([["m1", anchorsPayload()]]);
+      expect(store.correctionFreshAt("m1")).toBeUndefined();
+    });
   });
 
   // MS-29 F4：snapshot 只读快照导出（agentMessagesToHistory 携带取数入口）
