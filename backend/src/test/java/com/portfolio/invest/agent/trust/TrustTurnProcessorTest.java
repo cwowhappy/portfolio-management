@@ -295,6 +295,31 @@ class TrustTurnProcessorTest {
         assertThat(report.poolSummary()).hasSize(40);
     }
 
+    // ———— 覆盖序（MS-29 后续②）：更新既有键移到尾部，40-cap 逐出 = 最久未更新 ————
+
+    @DisplayName("池摘要覆盖序：旧键更新后超容量，逐出的是更久未更新的键而非早插入且刚更新的键")
+    @Test
+    void givenUpdatedOldKeyOverCapacity_whenProcess_thenEvictsLeastRecentlyUpdated() {
+        List<ToolInvocation> pool = new ArrayList<>();
+        pool.add(invocation("{\"price\":100.00}"));
+        for (int i = 1; i <= 40; i++) {
+            pool.add(new ToolInvocation("get_quote", Map.of(), "{\"price\":" + (100 + i) + ".00}",
+                    List.of(), "2026-10-05 14:59:32", ToolInvocation.AsOfKind.DATA, false, false));
+        }
+        // 同值再调用一次（「后写覆盖=最近一次调用」语义）：键 100 刚被更新
+        pool.add(invocation("{\"price\":100.00,\"time\":\"2026-10-06 09:30:00\"}"));
+        var report = processor.process("无数字。", pool, List.of(), List.of());
+
+        // 41 个不同值、上限 40：被逐出的应是最久未更新的键（101），而非更早插入但刚更新的键（100）
+        assertThat(report.poolSummary()).hasSize(40);
+        assertThat(report.poolSummary())
+                .extracting(entry -> entry.get("v"))
+                .doesNotContain("101")
+                .contains("100");
+        // 刚更新的键移到尾部（= 最近条目位）
+        assertThat(report.poolSummary().get(39).get("v")).isEqualTo("100");
+    }
+
     // ———— payload v1 形态（§2.1：无 null 用缺键；correction 键仅有注记时存在） ————
 
     @DisplayName("payload：v=1、anchors/stats 齐备、correction 键仅有修正时存在、无 null 值")
