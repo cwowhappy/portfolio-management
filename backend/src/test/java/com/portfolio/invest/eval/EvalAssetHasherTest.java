@@ -77,18 +77,19 @@ class EvalAssetHasherTest {
                 "intel.news_extract", "intel.policy_extract");
     }
 
-    @DisplayName("evalAssets：rubric 5 文件 + 题库 7 文件逐文件指纹（eval-only 资产回流登记通道）")
+    @DisplayName("evalAssets：rubric 5 文件 + 题库 8 文件逐文件指纹（eval-only 资产回流登记通道；MS-30 E1 增 market-fact）")
     @Test
     void givenStandaloneCollection_whenEvalAssetsListed_thenRubricAndQuestionFiles() {
         EvalAssetHasher.Collected collected = EvalAssetHasher.collectStandalone();
 
         Map<String, Long> byType = collected.evalAssets().stream()
                 .collect(Collectors.groupingBy(ReportWriter.AssetHash::assetType, Collectors.counting()));
-        assertThat(byType).containsEntry("EVAL_RUBRIC", 5L).containsEntry("QUESTION_BANK", 7L);
-        assertThat(collected.evalAssets()).hasSize(12);
+        assertThat(byType).containsEntry("EVAL_RUBRIC", 5L).containsEntry("QUESTION_BANK", 8L);
+        assertThat(collected.evalAssets()).hasSize(13);
         List<String> keys = collected.evalAssets().stream()
                 .map(ReportWriter.AssetHash::assetKey).toList();
-        assertThat(keys).contains("question_bank.single-turn", "question_bank.real");
+        assertThat(keys).contains("question_bank.single-turn", "question_bank.market-fact",
+                "question_bank.real");
     }
 
     @DisplayName("题库聚合 hash 确定性：两次采集一致且不等于任何单文件指纹")

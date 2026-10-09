@@ -8,7 +8,8 @@ import java.util.List;
  * 题库条目（src/eval/resources/questions/*.yaml，每文件一个 YAML 数组元素列表）。
  * 五要素：id / category / mode / turns / expect + judge 引用 + stubData 桩注入。
  *
- * <p>{@code category} 四类：single-turn 单轮 | multi-turn 多轮 | boundary 边界 | mcp MCP。
+ * <p>{@code category} 五类：single-turn 单轮 | multi-turn 多轮 | boundary 边界 | mcp MCP |
+ * MARKET_FACT 行情事实（MS-30 E1 起新三类金融 QA 基准之一，大写——词表见 {@link #CATEGORIES}）。
  * {@code mode}：stub（JVM 内桩上下文跑）| real（真实环境 HTTP 轨，本批次只留口子）。
  * null 的 expect 字段表示该维度不评估（SKIP），而非默认通过（装载校验要求至少声明一维，
  * 见 {@link #declaredDimensions()}）。
@@ -23,8 +24,14 @@ public record EvalQuestion(
         String judge,
         EvalStubData stubData) {
 
-    /** 题目类别枚举值（方案 §5.3 四分类）。 */
-    public static final List<String> CATEGORIES = List.of("single-turn", "multi-turn", "boundary", "mcp");
+    /**
+     * 题目类别枚举值（方案 §5.3 四分类 + MS-30 E1 起新三类金融 QA 基准）。MARKET_FACT 大写
+     * 与 main 侧 {@code EvalRegressionJudge.NEW_CATEGORIES} 逐字对齐——分类判定只遍历该常量
+     * 词表，题库侧错字即分类判定静默旁路（QuestionLoaderTest 钉对齐）；METRIC_CALC /
+     * HALLUCINATION_INDUCTION 归 Task 12/13 落题库时再增。
+     */
+    public static final List<String> CATEGORIES =
+            List.of("single-turn", "multi-turn", "boundary", "mcp", "MARKET_FACT");
     public static final List<String> MODES = List.of("stub", "real");
 
     /** 断言维度（方案 §5.3 映射），全部可空=SKIP。 */

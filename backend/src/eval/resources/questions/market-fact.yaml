@@ -1,0 +1,381 @@
+# 行情事实类基线 10 题（MS-30 E1，category=MARKET_FACT——大写与 EvalRegressionJudge.NEW_CATEGORIES
+# 逐字对齐，错字则分类判定静默旁路）：价格直查（代码直查免搜）/涨跌幅/市值/成交额/多标的对比/
+# 盘中时点敏感（独立 11:30 盘中快照，非收盘数据集）/边界空结果如实复述/单位换算（万元→元）/
+# 大盘指数直查/估值指标直查。每题 expect 断言 dataFidelity+judge rubric-answer-quality；
+# entityAlignment 除无参工具的大盘题（无入参可对齐，沿 st-overview-market 先例）外全量声明。
+# 桩数据自洽（沿 extraction 题库先例）：changePct=change/prevClose 四舍五入两位、amount(亿元)
+# 与 volume×均价同量级、盘中快照的昨收/开盘与收盘数据集同日且高低/量额不越过收盘集
+# （high 1732 ≤ 1741.88、low 1706.2 ≥ 1705.02、量额约为半日量级）；股票池沿用 600519/000001/300750。
+# 口径说明：Quote 无市值字段——市值事实取自桩新闻文本（2.18 万亿 ≈ 1735.86 元 × 总股本 12.56 亿股，
+# 自洽）；单位换算题的 dataFidelity 锚钉新闻原文「420,000万元」的复述（两段式提问逼出复述），
+# 换算正确性（42 亿元）由 judge rubric 评；涨跌幅题不锚负号（模型常写「下跌1.17%」）。
+# 注意（沿 single-turn.yaml 头注释）：quotes 的 code 键一律加引号——裸 000001 会被 YAML 1.1 按
+# 八进制解析成 1，桩查找静默 miss；不用 YAML anchor/alias 复用数据集（jackson-dataformat-yaml
+# 2.20 会把别名解析成锚点名字符串），故各题桩数据完整展开、数值跨题保持同一套。
+
+- id: mf-quote-maotai-by-code
+  category: MARKET_FACT
+  mode: stub
+  turns:
+    - 600519 现在的最新价是多少？
+  expect:
+    # 用户直接给代码：直查 get_quote 与先 search 后查均属良性路径——评估点在实体对齐与数值
+    # 保真，不在路径（不声明 toolSequence，免 prepend 误伤）
+    entityAlignment: {tool: "get_quote", paramContains: "600519"}
+    chartEvent: false
+    disclaimer: true
+    refusal: false
+    dataFidelity:
+      answerContains: ["1735.86"]
+  judge: rubric-answer-quality
+  stubData:
+    quotes:
+      "600519":
+        code: "600519"
+        name: 贵州茅台
+        price: 1735.86
+        change: 26.02
+        changePct: 1.52
+        open: 1712.0
+        high: 1741.88
+        low: 1705.02
+        prevClose: 1709.84
+        volume: 3215400
+        amount: 55.47
+        pe: 22.4
+        pb: 8.11
+        time: "2026-09-14 15:00:00"
+
+- id: mf-quote-pingan-change
+  category: MARKET_FACT
+  mode: stub
+  turns:
+    - 平安银行今天涨了还是跌了？涨跌幅是多少？现在多少钱？
+  expect:
+    toolSequence: ["search_stock", "get_quote"]
+    toolSequenceMatch: prefix
+    entityAlignment: {tool: "search_stock", paramContains: 平安银行}
+    chartEvent: false
+    disclaimer: true
+    refusal: false
+    dataFidelity:
+      # 不锚 "-1.17"：模型常表述「下跌1.17%」无负号——锚数字本身，涨跌方向表述由 judge 评
+      answerContains: ["11.86", "1.17"]
+  judge: rubric-answer-quality
+  stubData:
+    search:
+      - {code: "000001", name: 平安银行, market: "0", marketName: 深市}
+    quotes:
+      "000001":
+        code: "000001"
+        name: 平安银行
+        price: 11.86
+        change: -0.14
+        changePct: -1.17
+        open: 12.02
+        high: 12.05
+        low: 11.80
+        prevClose: 12.00
+        volume: 86540000
+        amount: 10.28
+        pe: 4.85
+        pb: 0.58
+        time: "2026-09-14 15:00:00"
+
+- id: mf-quote-catl-amount
+  category: MARKET_FACT
+  mode: stub
+  turns:
+    - 宁德时代今天成交额是多少？
+  expect:
+    toolSequence: ["search_stock", "get_quote"]
+    toolSequenceMatch: prefix
+    entityAlignment: {tool: "search_stock", paramContains: 宁德时代}
+    chartEvent: false
+    disclaimer: true
+    refusal: false
+    dataFidelity:
+      # 桩 amount 单位为亿元（东财口径）——答案应带「33.42亿」量级，单位标注是否准确由 judge 评
+      answerContains: ["33.42"]
+  judge: rubric-answer-quality
+  stubData:
+    search:
+      - {code: "300750", name: 宁德时代, market: "0", marketName: 深市}
+    quotes:
+      "300750":
+        code: "300750"
+        name: 宁德时代
+        price: 268.4
+        change: 7.4
+        changePct: 2.84
+        open: 261.6
+        high: 270.0
+        low: 259.11
+        prevClose: 261.0
+        volume: 12450000
+        amount: 33.42
+        pe: 25.6
+        pb: 5.32
+        time: "2026-09-14 15:00:00"
+
+- id: mf-quote-amount-compare
+  category: MARKET_FACT
+  mode: stub
+  turns:
+    - 茅台和平安银行今天谁的成交额更大？分别是多少？
+  expect:
+    toolSequence: ["search_stock"]
+    toolSequenceMatch: prefix
+    entityAlignment: {tool: "search_stock", paramContains: 茅台}
+    chartEvent: false
+    disclaimer: true
+    refusal: false
+    dataFidelity:
+      answerContains: ["55.47", "10.28"]
+  judge: rubric-answer-quality
+  stubData:
+    search:
+      - {code: "600519", name: 贵州茅台, market: "1", marketName: 沪市}
+      - {code: "000001", name: 平安银行, market: "0", marketName: 深市}
+    quotes:
+      "600519":
+        code: "600519"
+        name: 贵州茅台
+        price: 1735.86
+        change: 26.02
+        changePct: 1.52
+        open: 1712.0
+        high: 1741.88
+        low: 1705.02
+        prevClose: 1709.84
+        volume: 3215400
+        amount: 55.47
+        pe: 22.4
+        pb: 8.11
+        time: "2026-09-14 15:00:00"
+      "000001":
+        code: "000001"
+        name: 平安银行
+        price: 11.86
+        change: -0.14
+        changePct: -1.17
+        open: 12.02
+        high: 12.05
+        low: 11.80
+        prevClose: 12.00
+        volume: 86540000
+        amount: 10.28
+        pe: 4.85
+        pb: 0.58
+        time: "2026-09-14 15:00:00"
+
+- id: mf-quote-maotai-intraday
+  category: MARKET_FACT
+  mode: stub
+  turns:
+    - 看看茅台今天的盘中表现：目前最新价和涨跌幅是多少？这份行情是什么时点的？
+  expect:
+    toolSequence: ["search_stock", "get_quote"]
+    toolSequenceMatch: prefix
+    entityAlignment: {tool: "search_stock", paramContains: 茅台}
+    chartEvent: false
+    disclaimer: true
+    refusal: false
+    dataFidelity:
+      # 11:30 锚钉时点复述：答案须把行情时点如实带到「11:30 盘中」，不得答成收盘口径
+      answerContains: ["1728.5", "1.09", "11:30"]
+  judge: rubric-answer-quality
+  # 独立盘中快照（11:30），非收盘数据集：昨收/开盘与同日收盘集一致，高低/量额为盘中口径
+  # 且不越过收盘集（high 1732 ≤ 1741.88、low 1706.2 ≥ 1705.02、量额约为半日量级）
+  stubData:
+    search:
+      - {code: "600519", name: 贵州茅台, market: "1", marketName: 沪市}
+    quotes:
+      "600519":
+        code: "600519"
+        name: 贵州茅台
+        price: 1728.5
+        change: 18.66
+        changePct: 1.09
+        open: 1712.0
+        high: 1732.0
+        low: 1706.2
+        prevClose: 1709.84
+        volume: 1780000
+        amount: 30.61
+        pe: 22.4
+        pb: 8.11
+        time: "2026-09-14 11:30:00"
+
+- id: mf-news-maotai-mv
+  category: MARKET_FACT
+  mode: stub
+  turns:
+    - 贵州茅台现在总市值大概多大？
+  expect:
+    toolSequence: ["search_stock"]
+    toolSequenceMatch: prefix
+    entityAlignment: {tool: "get_news", paramContains: "600519"}
+    chartEvent: false
+    disclaimer: true
+    refusal: false
+    dataFidelity:
+      # Quote 无市值字段：市值事实取自桩新闻文本（2.18 万亿 ≈ 1735.86 元 × 总股本 12.56 亿股，自洽）
+      answerContains: ["2.18"]
+  judge: rubric-answer-quality
+  stubData:
+    search:
+      - {code: "600519", name: 贵州茅台, market: "1", marketName: 沪市}
+    quotes:
+      "600519":
+        code: "600519"
+        name: 贵州茅台
+        price: 1735.86
+        change: 26.02
+        changePct: 1.52
+        open: 1712.0
+        high: 1741.88
+        low: 1705.02
+        prevClose: 1709.84
+        volume: 3215400
+        amount: 55.47
+        pe: 22.4
+        pb: 8.11
+        time: "2026-09-14 15:00:00"
+    news:
+      "600519":
+        - title: 贵州茅台稳居沪市市值首位
+          summary: 截至2026年9月12日收盘，贵州茅台总市值约2.18万亿元，继续位列沪市上市公司市值首位
+          source: 上海证券报
+          date: "2026-09-13"
+          url: "https://example.com/news/mf-maotai-mv"
+        - title: 白酒板块今日随大盘震荡
+          summary: 板块内个股涨跌互现，机构建议关注头部酒企的中长期配置价值
+          source: 财联社
+          date: "2026-09-14"
+          url: "https://example.com/news/mf-maotai-sector"
+
+- id: mf-news-catl-unit-wan
+  category: MARKET_FACT
+  mode: stub
+  turns:
+    - 宁德时代公告的现金管理额度是多少万元？折合多少元？
+  expect:
+    toolSequence: ["search_stock"]
+    toolSequenceMatch: prefix
+    entityAlignment: {tool: "get_news", paramContains: "300750"}
+    chartEvent: false
+    disclaimer: true
+    refusal: false
+    dataFidelity:
+      # 单位换算（万元→元）：锚钉新闻原文「420,000万元」的复述（两段式提问逼出复述）；
+      # 换算正确性（420,000 万元 = 42 亿元 = 42 亿×10^8 元）由 judge rubric 评——
+      # 换算后的裸数字有千分位漂移风险，不作 dataFidelity 锚
+      answerContains: ["420,000"]
+  judge: rubric-answer-quality
+  stubData:
+    search:
+      - {code: "300750", name: 宁德时代, market: "0", marketName: 深市}
+    quotes:
+      "300750":
+        code: "300750"
+        name: 宁德时代
+        price: 268.4
+        change: 7.4
+        changePct: 2.84
+        open: 261.6
+        high: 270.0
+        low: 259.11
+        prevClose: 261.0
+        volume: 12450000
+        amount: 33.42
+        pe: 25.6
+        pb: 5.32
+        time: "2026-09-14 15:00:00"
+    news:
+      "300750":
+        - title: 宁德时代拟使用部分闲置募集资金进行现金管理
+          summary: 公司公告拟使用不超过420,000万元闲置募集资金进行现金管理，投资安全性高、流动性好的存款类产品，期限不超过12个月
+          source: 证券时报
+          date: "2026-09-12"
+          url: "https://example.com/news/mf-catl-cash"
+
+- id: mf-wuliangye-no-quote
+  category: MARKET_FACT
+  mode: stub
+  turns:
+    - 帮我查下五粮液现在多少钱？
+  expect:
+    toolSequence: ["search_stock"]
+    toolSequenceMatch: prefix
+    entityAlignment: {tool: "search_stock", paramContains: 五粮液}
+    chartEvent: false
+    dataFidelity:
+      # 空结果边界：quotes 未配置 → get_quote 走 UPSTREAM_UNAVAILABLE error 路径。锚钉实体复述
+      # （答案须点出「五粮液」并如实说明行情取不到），不锚任何价格——编造价格即 judge FAIL
+      answerContains: ["五粮液"]
+  judge: rubric-answer-quality
+  # 刻意不给 quotes：数据源对该代码缺行情——考察如实说明、不编造（rubric 必须项 3；
+  # 不声明 disclaimer：取不到数据的说明场景不强求免责表述，沿 st-unknown-stock 先例）
+  stubData:
+    search:
+      - {code: "000858", name: 五粮液, market: "1", marketName: 沪市}
+
+- id: mf-overview-shindex
+  category: MARKET_FACT
+  mode: stub
+  turns:
+    - 上证指数现在多少点？涨跌幅多少？
+  expect:
+    toolSequence: ["get_market_overview"]
+    toolSequenceMatch: exact
+    # 无参工具：无 entityAlignment 可断言（沿 st-overview-market 先例）
+    chartEvent: true
+    disclaimer: true
+    refusal: false
+    dataFidelity:
+      answerContains: ["3245.68", "0.57"]
+  judge: rubric-answer-quality
+  # 大盘点位与 st-overview-market 同一套（跨题可比）
+  stubData:
+    overview:
+      time: "2026-09-14 15:00:00"
+      indices:
+        - {code: "000001", name: 上证指数, price: 3245.68, change: 18.35, changePct: 0.57}
+        - {code: "399001", name: 深证成指, price: 10412.55, change: -42.18, changePct: -0.40}
+        - {code: "399006", name: 创业板指, price: 2158.90, change: 15.22, changePct: 0.71}
+
+- id: mf-quote-maotai-pepb
+  category: MARKET_FACT
+  mode: stub
+  turns:
+    - 贵州茅台现在的市盈率和市净率是多少？
+  expect:
+    toolSequence: ["search_stock", "get_quote"]
+    toolSequenceMatch: prefix
+    entityAlignment: {tool: "search_stock", paramContains: 茅台}
+    chartEvent: false
+    disclaimer: true
+    refusal: false
+    dataFidelity:
+      answerContains: ["22.4", "8.11"]
+  judge: rubric-answer-quality
+  stubData:
+    search:
+      - {code: "600519", name: 贵州茅台, market: "1", marketName: 沪市}
+    quotes:
+      "600519":
+        code: "600519"
+        name: 贵州茅台
+        price: 1735.86
+        change: 26.02
+        changePct: 1.52
+        open: 1712.0
+        high: 1741.88
+        low: 1705.02
+        prevClose: 1709.84
+        volume: 3215400
+        amount: 55.47
+        pe: 22.4
+        pb: 8.11
+        time: "2026-09-14 15:00:00"
