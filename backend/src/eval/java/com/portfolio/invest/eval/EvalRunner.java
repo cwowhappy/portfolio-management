@@ -241,7 +241,7 @@ public final class EvalRunner {
                 if (!question.isStubMode()) {
                     outcomes.add(new QuestionOutcome(question, QuestionOutcome.Status.SKIPPED,
                             "real 轨题目在 stub 基线下跳过（--real 本期未实现）", null,
-                            null, null, 0, List.of(), List.of(), null, null, null));
+                            null, null, 0, List.of(), List.of(), null, null, null, null));
                     System.out.printf("[eval] %-32s SKIPPED（real 轨预留）%n", question.id());
                     continue;
                 }
@@ -345,11 +345,11 @@ public final class EvalRunner {
                             .findFirst().orElse("轮次失败") : null;
             return new QuestionOutcome(question, status, null, error, username, threadId,
                     System.currentTimeMillis() - start, turns, dimensions, verdict,
-                    transcript.tokenUsage(), transcript.assistantText());
+                    transcript.tokenUsage(), transcript.trustStats(), transcript.assistantText());
         } catch (Exception e) {
             return new QuestionOutcome(question, QuestionOutcome.Status.ERROR, null,
                     e.getClass().getSimpleName() + ": " + e.getMessage(), username, threadId,
-                    System.currentTimeMillis() - start, List.of(), List.of(), null, null, null);
+                    System.currentTimeMillis() - start, List.of(), List.of(), null, null, null, null);
         }
     }
 

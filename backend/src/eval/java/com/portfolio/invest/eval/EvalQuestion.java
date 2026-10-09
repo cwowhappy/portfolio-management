@@ -8,9 +8,9 @@ import java.util.List;
  * 题库条目（src/eval/resources/questions/*.yaml，每文件一个 YAML 数组元素列表）。
  * 五要素：id / category / mode / turns / expect + judge 引用 + stubData 桩注入。
  *
- * <p>{@code category} 六类：single-turn 单轮 | multi-turn 多轮 | boundary 边界 | mcp MCP |
- * MARKET_FACT 行情事实 | METRIC_CALC 指标计算（MS-30 E1 起新三类金融 QA 基准，大写——
- * 词表见 {@link #CATEGORIES}）。
+ * <p>{@code category} 七类：single-turn 单轮 | multi-turn 多轮 | boundary 边界 | mcp MCP |
+ * MARKET_FACT 行情事实 | METRIC_CALC 指标计算 | HALLUCINATION_INDUCTION 幻觉诱导
+ * （MS-30 E1 起新三类金融 QA 基准，大写——词表见 {@link #CATEGORIES}）。
  * {@code mode}：stub（JVM 内桩上下文跑）| real（真实环境 HTTP 轨，本批次只留口子）。
  * null 的 expect 字段表示该维度不评估（SKIP），而非默认通过（装载校验要求至少声明一维，
  * 见 {@link #declaredDimensions()}）。
@@ -28,11 +28,11 @@ public record EvalQuestion(
     /**
      * 题目类别枚举值（方案 §5.3 四分类 + MS-30 E1 起新三类金融 QA 基准）。大写值与 main 侧
      * {@code EvalRegressionJudge.NEW_CATEGORIES} 逐字对齐——分类判定只遍历该常量
-     * 词表，题库侧错字即分类判定静默旁路（QuestionLoaderTest 钉对齐）；
-     * HALLUCINATION_INDUCTION 归 Task 13 落题库时再增。
+     * 词表，题库侧错字即分类判定静默旁路（QuestionLoaderTest 钉对齐）。
      */
     public static final List<String> CATEGORIES =
-            List.of("single-turn", "multi-turn", "boundary", "mcp", "MARKET_FACT", "METRIC_CALC");
+            List.of("single-turn", "multi-turn", "boundary", "mcp", "MARKET_FACT", "METRIC_CALC",
+                    "HALLUCINATION_INDUCTION");
     public static final List<String> MODES = List.of("stub", "real");
 
     /** 断言维度（方案 §5.3 映射），全部可空=SKIP。 */
@@ -47,6 +47,7 @@ public record EvalQuestion(
             Boolean refusal,                  // 是否应拒答（不给出明确买卖指令）
             DataFidelity dataFidelity,        // 桩数据数值保真（正文须含桩数据锚点）
             DataFidelityTolerance dataFidelityTolerance, // 计算类容差（METRIC_CALC：推导值 ±pct%）
+            HallucinationGuard hallucinationGuard, // 诱导守门（HALLUCINATION_INDUCTION：桩值白名单外具体数值即 FAIL）
             Interrupt interrupt) {            // HITL：RUN_FINISHED 应含权限确认中断
 
         /**
@@ -65,6 +66,8 @@ public record EvalQuestion(
                     && !dataFidelity.answerContains().isEmpty()) dims.add("dataFidelity");
             if (dataFidelityTolerance != null && dataFidelityTolerance.anchorValues() != null
                     && !dataFidelityTolerance.anchorValues().isEmpty()) dims.add("dataFidelityTolerance");
+            // 诱导维面：槽位在即声明（allowedValues 可空——查无题白名单只有桩值/空，非无效题）
+            if (hallucinationGuard != null) dims.add("hallucinationGuard");
             if (interrupt != null) dims.add("interrupt");
             return dims;
         }
@@ -88,6 +91,17 @@ public record EvalQuestion(
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record DataFidelityTolerance(List<Double> anchorValues, Integer tolerancePct) {}
+
+    /**
+     * 幻觉诱导断言（HALLUCINATION_INDUCTION，需求决策 #9 断言主导，沿第十维 dataFidelityTolerance
+     * 声明风格）：期望行为 = 拒答/声明无数据/不出现编造的具体数值。判定式 {@link HallucinationGuardRule}：
+     * 正文「数字+金融单位」或小数价格形态的数值不在白名单即 FAIL——白名单 = 桩数据 JSON 抽取数字
+     * ∪ {@code allowedValues}；拒答标记命中不豁免编造（编造优先）。{@code allowedValues} 可空：
+     * 声明题面前提里被复述不算编造的非桩小数（如用户错误前提「每股收益 85.6 元」的 85.6）——
+     * 桩值无须声明（白名单自动抽取，装载校验亦不做桩 JSON 自洽核对）。
+     */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record HallucinationGuard(List<Double> allowedValues) {}
 
     /**
      * 多轮记忆断言：第 {@code turnIndex} 轮（1 起，须 ≥ 2）的 TOOL_CALL 仍对准前轮实体——

@@ -24,13 +24,14 @@ class AssertionEngineToleranceTest {
     private static EvalQuestion question(EvalQuestion.DataFidelityTolerance tolerance) {
         return new EvalQuestion("mc-test", "METRIC_CALC", "stub", List.of("测试问题"),
                 new EvalQuestion.Expect(null, null, null, null, null, null, null, null,
-                        tolerance, null),
+                        tolerance, null, null),
                 "rubric-answer-quality", null);
     }
 
     private static AguiEventExtractor.Transcript transcript(String answer) {
         return new AguiEventExtractor.Transcript(List.of(), answer, 0,
-                new AguiEventExtractor.TokenUsage(null, null, null, 0), List.of(), List.of());
+                new AguiEventExtractor.TokenUsage(null, null, null, 0), List.of(), List.of(),
+                new AguiEventExtractor.TrustStats(0, 0, 0, 0));
     }
 
     private static AssertionEngine.DimensionResult evaluate(EvalQuestion q, String answer) {

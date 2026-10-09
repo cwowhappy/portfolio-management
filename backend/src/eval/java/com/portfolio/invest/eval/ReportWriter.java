@@ -196,6 +196,16 @@ public final class ReportWriter {
             if (usage.totalTokens() != null) u.put("totalTokens", usage.totalTokens());
             u.put("snapshots", usage.snapshots());
         }
+        // MS-29 D4-1 附加度量：trust 统计随题携带（诱导类报告节消费；缺席不写——边界在 Markdown 节明示）
+        AguiEventExtractor.TrustStats trust = o.trustStats();
+        if (trust != null && trust.events() > 0) {
+            ObjectNode t = node.putObject("trustStats");
+            t.put("verified", trust.verified());
+            t.put("sourced", trust.sourced());
+            t.put("unverified", trust.unverified());
+            t.put("events", trust.events());
+            t.put("unverifiedRatio", trust.unverifiedRatio());
+        }
         if (o.answerText() != null && !o.answerText().isBlank()) {
             node.put("answerText", o.answerText());
         }
@@ -372,6 +382,8 @@ public final class ReportWriter {
                         .append(" | ").append(e.getValue().path("fail").asInt())
                         .append(" | ").append(e.getValue().path("skipped").asInt()).append(" |\n"));
 
+        appendInductionTrustSection(md, outcomes);
+
         md.append("\n## 题目详情\n");
         for (QuestionOutcome o : outcomes) {
             md.append("\n### ").append(o.question().id())
@@ -451,6 +463,37 @@ public final class ReportWriter {
 
         md.append("\n---\n诊断仪报告：不设通过率门槛、不挂 CI；事件流原文与失败回放数据见同目录 eval-report.json。\n");
         return md.toString();
+    }
+
+    /**
+     * 诱导类 trust 附加度量（MS-29 需求 D4-1）：HALLUCINATION_INDUCTION 分类的题目附带校验器
+     * （TrustAgentHook）的未溯源标注率——CUSTOM trust.anchors 事件的 payload.stats 跨轮累计，
+     * 报告加列。事件缺席（无末轮文本/发射失败/题未跑到末轮）明示「缺席」不静默吞掉；非诱导类
+     * 题目有统计也只在 JSON questions[].trustStats 携带（本节不出现）。
+     */
+    private static void appendInductionTrustSection(StringBuilder md, List<QuestionOutcome> outcomes) {
+        List<QuestionOutcome> induction = outcomes.stream()
+                .filter(o -> "HALLUCINATION_INDUCTION".equals(o.question().category())).toList();
+        if (induction.isEmpty()) return;
+        md.append("\n## 诱导类 trust 附加度量（MS-29 D4-1）\n\n");
+        md.append("未溯源标注率 = unverified / (verified + sourced + unverified)"
+                + "（trust.anchors 事件 payload.stats 跨轮累计）。\n\n");
+        md.append("| 题目 | trust事件 | verified | sourced | unverified | 未溯源标注率 |\n|---|---|---|---|---|---|\n");
+        for (QuestionOutcome o : induction) {
+            AguiEventExtractor.TrustStats trust = o.trustStats();
+            if (trust == null || trust.events() == 0) {
+                md.append("| ").append(o.question().id())
+                        .append(" | 0 | - | - | - | 缺席（无 trust.anchors 事件：无末轮文本/发射失败） |\n");
+                continue;
+            }
+            md.append("| ").append(o.question().id())
+                    .append(" | ").append(trust.events())
+                    .append(" | ").append(trust.verified())
+                    .append(" | ").append(trust.sourced())
+                    .append(" | ").append(trust.unverified())
+                    .append(" | ").append(String.format("%.1f%%", trust.unverifiedRatio() * 100))
+                    .append(" |\n");
+        }
     }
 
     private static String escapeCell(String text) {

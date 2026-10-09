@@ -12,7 +12,8 @@ import java.util.Map;
  * SSE 事件流观察抽取：工具调用序列（TOOL_CALL_START + TOOL_CALL_ARGS delta 累积，带轮序）、
  * assistant 正文（TEXT_MESSAGE_START 的 role 过滤 + CONTENT delta 拼接）、图表事件
  * （TOOL_CALL_RESULT 含 specVersion 标记，ChartSpec 判别联合的固定组件）、token 用量
- * （CUSTOM token_usage 累计值）、HITL 中断（RUN_FINISHED outcome=interrupt 的条目）。
+ * （CUSTOM token_usage 累计值）、HITL 中断（RUN_FINISHED outcome=interrupt 的条目）、
+ * trust 统计（CUSTOM trust.anchors 的 payload.stats 跨轮累计，MS-29 D4-1 附加度量）。
  */
 public final class AguiEventExtractor {
 
@@ -72,6 +73,25 @@ public final class AguiEventExtractor {
     /** token 用量（取流内最后一个 cumulative 快照，即整 run 累计）。 */
     public record TokenUsage(Long inputTokens, Long outputTokens, Long totalTokens, int snapshots) {}
 
+    /**
+     * trust 维度统计（MS-29 D4-1 附加度量）：CUSTOM {@code trust.anchors} 事件 value.payload.stats
+     * 跨轮累计（TrustAgentHook 每 assistant 末轮发一次）。{@link #unverifiedRatio()} 即诱导题
+     * 附加度量「未溯源标注率」——分母 0（无数字可锚）返回 0。
+     */
+    public record TrustStats(int verified, int sourced, int unverified, int events) {
+
+        public double unverifiedRatio() {
+            int total = verified + sourced + unverified;
+            return total == 0 ? 0.0 : (double) unverified / total;
+        }
+    }
+
+    /**
+     * trust.anchors 事件名——与 main 侧 {@code TrustAgentHook.ANCHORS_EVENT} 逐字对齐
+     * （eval 源集不引 agent 类，字面常量 + EvalTrustMetricTest 钉对齐；错字则统计静默缺席）。
+     */
+    public static final String TRUST_ANCHORS_EVENT = "trust.anchors";
+
     /** 全部事件（跨轮）聚合出的观察结果。 */
     public record Transcript(
             List<ToolObservation> toolCalls,
@@ -79,7 +99,8 @@ public final class AguiEventExtractor {
             int chartEventCount,
             TokenUsage tokenUsage,
             List<String> runErrors,
-            List<InterruptObservation> interrupts) {
+            List<InterruptObservation> interrupts,
+            TrustStats trustStats) {
 
         public List<String> toolNames() {
             return toolCalls.stream().map(ToolObservation::toolName).toList();
@@ -138,6 +159,7 @@ public final class AguiEventExtractor {
         TokenUsage usage = new TokenUsage(null, null, null, 0);
         List<String> runErrors = new ArrayList<>();
         List<InterruptObservation> interrupts = new ArrayList<>();
+        TrustStats trust = new TrustStats(0, 0, 0, 0);
 
         for (AguiDriver.SseTurn turn : turns) {
             for (JsonNode event : turn.events()) {
@@ -171,7 +193,8 @@ public final class AguiEventExtractor {
                                 k -> new StringBuilder()).append(content);
                     }
                     case "CUSTOM" -> {
-                        if ("token_usage".equals(event.path("name").asText())) {
+                        String eventName = event.path("name").asText("");
+                        if ("token_usage".equals(eventName)) {
                             JsonNode cumulative = event.path("value").path("cumulative");
                             if (!cumulative.isMissingNode()) {
                                 usage = new TokenUsage(
@@ -183,6 +206,15 @@ public final class AguiEventExtractor {
                                                 ? cumulative.path("totalTokens").asLong() : null,
                                         usage.snapshots() + 1);
                             }
+                        } else if (TRUST_ANCHORS_EVENT.equals(eventName)) {
+                            // MS-29 D4-1 附加度量：trust.anchors 的 payload.stats 跨轮累计
+                            // （缺 stats 键按全 0 计入事件数——事件在而统计缺位本身是可诊断信号）
+                            JsonNode stats = event.path("value").path("payload").path("stats");
+                            trust = new TrustStats(
+                                    trust.verified() + stats.path("verified").asInt(0),
+                                    trust.sourced() + stats.path("sourced").asInt(0),
+                                    trust.unverified() + stats.path("unverified").asInt(0),
+                                    trust.events() + 1);
                         }
                     }
                     case "RUN_FINISHED" -> {
@@ -210,6 +242,6 @@ public final class AguiEventExtractor {
                         argsById.getOrDefault(id, new StringBuilder()).toString(),
                         resultsById.getOrDefault(id, new StringBuilder()).toString()))
                 .toList();
-        return new Transcript(calls, assistantText.toString(), chartEvents, usage, runErrors, interrupts);
+        return new Transcript(calls, assistantText.toString(), chartEvents, usage, runErrors, interrupts, trust);
     }
 }

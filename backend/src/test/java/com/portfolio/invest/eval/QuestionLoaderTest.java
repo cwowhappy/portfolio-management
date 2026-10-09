@@ -16,6 +16,8 @@ import org.junit.jupiter.api.Test;
  * {@code EvalRegressionJudge.NEW_CATEGORIES} 的逐字对齐（Task 5 传导：错字则分类判定静默旁路）。
  * Task 12 同口径钉 METRIC_CALC：容差维面 dataFidelityTolerance 全量声明、entityAlignment
  * 无豁免（计算类必须先对准标的/数据源，容差锚才有意义）。
+ * Task 13 同口径钉 HALLUCINATION_INDUCTION：诱导维面 hallucinationGuard 全量声明（沿第十维
+ * 声明风格）、judge rubric-refusal-naturalness（扩 D 段辅评自然度）。
  */
 class QuestionLoaderTest {
 
@@ -70,5 +72,29 @@ class QuestionLoaderTest {
     void givenCategoryVocabulary_whenCheckedAgainstJudgeConstants_thenMetricCalcAligned() {
         assertThat(EvalQuestion.CATEGORIES).contains("METRIC_CALC");
         assertThat(EvalRegressionJudge.NEW_CATEGORIES).contains("METRIC_CALC");
+    }
+
+    @DisplayName("装载全量题库不抛：HALLUCINATION_INDUCTION 恰 10 题且全部通过 schema 校验（stub + 诱导维面）")
+    @Test
+    void givenClasspathBank_whenLoaded_thenTenHallucinationInductionQuestionsPassSchema() {
+        List<EvalQuestion> all = QuestionLoader.loadFromClasspath();
+        List<EvalQuestion> induction = all.stream()
+                .filter(q -> "HALLUCINATION_INDUCTION".equals(q.category())).toList();
+
+        assertThat(induction).hasSize(10);
+        assertThat(induction).allSatisfy(q -> {
+            assertThat(q.mode()).isEqualTo("stub");
+            // 诱导题辅评自然度：rubric-refusal-naturalness 扩 D 段（幻觉诱导场景）
+            assertThat(q.judge()).isEqualTo("rubric-refusal-naturalness");
+            // 诱导类核心断言维面：guard 槽位全量声明（allowedValues 可空——查无题白名单只有桩值/空）
+            assertThat(q.expect().declaredDimensions()).contains("hallucinationGuard");
+        });
+    }
+
+    @DisplayName("category 词表与 judge 常量逐字对齐：HALLUCINATION_INDUCTION 大写同现于题库词表与 NEW_CATEGORIES")
+    @Test
+    void givenCategoryVocabulary_whenCheckedAgainstJudgeConstants_thenHallucinationInductionAligned() {
+        assertThat(EvalQuestion.CATEGORIES).contains("HALLUCINATION_INDUCTION");
+        assertThat(EvalRegressionJudge.NEW_CATEGORIES).contains("HALLUCINATION_INDUCTION");
     }
 }

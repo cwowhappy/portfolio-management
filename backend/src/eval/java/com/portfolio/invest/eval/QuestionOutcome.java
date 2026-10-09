@@ -15,6 +15,7 @@ public record QuestionOutcome(
         List<AssertionEngine.DimensionResult> dimensions,
         DeepSeekJudge.Verdict judge,
         AguiEventExtractor.TokenUsage tokenUsage,
+        AguiEventExtractor.TrustStats trustStats, // MS-29 D4-1：诱导题附加度量的数据源（可空）
         String answerText) {
 
     public enum Status { PASS, FAIL, SKIPPED, ERROR }
