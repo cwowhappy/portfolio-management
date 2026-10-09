@@ -21,6 +21,11 @@ vi.mock("@/lib/mcpApi", () => ({
   fetchProviders: vi.fn().mockResolvedValue([]),
 }));
 
+// AdminBoard 内嵌 ObservabilitySection（MS-30 F1）——子区块自取数，自有测试文件覆盖，此处 mock 壳
+vi.mock("@/components/admin/observability/ObservabilitySection", () => ({
+  default: () => <section data-testid="observability-section-stub" />,
+}));
+
 const api = vi.mocked(adminApi);
 
 const admin: AdminUserView = { id: 1, username: "admin", role: "ADMIN", status: "APPROVED", enabled: true, email: null };
