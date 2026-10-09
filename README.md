@@ -86,6 +86,14 @@ Playwright e2e 位于 `frontend/e2e/`，配置见 `frontend/playwright.config.ts
 | POST /api/admin/users/{id}/reset-password | 重置密码 |
 | POST /api/admin/users/{id}/email | 绑定/更新邮箱（M01-F06） |
 | PUT /api/admin/mcp/providers/{code}/token | 设置 MCP 数据源 token（P1-10，AES-256-GCM 密文落库，无回显） |
+| POST /api/admin/eval/run | 手动触发一轮 eval（MS-30：202 返回 `{runId}` 非阻塞，进行中 409） |
+| GET /api/admin/eval/runs?limit=20 | eval 运行历史倒序（得分/判定/baseline/completeness，RUNNING 行供轮询） |
+| PUT /api/admin/eval/runs/{id}/baseline | baseline 置位（body `{"baseline":true/false}`；置 true 仅限完成且非劣化跑，422 拒绝） |
+| PUT /api/admin/prompt-assets/{id}/note | 提示词版本变更说明补注（`{id}` 为版本行主键） |
+| GET /api/admin/observability/trace?from&to&tool&failed&page&size | 工具调用明细（倒序分页，MS-30 观测） |
+| GET /api/admin/observability/cost?days=7 | token 成本（按日消耗 + 按工具统计；估算单价走前端环境变量） |
+| GET /api/admin/observability/latency?days=7 | 时延（轮整体/按日 + 按工具 p50/p95） |
+| GET /api/admin/prompt-assets | 提示词版本链（五类资产分组，最新 `current=true`，未注记徽标由前端渲染） |
 
 **会话**（前端经 /api/conversations/** 反代，需登录，按归属隔离、非本人 404）：
 
@@ -227,6 +235,7 @@ scripts/    smoke.sh 冒烟（6 段：健康/上游漂移/行情/反代/AI 对�
 | COLLECTOR_ALERT_WEBHOOK | - | 采集告警通用 JSON POST webhook（opt-in 逃生通道；仅在未配置 FEISHU_BOT_WEBHOOK 时生效） |
 | MCP_SECRET_KEY | - | MCP 系统 Token 的 AES-256-GCM 主密钥（base64 32 字节，生成：`openssl rand -base64 32`）。**已实现（P1-10，2026-10-03）**：管理员经 `/admin` 页设置 token，服务端加密落库（`v1:` 前缀密文）；缺失不阻断启动、设置 token 时报 503；库内存量明文仍可直读（warn 提示经 admin 覆写） |
 | INVEST_EVAL_ENABLED / INVEST_EVAL_JAR_PATH / INVEST_EVAL_DATA_ROOT | true / - / build/eval-agent | eval 定时调度（MS-30，每晚 02:17）：总开关 / `app-eval.jar` 位置（空=生产 jar 同目录唯一 `*-eval.jar` 派生）/ 评测数据根（部署机传绝对路径）；`EVAL_DATASOURCE_URL` 显式指定评测库（空=回退主库同实例，独立 schema 每轮重置）。缺 `DEEPSEEK_API_KEY` 时调度静默跳过 |
+| NEXT_PUBLIC_UNIT_PRICE_CNY_PER_MTOK | -（不显示） | **前端构建期变量**（MS-30）：admin 观测看板成本估算单价（元/Mtok，>0 时显示估算行，不入库）。注意后端 `invest.eval.observability.unit-price-cny-per-mtok` yml 键无消费方（死配置）——设本前端变量而非后端 yml |
 
 **MCP 数据源**：内置 provider（妙想 `mx-ds` / Tushare / Wind）的 Token 不随迁移进 git——V1 基线（原 V10 段）仅 seed `NULL` 占位。**推荐由管理员在 `/admin` 页「MCP 数据源 Token」设置**（前置：后端 `.env` 配 `MCP_SECRET_KEY` 并重启；明文仅经请求体一次，AES-256-GCM 密文落库，任何接口与界面不回显）；SQL 明文直填仅为应急回退（后端兼容存量明文直读并按 provider 记 warn 提示覆写）。三个 MCP 端点的手动握手冒烟见 `backend/scripts/mcp-smoke.sh`（从 `MX_DS_TOKEN` / `TUSHARE_TOKEN` / `WIND_TOKEN` 读 token，无硬编码密钥）。
 
