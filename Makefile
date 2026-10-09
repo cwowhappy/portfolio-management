@@ -78,9 +78,9 @@ test-frontend:
 test-e2e:
 	cd frontend && CI=true pnpm test:e2e
 
-## 构建
+## 构建（双 jar：生产 app.jar + 评测 eval jar——部署机在 app.jar 旁分发 *-eval.jar，MS-30 §2.1/§2.2）
 build:
-	cd backend && ./gradlew bootJar --console=plain
+	cd backend && ./gradlew bootJar evalBootJar --console=plain
 	cd frontend && pnpm install && pnpm build
 
 ## Docker Compose 部署

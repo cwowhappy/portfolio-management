@@ -226,6 +226,7 @@ scripts/    smoke.sh 冒烟（6 段：健康/上游漂移/行情/反代/AI 对�
 | MAIL_TEST_FIXED_CODE / MAIL_TEST_MODE | - / false | **e2e 固定码专用，生产严禁设置**：固定码设了而未开测试模式时后端拒绝启动；开了则发码短路、恒为约定值 |
 | COLLECTOR_ALERT_WEBHOOK | - | 采集告警通用 JSON POST webhook（opt-in 逃生通道；仅在未配置 FEISHU_BOT_WEBHOOK 时生效） |
 | MCP_SECRET_KEY | - | MCP 系统 Token 的 AES-256-GCM 主密钥（base64 32 字节，生成：`openssl rand -base64 32`）。**已实现（P1-10，2026-10-03）**：管理员经 `/admin` 页设置 token，服务端加密落库（`v1:` 前缀密文）；缺失不阻断启动、设置 token 时报 503；库内存量明文仍可直读（warn 提示经 admin 覆写） |
+| INVEST_EVAL_ENABLED / INVEST_EVAL_JAR_PATH / INVEST_EVAL_DATA_ROOT | true / - / build/eval-agent | eval 定时调度（MS-30，每晚 02:17）：总开关 / `app-eval.jar` 位置（空=生产 jar 同目录唯一 `*-eval.jar` 派生）/ 评测数据根（部署机传绝对路径）；`EVAL_DATASOURCE_URL` 显式指定评测库（空=回退主库同实例，独立 schema 每轮重置）。缺 `DEEPSEEK_API_KEY` 时调度静默跳过 |
 
 **MCP 数据源**：内置 provider（妙想 `mx-ds` / Tushare / Wind）的 Token 不随迁移进 git——V1 基线（原 V10 段）仅 seed `NULL` 占位。**推荐由管理员在 `/admin` 页「MCP 数据源 Token」设置**（前置：后端 `.env` 配 `MCP_SECRET_KEY` 并重启；明文仅经请求体一次，AES-256-GCM 密文落库，任何接口与界面不回显）；SQL 明文直填仅为应急回退（后端兼容存量明文直读并按 provider 记 warn 提示覆写）。三个 MCP 端点的手动握手冒烟见 `backend/scripts/mcp-smoke.sh`（从 `MX_DS_TOKEN` / `TUSHARE_TOKEN` / `WIND_TOKEN` 读 token，无硬编码密钥）。
 

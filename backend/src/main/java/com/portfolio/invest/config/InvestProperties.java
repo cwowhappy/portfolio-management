@@ -20,6 +20,7 @@ public class InvestProperties {
     private Mail mail = new Mail();
     private Intelligence intelligence = new Intelligence();
     private Trust trust = new Trust();
+    private Eval eval = new Eval();
 
     public Llm getLlm() {
         return llm;
@@ -99,6 +100,14 @@ public class InvestProperties {
 
     public void setTrust(Trust trust) {
         this.trust = trust;
+    }
+
+    public Eval getEval() {
+        return eval;
+    }
+
+    public void setEval(Eval eval) {
+        this.eval = eval;
     }
 
     public static class Llm {
@@ -485,6 +494,86 @@ public class InvestProperties {
                 if (staleFinancialDays == null) staleFinancialDays = 110;
                 if (staleMacroDays == null) staleMacroDays = 35;
             }
+        }
+    }
+
+    /**
+     * 评测与可观测性（MS-30，设计规格 §3.3 样例逐字段落）：调度开关/评测库指向/数据目录/
+     * 整跑护栏/回归三阈值/观测三项/计算容差。子进程命令行只收 data-root 一参 + env 白名单
+     * （runner 内部构造其余覆盖项），本组的 datasource/token-budget/calc-tolerance 由生产侧
+     * 调度器与后续任务（观测/题域）按需消费；cron 为声明位——@Scheduled 字面量为准。
+     */
+    public static class Eval {
+        /** 定时总开关（缺 DEEPSEEK_API_KEY 时调度器静默跳过并留痕，沿 IntelligenceChatPort 空 key 先例）。 */
+        private boolean enabled = true;
+        /** cron 说明位：真实调度在 @Scheduled 字面量（02:17 错峰），此处仅作部署文档/对账声明。 */
+        private String cron = "0 17 2 * * *";
+        private Datasource datasource = new Datasource();
+        /** 评测数据根（state/workspace/报告 cwd）：空 = build/eval-agent（本地）；部署机传绝对路径。 */
+        private String dataRoot = "";
+        /** evalBootJar 产物位置：空 = 生产 jar 同目录唯一 *-eval.jar 派生（§2.1「app.jar 旁分发」）。 */
+        private String jarPath = "";
+        /** 整跑护栏：超时 destroyForcibly → 收割按 PARTIAL 语义。 */
+        private int timeoutMinutes = 120;
+        /** 当次 eval token 护栏（超限中止标 PARTIAL；执行端接线归题域批次）。 */
+        private long tokenBudget = 5_000_000L;
+        private Regression regression = new Regression();
+        private Observability observability = new Observability();
+        /** 计算类断言相对容差（百分点，需求决策 #15；题域批次消费）。 */
+        private int calcTolerancePct = 2;
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        public String getCron() { return cron; }
+        public void setCron(String cron) { this.cron = cron; }
+        public Datasource getDatasource() { return datasource; }
+        public void setDatasource(Datasource datasource) { this.datasource = datasource; }
+        public String getDataRoot() { return dataRoot; }
+        public void setDataRoot(String dataRoot) { this.dataRoot = dataRoot; }
+        public String getJarPath() { return jarPath; }
+        public void setJarPath(String jarPath) { this.jarPath = jarPath; }
+        public int getTimeoutMinutes() { return timeoutMinutes; }
+        public void setTimeoutMinutes(int timeoutMinutes) { this.timeoutMinutes = timeoutMinutes; }
+        public long getTokenBudget() { return tokenBudget; }
+        public void setTokenBudget(long tokenBudget) { this.tokenBudget = tokenBudget; }
+        public Regression getRegression() { return regression; }
+        public void setRegression(Regression regression) { this.regression = regression; }
+        public Observability getObservability() { return observability; }
+        public void setObservability(Observability observability) { this.observability = observability; }
+        public int getCalcTolerancePct() { return calcTolerancePct; }
+        public void setCalcTolerancePct(int calcTolerancePct) { this.calcTolerancePct = calcTolerancePct; }
+
+        /** 评测库指向（缺省回退主 datasource 同实例；currentSchema 由 provisioner 规范化拼装）。 */
+        public static class Datasource {
+            private String url = "";
+            public String getUrl() { return url; }
+            public void setUrl(String url) { this.url = url; }
+        }
+
+        /** 相对回归三阈值（§3.1：总通过率降幅/翻转数/三新类分类降幅，含等于）。 */
+        public static class Regression {
+            private int passRateDropPp = 10;
+            private int flipThreshold = 3;
+            private int categoryDropPp = 15;
+            public int getPassRateDropPp() { return passRateDropPp; }
+            public void setPassRateDropPp(int passRateDropPp) { this.passRateDropPp = passRateDropPp; }
+            public int getFlipThreshold() { return flipThreshold; }
+            public void setFlipThreshold(int flipThreshold) { this.flipThreshold = flipThreshold; }
+            public int getCategoryDropPp() { return categoryDropPp; }
+            public void setCategoryDropPp(int categoryDropPp) { this.categoryDropPp = categoryDropPp; }
+        }
+
+        /** 观测三项（Task 8/9 消费：保留期/resultText 截断/看板估算单价）。 */
+        public static class Observability {
+            private int retentionDays = 90;
+            private int resultTextMaxBytes = 2048;
+            private double unitPriceCnyPerMtok = 0.0;
+            public int getRetentionDays() { return retentionDays; }
+            public void setRetentionDays(int retentionDays) { this.retentionDays = retentionDays; }
+            public int getResultTextMaxBytes() { return resultTextMaxBytes; }
+            public void setResultTextMaxBytes(int resultTextMaxBytes) { this.resultTextMaxBytes = resultTextMaxBytes; }
+            public double getUnitPriceCnyPerMtok() { return unitPriceCnyPerMtok; }
+            public void setUnitPriceCnyPerMtok(double unitPriceCnyPerMtok) { this.unitPriceCnyPerMtok = unitPriceCnyPerMtok; }
         }
     }
 

@@ -10,11 +10,11 @@ import org.junit.jupiter.api.Test;
 
 /**
  * 五类资产指纹采集（MS-30 B2，设计规格 §4.1 eval 侧回流通道）：eval 源集内联实现（Task 4
- * 才建 main 侧采集器，两处允许少量 hash 逻辑重复，不建跨源集共享接口）。采集全程零 Spring——
+ * 已建 main 侧采集器，两处允许少量 hash 逻辑重复，不建跨源集共享接口）。采集全程零 Spring——
  * @Tool 描述取新建 Toolkit 枚举（装饰前天然成立），Skill/情报 prompt/系统提示词经类常量与
  * classpath 直读，与 {@code --list} 干跑同源（干跑无上下文，两路必须同一实现）。
- * 类型计数即 V5 表 prompt_asset_version.asset_type 枚举口径；LEAD_SYSTEM_PROMPT 为 private
- * （本任务不改可见性，Task 4 补录），情报项暂为 3。
+ * 类型计数即 V5 表 prompt_asset_version.asset_type 枚举口径；情报 prompt 4 项含
+ * LEAD_SYSTEM_PROMPT（Task 4 改 public 后已补录，I1 口径与 main 侧 27 项对齐）。
  */
 class EvalAssetHasherTest {
 
@@ -25,7 +25,7 @@ class EvalAssetHasherTest {
                 .isEqualTo("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
     }
 
-    @DisplayName("采集清单：26 main（1+16+6+3）+ 5 rubric + 1 题库聚合 = 32 项，类型计数符合设计规格 §4.1")
+    @DisplayName("采集清单：27 main（1+16+6+4）+ 5 rubric + 1 题库聚合 = 33 项，类型计数符合设计规格 §4.1")
     @Test
     void givenStandaloneCollection_whenGroupedByType_thenCountsMatchDesignSpec() {
         EvalAssetHasher.Collected collected = EvalAssetHasher.collectStandalone();
@@ -35,16 +35,16 @@ class EvalAssetHasherTest {
         assertThat(byType).containsEntry("SYSTEM_PROMPT", 1L)
                 .containsEntry("TOOL_DESC", 16L)
                 .containsEntry("SKILL", 6L)
-                .containsEntry("INTEL_PROMPT", 3L)
+                .containsEntry("INTEL_PROMPT", 4L)
                 .containsEntry("EVAL_RUBRIC", 5L)
                 .containsEntry("QUESTION_BANK", 1L);
-        assertThat(collected.assetHashes()).hasSize(32);
+        assertThat(collected.assetHashes()).hasSize(33);
         assertThat(collected.assetHashes())
                 .allMatch(h -> h.contentHash().matches("[0-9a-f]{64}"));
         // (assetType, assetKey) 全清单唯一（收割端 upsert 主键语义）
         long distinctKeys = collected.assetHashes().stream()
                 .map(h -> h.assetType() + ":" + h.assetKey()).distinct().count();
-        assertThat(distinctKeys).isEqualTo(32);
+        assertThat(distinctKeys).isEqualTo(33);
         // 题库聚合项 hash 与顶层 questionBankHash 一致
         String aggregate = collected.assetHashes().stream()
                 .filter(h -> "QUESTION_BANK".equals(h.assetType()) && "question_bank".equals(h.assetKey()))
@@ -66,14 +66,15 @@ class EvalAssetHasherTest {
         assertThat(keys.stream().filter(k -> k.startsWith("skill.")).count()).isEqualTo(6);
     }
 
-    @DisplayName("情报提示词：仅 3 处 public 常量（LEAD_SYSTEM_PROMPT private，Task 4 改可见性后补录第 4 项）")
+    @DisplayName("情报提示词：4 处 public 常量（含 LEAD_SYSTEM_PROMPT——I1 口径补齐，与 main 侧 27 项对齐）")
     @Test
-    void givenIntelligencePrompts_whenCollected_thenOnlyThreePublicConstants() {
+    void givenIntelligencePrompts_whenCollected_thenFourPublicConstantsIncludingLead() {
         List<String> intelKeys = EvalAssetHasher.collectStandalone().assetHashes().stream()
                 .filter(h -> "INTEL_PROMPT".equals(h.assetType()))
                 .map(ReportWriter.AssetHash::assetKey).sorted().toList();
         assertThat(intelKeys).containsExactly(
-                "intel.announcement_extract", "intel.news_extract", "intel.policy_extract");
+                "intel.announcement_extract", "intel.brief_lead",
+                "intel.news_extract", "intel.policy_extract");
     }
 
     @DisplayName("evalAssets：rubric 5 文件 + 题库 7 文件逐文件指纹（eval-only 资产回流登记通道）")

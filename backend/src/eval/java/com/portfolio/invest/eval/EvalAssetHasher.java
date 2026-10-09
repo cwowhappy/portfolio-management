@@ -4,6 +4,7 @@ import com.portfolio.invest.agent.InvestSystemPrompt;
 import com.portfolio.invest.agent.InvestTools;
 import com.portfolio.invest.agent.UserInvestTools;
 import com.portfolio.invest.application.intelligence.AnnouncementExtractPrompt;
+import com.portfolio.invest.application.intelligence.BriefGenerationService;
 import com.portfolio.invest.application.intelligence.NewsExtractPrompt;
 import com.portfolio.invest.application.intelligence.PolicyExtractPrompt;
 import io.agentscope.core.skill.repository.ClasspathSkillRepository;
@@ -28,9 +29,9 @@ import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
  * {@code runMeta.evalAssets}（rubric/题库逐文件，收割端 upsert EVAL_RUBRIC 资产）。
  *
  * <p>采集全程零 Spring（{@code --list} 干跑无上下文，干跑与真跑必须同一实现）：
- * 系统提示词/情报 prompt 经 main 类常量直读（{@code BriefGenerationService.LEAD_SYSTEM_PROMPT}
- * 为 private，本任务不改其可见性——情报项暂收 3 处 public 常量，Task 4 补录第 4 项）；
- * @Tool 描述新建裸 Toolkit 枚举（UserToolkitFactory.build 同源两件：InvestTools + UserInvestTools，
+ * 系统提示词/情报 prompt 经 main 类常量直读（情报 prompt 4 项——含 Task 4 改 public 后
+ * 补录的 {@code BriefGenerationService.LEAD_SYSTEM_PROMPT}，与 main 侧 registrar 27 项
+ * 口径对齐）；@Tool 描述新建裸 Toolkit 枚举（UserToolkitFactory.build 同源两件：InvestTools + UserInvestTools，
  * 天然在 decorateWithRecording 之前——装饰后 getTool 返回 decorator）；@Tool 描述是注解常量、
  * 与服务实例状态无关，依赖传 null 仅注册期反射、无方法调用；Skill 直读独立
  * ClasspathSkillRepository（Spring 单例管 JAR 虚拟 FS 生命周期，eval 进程短命且用后即关）；
@@ -113,7 +114,7 @@ public final class EvalAssetHasher {
         }
     }
 
-    /** 情报 prompt ×3：public 常量直读（LEAD_SYSTEM_PROMPT 为 private，Task 4 改可见性后补录）。 */
+    /** 情报 prompt ×4：public 常量直读（含 LEAD_SYSTEM_PROMPT——Task 4 改 public 后补录，I1 口径与 main 侧对齐）。 */
     private static List<ReportWriter.AssetHash> intelligencePrompts() {
         return List.of(
                 new ReportWriter.AssetHash(TYPE_INTEL_PROMPT, "intel.news_extract",
@@ -121,7 +122,9 @@ public final class EvalAssetHasher {
                 new ReportWriter.AssetHash(TYPE_INTEL_PROMPT, "intel.announcement_extract",
                         sha256Hex(AnnouncementExtractPrompt.SYSTEM_PROMPT)),
                 new ReportWriter.AssetHash(TYPE_INTEL_PROMPT, "intel.policy_extract",
-                        sha256Hex(PolicyExtractPrompt.SYSTEM_PROMPT)));
+                        sha256Hex(PolicyExtractPrompt.SYSTEM_PROMPT)),
+                new ReportWriter.AssetHash(TYPE_INTEL_PROMPT, "intel.brief_lead",
+                        sha256Hex(BriefGenerationService.LEAD_SYSTEM_PROMPT)));
     }
 
     // ———— eval-only 资产（rubric/题库，classpath 逐文件） ————
