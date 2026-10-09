@@ -56,6 +56,10 @@ test-backend-mutation-descartes:
 
 # Agent 效果评估：真实 LLM（DeepSeek）周期性诊断（题库 backend/src/eval/resources，报告
 # backend/build/reports/eval-agent）。不挂 CI 门禁、无通过率阈值，退出码恒 0。
+# 评测库（MS-30 B2）不再自动起 Testcontainers 容器：连 EVAL_DATASOURCE_URL 指定的 PG
+# （env 或仓库根 .env；缺省回退主 datasource 的 SPRING_DATASOURCE_URL），独立 schema
+# eval_schema 每轮 DROP-CASCADE 重置、不动主库数据。本地想用容器则自行 docker run 后
+# export EVAL_DATASOURCE_URL/USERNAME/PASSWORD 指向该容器。
 # 可选：DEEPSEEK_MODEL=deepseek-v4-pro 临时换被评模型（传 shell 环境变量，gradle 任务会盖写 daemon 旧值）；
 #       EVAL_ARGS="--compare=<上次报告>" 透传 runner 参数
 eval-agent:
