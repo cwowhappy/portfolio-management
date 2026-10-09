@@ -22,7 +22,7 @@ class TrustTurnProcessorTest {
 
     private static ToolInvocation invocation(String resultText, String... specs) {
         return new ToolInvocation("get_quote", Map.of("code", "600519"), resultText,
-                List.of(specs), "2026-10-05 14:59:32", ToolInvocation.AsOfKind.DATA, false, false);
+                List.of(specs), "2026-10-05 14:59:32", ToolInvocation.AsOfKind.DATA, false, false, 0L);
     }
 
     private static Map<String, Object> historyEntry(String value, String tool, String asOf, String kind) {
@@ -45,7 +45,7 @@ class TrustTurnProcessorTest {
         return new ToolInvocation("research_draft", Map.of("stage", "STRATEGY"),
                 "草稿已记录：STRATEGY 阶段共 3 条要点。\n```research-draft\n"
                         + "{\"valuationLow\":12.5,\"valuationHigh\":18.2}\n```",
-                List.of(), "2026-10-06 10:00:00", ToolInvocation.AsOfKind.CALL, false, false);
+                List.of(), "2026-10-06 10:00:00", ToolInvocation.AsOfKind.CALL, false, false, 0L);
     }
 
     // ———— 豁免优先序（契约：先配真值 verified/sourced → 无匹配且用户来源 → 豁免不锚定 → 其余 unverified） ————
@@ -141,7 +141,7 @@ class TrustTurnProcessorTest {
     @Test
     void givenFailedInvocationOnly_whenProcess_thenUnverified() {
         var failed = new ToolInvocation("get_quote", Map.of("code", "600519"),
-                "{\"price\":1520.33}", List.of(), null, ToolInvocation.AsOfKind.CALL, true, false);
+                "{\"price\":1520.33}", List.of(), null, ToolInvocation.AsOfKind.CALL, true, false, 0L);
         var report = processor.process("现价1520.33元。", List.of(failed), List.of(), List.of());
 
         assertThat(report.anchors()).hasSize(1);
@@ -169,7 +169,7 @@ class TrustTurnProcessorTest {
     void givenResearchDraftJsonLikeReturn_whenProcess_thenStillUnverified() {
         var jsonLike = new ToolInvocation("research_draft", Map.of(),
                 "{\"valuationLow\":12.5,\"time\":\"2026-10-06 10:00:00\"}", List.of(),
-                "2026-10-06 10:00:00", ToolInvocation.AsOfKind.DATA, false, false);
+                "2026-10-06 10:00:00", ToolInvocation.AsOfKind.DATA, false, false, 0L);
         var report = processor.process("估值下沿 12.5。", List.of(jsonLike), List.of(), List.of());
 
         assertThat(report.anchors().get(0).state()).isEqualTo(TrustVerdict.UNVERIFIED);
@@ -189,7 +189,7 @@ class TrustTurnProcessorTest {
     @Test
     void givenMixedPoolWithExcludedTool_whenProcess_thenSummarySkipsExcludedAndCarriesMcp() {
         var mcpCall = new ToolInvocation("tushare_search", Map.of(), "营收 19000亿", List.of(),
-                "2026-10-06 09:00:00", ToolInvocation.AsOfKind.CALL, false, true);
+                "2026-10-06 09:00:00", ToolInvocation.AsOfKind.CALL, false, true, 0L);
         var report = processor.process("无数字。",
                 List.of(researchDraftEcho(), mcpCall,
                         invocation("{\"price\":1520.33,\"time\":\"2026-10-05 14:59:32\"}")),
@@ -270,7 +270,7 @@ class TrustTurnProcessorTest {
                         invocation("{\"price\":1520.33,\"time\":\"2026-10-05 14:59:32\"}"),
                         invocation("{\"price\":1520.33}", "{\"type\":\"bar\",\"data\":[1520.33]}"),
                         new ToolInvocation("bad_tool", Map.of(), "{\"price\":1.00}", List.of(),
-                                null, ToolInvocation.AsOfKind.CALL, true, false)),
+                                null, ToolInvocation.AsOfKind.CALL, true, false, 0L)),
                 List.of(),
                 List.of());
 
@@ -288,7 +288,7 @@ class TrustTurnProcessorTest {
         List<ToolInvocation> pool = new ArrayList<>();
         for (int i = 0; i < 45; i++) {
             pool.add(new ToolInvocation("get_quote", Map.of(), "{\"price\":" + (1000 + i) + ".00}",
-                    List.of(), "2026-10-05 14:59:32", ToolInvocation.AsOfKind.DATA, false, false));
+                    List.of(), "2026-10-05 14:59:32", ToolInvocation.AsOfKind.DATA, false, false, 0L));
         }
         var report = processor.process("无数字。", pool, List.of(), List.of());
 
@@ -304,7 +304,7 @@ class TrustTurnProcessorTest {
         pool.add(invocation("{\"price\":100.00}"));
         for (int i = 1; i <= 40; i++) {
             pool.add(new ToolInvocation("get_quote", Map.of(), "{\"price\":" + (100 + i) + ".00}",
-                    List.of(), "2026-10-05 14:59:32", ToolInvocation.AsOfKind.DATA, false, false));
+                    List.of(), "2026-10-05 14:59:32", ToolInvocation.AsOfKind.DATA, false, false, 0L));
         }
         // 同值再调用一次（「后写覆盖=最近一次调用」语义）：键 100 刚被更新
         pool.add(invocation("{\"price\":100.00,\"time\":\"2026-10-06 09:30:00\"}"));
@@ -377,7 +377,7 @@ class TrustTurnProcessorTest {
     @Test
     void givenGeneratedKind_whenToPayload_thenLowercaseWireName() {
         var generated = new ToolInvocation("get_market_overview", Map.of(), "{\"price\":1520.33}",
-                List.of(), "2026-10-05 15:00:00", ToolInvocation.AsOfKind.GENERATED, false, false);
+                List.of(), "2026-10-05 15:00:00", ToolInvocation.AsOfKind.GENERATED, false, false, 0L);
         var report = processor.process("现价1520.33元。", List.of(generated), List.of(), List.of());
 
         @SuppressWarnings("unchecked")
@@ -507,7 +507,7 @@ class TrustTurnProcessorTest {
         // 锚定携带 invocation.asOf（B3 记录字段）——JSON time 只影响装饰器解析，此处直构陈旧时点
         var stale = new ToolInvocation("get_quote", Map.of("code", "600519"),
                 "{\"price\":1520.33,\"time\":\"2026-09-01 09:30:00\"}", List.of(),
-                "2026-09-01 09:30:00", ToolInvocation.AsOfKind.DATA, false, false);
+                "2026-09-01 09:30:00", ToolInvocation.AsOfKind.DATA, false, false, 0L);
         var report = fixedClockProcessor().process(
                 "现价1520.33元。",
                 List.of(stale),
@@ -526,7 +526,7 @@ class TrustTurnProcessorTest {
     @Test
     void givenGeneratedAsOfAnchor_whenProcess_thenNoStaleSignal() {
         var generated = new ToolInvocation("get_market_overview", Map.of(), "{\"close\":3245.10}",
-                List.of(), "2026-01-01 12:00:00", ToolInvocation.AsOfKind.GENERATED, false, false);
+                List.of(), "2026-01-01 12:00:00", ToolInvocation.AsOfKind.GENERATED, false, false, 0L);
         var report = fixedClockProcessor().process(
                 "收盘点位3245.10点。", List.of(generated), List.of(), List.of());
 
@@ -538,7 +538,7 @@ class TrustTurnProcessorTest {
     @Test
     void givenFailedInvocation_whenProcess_thenToolFailuresInSignals() {
         var failed = new ToolInvocation("get_quote", Map.of("code", "600519"),
-                "{\"price\":1520.33}", List.of(), null, ToolInvocation.AsOfKind.CALL, true, false);
+                "{\"price\":1520.33}", List.of(), null, ToolInvocation.AsOfKind.CALL, true, false, 0L);
         var report = fixedClockProcessor().process(
                 "涨幅3.2%。", List.of(failed), List.of(), List.of());
 

@@ -141,7 +141,8 @@ class ConsistencyValidatorFixtureTest {
                     entry.isFailed() ? ToolInvocation.AsOfKind.DATA
                             : entry.isMcp() ? ToolInvocation.AsOfKind.CALL : ToolInvocation.AsOfKind.DATA,
                     entry.isFailed(),
-                    entry.isMcp()));
+                    entry.isMcp(),
+                    0L));
         }
         return pool;
     }

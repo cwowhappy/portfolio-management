@@ -143,7 +143,7 @@ public class TrustTurnProcessor {
                 }
                 pool.add(new ToolInvocation(invocation.toolName(), invocation.args(), text.toString(),
                         List.of(), invocation.asOf(), invocation.asOfKind(), invocation.failed(),
-                        invocation.mcp()));
+                        invocation.mcp(), invocation.durationMs()));
             }
         }
         if (historyPool != null) {
@@ -177,7 +177,9 @@ public class TrustTurnProcessor {
             kind = ToolInvocation.AsOfKind.CALL;
         }
         boolean mcp = entry.get("mcp") instanceof Boolean flag ? flag : kind == ToolInvocation.AsOfKind.CALL;
-        return new ToolInvocation(tool, Map.of(), value, List.of(), str(entry.get("asOf")), kind, false, mcp);
+        // 历史池 metadata 不含计时（ToolInvocation.durationMs，MS-30）：合成调用恒 0，仅参与提数校验
+        return new ToolInvocation(tool, Map.of(), value, List.of(), str(entry.get("asOf")), kind, false,
+                mcp, 0L);
     }
 
     /**

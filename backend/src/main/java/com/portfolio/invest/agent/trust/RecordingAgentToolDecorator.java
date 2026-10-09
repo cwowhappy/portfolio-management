@@ -28,8 +28,9 @@ import reactor.core.publisher.Mono;
 
 /**
  * 工具真值捕获装饰器（MS-29 B3，设计规格 §三）：同名覆盖注册进 Toolkit，对每次工具调用旁路记录
- * {@link ToolInvocation}（参数/结果文本/emit 块/数据时点）进 {@link TrustContext} 真值池，供 B5 锚定
- * 校验与 B7 信号消费。<strong>只旁路记录，不改调用语义</strong>——失败照常抛、返回值原样透传。
+ * {@link ToolInvocation}（参数/结果文本/emit 块/数据时点/耗时）进 {@link TrustContext} 真值池，供 B5 锚定
+ * 校验与 B7 信号消费；耗时（MS-30 §5.1）由观测 hook（Task 9）随轮映射进 tool_invocation_obs。
+ * <strong>只旁路记录，不改调用语义</strong>——失败照常抛、返回值原样透传。
  *
  * <p><strong>必须 extends ToolBase（非可选）</strong>：ReActAgent 权限门对注册表里非 ToolBase 的
  * 工具直接放行——若本装饰器仅实现 AgentTool，包裹 McpTool 会使非只读 MCP 工具的 HITL 审批静默失效
@@ -153,30 +154,41 @@ public class RecordingAgentToolDecorator extends ToolBase {
         String callTime = LocalDateTime.now(clock).format(CALL_TIME);
         Map<String, Object> raw = param.getInput() != null ? param.getInput() : use.getInput();
         Map<String, Object> args = raw == null ? Map.of() : new LinkedHashMap<>(raw);
+        // 工具级计时（MS-30 §5.1）：起点在 Mono.defer 前——含装配与订阅调度开销，成功/失败两路同口径
+        long t0 = System.nanoTime();
         return Mono.defer(() -> {
             ConcurrentLinkedQueue<String> emissions = new ConcurrentLinkedQueue<>();
             EMISSIONS.put(use.getId(), emissions);
             return delegate.callAsync(param)
-                    .doOnSuccess(result -> record(args, result, emissions, callTime, param.getRuntimeContext()))
-                    .doOnError(error -> recordFailure(args, emissions, callTime, param.getRuntimeContext()))
+                    .doOnSuccess(result -> record(args, result, emissions, callTime,
+                            param.getRuntimeContext(), elapsedMs(t0)))
+                    .doOnError(error -> recordFailure(args, emissions, callTime,
+                            param.getRuntimeContext(), elapsedMs(t0)))
                     .doFinally(signal -> EMISSIONS.remove(use.getId()));
         });
     }
 
+    /** nanoTime 起点折毫秒（真墙钟：固定 Clock 只管 callTime 文案，不参与计时；下限 0 防时钟回退）。 */
+    private static long elapsedMs(long t0) {
+        return Math.max(0L, (System.nanoTime() - t0) / 1_000_000L);
+    }
+
     private void record(Map<String, Object> args, ToolResultBlock result,
-                        ConcurrentLinkedQueue<String> emissions, String callTime, RuntimeContext rc) {
+                        ConcurrentLinkedQueue<String> emissions, String callTime, RuntimeContext rc,
+                        long durationMs) {
         String resultText = result == null ? "" : textOf(result);
         List<String> specs = List.copyOf(emissions);
         AsOf asOf = resolveAsOf(resultText, specs, callTime);
         TrustContext.current(rc).record(new ToolInvocation(
-                delegate.getName(), args, resultText, specs, asOf.value(), asOf.kind(), false, mcp));
+                delegate.getName(), args, resultText, specs, asOf.value(), asOf.kind(), false, mcp,
+                durationMs));
     }
 
     private void recordFailure(Map<String, Object> args, ConcurrentLinkedQueue<String> emissions,
-                               String callTime, RuntimeContext rc) {
+                               String callTime, RuntimeContext rc, long durationMs) {
         TrustContext.current(rc).record(new ToolInvocation(
                 delegate.getName(), args, "", List.copyOf(emissions), callTime,
-                ToolInvocation.AsOfKind.CALL, true, mcp));
+                ToolInvocation.AsOfKind.CALL, true, mcp, durationMs));
     }
 
     /** user 级 chunkCallback 目标（装配期挂一次）：emit 块按 toolUseId 归位进在途调用。 */

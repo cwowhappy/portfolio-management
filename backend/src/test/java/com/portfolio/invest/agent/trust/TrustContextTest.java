@@ -23,7 +23,7 @@ class TrustContextTest {
 
     private static ToolInvocation invocation(String toolName) {
         return new ToolInvocation(toolName, Map.of(), "{}", List.of(), "09:30:00",
-                ToolInvocation.AsOfKind.DATA, false, false);
+                ToolInvocation.AsOfKind.DATA, false, false, 0L);
     }
 
     @DisplayName("RuntimeContext 通道：同 rc 重复取用为同一实例（回合内累积）")

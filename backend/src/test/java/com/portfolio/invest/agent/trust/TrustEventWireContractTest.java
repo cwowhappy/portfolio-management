@@ -170,7 +170,7 @@ class TrustEventWireContractTest {
         List<CustomEvent> events = runTurn(
                 List.of(new ToolInvocation("get_quote", Map.of("code", "600519"),
                         "{\"price\":1520.33,\"time\":\"2026-10-06 09:30:00\"}", List.of(),
-                        "2026-10-06 09:30:00", ToolInvocation.AsOfKind.DATA, false, false)),
+                        "2026-10-06 09:30:00", ToolInvocation.AsOfKind.DATA, false, false, 0L)),
                 "现价1520.33元，毛利率58.2%。");
 
         assertThat(events).extracting(CustomEvent::getName)
@@ -221,12 +221,12 @@ class TrustEventWireContractTest {
         return runTurn(List.of(
                 new ToolInvocation("get_quote", quoteArgs,
                         "{\"price\":1520.33,\"time\":\"2026-10-01 09:30:00\"}", List.of(),
-                        "2026-10-01 09:30:00", ToolInvocation.AsOfKind.DATA, false, false),
+                        "2026-10-01 09:30:00", ToolInvocation.AsOfKind.DATA, false, false, 0L),
                 new ToolInvocation("tushare_search", Map.of("keyword", "贵州茅台"),
                         "贵州茅台2025年营收19000亿元", List.of(),
-                        "2026-10-06 09:00:00", ToolInvocation.AsOfKind.CALL, false, true),
+                        "2026-10-06 09:00:00", ToolInvocation.AsOfKind.CALL, false, true, 0L),
                 new ToolInvocation("get_kline", Map.of("code", "600519"), "{\"error\":\"timeout\"}",
-                        List.of(), "2026-10-06 09:00:00", ToolInvocation.AsOfKind.DATA, true, false)),
+                        List.of(), "2026-10-06 09:00:00", ToolInvocation.AsOfKind.DATA, true, false, 0L)),
                 "贵州茅台现价1520.33元，市盈率25.5倍。机构测算营收19000亿元，错报口径为15.20元。"
                         + "另估产能3.5万吨、员工1.2万人、门店2.1万个。操作上可逢低加仓。\n<!--advice-->");
     }
