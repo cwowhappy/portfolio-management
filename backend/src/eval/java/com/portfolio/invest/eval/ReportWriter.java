@@ -31,6 +31,24 @@ public final class ReportWriter {
     public record Meta(String mode, String subjectModel, String subjectBaseUrl, String judgeRequestedModel,
                        String judgeRespondedModel, int perTurnTimeoutMs) {}
 
+    /**
+     * 资产指纹条目（MS-30 B2，报告 schema v2）：「类型:键:内容hash」清单元素——hash 而非版本号，
+     * 版本表在生产库、子进程不可见，收割端拿 hash 回流 upsert（assetType 前五类与
+     * prompt_asset_version.asset_type 枚举一致，QUESTION_BANK 为题库聚合项）。
+     */
+    public record AssetHash(String assetType, String assetKey, String contentHash) {}
+
+    /**
+     * 运行指纹（runMeta，设计规格 §2.4）：runId/起止时间/触发方式/资产清单/题库聚合 hash/
+     * 总时长/完整度。completeness=FULL 表示 runner 走完整个题库循环并落报告（单题 ERROR 仍属
+     * 完整运行）；PARTIAL 语义（超时 destroyForcibly/非零退出）由收割侧落库，不经本字段。
+     * triggeredBy 子进程不可知触发来源，缺省 MANUAL——eval_run.triggered_by 落库口径以
+     * 调度/收割侧为准（Task 6）。
+     */
+    public record RunMeta(String runId, String startedAt, String finishedAt, String triggeredBy,
+                          List<AssetHash> assetHashes, List<AssetHash> evalAssets,
+                          String questionBankHash, long totalDurationMs, String completeness) {}
+
     public record Written(Path json, Path md) {}
 
     private final Path outputDir;
@@ -39,8 +57,9 @@ public final class ReportWriter {
         this.outputDir = outputDir;
     }
 
-    public Written write(List<QuestionOutcome> outcomes, Meta meta, Path compareWith) throws IOException {
-        ObjectNode report = buildJson(outcomes, meta, compareWith);
+    public Written write(List<QuestionOutcome> outcomes, Meta meta, RunMeta runMeta, Path compareWith)
+            throws IOException {
+        ObjectNode report = buildJson(outcomes, meta, runMeta, compareWith);
         Files.createDirectories(outputDir);
         Path json = outputDir.resolve("eval-report.json");
         Path md = outputDir.resolve("eval-report.md");
@@ -52,11 +71,12 @@ public final class ReportWriter {
 
     // ———— JSON 装配 ————
 
-    private ObjectNode buildJson(List<QuestionOutcome> outcomes, Meta meta, Path compareWith) {
+    private ObjectNode buildJson(List<QuestionOutcome> outcomes, Meta meta, RunMeta runMeta, Path compareWith) {
         ObjectNode root = MAPPER.createObjectNode();
-        root.put("schema", "eval-agent-report/1");
+        root.put("schema", "eval-agent-report/2");
         root.put("generatedAt", ZonedDateTime.now().toString());
         root.put("mode", meta.mode());
+        root.set("runMeta", runMetaNode(runMeta));
         ObjectNode subject = root.putObject("subjectModel");
         subject.put("provider", "deepseek");
         subject.put("model", meta.subjectModel());
@@ -69,8 +89,33 @@ public final class ReportWriter {
         root.set("summary", summaryNode(outcomes));
         ArrayNode questions = root.putArray("questions");
         for (QuestionOutcome o : outcomes) questions.add(questionNode(o));
-        if (compareWith != null) root.set("compare", compareNode(outcomes, compareWith));
+        if (compareWith != null) root.set("compare", compareNode(outcomes, compareWith, runMeta));
         return root;
+    }
+
+    /** runMeta 装配（§2.4）：hash 清单而非版本号——版本表在生产库，收割端回流 upsert。 */
+    private ObjectNode runMetaNode(RunMeta runMeta) {
+        ObjectNode node = MAPPER.createObjectNode();
+        node.put("runId", runMeta.runId());
+        node.put("startedAt", runMeta.startedAt());
+        node.put("finishedAt", runMeta.finishedAt());
+        node.put("triggeredBy", runMeta.triggeredBy());
+        ArrayNode assetHashes = node.putArray("assetHashes");
+        for (AssetHash h : runMeta.assetHashes()) assetHashes.add(assetHashNode(h));
+        ArrayNode evalAssets = node.putArray("evalAssets");
+        for (AssetHash h : runMeta.evalAssets()) evalAssets.add(assetHashNode(h));
+        node.put("questionBankHash", runMeta.questionBankHash());
+        node.put("totalDurationMs", runMeta.totalDurationMs());
+        node.put("completeness", runMeta.completeness());
+        return node;
+    }
+
+    private ObjectNode assetHashNode(AssetHash hash) {
+        ObjectNode node = MAPPER.createObjectNode();
+        node.put("assetType", hash.assetType());
+        node.put("assetKey", hash.assetKey());
+        node.put("contentHash", hash.contentHash());
+        return node;
     }
 
     private ObjectNode summaryNode(List<QuestionOutcome> outcomes) {
@@ -151,6 +196,16 @@ public final class ReportWriter {
             if (usage.totalTokens() != null) u.put("totalTokens", usage.totalTokens());
             u.put("snapshots", usage.snapshots());
         }
+        // MS-29 D4-1 附加度量：trust 统计随题携带（诱导类报告节消费；缺席不写——边界在 Markdown 节明示）
+        AguiEventExtractor.TrustStats trust = o.trustStats();
+        if (trust != null && trust.events() > 0) {
+            ObjectNode t = node.putObject("trustStats");
+            t.put("verified", trust.verified());
+            t.put("sourced", trust.sourced());
+            t.put("unverified", trust.unverified());
+            t.put("events", trust.events());
+            t.put("unverifiedRatio", trust.unverifiedRatio());
+        }
         if (o.answerText() != null && !o.answerText().isBlank()) {
             node.put("answerText", o.answerText());
         }
@@ -159,7 +214,7 @@ public final class ReportWriter {
 
     // ———— 与上次报告的对比（可选 --compare） ————
 
-    private ObjectNode compareNode(List<QuestionOutcome> outcomes, Path previous) {
+    private ObjectNode compareNode(List<QuestionOutcome> outcomes, Path previous, RunMeta runMeta) {
         ObjectNode compare = MAPPER.createObjectNode();
         Path resolved = resolveComparePath(previous);
         compare.put("previousReport", resolved.toString());
@@ -170,6 +225,38 @@ public final class ReportWriter {
             compare.put("error", "上次报告读取失败: " + e.getMessage());
             return compare;
         }
+        // 基准可比性指纹（§3.1：题库 hash + rubric 各文件版本）：v1 旧档无 runMeta 直接不可比；
+        // 指纹漂移仍照常列出 questionChanges（诊断信息不因不可比而丢），判定端只降级不翻转
+        ArrayNode incomparableReasons = compare.putArray("incomparableReasons");
+        JsonNode prevMeta = prev.path("runMeta");
+        if (prevMeta.isMissingNode() || prevMeta.path("questionBankHash").asText("").isBlank()) {
+            incomparableReasons.add("BASELINE_INCOMPARABLE: 上次报告无 runMeta"
+                    + "（schema v1 旧档，题库/资产指纹缺失）");
+        } else {
+            String prevQuestionBankHash = prevMeta.path("questionBankHash").asText();
+            if (!prevQuestionBankHash.equals(runMeta.questionBankHash())) {
+                incomparableReasons.add("BASELINE_INCOMPARABLE: 题库 hash 不一致（"
+                        + shortHash(prevQuestionBankHash) + " → " + shortHash(runMeta.questionBankHash()) + "）");
+            }
+            Map<String, String> prevRubric = new LinkedHashMap<>();
+            prevMeta.path("assetHashes").forEach(h -> {
+                if ("EVAL_RUBRIC".equals(h.path("assetType").asText())) {
+                    prevRubric.put(h.path("assetKey").asText(), h.path("contentHash").asText());
+                }
+            });
+            for (AssetHash hash : runMeta.assetHashes()) {
+                if (!"EVAL_RUBRIC".equals(hash.assetType())) continue;
+                String was = prevRubric.get(hash.assetKey());
+                if (was == null) {
+                    incomparableReasons.add("BASELINE_INCOMPARABLE: rubric 新增 " + hash.assetKey());
+                } else if (!was.equals(hash.contentHash())) {
+                    incomparableReasons.add("BASELINE_INCOMPARABLE: rubric 变更 " + hash.assetKey()
+                            + "（" + shortHash(was) + " → " + shortHash(hash.contentHash()) + "）");
+                }
+            }
+        }
+        compare.put("incomparable", !incomparableReasons.isEmpty());
+
         Map<String, JsonNode> prevQuestions = new LinkedHashMap<>();
         prev.path("questions").forEach(q -> prevQuestions.put(q.path("id").asText(), q));
         Set<String> currentIds = new LinkedHashSet<>();
@@ -245,7 +332,19 @@ public final class ReportWriter {
         JsonNode responded = report.path("judge").path("respondedModel");
         if (!responded.isMissingNode()) md.append("（服务端回报 ").append(responded.asText()).append('）');
         md.append("，temperature=0\n");
-        md.append("- 单轮超时: ").append(report.path("perTurnTimeoutMs").asText()).append(" ms\n\n");
+        md.append("- 单轮超时: ").append(report.path("perTurnTimeoutMs").asText()).append(" ms\n");
+        // 运行指纹摘要（完整清单见 JSON 报告 runMeta——版本表在生产库，此处只携 hash）
+        JsonNode runMeta = report.path("runMeta");
+        if (!runMeta.isMissingNode()) {
+            md.append("- 运行: ").append(runMeta.path("runId").asText())
+                    .append("（").append(runMeta.path("triggeredBy").asText())
+                    .append("，").append(runMeta.path("completeness").asText())
+                    .append("，用时 ").append(runMeta.path("totalDurationMs").asLong() / 1000).append("s）\n");
+            md.append("- 资产指纹: assetHashes ").append(runMeta.path("assetHashes").size()).append(" 项、")
+                    .append("evalAssets ").append(runMeta.path("evalAssets").size()).append(" 项、题库 hash ")
+                    .append(shortHash(runMeta.path("questionBankHash").asText())).append("…\n");
+        }
+        md.append('\n');
         md.append("## 总览\n\n");
         md.append("| 题目 | 类别 | 状态 | 维度通过 | judge 评分 | 耗时 | token(out) |\n");
         md.append("|---|---|---|---|---|---|---|\n");
@@ -282,6 +381,8 @@ public final class ReportWriter {
                         .append(" | ").append(e.getValue().path("pass").asInt())
                         .append(" | ").append(e.getValue().path("fail").asInt())
                         .append(" | ").append(e.getValue().path("skipped").asInt()).append(" |\n"));
+
+        appendInductionTrustSection(md, outcomes);
 
         md.append("\n## 题目详情\n");
         for (QuestionOutcome o : outcomes) {
@@ -340,6 +441,13 @@ public final class ReportWriter {
         if (!compare.isMissingNode()) {
             md.append("\n## 与上次报告对比\n\n");
             md.append("- 上次报告: ").append(compare.path("previousReport").asText()).append('\n');
+            // 基准不可比（§3.1 指纹漂移/v1 旧档）：置顶声明，题目级 diff 仍列出（诊断信息）
+            if (compare.path("incomparable").asBoolean(false)) {
+                md.append("- 基准不可比（BASELINE_INCOMPARABLE）:\n");
+                for (JsonNode reason : compare.path("incomparableReasons")) {
+                    md.append("  - ").append(reason.asText()).append('\n');
+                }
+            }
             JsonNode changes = compare.path("questionChanges");
             if (changes.isEmpty()) {
                 md.append("- 无状态/维度/judge 漂移\n");
@@ -357,8 +465,44 @@ public final class ReportWriter {
         return md.toString();
     }
 
+    /**
+     * 诱导类 trust 附加度量（MS-29 需求 D4-1）：HALLUCINATION_INDUCTION 分类的题目附带校验器
+     * （TrustAgentHook）的未溯源标注率——CUSTOM trust.anchors 事件的 payload.stats 跨轮累计，
+     * 报告加列。事件缺席（无末轮文本/发射失败/题未跑到末轮）明示「缺席」不静默吞掉；非诱导类
+     * 题目有统计也只在 JSON questions[].trustStats 携带（本节不出现）。
+     */
+    private static void appendInductionTrustSection(StringBuilder md, List<QuestionOutcome> outcomes) {
+        List<QuestionOutcome> induction = outcomes.stream()
+                .filter(o -> "HALLUCINATION_INDUCTION".equals(o.question().category())).toList();
+        if (induction.isEmpty()) return;
+        md.append("\n## 诱导类 trust 附加度量（MS-29 D4-1）\n\n");
+        md.append("未溯源标注率 = unverified / (verified + sourced + unverified)"
+                + "（trust.anchors 事件 payload.stats 跨轮累计）。\n\n");
+        md.append("| 题目 | trust事件 | verified | sourced | unverified | 未溯源标注率 |\n|---|---|---|---|---|---|\n");
+        for (QuestionOutcome o : induction) {
+            AguiEventExtractor.TrustStats trust = o.trustStats();
+            if (trust == null || trust.events() == 0) {
+                md.append("| ").append(o.question().id())
+                        .append(" | 0 | - | - | - | 缺席（无 trust.anchors 事件：无末轮文本/发射失败） |\n");
+                continue;
+            }
+            md.append("| ").append(o.question().id())
+                    .append(" | ").append(trust.events())
+                    .append(" | ").append(trust.verified())
+                    .append(" | ").append(trust.sourced())
+                    .append(" | ").append(trust.unverified())
+                    .append(" | ").append(String.format("%.1f%%", trust.unverifiedRatio() * 100))
+                    .append(" |\n");
+        }
+    }
+
     private static String escapeCell(String text) {
         return text == null ? "" : text.replace("|", "\\|").replace("\n", " ");
+    }
+
+    /** hash 短码（前 8 位）：报告/告警人读摘要用，完整值见 JSON 报告。 */
+    private static String shortHash(String hash) {
+        return hash == null || hash.length() <= 8 ? hash : hash.substring(0, 8);
     }
 
     private static String truncate(String text, int max) {

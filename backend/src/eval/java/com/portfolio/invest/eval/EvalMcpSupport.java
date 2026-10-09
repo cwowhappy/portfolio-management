@@ -23,7 +23,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * <p>工具面（与 McpHitl 口径一致）：
  * <ul>
  *   <li>write_note——不标 readOnlyHint → 缺省视为写，触发 permission_confirm 审批中断（HITL 题）；
- *       写入 build/eval-agent/mcp-notes/（中断即停时不应有文件落盘）</li>
+ *       写入 &lt;dataRoot&gt;/mcp-notes/（MS-30 B2 随 --invest.eval.data-root 参数化，默认
+ *       build/eval-agent；中断即停时不应有文件落盘）</li>
  *   <li>read_note——readOnlyHint=true → 只读放行直接执行，返回固定样例笔记</li>
  *   <li>get_research_report——readOnlyHint=true 的数据兜底工具（研报领域内置不覆盖，
  *       「扩展源兜底分工」题的观察点），按代码返回固定研报摘要</li>
@@ -37,18 +38,28 @@ public final class EvalMcpSupport {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final String PROVIDER_CODE = "eval-mcp-source";
-    private static final Path NOTE_DIR = Path.of("build", "eval-agent", "mcp-notes");
+
+    /**
+     * mcp 笔记目录：随 runner 数据目录参数化（{@link #configure} 注入，默认与
+     * {@code Options.DEFAULT_DATA_ROOT} 同源），部署机裸进程下相对路径不成立须显式传绝对路径。
+     */
+    private static volatile Path noteDir = Path.of(EvalRunner.Options.DEFAULT_DATA_ROOT, "mcp-notes");
 
     private static volatile Tomcat tomcat;
     private static volatile McpSyncServer mcpServer;
 
     private EvalMcpSupport() {}
 
+    /** 注入数据根目录（笔记落其 mcp-notes/ 子目录）；由 runner 在首个 mcp 题触发懒启动前调用。 */
+    public static synchronized void configure(Path dataRoot) {
+        noteDir = dataRoot.resolve("mcp-notes");
+    }
+
     /** 懒启动（首个 mcp 题触发）；已启动则直接返回 /mcp 端点 URL。 */
     public static synchronized String serverUrl() {
         if (tomcat != null) return mcpUrl();
         try {
-            Files.createDirectories(NOTE_DIR);
+            Files.createDirectories(noteDir);
 
             HttpServletStreamableServerTransportProvider transport =
                     HttpServletStreamableServerTransportProvider.builder()
@@ -60,7 +71,7 @@ public final class EvalMcpSupport {
                     .tool(writeNoteTool(), (exchange, args) -> {
                         // BiFunction#apply 不声明受检异常（javac 核对 0.17.2），IOException 只能包装抛出
                         try {
-                            Path file = NOTE_DIR.resolve(String.valueOf(
+                            Path file = noteDir.resolve(String.valueOf(
                                     args.getOrDefault("file", "note.md")).replaceAll("[^a-zA-Z0-9._-]", "_"));
                             Files.writeString(file, String.valueOf(args.get("content")), StandardCharsets.UTF_8);
                             return new McpSchema.CallToolResult("written: " + file.getFileName(), false);

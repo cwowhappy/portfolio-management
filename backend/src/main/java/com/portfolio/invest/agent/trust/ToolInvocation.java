@@ -11,6 +11,10 @@ import java.util.Map;
  * 标志承载，不再由 {@code asOfKind==CALL} 编码——MCP 工具恒 CALL（决策 #5）但内置无时点工具
  * 同样落 CALL 兜底，两者语义不同桶：MCP 真值不入比对池（sourced），内置无时点真值可参与比对
  * （verified）。装饰器按被包装工具的 MCP 语义填充（UserToolkitFactory 装配处已知）。
+ *
+ * <p><strong>durationMs（MS-30 §5.1）：</strong>工具级时延（decorator 计时，毫秒），随真值池
+ * 旁路流转——回合结束由观测 hook（Task 9）映射进 tool_invocation_obs；历史池摘要/合成调用
+ * 不含计时，恒 0（仅参与提数校验，时延观测只认当回合实录）。
  */
 public record ToolInvocation(
         String toolName,
@@ -20,7 +24,8 @@ public record ToolInvocation(
         String asOf,
         AsOfKind asOfKind,
         boolean failed,
-        boolean mcp) {
+        boolean mcp,
+        long durationMs) {
 
     /** 数据时点语义（决策 #17）：data=源站数据时刻 / generated=本机生成时刻 / call=调用时刻。 */
     public enum AsOfKind {

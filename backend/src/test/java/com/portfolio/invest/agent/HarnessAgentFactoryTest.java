@@ -68,9 +68,9 @@ class HarnessAgentFactoryTest {
         assertThat(agent).isNotNull();
     }
 
-    @DisplayName("MS-29 B5 挂载：build() 装配 TrustAgentHook 与线上 messageId 观察中间件")
+    @DisplayName("MS-29 B5 + MS-30 B6 挂载：build() 装配双 hook（trust 先行、观测后行）与观察中间件")
     @Test
-    void givenBuild_whenAssemble_thenTrustHookAndMiddlewareMounted() throws IOException {
+    void givenBuild_whenAssemble_thenTrustAndObservabilityHooksAndMiddlewareMounted() throws IOException {
         UserToolkitFactory toolkitFactory = mock(UserToolkitFactory.class);
         SkillApplicationService skillApplicationService = mock(SkillApplicationService.class);
         when(skillApplicationService.enabledSkillCodes(1L)).thenReturn(List.of());
@@ -78,10 +78,27 @@ class HarnessAgentFactoryTest {
 
         HarnessAgent agent = factory(toolkitFactory, skillApplicationService).build(1L);
 
-        assertThat(agent.getDelegate().getHooks())
+        List<io.agentscope.core.hook.Hook> hooks = agent.getDelegate().getHooks();
+        assertThat(hooks)
                 .anyMatch(h -> h instanceof com.portfolio.invest.agent.trust.TrustAgentHook);
+        assertThat(hooks)
+                .anyMatch(h -> h instanceof com.portfolio.invest.agent.observability.ObservabilityAgentHook);
+        // 装配序钉死：trust 先行（默认 priority 100）、观测后行（priority 200 读其产物）
+        int trustIndex = indexOfInstance(hooks, com.portfolio.invest.agent.trust.TrustAgentHook.class);
+        int observabilityIndex =
+                indexOfInstance(hooks, com.portfolio.invest.agent.observability.ObservabilityAgentHook.class);
+        assertThat(trustIndex).isLessThan(observabilityIndex);
         assertThat(agent.getDelegate().getMiddlewares())
                 .anyMatch(m -> m instanceof com.portfolio.invest.agent.trust.TrustWireMessageIdMiddleware);
+    }
+
+    private static int indexOfInstance(List<io.agentscope.core.hook.Hook> hooks, Class<?> type) {
+        for (int i = 0; i < hooks.size(); i++) {
+            if (type.isInstance(hooks.get(i))) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     /** 真实 InvestProperties（Harness 嵌套 POJO 有默认值），workspace/stateRoot 指向 @TempDir，避免触碰仓库工作目录。 */
@@ -95,10 +112,12 @@ class HarnessAgentFactoryTest {
         return props;
     }
 
-    /** 四个构造依赖全 mock + 指向 @TempDir 的真实 InvestProperties。 */
+    /** 构造依赖全 mock + 指向 @TempDir 的真实 InvestProperties + 观测端口/ObjectMapper 替身。 */
     private HarnessAgentFactory factory(UserToolkitFactory toolkitFactory,
                                         SkillApplicationService skillApplicationService) throws IOException {
         return new HarnessAgentFactory(toolkitFactory, skillApplicationService,
-                mock(ClasspathSkillRepository.class), mock(Model.class), tempDirProperties());
+                mock(ClasspathSkillRepository.class), mock(Model.class), tempDirProperties(),
+                mock(com.portfolio.invest.domain.observability.ObservabilityRecorder.class),
+                new com.fasterxml.jackson.databind.ObjectMapper());
     }
 }

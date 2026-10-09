@@ -140,3 +140,21 @@ invest:
         flush-before-compact: true
       memory:
         flush-min-gap: 30m
+  eval:                                # MS-30 评测与可观测性（设计规格 §3.3）
+    enabled: ${INVEST_EVAL_ENABLED:true}    # 定时总开关（缺 DEEPSEEK_API_KEY 时调度器静默跳过并留痕）
+    cron: "0 17 2 * * *"                # 说明位：真实调度在 @Scheduled 字面量（02:17 错峰）
+    jar-path: ${INVEST_EVAL_JAR_PATH:}  # evalBootJar 产物；空 = 生产 jar 同目录唯一 *-eval.jar 派生
+    datasource:
+      url: ${EVAL_DATASOURCE_URL:}      # 空 = 回退主 datasource（currentSchema 由 provisioner 拼）
+    data-root: ${INVEST_EVAL_DATA_ROOT:}    # 空 = build/eval-agent（本地）；部署机绝对路径
+    timeout-minutes: 120                # 整跑护栏（超时 destroyForcibly → 收割按 PARTIAL）
+    token-budget: 5000000               # 当次 eval token 护栏（超限中止标 PARTIAL；执行端接线归题域批次）
+    regression:                         # 相对回归三阈值（§3.1，含等于）
+      pass-rate-drop-pp: 10
+      flip-threshold: 3
+      category-drop-pp: 15
+    observability:                      # 观测三项（Task 8/9/10 消费）
+      retention-days: 90                # 观测滚动清理（Task 10 消费），沿 NEWS_RETENTION=90 先例
+      result-text-max-bytes: 2048       # 工具级 resultText 截断（需求决策 #13）
+      unit-price-cny-per-mtok: 0.0      # >0 时看板显示估算成本（不入库）
+    calc-tolerance-pct: 2               # 计算类断言相对容差（需求决策 #15；EvalRunner 读入下传 AssertionEngine 容差维面）

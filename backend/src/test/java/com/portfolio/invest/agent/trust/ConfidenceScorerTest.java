@@ -37,7 +37,7 @@ class ConfidenceScorerTest {
 
     private static ToolInvocation failedCall() {
         return new ToolInvocation("get_quote", Map.of("code", "600519"), "", List.of(),
-                "2026-10-06 09:30:00", ToolInvocation.AsOfKind.CALL, true, false);
+                "2026-10-06 09:30:00", ToolInvocation.AsOfKind.CALL, true, false, 0L);
     }
 
     private List<ConfidenceSignal.Hit> score(List<AnchorRecord> anchors, AnchorBatch.Stats stats,
@@ -139,7 +139,7 @@ class ConfidenceScorerTest {
     @Test
     void givenFailedInvocationCount_whenScore_thenToolFailuresSignalAtLeastOne() {
         ToolInvocation ok = new ToolInvocation("get_quote", Map.of(), "{\"price\":1520.33}",
-                List.of(), "2026-10-06 09:30:00", ToolInvocation.AsOfKind.DATA, false, false);
+                List.of(), "2026-10-06 09:30:00", ToolInvocation.AsOfKind.DATA, false, false, 0L);
         assertThat(score(List.of(), new AnchorBatch.Stats(1, 0, 0), List.of(ok), 0, 0)).isEmpty();
         assertThat(score(List.of(), new AnchorBatch.Stats(1, 0, 0),
                 List.of(failedCall(), failedCall()), 0, 0))

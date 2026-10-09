@@ -16,10 +16,11 @@ import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 class FlywayMigrationCountGuardTest {
 
     /**
-     * 当前迁移文件数（V1 基线 squash + V2 research + V3 intelligence + V4 p2 索引清理）。
+     * 当前迁移文件数（V1 基线 squash + V2 research + V3 intelligence + V4 p2 索引清理
+     * + V5 MS-30 评测/观测四表）。
      * 新增迁移须同步 +1（删并迁移则相应调整），随 commit 一起改。
      */
-    private static final int EXPECTED_MIGRATION_COUNT = 4;
+    private static final int EXPECTED_MIGRATION_COUNT = 5;
 
     @Test
     @DisplayName("迁移目录 .sql 文件数与预期常量一致（新增迁移须同步 +1，B9-⑤）")

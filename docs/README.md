@@ -7,7 +7,7 @@
 | 目录 | 定位 | 入口 |
 |------|------|------|
 | [function/](function/) | 产品功能（M01–M14 + 进度看板），供产品/设计/测试/新人 | [README](function/README.md) |
-| [technology/](technology/) | 技术文档（架构 / 模块 01–13 / 规范 / 决策 0001–0011 / 储备） | [README](technology/README.md) |
+| [technology/](technology/) | 技术文档（架构 / 模块 01–16 / 规范 / 决策 / 储备） | [README](technology/README.md) |
 | [roadmap/](roadmap/) | 产品功能规划与进度跟踪（里程碑落地计划、产品功能规划） | [README](roadmap/README.md) |
 | [research/](research/) | 跨特性调研报告（调研与规划分离：规划入 roadmap/） | [README](research/README.md) |
 | [deployment/](deployment/) | 发布方案与发布计划（v1 首次发布） | [v1/发布计划.md](deployment/v1/发布计划.md) |
@@ -32,6 +32,7 @@
 | [2026-08-27-产品落地计划.md](roadmap/2026-08-27-产品落地计划.md) | 里程碑级（MS-00~MS-15 + 平台增强 MS-16~19）落地计划与进度跟踪（**跨模块权威**） |
 | [2026-09-28-阶段二产品功能规划.md](roadmap/2026-09-28-阶段二产品功能规划.md) | 阶段二（MS-20~27，情报 + 投资 SOP）产品功能规划 |
 | [2026-10-04-投研Agent功能迭代方向规划.md](roadmap/2026-10-04-投研Agent功能迭代方向规划.md) | v1 后迭代方向：D1–D8 八个方向 + P0–P3 路线图（依据 [research/ 趋势调研](research/2026-10-04-投研Agent发展趋势调研.md)，MS-28 及以后立项输入） |
+| [2026-10-05-阶段三产品功能规划.md](roadmap/2026-10-05-阶段三产品功能规划.md) | 阶段三（MS-28~32：工程前置 + 可信溯源/记忆个性化/深度研究 + 评测观测工程项）里程碑规划与进度跟踪 |
 
 ## research/ 目录
 

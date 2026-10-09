@@ -195,6 +195,47 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(status).body(new ApiError(e.code(), e.getMessage()));
     }
 
+    /**
+     * eval 域（MS-30 B5 admin 端点，照 intelligence 范式）：行缺失两码→404、基准置位
+     * 不合格（仅 COMPLETED 且非 DEGRADED 可置 true）→422、default→400。
+     */
+    @ExceptionHandler(com.portfolio.invest.domain.eval.EvalException.class)
+    public ResponseEntity<ApiError> eval(com.portfolio.invest.domain.eval.EvalException e) {
+        HttpStatus status = switch (e.code()) {
+            case com.portfolio.invest.domain.eval.EvalErrorCode.EVAL_RUN_NOT_FOUND,
+                 com.portfolio.invest.domain.eval.EvalErrorCode.PROMPT_ASSET_NOT_FOUND
+                    -> HttpStatus.NOT_FOUND;
+            case com.portfolio.invest.domain.eval.EvalErrorCode.ERR_BASELINE_INELIGIBLE
+                    -> HttpStatus.UNPROCESSABLE_CONTENT;
+            default -> HttpStatus.BAD_REQUEST;
+        };
+        return ResponseEntity.status(status).body(new ApiError(e.code(), e.getMessage()));
+    }
+
+    /**
+     * eval 运行互斥冲突（MS-30 B5）：手动触发撞进行中运行（单实例 AtomicBoolean 互斥）
+     * → 409 EVAL_RUN_IN_PROGRESS。
+     */
+    @ExceptionHandler(com.portfolio.invest.application.eval.EvalRunInProgressException.class)
+    public ResponseEntity<ApiError> evalRunInProgress(
+            com.portfolio.invest.application.eval.EvalRunInProgressException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ApiError("EVAL_RUN_IN_PROGRESS", e.getMessage()));
+    }
+
+    /**
+     * eval 触发不可用（MS-30 B5 审查 I2）：未启用/缺 DEEPSEEK_API_KEY/evalBootJar 派生或
+     * 子进程启动失败等服务端配置缺失类失败 → 503 EVAL_TRIGGER_UNAVAILABLE，透出调度器
+     * 面向运维的原文案（沿 AgentNotFoundException→503 AGENT_NOT_CONFIGURED 先例）。
+     */
+    @ExceptionHandler(com.portfolio.invest.application.eval.EvalTriggerUnavailableException.class)
+    public ResponseEntity<ApiError> evalTriggerUnavailable(
+            com.portfolio.invest.application.eval.EvalTriggerUnavailableException e) {
+        log.warn("eval 手动触发不可用: {}", e.getMessage());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(new ApiError("EVAL_TRIGGER_UNAVAILABLE", e.getMessage()));
+    }
+
     @ExceptionHandler(com.portfolio.invest.domain.valuation.ValuationException.class)
     public ResponseEntity<ApiError> valuation(com.portfolio.invest.domain.valuation.ValuationException e) {
         HttpStatus status = switch (e.code()) {

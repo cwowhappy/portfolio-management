@@ -20,7 +20,10 @@ import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
  * toolSequenceMatch 须为 exact/prefix（防 typo 被断言引擎静默按 exact 断言）；
  * memoryFollowUp 的 turnIndex 须为 2..turns 数（多轮才谈记忆承接）、interrupt.toolName 必填且
  * kind 仅支持 permission_confirm；dataFidelity 锚点须与桩数据自洽（锚点串必须出现在桩数据
- * JSON 序列化里——防"期望 1700.5、桩里 1700.50"这类写错题）。
+ * JSON 序列化里——防"期望 1700.5、桩里 1700.50"这类写错题）；dataFidelityTolerance 锚为
+ * 推导值非桩字面值（无桩 JSON 自洽可言），只校验锚值非空有限数、tolerancePct 0..100，
+ * 计算链自洽性由题目 YAML 注释写明期望推导路径守护；hallucinationGuard.allowedValues 声明
+ * 则须为非空有限数列表（可缺省——桩值由断言侧从桩 JSON 自动抽取入白名单）。
  */
 public final class QuestionLoader {
 
@@ -81,6 +84,8 @@ public final class QuestionLoader {
         validateMemoryFollowUp(q, file);
         validateInterrupt(q, file);
         validateFidelityAnchors(q, file);
+        validateToleranceAnchors(q, file);
+        validateGuardAllowedValues(q, file);
     }
 
     /** 多轮记忆槽位：仅多轮题可声明；turnIndex 1 起、须 ≥ 2 且不越界；锚点至少其一。 */
@@ -125,6 +130,36 @@ public final class QuestionLoader {
             require(anchor != null && !anchor.isBlank() && stubJson.contains(anchor), file,
                     q.id() + ": dataFidelity 锚点 \"" + anchor + "\" 与桩数据不自洽（桩 JSON 中找不到）");
         }
+    }
+
+    /**
+     * 计算类容差槽位（METRIC_CALC）：锚值须为非空有限数列表；tolerancePct 可空（缺省=
+     * invest.eval.calc-tolerance-pct），声明则须在 0..100（0=只许精确相等，100 以上失义）。
+     * 锚是推导值、非桩字面值——不做 validateFidelityAnchors 式的桩 JSON 自洽校验。
+     */
+    private static void validateToleranceAnchors(EvalQuestion q, String file) {
+        EvalQuestion.DataFidelityTolerance tolerance = q.expect().dataFidelityTolerance();
+        if (tolerance == null) return;
+        List<Double> anchors = tolerance.anchorValues();
+        require(anchors != null && !anchors.isEmpty()
+                        && anchors.stream().allMatch(a -> a != null && Double.isFinite(a)),
+                file, q.id() + ": dataFidelityTolerance.anchorValues 须为非空有限数列表");
+        require(tolerance.tolerancePct() == null
+                        || (tolerance.tolerancePct() >= 0 && tolerance.tolerancePct() <= 100),
+                file, q.id() + ": dataFidelityTolerance.tolerancePct 须在 0..100（可缺省=invest.eval.calc-tolerance-pct）");
+    }
+
+    /**
+     * 诱导守门槽位（HALLUCINATION_INDUCTION）：allowedValues 可空（查无题白名单只有桩值/空），
+     * 声明则须为非空有限数列表（题面前提里被复述不算编造的非桩小数）。桩值无须声明——白名单
+     * 在断言时从桩数据 JSON 自动抽取（正确引用桩内数值非编造的字面实现），故无桩自洽校验。
+     */
+    private static void validateGuardAllowedValues(EvalQuestion q, String file) {
+        EvalQuestion.HallucinationGuard guard = q.expect().hallucinationGuard();
+        if (guard == null) return;
+        List<Double> allowed = guard.allowedValues();
+        require(allowed == null || allowed.stream().allMatch(v -> v != null && Double.isFinite(v)), file,
+                q.id() + ": hallucinationGuard.allowedValues 须为非空有限数列表（题面前提合法复述值，可缺省）");
     }
 
     private static void require(boolean condition, String file, String message) {

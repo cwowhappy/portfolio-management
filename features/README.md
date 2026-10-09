@@ -58,7 +58,7 @@
 | [skill-integration](skill-integration/) | MS-17（已交付 2026-09-08，PR #20） | M03 对话式投研问答、M14 系统与工程 | `/settings/skills` |
 | [mcp-hitl](mcp-hitl/) | MS-18（已交付 2026-09-08，PR #22/#23；修复 #28/#30） | M03 对话式投研问答、M14 系统与工程 | — |
 | [chat-rich-content](chat-rich-content/) | MS-19（已交付 2026-09-12，PR #29） | M03 对话式投研问答、M14 系统与工程 | —（对话流内，图表基建惠及 `/portfolio` `/valuation` `/allocation`） |
-| [agent-testing](agent-testing/) | 跨 MS-16~19（测试加固，进行中） | M03 对话式投研问答（被测域）、M14 系统与工程 | —（纯测试/评估，无新页面） |
+| [agent-testing](agent-testing/) | 跨 MS-16~19（测试加固，历史基线存档——eval 设施已由 MS-30 生产化演进） | M03 对话式投研问答（被测域）、M14 系统与工程 | —（纯测试/评估，无新页面） |
 | [feishu-messaging](feishu-messaging/) | 跨 MS-15/M14/M03（已交付 2026-09-27，PR #71/#72/#73） | M14 系统与工程（采集告警）、M03 对话式投研问答（飞书入口）、M13 投资知识库（PrincipleRule 消费） | —（飞书客户端内） |
 | [account-email](account-email/) | MS-15（已交付 2026-09-27，PR #76） | M01 用户与认证（F06 邮箱验证/找回密码） | `/register`（改造）`/forgot-password`（新增）`/admin`（扩展） |
 | [research-intelligence](research-intelligence/) | MS-20~23（已交付 2026-09-29/10-02/10-03/10-03，PR #82 已合并 2026-10-03——PR 合并后补记） | M15 智能情报中心 | `/intelligence`（新增）`/settings/intelligence`（新增）`/research/[id]`（扩展：情报开关） |
@@ -66,7 +66,7 @@
 | [mcp-token-encryption](mcp-token-encryption/) | P1-10 工程项（已交付 2026-10-03，PR #84 已合并 2026-10-04） | M14 系统与工程（token 加密）、M03 供数（MCP 装配解密） | `/admin`（扩展：Token 管理块） |
 | [code-review-2026-10](code-review-2026-10/) | 跨 MS 工程项（第一批 P1 已交付 2026-10-04 PR #86；第二批 P2 已交付 2026-10-05 PR #93/#94/#95，MS-28 收口） | M14 系统与工程（审查修复，覆盖 M01/M03/M05/M12/M15） | —（纯修复，无新页面） |
 | [trust-provenance](trust-provenance/) | MS-29（已交付 2026-10-06，PR #97 立项 / PR #98 实现） | M17 可信溯源与幻觉治理 | —（对话流内：数字级溯源角标/浮层、修正注记、低置信横幅、disclaimer） |
-| [eval-observability](eval-observability/) | MS-30（进行中） | M14 系统与工程（工程项：eval 三类基准/定时回归告警/提示词版本化/观测看板） | `/admin`（扩展：观测看板四区块） |
+| [eval-observability](eval-observability/) | MS-30（已交付 2026-10-10，待 PR） | M14 系统与工程（工程项：eval 三类基准/定时回归告警/提示词版本化/观测看板） | `/admin`（扩展：观测看板四区块） |
 
 > 里程碑（MS）定义与进度见 [产品落地计划](../docs/roadmap/2026-08-27-产品落地计划.md)；模块（M）定义与进度看板见 [功能模块概览](../docs/function/00-功能模块概览.md)。
 

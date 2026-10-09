@@ -7,8 +7,10 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
+import com.portfolio.invest.config.InvestProperties;
 import com.portfolio.invest.domain.intelligence.BindingCodeRepository;
 import com.portfolio.invest.domain.intelligence.NewsRepository;
+import com.portfolio.invest.domain.observability.ObservabilityRecorder;
 import com.portfolio.invest.domain.user.VerificationCodeRepository;
 import java.time.Clock;
 import java.time.Duration;
@@ -19,8 +21,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * 情报数据滚动清理切片：新闻 90 天/绑定码 1 天/验证码 90 天三个 cutoff 口径（clock 注入
- * 算死）、任一步失败不挡其余两步、三步全炸时调度入口顶层吞异常不炸调度线程。
+ * 情报数据滚动清理切片：新闻 90 天/绑定码 1 天/验证码 90 天/观测数据 retention-days 四个
+ * cutoff 口径（clock 注入算死）、任一步失败不挡其余三步、四步全炸时调度入口顶层吞异常
+ * 不炸调度线程。观测保留天数走 {@link InvestProperties} 默认值（90），配置化口径单测覆盖。
  */
 class IntelligenceCleanupServiceTest {
 
@@ -31,22 +34,25 @@ class IntelligenceCleanupServiceTest {
     private final NewsRepository newsRepository = mock(NewsRepository.class);
     private final BindingCodeRepository bindingCodeRepository = mock(BindingCodeRepository.class);
     private final VerificationCodeRepository codeRepository = mock(VerificationCodeRepository.class);
+    private final ObservabilityRecorder observabilityRecorder = mock(ObservabilityRecorder.class);
+    private final InvestProperties properties = new InvestProperties();
     private IntelligenceCleanupService service;
 
     @BeforeEach
     void setUp() {
         service = new IntelligenceCleanupService(newsRepository, bindingCodeRepository,
-                codeRepository, CLOCK);
+                codeRepository, observabilityRecorder, properties, CLOCK);
     }
 
     @Test
-    @DisplayName("when清理，then新闻cutoff=now-90天、绑定码cutoff=now-1天、验证码cutoff=now-90天")
+    @DisplayName("when清理，then新闻/绑定码/验证码/观测四步cutoff分别为now-90天、now-1天、now-90天、now-90天")
     void whenCleanup_thenCutoffsAreNowMinus90dAndNowMinus1d() {
         service.cleanupNow();
 
         verify(newsRepository).deleteRawBefore(NOW.minus(Duration.ofDays(90)));
         verify(bindingCodeRepository).deleteExpiredBefore(NOW.minus(Duration.ofDays(1)));
         verify(codeRepository).deleteCreatedBefore(NOW.minus(Duration.ofDays(90)));
+        verify(observabilityRecorder).purgeBefore(NOW.minus(Duration.ofDays(90)));
     }
 
     @Test
@@ -71,13 +77,26 @@ class IntelligenceCleanupServiceTest {
     }
 
     @Test
-    @DisplayName("给定三步全炸，when调度入口，then顶层吞异常不炸调度线程")
+    @DisplayName("给定观测清理抛异常，when清理，then异常不外抛且新闻/绑定码/验证码三步仍执行")
+    void givenObservabilityPurgeBlowsUp_whenCleanup_thenOtherThreeStepsStillSwept() {
+        doThrow(new IllegalStateException("db down")).when(observabilityRecorder).purgeBefore(any());
+
+        assertThatCode(() -> service.cleanupNow()).doesNotThrowAnyException();
+
+        verify(newsRepository).deleteRawBefore(NOW.minus(Duration.ofDays(90)));
+        verify(bindingCodeRepository).deleteExpiredBefore(NOW.minus(Duration.ofDays(1)));
+        verify(codeRepository).deleteCreatedBefore(NOW.minus(Duration.ofDays(90)));
+    }
+
+    @Test
+    @DisplayName("给定四步全炸，when调度入口，then顶层吞异常不炸调度线程")
     void givenAllStepsBlowUp_whenScheduled_thenSwallowed() {
         doThrow(new IllegalStateException("db down")).when(newsRepository).deleteRawBefore(any());
         doThrow(new IllegalStateException("db down"))
                 .when(bindingCodeRepository).deleteExpiredBefore(any());
         doThrow(new IllegalStateException("db down"))
                 .when(codeRepository).deleteCreatedBefore(any());
+        doThrow(new IllegalStateException("db down")).when(observabilityRecorder).purgeBefore(any());
 
         assertThatCode(() -> service.cleanupScheduled()).doesNotThrowAnyException();
     }
@@ -87,14 +106,36 @@ class IntelligenceCleanupServiceTest {
     void whenClockShifts_thenCutoffsTrackClock() {
         Instant later = NOW.plus(Duration.ofHours(1));
         IntelligenceCleanupService shifted = new IntelligenceCleanupService(
-                newsRepository, bindingCodeRepository, codeRepository,
-                Clock.fixed(later, ZoneId.of("Asia/Shanghai")));
+                newsRepository, bindingCodeRepository, codeRepository, observabilityRecorder,
+                properties, Clock.fixed(later, ZoneId.of("Asia/Shanghai")));
 
         shifted.cleanupNow();
 
         verify(newsRepository).deleteRawBefore(later.minus(Duration.ofDays(90)));
         verify(bindingCodeRepository).deleteExpiredBefore(later.minus(Duration.ofDays(1)));
         verify(codeRepository).deleteCreatedBefore(later.minus(Duration.ofDays(90)));
+        verify(observabilityRecorder).purgeBefore(later.minus(Duration.ofDays(90)));
         verify(newsRepository, never()).deleteRawBefore(NOW.minus(Duration.ofDays(90)));
+    }
+
+    @Test
+    @DisplayName("给定观测保留天数配置为30，when清理，then观测cutoff=now-30天且新闻保留口径不受影响")
+    void givenRetentionDaysConfigured_whenCleanup_thenPurgeCutoffTracksRetention() {
+        properties.getEval().getObservability().setRetentionDays(30);
+
+        service.cleanupNow();
+
+        verify(observabilityRecorder).purgeBefore(NOW.minus(Duration.ofDays(30)));
+        verify(newsRepository).deleteRawBefore(NOW.minus(Duration.ofDays(90)));
+    }
+
+    @Test
+    @DisplayName("给定观测保留天数配置为非正，when清理，then回退默认90天不放大删除面")
+    void givenNonPositiveRetentionDays_whenCleanup_thenFallbackToDefault90d() {
+        properties.getEval().getObservability().setRetentionDays(0);
+
+        service.cleanupNow();
+
+        verify(observabilityRecorder).purgeBefore(NOW.minus(Duration.ofDays(90)));
     }
 }

@@ -184,7 +184,7 @@ class ConsistencyValidatorTest {
     void givenBuiltinCallKindTruth_whenVerify_thenComparableVerified() {
         ToolInvocation builtinCall = new ToolInvocation("get_quote", Map.of("code", "600519"),
                 "15.20元", List.of(), "2026-10-05 14:59:32",
-                ToolInvocation.AsOfKind.CALL, false, false);
+                ToolInvocation.AsOfKind.CALL, false, false, 0L);
 
         AnchorBatch batch = validator.verify(NumberExtractor.extract("现价15.20元"), pool(builtinCall));
 
@@ -288,17 +288,17 @@ class ConsistencyValidatorTest {
 
     static ToolInvocation truth(String tool, String resultText) {
         return new ToolInvocation(tool, Map.of("code", "600519"), resultText, List.of(),
-                "2026-10-05 14:59:32", ToolInvocation.AsOfKind.DATA, false, false);
+                "2026-10-05 14:59:32", ToolInvocation.AsOfKind.DATA, false, false, 0L);
     }
 
     static ToolInvocation mcpTruth(String resultText) {
         return new ToolInvocation("mcp_tushare", Map.of(), resultText, List.of(),
-                "2026-10-05 14:59:32", ToolInvocation.AsOfKind.CALL, false, true);
+                "2026-10-05 14:59:32", ToolInvocation.AsOfKind.CALL, false, true, 0L);
     }
 
     static ToolInvocation failedTruth(String resultText) {
         return new ToolInvocation("get_quote", Map.of("code", "600519"), resultText, List.of(),
-                null, ToolInvocation.AsOfKind.DATA, true, false);
+                null, ToolInvocation.AsOfKind.DATA, true, false, 0L);
     }
 
     static List<ToolInvocation> pool(ToolInvocation... invocations) {

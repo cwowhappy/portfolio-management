@@ -1,0 +1,128 @@
+# 端到端冒烟 workflow：make smoke（健康检查 → 腾讯 fixture 漂移探测 → 行情/前端反代 →
+# 真实 AI 对话 → 邮件 opt-in → research 复盘闭环 → 情报源网络探测）。
+# code-review-2026-10 P3：smoke.sh 未挂 CI——腾讯 fixture 漂移探测随 schedule 兑现。
+# 不挂 push/pull_request（需求决策 #18：真行情+真 LLM 成本，与 eval 同理），每日 cron + 手动触发。
+# cron '37 1 * * *' = UTC 01:37 ≈ 北京 09:37，A 股盘中稳定窗口（行情接口数据新鲜）。
+# 注意：schedule/workflow_dispatch 均只对默认分支生效，合并 main 后方会按时触发。
+name: Smoke
+
+on:
+  schedule:
+    - cron: '37 1 * * *'
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    name: End-to-end smoke
+    runs-on: ubuntu-latest
+    # 真 LLM 冒烟最多 6 次 /agui/run（smoke.sh 单次 curl 上限 120s）≈ 12 分钟，
+    # 加双端构建启动与 gradle 缓存冷启动余量
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      # bootRun 经 gradlew 拉起，需要 Gradle 缓存（与 ci.yml backend/e2e job 同款理由）
+      - uses: gradle/actions/setup-gradle@v4
+
+      # compose 基座 db 不发布端口（仅供容器网内访问，本地 5432 留给宿主 PG，见
+      # docker-compose.yml）；本 job 后端跑宿主 bootRun，经运行期 override 向宿主发布
+      # 5432。--wait 以 compose healthcheck（pg_isready，同 ci.yml service 容器
+      # --health-cmd pg_isready 的等待形态）门控就绪后才进下一步
+      - name: 启动数据库（docker compose db）
+        run: |
+          cat > compose.ci-ports.yml <<'EOF'
+          services:
+            db:
+              ports:
+                - "5432:5432"
+          EOF
+          docker compose -f docker-compose.yml -f compose.ci-ports.yml up -d --wait --wait-timeout 120 db
+
+      # 仓库根 .env 是本地链路的单一配置入口（Makefile `-include .env` + export）：
+      # LLM key（§5 真实对话）、管理员种子（§5/§7 登录，AdminSeedRunner 启动幂等种子）、
+      # B-22 remember-me 签名 key（启动强校验必填，缺失即拒启）。须在后端启动前写好。
+      # ADMIN/REMEMBER_ME 取值沿 ci.yml e2e job 的 CI 临时实例固定值惯例
+      - name: 写 .env
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: |
+          {
+            echo "DEEPSEEK_API_KEY=$DEEPSEEK_API_KEY"
+            echo "ADMIN_USERNAME=ci_admin"
+            echo "ADMIN_PASSWORD=CiPassw0rd123"
+            echo "REMEMBER_ME_KEY=ci-remember-me-key"
+            echo "SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/invest"
+          } > .env
+
+      # 后端 env 经 .env 注入（set -a 载入形态沿 scripts/e2e-backend.sh，但不带其
+      # e2e 专用导出——MAIL_TEST_FIXED_CODE 会使 smoke §6 邮件段误入固定码跳过分支）
+      - name: 启动后端（bootRun）
+        working-directory: backend
+        run: |
+          set -a
+          . ../.env
+          set +a
+          nohup ./gradlew bootRun --console=plain > /tmp/backend-bootrun.log 2>&1 &
+
+      # 健康探测沿 smoke.sh probe_intel_source 同款 http_code 惯例；bootRun 首启含编译，
+      # 等待上限 10 分钟，失败由后续诊断步骤带出日志
+      - name: 等待后端健康检查
+        run: |
+          for i in $(seq 1 120); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://localhost:8080/api/agent/health) || code="000"
+            if [ "$code" = "200" ]; then
+              echo "后端健康检查通过（第 ${i} 次探测，HTTP 200）"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::后端 10 分钟内未通过健康检查（最后 HTTP $code）"
+          exit 1
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.22.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Install
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+      - name: Build
+        working-directory: frontend
+        run: pnpm build
+      # smoke §4 前端反代断言需 :3000 在线（BACKEND_URL 默认 http://localhost:8080 即后端）；
+      # curl 无 -f：任何 HTTP 应答（含 3xx 跳转）即视为服务已起，语义断言留给 make smoke
+      - name: 启动前端（next start）
+        working-directory: frontend
+        run: |
+          nohup pnpm start > /tmp/frontend.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -s -o /dev/null --max-time 5 http://localhost:3000; then
+              echo "前端就绪（第 ${i} 次探测）"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::前端 1 分钟内未就绪"
+          exit 1
+
+      # Makefile 以 `-include .env` + export 把 key/管理员注入 smoke.sh 进程环境（本地同款链路）
+      - name: Smoke（make smoke）
+        run: make smoke
+
+      # 冒烟失败时带出双端日志尾段与容器状态，定位免翻整段 job 日志
+      - name: 失败诊断（服务日志尾段）
+        if: failure()
+        run: |
+          echo '===== backend bootRun log（tail 120） ====='
+          tail -n 120 /tmp/backend-bootrun.log 2>/dev/null || true
+          echo '===== frontend log（tail 60） ====='
+          tail -n 60 /tmp/frontend.log 2>/dev/null || true
+          echo '===== compose ps ====='
+          docker compose -f docker-compose.yml -f compose.ci-ports.yml ps --all || true

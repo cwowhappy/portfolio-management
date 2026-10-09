@@ -51,8 +51,11 @@ public class BriefGenerationService {
     /** fail_reason 截断长度（异常栈 toString 可能极长，留档取头部即可定位）。 */
     private static final int FAIL_REASON_MAX = 500;
 
-    /** 节导语系统提示词：条目是结构化事实不重写，只写节导语。 */
-    private static final String LEAD_SYSTEM_PROMPT = """
+    /**
+     * 节导语系统提示词：条目是结构化事实不重写，只写节导语。public：MS-30 B3 版本登记跨包
+     * 采集（application/eval 的 PromptVersionRegistrar，沿其余三处情报 prompt public 常量先例）。
+     */
+    public static final String LEAD_SYSTEM_PROMPT = """
             你是 A 股晨报编辑。给定简报某一小节的入选条目（标题与摘要），为该小节写 2~3 句中文导语，
             概括本节核心信息与对 A 股的整体含义。约束：
             - 只依据给定条目，严禁编造或引入条目外的信息。

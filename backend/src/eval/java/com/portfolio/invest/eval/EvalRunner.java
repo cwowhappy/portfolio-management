@@ -3,10 +3,13 @@ package com.portfolio.invest.eval;
 import com.portfolio.invest.InvestAgentApplication;
 import com.portfolio.invest.application.market.MarketDataService;
 import com.portfolio.invest.domain.user.UserRepository;
+import com.portfolio.invest.infrastructure.eval.EvalPostgresProvisioner;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -17,7 +20,7 @@ import org.springframework.context.ConfigurableApplicationContext;
 
 /**
  * Agent 效果评估入口（方案 §5.4 批次 4）：周期性诊断仪，评估对象是真实 DeepSeek——
- * JVM 内起完整生产上下文（Testcontainers PG + 真实 investModel），仅行情门面替换为逐题注入的桩。
+ * JVM 内起完整生产上下文（同库独立 schema PG + 真实 investModel），仅行情门面替换为逐题注入的桩。
  *
  * <p>两模式：stub（默认，本批次实现）JVM 内 MockMvc 驱动 /agui/run；real 只留口子
  * （--real 本期打印未实现提示后正常退出）。报告恒生成、退出码恒 0（诊断不挂门槛；
@@ -27,22 +30,62 @@ import org.springframework.context.ConfigurableApplicationContext;
  */
 public final class EvalRunner {
 
-    /** 命令行参数（--list / --real / --compare=&lt;path&gt; / --timeout-ms=&lt;n&gt;）。 */
-    record Options(boolean list, boolean real, Path compare, long timeoutMs) {
+    /** 命令行参数（--list / --real / --compare=&lt;path&gt; / --timeout-ms=&lt;n&gt; / --invest.eval.data-root=&lt;path&gt;）。 */
+    record Options(boolean list, boolean real, Path compare, long timeoutMs, String dataRoot) {
+
+        /** 评测数据目录默认值：state/workspace 相对 backend/build（Gradle JavaExec 工作目录成立）；部署机裸进程须显式传绝对路径。 */
+        static final String DEFAULT_DATA_ROOT = "build/eval-agent";
 
         static Options parse(String[] args) {
             boolean list = false;
             boolean real = false;
             Path compare = null;
             long timeoutMs = 120_000;
+            String dataRoot = DEFAULT_DATA_ROOT;
             for (String arg : args) {
                 if ("--list".equals(arg)) list = true;
                 else if ("--real".equals(arg)) real = true;
                 else if (arg.startsWith("--compare=")) compare = Path.of(arg.substring("--compare=".length()));
                 else if (arg.startsWith("--timeout-ms=")) timeoutMs = Long.parseLong(arg.substring("--timeout-ms=".length()));
-                else throw new IllegalArgumentException("未知参数: " + arg + "（支持 --list / --real / --compare=<path> / --timeout-ms=<n>）");
+                else if (arg.startsWith("--invest.eval.data-root=")) dataRoot = arg.substring("--invest.eval.data-root=".length());
+                else throw new IllegalArgumentException("未知参数: " + arg + "（支持 --list / --real / --compare=<path> / --timeout-ms=<n> / --invest.eval.data-root=<path>）");
             }
-            return new Options(list, real, compare, timeoutMs);
+            if (dataRoot == null || dataRoot.isBlank()) {
+                throw new IllegalArgumentException("--invest.eval.data-root 不得为空（state/workspace/工具输出回读的根目录）");
+            }
+            return new Options(list, real, compare, timeoutMs, dataRoot);
+        }
+    }
+
+    /**
+     * 评测库连接参数（MS-30 B2，同库独立 schema）：{@code EVAL_DATASOURCE_*} 显式覆盖
+     * （本地容器路径：自行 docker run 后 export 三变量指向容器 URL），空则回退主
+     * datasource——环境变量名与默认值逐字对齐 application.yml（{@code SPRING_DATASOURCE_URL}
+     * / {@code POSTGRES_USER} / {@code POSTGRES_PASSWORD}，.env 兜底同 {@link EnvSupport}）。
+     * 不经 Spring 解析（reset 发生在上下文启动前），此处复刻 yml 占位符语义。
+     */
+    record EvalDatasource(String url, String username, String password) {
+
+        /** application.yml 的 datasource 默认值复刻（缺省回退主库同实例）。 */
+        private static final String DEFAULT_URL = "jdbc:postgresql://localhost:5432/invest";
+        private static final String DEFAULT_USERNAME = "invest";
+        private static final String DEFAULT_PASSWORD = "invest";
+
+        static EvalDatasource resolve(Map<String, String> dotEnv) {
+            return new EvalDatasource(
+                    firstNonBlank(EnvSupport.resolve("EVAL_DATASOURCE_URL", dotEnv).orElse(null),
+                            EnvSupport.resolve("SPRING_DATASOURCE_URL", dotEnv).orElse(null), DEFAULT_URL),
+                    firstNonBlank(EnvSupport.resolve("EVAL_DATASOURCE_USERNAME", dotEnv).orElse(null),
+                            EnvSupport.resolve("POSTGRES_USER", dotEnv).orElse(null), DEFAULT_USERNAME),
+                    firstNonBlank(EnvSupport.resolve("EVAL_DATASOURCE_PASSWORD", dotEnv).orElse(null),
+                            EnvSupport.resolve("POSTGRES_PASSWORD", dotEnv).orElse(null), DEFAULT_PASSWORD));
+        }
+
+        private static String firstNonBlank(String... candidates) {
+            for (String candidate : candidates) {
+                if (candidate != null && !candidate.isBlank()) return candidate;
+            }
+            throw new IllegalStateException("不可达：末位候选为非空默认值");
         }
     }
 
@@ -64,6 +107,11 @@ public final class EvalRunner {
             }
             System.out.printf("[eval] --list 干跑通过：装载 %d 题，schema 校验全部通过（未起 LLM）%n",
                     questions.size());
+            // 资产指纹干跑同源采集（零 Spring；真跑 runMeta 用同一实现，hash 必须一致）
+            EvalAssetHasher.Collected fingerprint = EvalAssetHasher.collectStandalone();
+            System.out.printf("[eval] 资产指纹：assetHashes %d 项（%s）、evalAssets %d 项、questionBankHash=%s%n",
+                    fingerprint.assetHashes().size(), fingerprint.typeSummary(),
+                    fingerprint.evalAssets().size(), fingerprint.questionBankHash());
             return 0;
         }
 
@@ -94,11 +142,22 @@ public final class EvalRunner {
             return 0;
         }
 
+        // —— 运行指纹起点（runMeta 口径：起止时间覆盖装载→题库循环收尾，报告写出不计入） ——
+        String runId = UUID.randomUUID().toString();
+        ZonedDateTime startedAt = ZonedDateTime.now();
+        System.out.printf("[eval] runId=%s（triggeredBy=MANUAL）%n", runId);
+
         // —— 题库装载（schema 校验 fail-fast） ——
         List<EvalQuestion> questions = QuestionLoader.loadFromClasspath();
         System.out.printf("[eval] 题库装载 %d 题；模式=stub；被评模型=deepseek/%s%n", questions.size(), model);
 
-        // —— 运行前探活（同 judge 客户端，10s）：拥塞期白起 Testcontainers + 全上下文不值得 ——
+        // —— 资产指纹采集（装载时，§4.1 eval 侧回流：main 四类 + rubric/题库，零 Spring 干跑同源） ——
+        EvalAssetHasher.Collected fingerprint = EvalAssetHasher.collectStandalone();
+        System.out.printf("[eval] 资产指纹：assetHashes %d 项（%s）、evalAssets %d 项、questionBankHash=%s%n",
+                fingerprint.assetHashes().size(), fingerprint.typeSummary(),
+                fingerprint.evalAssets().size(), fingerprint.questionBankHash());
+
+        // —— 运行前探活（同 judge 客户端，10s）：拥塞期白起评测 schema 重置 + 全上下文不值得 ——
         DeepSeekJudge judge = new DeepSeekJudge(baseUrl, model, apiKey, options.timeoutMs());
         String probeError = judge.probe();
         if (probeError != null) {
@@ -109,33 +168,58 @@ public final class EvalRunner {
         }
         System.out.printf("[eval] 端点探活通过：%s（模型 %s）%n", baseUrl, model);
 
-        // —— 上下文启动：Testcontainers PG + 完整生产装配 + 行情桩 + 真实 DeepSeek ——
+        // —— 上下文启动：同库独立 schema 重置 + 完整生产装配 + 行情桩 + 真实 DeepSeek ——
         // 覆盖项必须走命令行参数（优先级高于 application.yml）；SpringApplicationBuilder.properties()
         // 只是 default properties（优先级最低），会被 application.yml 的 datasource/state-root 压掉
         // ——首跑即因此连上了本机 dev 库（已回滚清理），勿改回
-        EvalPostgresSupport.postgres();
+        EvalDatasource evalDatasource = EvalDatasource.resolve(dotEnv);
+        String evalJdbcUrl;
+        try {
+            // 每轮重置独立评测 schema（DROP CASCADE 重建，Flyway 随上下文启动全量迁移进去）；
+            // 连的是同库的 eval_schema，主库其他 schema 数据不受影响
+            evalJdbcUrl = EvalPostgresProvisioner.reset(
+                    evalDatasource.url(), evalDatasource.username(), evalDatasource.password());
+        } catch (IllegalStateException e) {
+            System.err.println(e.getMessage());
+            System.err.println("请检查 EVAL_DATASOURCE_URL（缺省回退 SPRING_DATASOURCE_URL→"
+                    + "jdbc:postgresql://localhost:5432/invest）与凭据 EVAL_DATASOURCE_USERNAME/POSTGRES_USER、"
+                    + "EVAL_DATASOURCE_PASSWORD/POSTGRES_PASSWORD 是否指向可用的 PostgreSQL（env 或仓库根 .env）。");
+            return 1;
+        }
+        Path dataRoot = Path.of(options.dataRoot());
+        EvalMcpSupport.configure(dataRoot); // mcp 题的笔记目录随数据根（须在懒启动前注入）
+        System.out.printf("[eval] 评测库：%s（独立 schema %s，每轮重置）；数据目录：%s%n",
+                evalDatasource.url(), EvalPostgresProvisioner.EVAL_SCHEMA, dataRoot.toAbsolutePath());
         ConfigurableApplicationContext context = new SpringApplicationBuilder()
                 .sources(InvestAgentApplication.class, EvalMarketStubConfig.class)
                 .run(
-                        "--spring.datasource.url=" + EvalPostgresSupport.jdbcUrl(),
-                        "--spring.datasource.username=" + EvalPostgresSupport.username(),
-                        "--spring.datasource.password=" + EvalPostgresSupport.password(),
+                        "--spring.datasource.url=" + evalJdbcUrl,
+                        "--spring.datasource.username=" + evalDatasource.username(),
+                        "--spring.datasource.password=" + evalDatasource.password(),
                         "--spring.datasource.hikari.maximum-pool-size=5",
                         "--spring.datasource.hikari.minimum-idle=1",
                         // 同名覆盖 cachedMarketDataService（行情桩）的前提
                         "--spring.main.allow-bean-definition-overriding=true",
-                        // harness state/workspace 重定向到 build/（不写仓库 .agentscope）
-                        "--invest.mcp.harness.state-root=build/eval-agent/state",
-                        "--invest.mcp.harness.workspace=build/eval-agent/workspace",
+                        // harness state/workspace 重定向到数据目录（不写仓库 .agentscope；根目录经
+                        // --invest.eval.data-root 参数化——本地默认 build/eval-agent，部署机/调度器传绝对路径）
+                        "--invest.mcp.harness.state-root=" + dataRoot.resolve("state"),
+                        "--invest.mcp.harness.workspace=" + dataRoot.resolve("workspace"),
                         // 完整上下文启动前提（同测试任务的显式 key 注入）
                         "--REMEMBER_ME_KEY=eval-remember-me-key",
+                        // §2.3 副作用禁用双保险②：eval 上下文禁调度（SchedulingConfig 条件化，
+                        // 全部 @Scheduled cron 静默缺席；跑完即 System.exit，本就等不到 cron 点位）
+                        "--Eval_MODE=true",
                         // 不占用 8080：MockMvc 驱动无需真实端口，嵌入式 Tomcat 随机端口兜底
                         "--server.port=0");
         try {
-            // 覆盖项兜底校验：datasource 必须命中评估容器（防优先级回归导致静默连上 dev 库）
-            String actualUrl = context.getEnvironment().getProperty("spring.datasource.url");
-            if (!EvalPostgresSupport.jdbcUrl().equals(actualUrl)) {
-                throw new IllegalStateException("评估 datasource 未指向 Testcontainers 容器: " + actualUrl);
+            // 覆盖项兜底校验：datasource 必须指向独立评测 schema（防优先级回归静默连上 dev/主库）
+            EvalPostgresProvisioner.assertGuard(context.getEnvironment().getProperty("spring.datasource.url"));
+            // §2.3 双保险②守卫：Eval_MODE=true 必须让调度后处理器缺席（SchedulingConfig 条件被
+            // 误删/失效时 fail-fast，防评测上下文静默跑起定时副作用）
+            if (context.getBeanNamesForType(
+                    org.springframework.scheduling.annotation.ScheduledAnnotationBeanPostProcessor.class).length > 0) {
+                throw new IllegalStateException(
+                        "Eval_MODE=true 未生效：调度后处理器仍在评测上下文（SchedulingConfig 条件化失效）");
             }
             EvalStubMarketService stub = (EvalStubMarketService)
                     EvalMarketStubConfig.expectStub(context.getBean(MarketDataService.class));
@@ -146,6 +230,10 @@ public final class EvalRunner {
 
             AguiDriver driver = new AguiDriver((org.springframework.web.context.WebApplicationContext) context,
                     context.getBean(UserRepository.class));
+            // 计算类断言容差（需求决策 #15）：配置在主上下文环境里（application.yml invest.eval.*），
+            // 断言器是纯静态无 Spring——此处读出后逐题下传（CalcTolerance 纯函数收参数不读配置）
+            int calcTolerancePct = resolveCalcTolerancePct(context);
+            System.out.printf("[eval] 计算类断言容差：invest.eval.calc-tolerance-pct=%d%n", calcTolerancePct);
 
             List<QuestionOutcome> outcomes = new ArrayList<>();
             String judgeRespondedModel = null;
@@ -153,11 +241,12 @@ public final class EvalRunner {
                 if (!question.isStubMode()) {
                     outcomes.add(new QuestionOutcome(question, QuestionOutcome.Status.SKIPPED,
                             "real 轨题目在 stub 基线下跳过（--real 本期未实现）", null,
-                            null, null, 0, List.of(), List.of(), null, null, null));
+                            null, null, 0, List.of(), List.of(), null, null, null, null));
                     System.out.printf("[eval] %-32s SKIPPED（real 轨预留）%n", question.id());
                     continue;
                 }
-                QuestionOutcome outcome = runOne(question, driver, stub, judge, options, context);
+                QuestionOutcome outcome = runOne(question, driver, stub, judge, options, context,
+                        calcTolerancePct);
                 outcomes.add(outcome);
                 if (outcome.judge() != null && outcome.judge().respondedModel() != null) {
                     judgeRespondedModel = outcome.judge().respondedModel();
@@ -168,9 +257,16 @@ public final class EvalRunner {
 
             ReportWriter.Written written;
             try {
+                // runMeta（报告 schema v2，§2.4）：runner 正常收尾恒 FULL（PARTIAL 由收割侧超时/
+                // 非零退出落库）；triggeredBy 子进程不可知触发来源，缺省 MANUAL（落库口径归 Task 6）
+                ZonedDateTime finishedAt = ZonedDateTime.now();
+                ReportWriter.RunMeta runMeta = new ReportWriter.RunMeta(runId,
+                        startedAt.toString(), finishedAt.toString(), "MANUAL",
+                        fingerprint.assetHashes(), fingerprint.evalAssets(), fingerprint.questionBankHash(),
+                        Duration.between(startedAt, finishedAt).toMillis(), "FULL");
                 written = new ReportWriter(Path.of("build", "reports", "eval-agent"))
                         .write(outcomes, new ReportWriter.Meta("stub", model, baseUrl, model,
-                                judgeRespondedModel, (int) options.timeoutMs()), options.compare());
+                                judgeRespondedModel, (int) options.timeoutMs()), runMeta, options.compare());
             } catch (java.io.IOException e) {
                 throw new IllegalStateException("评估报告写出失败", e);
             }
@@ -183,12 +279,21 @@ public final class EvalRunner {
     }
 
     /**
+     * 计算类断言容差解析：读主上下文环境的 invest.eval.calc-tolerance-pct（application.yml
+     * 默认 2，部署可覆盖），未配置时回退 {@link AssertionEngine#DEFAULT_CALC_TOLERANCE_PCT}。
+     */
+    private static int resolveCalcTolerancePct(ConfigurableApplicationContext context) {
+        Integer pct = context.getEnvironment().getProperty("invest.eval.calc-tolerance-pct", Integer.class);
+        return pct != null ? pct : AssertionEngine.DEFAULT_CALC_TOLERANCE_PCT;
+    }
+
+    /**
      * 单题执行：桩注入 → 独立用户/threadId →（mcp 题为该用户 seed 扩展源）→ 逐轮 SSE →
      * 断言器（结构分）→ judge（主观细项）。
      */
     private QuestionOutcome runOne(EvalQuestion question, AguiDriver driver, EvalStubMarketService stub,
                                    DeepSeekJudge judge, Options options,
-                                   ConfigurableApplicationContext context) {
+                                   ConfigurableApplicationContext context, int calcTolerancePct) {
         long start = System.currentTimeMillis();
         String safeId = question.id().replaceAll("[^a-zA-Z0-9_-]", "_").toLowerCase(Locale.ROOT);
         String suffix = UUID.randomUUID().toString().substring(0, 8);
@@ -210,11 +315,13 @@ public final class EvalRunner {
                         question.turns().get(i), i, options.timeoutMs()));
             }
             AguiEventExtractor.Transcript transcript = AguiEventExtractor.extract(turns);
-            List<AssertionEngine.DimensionResult> dimensions = AssertionEngine.evaluate(question, transcript);
+            List<AssertionEngine.DimensionResult> dimensions =
+                    AssertionEngine.evaluate(question, transcript, calcTolerancePct);
             // LLM 实际所见的 TOOL 输出（state 落盘读回）：图表类调用 SSE 只有全量 ChartSpec，
-            // 其摘要被双通道 skipSet 跳过——judge 数值核对的事实源须取模型真正看到的文本
+            // 其摘要被双通道 skipSet 跳过——judge 数值核对的事实源须取模型真正看到的文本。
+            // state 路径与上下文注入的 state-root 同源（--invest.eval.data-root 解析值）
             Map<String, String> llmSeen = AguiEventExtractor.llmToolOutputs(
-                    Path.of("build", "eval-agent", "state"), threadId);
+                    Path.of(options.dataRoot()).resolve("state"), threadId);
 
             DeepSeekJudge.Verdict verdict = judge.judge(question.judge(),
                     readResource("rubric/" + question.judge() + ".md"),
@@ -238,11 +345,11 @@ public final class EvalRunner {
                             .findFirst().orElse("轮次失败") : null;
             return new QuestionOutcome(question, status, null, error, username, threadId,
                     System.currentTimeMillis() - start, turns, dimensions, verdict,
-                    transcript.tokenUsage(), transcript.assistantText());
+                    transcript.tokenUsage(), transcript.trustStats(), transcript.assistantText());
         } catch (Exception e) {
             return new QuestionOutcome(question, QuestionOutcome.Status.ERROR, null,
                     e.getClass().getSimpleName() + ": " + e.getMessage(), username, threadId,
-                    System.currentTimeMillis() - start, List.of(), List.of(), null, null, null);
+                    System.currentTimeMillis() - start, List.of(), List.of(), null, null, null, null);
         }
     }
 

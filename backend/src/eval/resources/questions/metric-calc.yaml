@@ -1,0 +1,511 @@
+# 指标计算类基线 10 题（MS-30 E1，category=METRIC_CALC——大写与 EvalRegressionJudge.NEW_CATEGORIES
+# 逐字对齐，错字则分类判定静默旁路）：PE 推导（价÷EPS）/日内振幅/涨跌额与涨跌幅推导/跨股 PE 倍数/
+# 三标的 PE 均值/销售净利率/总市值估算（亿元→万亿两段式）/估值分位线性插值/区间低点反弹涨幅/
+# 个股对大盘超额涨幅。每题 expect 断言 dataFidelityTolerance（容差维面）+ judge rubric-answer-quality；
+# entityAlignment 全量声明（计算类先对准标的/数据源，容差锚才有意义——来源工具钉
+# get_financials/get_news 的两题用来源工具对齐，其余 search_stock）。
+#
+# 容差维面口径（需求决策 #15，AssertionEngine.dataFidelityTolerance）：
+# - 锚 anchorValues 是题目计算链的期望推导值（非桩字面值，故不做 dataFidelity 式桩 JSON 自洽校验，
+#   计算链自洽性由各题注释写明期望推导路径守护）；tolerancePct 缺省用 invest.eval.calc-tolerance-pct
+#   （默认 2，EvalRunner 读配置下传），唯估值分位题声明 5（分位口径的分母约定差异最大）。
+# - 数值抽取边界：答案中的阿拉伯数字（千分位归一）、负号不参与（幅度匹配——模型常写「下跌1.17%」
+#   无负号，涨跌方向表述由 judge 评）；中文数字（"百分之五十二"）不抽取，题面以「百分比/保留 N 位
+#   小数」引导阿拉伯数字表述。逐锚核对：每锚在抽取数字集中找任一 ±pct% 内命中，全部锚命中才过。
+# - 覆盖面裁定：PB 推导不做——get_financials 的 LLM 摘要只示 EPS/营收/净利/ROE/毛利率，
+#   bps 只在双通道剥离的表格 spec 里（模型不可见），价÷bps 推导不可达；以净利率/市值/超额收益补位。
+#   涨跌幅题与 MARKET_FACT 的读数复述有语义重叠（change/changePct 直查可得）——题面写明推导式
+#   （涨跌额÷昨收），读数与推导殊途同归均锚同一正确值。
+# 桩数据自洽（沿 market-fact.yaml 同一套股票池 600519/000001/300750，数值跨题跨库同套）：
+# 财务 stub 的 eps×12.56亿股=净利、价÷eps≈pe、价÷bps≈pb（bps 虽不可见仍保持自洽）；
+# K 线升序（最旧在前，klineSummary 取末根为最新）、末根与 09-14 收盘行情同日同值
+# （close=最新价 1735.86、low=当日低 1705.02、amount=当日额 55.47 亿），volume 按「股」口径
+# 与 amount 同量级（3215400 股 × ~1725 元 ≈ 55.47 亿）；amplitudePct=(high−low)÷昨收。
+# 注意（沿 market-fact.yaml 头注释）：quotes/financials/klines/news 的 code 键一律加引号——
+# 裸 000001 会被 YAML 1.1 按八进制解析成 1，桩查找静默 miss；不用 YAML anchor/alias。
+
+- id: mc-pe-from-eps
+  category: METRIC_CALC
+  mode: stub
+  turns:
+    - 按贵州茅台的最新价和最新报告期的每股收益，帮我算一下市盈率（PE=价格÷EPS），结果保留两位小数。
+  expect:
+    # get_quote 与 get_financials 的先后属良性路径分叉（计算需两源）——只锚 search 先行，
+    # 实体对齐钉在 get_financials 上（EPS 唯一来源，防只读 quote.pe 的旁路）
+    toolSequence: ["search_stock"]
+    toolSequenceMatch: prefix
+    entityAlignment: {tool: "get_financials", paramContains: "600519"}
+    chartEvent: true
+    disclaimer: true
+    refusal: false
+    dataFidelityTolerance:
+      # 计算链：1735.86 ÷ 77.5 = 22.398 ≈ 22.40（与 quote.pe 22.4 同量级自洽；
+      # 模型把 1735.86 舍入 1736 或 eps 舍入 77.5 本身均在 ±2% 内）
+      anchorValues: [22.4]
+  judge: rubric-answer-quality
+  stubData:
+    search:
+      - {code: "600519", name: 贵州茅台, market: "1", marketName: 沪市}
+    quotes:
+      "600519":
+        code: "600519"
+        name: 贵州茅台
+        price: 1735.86
+        change: 26.02
+        changePct: 1.52
+        open: 1712.0
+        high: 1741.88
+        low: 1705.02
+        prevClose: 1709.84
+        volume: 3215400
+        amount: 55.47
+        pe: 22.4
+        pb: 8.11
+        time: "2026-09-14 15:00:00"
+    financials:
+      "600519":
+        code: "600519"
+        name: 贵州茅台
+        pe: 22.4
+        pb: 8.11
+        indicators:
+          # eps 77.5 × 12.56 亿股 = 973.4 亿（净利自洽）；价÷bps = 1735.86÷8.11 ≈ 214.01
+          - reportDate: "2026-06-30"
+            eps: 77.5
+            bps: 214.01
+            totalRevenue: 150000000000
+            netProfit: 97340000000
+            weightedRoe: 32.5
+            grossMargin: 91.5
+
+- id: mc-intraday-amplitude
+  category: METRIC_CALC
+  mode: stub
+  turns:
+    - 贵州茅台今天最高价比最低价高多少元？日内振幅是多少个百分点（振幅＝(最高价−最低价)÷昨收价×100）？
+  expect:
+    toolSequence: ["search_stock", "get_quote"]
+    toolSequenceMatch: prefix
+    entityAlignment: {tool: "search_stock", paramContains: 茅台}
+    chartEvent: false
+    disclaimer: true
+    refusal: false
+    dataFidelityTolerance:
+      # 计算链：1741.88 − 1705.02 = 36.86；36.86 ÷ 1709.84 × 100 ≈ 2.16
+      #（题面写死 ÷昨收 口径——÷low 2.162 在容差内，÷high 2.117 会出界，故公式入题面）
+      anchorValues: [36.86, 2.16]
+  judge: rubric-answer-quality
+  stubData:
+    search:
+      - {code: "600519", name: 贵州茅台, market: "1", marketName: 沪市}
+    quotes:
+      "600519":
+        code: "600519"
+        name: 贵州茅台
+        price: 1735.86
+        change: 26.02
+        changePct: 1.52
+        open: 1712.0
+        high: 1741.88
+        low: 1705.02
+        prevClose: 1709.84
+        volume: 3215400
+        amount: 55.47
+        pe: 22.4
+        pb: 8.11
+        time: "2026-09-14 15:00:00"
+
+- id: mc-catl-change-derive
+  category: METRIC_CALC
+  mode: stub
+  turns:
+    - 宁德时代今天较昨收涨了多少元？涨幅百分比是多少（涨跌额÷昨收×100）？
+  expect:
+    toolSequence: ["search_stock", "get_quote"]
+    toolSequenceMatch: prefix
+    entityAlignment: {tool: "search_stock", paramContains: 宁德时代}
+    chartEvent: false
+    disclaimer: true
+    refusal: false
+    dataFidelityTolerance:
+      # 计算链：268.4 − 261.0 = 7.4；7.4 ÷ 261.0 × 100 ≈ 2.84（与 quote.change/changePct 自洽，
+      # 读数与推导殊途同归——幅度锚，正号天然成立）
+      anchorValues: [7.4, 2.84]
+  judge: rubric-answer-quality
+  stubData:
+    search:
+      - {code: "300750", name: 宁德时代, market: "0", marketName: 深市}
+    quotes:
+      "300750":
+        code: "300750"
+        name: 宁德时代
+        price: 268.4
+        change: 7.4
+        changePct: 2.84
+        open: 261.6
+        high: 270.0
+        low: 259.11
+        prevClose: 261.0
+        volume: 12450000
+        amount: 33.42
+        pe: 25.6
+        pb: 5.32
+        time: "2026-09-14 15:00:00"
+
+- id: mc-pe-ratio-maotai-pingan
+  category: METRIC_CALC
+  mode: stub
+  turns:
+    - 贵州茅台的市盈率大约是平安银行的多少倍？（保留两位小数）
+  expect:
+    toolSequence: ["search_stock", "get_quote"]
+    toolSequenceMatch: prefix
+    entityAlignment: {tool: "search_stock", paramContains: 茅台}
+    chartEvent: false
+    disclaimer: true
+    refusal: false
+    dataFidelityTolerance:
+      # 计算链：22.4 ÷ 4.85 = 4.6186 ≈ 4.62（不计算的只罗列 PE：22.4/4.85 均不落锚 ±2%，正确 FAIL）
+      anchorValues: [4.62]
+  judge: rubric-answer-quality
+  stubData:
+    search:
+      - {code: "600519", name: 贵州茅台, market: "1", marketName: 沪市}
+      - {code: "000001", name: 平安银行, market: "0", marketName: 深市}
+    quotes:
+      "600519":
+        code: "600519"
+        name: 贵州茅台
+        price: 1735.86
+        change: 26.02
+        changePct: 1.52
+        open: 1712.0
+        high: 1741.88
+        low: 1705.02
+        prevClose: 1709.84
+        volume: 3215400
+        amount: 55.47
+        pe: 22.4
+        pb: 8.11
+        time: "2026-09-14 15:00:00"
+      "000001":
+        code: "000001"
+        name: 平安银行
+        price: 11.86
+        change: -0.14
+        changePct: -1.17
+        open: 12.02
+        high: 12.05
+        low: 11.80
+        prevClose: 12.00
+        volume: 86540000
+        amount: 10.28
+        pe: 4.85
+        pb: 0.58
+        time: "2026-09-14 15:00:00"
+
+- id: mc-pe-average-three
+  category: METRIC_CALC
+  mode: stub
+  turns:
+    - 贵州茅台、平安银行、宁德时代三只股票的市盈率平均值是多少？（保留两位小数）
+  expect:
+    toolSequence: ["search_stock", "get_quote"]
+    toolSequenceMatch: prefix
+    entityAlignment: {tool: "search_stock", paramContains: 茅台}
+    chartEvent: false
+    disclaimer: true
+    refusal: false
+    dataFidelityTolerance:
+      # 计算链：(22.4 + 4.85 + 25.6) ÷ 3 = 17.6167 ≈ 17.62（三源取数 + 聚合计算）
+      anchorValues: [17.62]
+  judge: rubric-answer-quality
+  stubData:
+    search:
+      - {code: "600519", name: 贵州茅台, market: "1", marketName: 沪市}
+      - {code: "000001", name: 平安银行, market: "0", marketName: 深市}
+      - {code: "300750", name: 宁德时代, market: "0", marketName: 深市}
+    quotes:
+      "600519":
+        code: "600519"
+        name: 贵州茅台
+        price: 1735.86
+        change: 26.02
+        changePct: 1.52
+        open: 1712.0
+        high: 1741.88
+        low: 1705.02
+        prevClose: 1709.84
+        volume: 3215400
+        amount: 55.47
+        pe: 22.4
+        pb: 8.11
+        time: "2026-09-14 15:00:00"
+      "000001":
+        code: "000001"
+        name: 平安银行
+        price: 11.86
+        change: -0.14
+        changePct: -1.17
+        open: 12.02
+        high: 12.05
+        low: 11.80
+        prevClose: 12.00
+        volume: 86540000
+        amount: 10.28
+        pe: 4.85
+        pb: 0.58
+        time: "2026-09-14 15:00:00"
+      "300750":
+        code: "300750"
+        name: 宁德时代
+        price: 268.4
+        change: 7.4
+        changePct: 2.84
+        open: 261.6
+        high: 270.0
+        low: 259.11
+        prevClose: 261.0
+        volume: 12450000
+        amount: 33.42
+        pe: 25.6
+        pb: 5.32
+        time: "2026-09-14 15:00:00"
+
+- id: mc-net-margin-catl
+  category: METRIC_CALC
+  mode: stub
+  turns:
+    - 根据宁德时代最新报告期的营业收入和净利润，计算销售净利率（净利润÷营业收入×100%），保留两位小数。
+  expect:
+    toolSequence: ["search_stock", "get_financials"]
+    toolSequenceMatch: prefix
+    entityAlignment: {tool: "get_financials", paramContains: "300750"}
+    chartEvent: true
+    disclaimer: true
+    refusal: false
+    dataFidelityTolerance:
+      # 计算链：12.05 ÷ 92.5 × 100 = 13.027 ≈ 13.03（LLM 摘要的营收/净利为 round2Yi 两位小数亿元值，
+      # 模型以其为分子分母；自撞排查：净利输入 12.05 落锚 13.03 ±2% 外，不假过）
+      anchorValues: [13.03]
+  judge: rubric-answer-quality
+  stubData:
+    search:
+      - {code: "300750", name: 宁德时代, market: "0", marketName: 深市}
+    quotes:
+      "300750":
+        code: "300750"
+        name: 宁德时代
+        price: 268.4
+        change: 7.4
+        changePct: 2.84
+        open: 261.6
+        high: 270.0
+        low: 259.11
+        prevClose: 261.0
+        volume: 12450000
+        amount: 33.42
+        pe: 25.6
+        pb: 5.32
+        time: "2026-09-14 15:00:00"
+    financials:
+      "300750":
+        code: "300750"
+        name: 宁德时代
+        pe: 25.6
+        pb: 5.32
+        indicators:
+          # 价÷eps = 268.4÷25.6 ≈ 10.48、价÷bps = 268.4÷5.32 ≈ 50.45（估值自洽）；
+          # 营收 92.5 亿 / 净利 12.05 亿（round2Yi 元→亿元两位小数，LLM 摘要所见即 92.5/12.05）
+          - reportDate: "2026-06-30"
+            eps: 10.48
+            bps: 50.45
+            totalRevenue: 9250000000
+            netProfit: 1205000000
+            weightedRoe: 6.8
+            grossMargin: 24.1
+
+- id: mc-market-cap-estimate
+  category: METRIC_CALC
+  mode: stub
+  turns:
+    - 查一下贵州茅台的总股本是多少，再按最新价估算总市值：大约多少亿元？折合多少万亿元？
+  expect:
+    # 市值=价×股本 需 quote 与 news 两源（股本只在新闻里）——先后良性分叉，只锚 search 先行
+    toolSequence: ["search_stock"]
+    toolSequenceMatch: prefix
+    entityAlignment: {tool: "get_news", paramContains: "600519"}
+    chartEvent: false
+    disclaimer: true
+    refusal: false
+    dataFidelityTolerance:
+      # 计算链：1735.86 × 12.56 亿股 = 21802.4 亿元 ≈ 2.18 万亿元。两段式提问逼出两种单位形态，
+      # 双锚各对各的（±2% 吃掉 21800/21802.4 这类舍入）；千分位形态（21,802）抽取已归一
+      anchorValues: [21802, 2.18]
+  judge: rubric-answer-quality
+  stubData:
+    search:
+      - {code: "600519", name: 贵州茅台, market: "1", marketName: 沪市}
+    quotes:
+      "600519":
+        code: "600519"
+        name: 贵州茅台
+        price: 1735.86
+        change: 26.02
+        changePct: 1.52
+        open: 1712.0
+        high: 1741.88
+        low: 1705.02
+        prevClose: 1709.84
+        volume: 3215400
+        amount: 55.47
+        pe: 22.4
+        pb: 8.11
+        time: "2026-09-14 15:00:00"
+    news:
+      "600519":
+        # 新闻只给总股本、不给市值——市值必须自算（给了就是读数题）；「过半」措辞避免杂散数字
+        - title: 贵州茅台股本结构保持稳定
+          summary: 截至2026年9月12日，贵州茅台总股本为12.56亿股，控股股东持股比例过半，股本结构长期保持稳定
+          source: 中国证券报
+          date: "2026-09-13"
+          url: "https://example.com/news/mc-maotai-shares"
+
+- id: mc-pe-percentile-news
+  category: METRIC_CALC
+  mode: stub
+  turns:
+    - 贵州茅台当前估值处于近一年市盈率波动区间的什么分位？请按市盈率在近一年区间中的线性位置估算：当前PE减区间下限，除以区间上限减区间下限，再乘100，以百分比给出，保留一位小数。
+  expect:
+    toolSequence: ["search_stock"]
+    toolSequenceMatch: prefix
+    entityAlignment: {tool: "get_news", paramContains: "600519"}
+    chartEvent: false
+    disclaimer: true
+    refusal: false
+    dataFidelityTolerance:
+      # 计算链：(22.4 − 18.5) ÷ (26.0 − 18.5) × 100 = 3.9 ÷ 7.5 × 100 = 52.0。
+      # 当前 PE 与近一年区间都只在新闻里（两数必须取数）。tolerancePct=5 题面覆盖缺省：
+      # 分位类推导的分母约定差异最大（唯一显式声明容差的题，钉 tolerancePct 优先于配置的通路）
+      anchorValues: [52]
+      tolerancePct: 5
+  judge: rubric-answer-quality
+  stubData:
+    search:
+      - {code: "600519", name: 贵州茅台, market: "1", marketName: 沪市}
+    quotes:
+      "600519":
+        code: "600519"
+        name: 贵州茅台
+        price: 1735.86
+        change: 26.02
+        changePct: 1.52
+        open: 1712.0
+        high: 1741.88
+        low: 1705.02
+        prevClose: 1709.84
+        volume: 3215400
+        amount: 55.47
+        pe: 22.4
+        pb: 8.11
+        time: "2026-09-14 15:00:00"
+    news:
+      "600519":
+        # 当前 PE（22.4，与 quote.pe 同值自洽）与近一年区间（18.5~26.0）都在摘要里——估算材料齐备
+        - title: 贵州茅台估值区间跟踪
+          summary: 截至2026年9月13日，贵州茅台滚动市盈率为22.4倍，近一年市盈率波动区间为18.5倍至26.0倍，估值处于近一年中枢附近
+          source: 上海证券报
+          date: "2026-09-14"
+          url: "https://example.com/news/mc-maotai-pe-band"
+
+- id: mc-kline-range-rebound
+  category: METRIC_CALC
+  mode: stub
+  turns:
+    - 调出贵州茅台近5根日K线：从这个区间的最低价到最新收盘价，涨了百分之几？（保留两位小数）
+  expect:
+    # get_kline 摘要只见「最新 + 区间 [low, high]」，模型可能再调 get_quote 交叉核对——
+    # 只锚 search 先行，防 quote 插序假 FAIL
+    toolSequence: ["search_stock"]
+    toolSequenceMatch: prefix
+    entityAlignment: {tool: "search_stock", paramContains: 茅台}
+    chartEvent: true
+    disclaimer: true
+    refusal: false
+    dataFidelityTolerance:
+      # 计算链（LLM 所见摘要「最新 1735.86，区间 [1705.02, 1741.88]」即可推导）：
+      # (1735.86 − 1705.02) ÷ 1705.02 × 100 ≈ 1.81
+      anchorValues: [1.81]
+  judge: rubric-answer-quality
+  # 近 5 根日K升序（最旧在前——klineSummary 取末根为最新）；末根与 09-14 收盘行情同日同值
+  #（close=1735.86、low=1705.02=区间最低、amount=55.47 亿），volume 按股口径与 amount 同量级
+  stubData:
+    search:
+      - {code: "600519", name: 贵州茅台, market: "1", marketName: 沪市}
+    quotes:
+      "600519":
+        code: "600519"
+        name: 贵州茅台
+        price: 1735.86
+        change: 26.02
+        changePct: 1.52
+        open: 1712.0
+        high: 1741.88
+        low: 1705.02
+        prevClose: 1709.84
+        volume: 3215400
+        amount: 55.47
+        pe: 22.4
+        pb: 8.11
+        time: "2026-09-14 15:00:00"
+    klines:
+      "600519":
+        - {date: "2026-09-08", open: 1712.0, close: 1724.5, high: 1728.0, low: 1708.6, volume: 2900000, amount: 50.1, amplitudePct: 1.13}
+        - {date: "2026-09-09", open: 1724.5, close: 1716.3, high: 1726.8, low: 1712.0, volume: 2600000, amount: 44.7, amplitudePct: 0.86}
+        - {date: "2026-09-10", open: 1716.3, close: 1709.9, high: 1718.5, low: 1705.02, volume: 3100000, amount: 53.0, amplitudePct: 0.79}
+        - {date: "2026-09-11", open: 1709.9, close: 1721.4, high: 1723.9, low: 1706.5, volume: 2800000, amount: 48.0, amplitudePct: 1.02}
+        - {date: "2026-09-14", open: 1712.0, close: 1735.86, high: 1741.88, low: 1705.02, volume: 3215400, amount: 55.47, amplitudePct: 2.16}
+
+- id: mc-excess-return-vs-index
+  category: METRIC_CALC
+  mode: stub
+  turns:
+    - 宁德时代今天的涨跌幅比上证指数高多少个百分点？
+  expect:
+    # 个股涨跌幅与大盘涨跌幅两源（get_quote + get_market_overview），先后良性分叉——只锚 search 先行
+    toolSequence: ["search_stock"]
+    toolSequenceMatch: prefix
+    entityAlignment: {tool: "search_stock", paramContains: 宁德时代}
+    chartEvent: true
+    disclaimer: true
+    refusal: false
+    dataFidelityTolerance:
+      # 计算链：2.84 − 0.57 = 2.27（个股超额收益；只答 2.84 不减大盘即 2.84 不落锚，正确 FAIL）
+      anchorValues: [2.27]
+  judge: rubric-answer-quality
+  # 大盘点位与 market-fact.yaml / single-turn.yaml 同一套（跨题跨库可比）
+  stubData:
+    search:
+      - {code: "300750", name: 宁德时代, market: "0", marketName: 深市}
+    quotes:
+      "300750":
+        code: "300750"
+        name: 宁德时代
+        price: 268.4
+        change: 7.4
+        changePct: 2.84
+        open: 261.6
+        high: 270.0
+        low: 259.11
+        prevClose: 261.0
+        volume: 12450000
+        amount: 33.42
+        pe: 25.6
+        pb: 5.32
+        time: "2026-09-14 15:00:00"
+    overview:
+      time: "2026-09-14 15:00:00"
+      indices:
+        - {code: "000001", name: 上证指数, price: 3245.68, change: 18.35, changePct: 0.57}
+        - {code: "399001", name: 深证成指, price: 10412.55, change: -42.18, changePct: -0.40}
+        - {code: "399006", name: 创业板指, price: 2158.90, change: 15.22, changePct: 0.71}

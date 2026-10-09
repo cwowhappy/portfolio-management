@@ -117,7 +117,7 @@ class TrustAgentHookTest {
     private static void recordQuoteTruth(RuntimeContext rc) {
         TrustContext.current(rc).record(new ToolInvocation(
                 "get_quote", Map.of("code", "600519"), POOL_JSON,
-                List.of(), "2026-10-05 14:59:32", ToolInvocation.AsOfKind.DATA, false, false));
+                List.of(), "2026-10-05 14:59:32", ToolInvocation.AsOfKind.DATA, false, false, 0L));
     }
 
     @DisplayName("POST_REASONING 末轮：改写消息（修正文本+池摘要 metadata），保留 id/name/role/usage")
@@ -414,7 +414,7 @@ class TrustAgentHookTest {
         RuntimeContext rc = bound();
         TrustContext.current(rc).record(new ToolInvocation(
                 "get_quote", Map.of("code", "600519"), "", List.of(),
-                "2026-10-05 14:59:32", ToolInvocation.AsOfKind.CALL, true, false));
+                "2026-10-05 14:59:32", ToolInvocation.AsOfKind.CALL, true, false, 0L));
         ch.qos.logback.classic.Logger hookLogger =
                 (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(TrustAgentHook.class);
         ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
