@@ -62,6 +62,16 @@ sourceSets {
         compileClasspath += sourceSets.main.output
         runtimeClasspath += sourceSets.main.output
     }
+    // test 源集可见 eval 类（MS-30 B2）：ReportWriter（报告 v2 runMeta）与 EvalAssetHasher（资产指纹）
+    // 在 eval 源集且无独立测试任务先例——把 eval 输出挂上 test 类路径，纯逻辑用标准 JUnit 守住
+    // （不新建 evalTest 源集/任务，避免 JaCoCo 聚合与 check 接线的额外面）。副作用已核对：
+    // ① ArchUnit @AnalyzeClasses 类路径会新增 eval 类——逐规则核对无命中（不依赖 web、不属
+    //   分层包、eval 内无环）；② JaCoCo 聚合/门槛 sourceSets 钉死 main，eval 覆盖不计入门禁；
+    // ③ test 任务由此连带 compileEvalJava，check 本就依赖它，无新增构建边
+    test {
+        compileClasspath += sourceSets.eval.output
+        runtimeClasspath += sourceSets.eval.output
+    }
 }
 configurations {
     evalImplementation.extendsFrom implementation

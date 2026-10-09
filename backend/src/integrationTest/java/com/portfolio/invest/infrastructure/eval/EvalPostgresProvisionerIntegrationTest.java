@@ -10,8 +10,10 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import org.flywaydb.core.Flyway;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
 import org.testcontainers.containers.PostgreSQLContainer;
 
 /**
@@ -25,7 +27,25 @@ import org.testcontainers.containers.PostgreSQLContainer;
  * Flyway V1~V5，钉死全部表与 history 表落 eval_schema、public 不受波及——首跑冒烟正是靠
  * 这条拦住了「search_path 缺 public 导致 V3 gin_trgm_ops 解析失败」。
  */
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class EvalPostgresProvisionerIntegrationTest extends PostgresTestSupport {
+
+    /**
+     * 共享容器卫生（Task 2 引入、Task 3 全量 check 暴露）：端到端用例把 V1~V5 全量迁进
+     * eval_schema 后不回收，而同容器的 IntelligenceMigrationTest 以不带 schema 限定的
+     * information_schema 计数断言表唯一——两类执行顺序翻转（重编译使类发现序重排）即双份
+     * 计数失败（clean HEAD 复现：expected 1 but was 2）。@AfterAll 整体 DROP 回收，恢复
+     * 「容器内只有 public 业务 schema」的共享前提，两种类执行顺序下均确定（与下方 pg_trgm
+     * 钉入 public 的秩序观同款）；pg_trgm 是库级对象且各处建法均为 IF NOT EXISTS，保留无害。
+     */
+    @AfterAll
+    void whenClassDone_thenDropEvalSchema() throws SQLException {
+        PostgreSQLContainer<?> pg = PostgresTestSupport.postgres();
+        try (Connection c = DriverManager.getConnection(pg.getJdbcUrl(), pg.getUsername(), pg.getPassword());
+             Statement st = c.createStatement()) {
+            st.execute("DROP SCHEMA IF EXISTS eval_schema CASCADE");
+        }
+    }
 
     @Test
     @DisplayName("reset 清空并重建 eval_schema 且返回 URL 携带评测 search_path（幂等）")

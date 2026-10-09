@@ -8,6 +8,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -105,6 +107,11 @@ public final class EvalRunner {
             }
             System.out.printf("[eval] --list 干跑通过：装载 %d 题，schema 校验全部通过（未起 LLM）%n",
                     questions.size());
+            // 资产指纹干跑同源采集（零 Spring；真跑 runMeta 用同一实现，hash 必须一致）
+            EvalAssetHasher.Collected fingerprint = EvalAssetHasher.collectStandalone();
+            System.out.printf("[eval] 资产指纹：assetHashes %d 项（%s）、evalAssets %d 项、questionBankHash=%s%n",
+                    fingerprint.assetHashes().size(), fingerprint.typeSummary(),
+                    fingerprint.evalAssets().size(), fingerprint.questionBankHash());
             return 0;
         }
 
@@ -135,9 +142,20 @@ public final class EvalRunner {
             return 0;
         }
 
+        // —— 运行指纹起点（runMeta 口径：起止时间覆盖装载→题库循环收尾，报告写出不计入） ——
+        String runId = UUID.randomUUID().toString();
+        ZonedDateTime startedAt = ZonedDateTime.now();
+        System.out.printf("[eval] runId=%s（triggeredBy=MANUAL）%n", runId);
+
         // —— 题库装载（schema 校验 fail-fast） ——
         List<EvalQuestion> questions = QuestionLoader.loadFromClasspath();
         System.out.printf("[eval] 题库装载 %d 题；模式=stub；被评模型=deepseek/%s%n", questions.size(), model);
+
+        // —— 资产指纹采集（装载时，§4.1 eval 侧回流：main 四类 + rubric/题库，零 Spring 干跑同源） ——
+        EvalAssetHasher.Collected fingerprint = EvalAssetHasher.collectStandalone();
+        System.out.printf("[eval] 资产指纹：assetHashes %d 项（%s）、evalAssets %d 项、questionBankHash=%s%n",
+                fingerprint.assetHashes().size(), fingerprint.typeSummary(),
+                fingerprint.evalAssets().size(), fingerprint.questionBankHash());
 
         // —— 运行前探活（同 judge 客户端，10s）：拥塞期白起评测 schema 重置 + 全上下文不值得 ——
         DeepSeekJudge judge = new DeepSeekJudge(baseUrl, model, apiKey, options.timeoutMs());
@@ -188,11 +206,21 @@ public final class EvalRunner {
                         "--invest.mcp.harness.workspace=" + dataRoot.resolve("workspace"),
                         // 完整上下文启动前提（同测试任务的显式 key 注入）
                         "--REMEMBER_ME_KEY=eval-remember-me-key",
+                        // §2.3 副作用禁用双保险②：eval 上下文禁调度（SchedulingConfig 条件化，
+                        // 全部 @Scheduled cron 静默缺席；跑完即 System.exit，本就等不到 cron 点位）
+                        "--Eval_MODE=true",
                         // 不占用 8080：MockMvc 驱动无需真实端口，嵌入式 Tomcat 随机端口兜底
                         "--server.port=0");
         try {
             // 覆盖项兜底校验：datasource 必须指向独立评测 schema（防优先级回归静默连上 dev/主库）
             EvalPostgresProvisioner.assertGuard(context.getEnvironment().getProperty("spring.datasource.url"));
+            // §2.3 双保险②守卫：Eval_MODE=true 必须让调度后处理器缺席（SchedulingConfig 条件被
+            // 误删/失效时 fail-fast，防评测上下文静默跑起定时副作用）
+            if (context.getBeanNamesForType(
+                    org.springframework.scheduling.annotation.ScheduledAnnotationBeanPostProcessor.class).length > 0) {
+                throw new IllegalStateException(
+                        "Eval_MODE=true 未生效：调度后处理器仍在评测上下文（SchedulingConfig 条件化失效）");
+            }
             EvalStubMarketService stub = (EvalStubMarketService)
                     EvalMarketStubConfig.expectStub(context.getBean(MarketDataService.class));
             // 守卫：investModel 必须是真实装配（AgentConfig 的 @ConditionalOnExpression 已触发）
@@ -224,9 +252,16 @@ public final class EvalRunner {
 
             ReportWriter.Written written;
             try {
+                // runMeta（报告 schema v2，§2.4）：runner 正常收尾恒 FULL（PARTIAL 由收割侧超时/
+                // 非零退出落库）；triggeredBy 子进程不可知触发来源，缺省 MANUAL（落库口径归 Task 6）
+                ZonedDateTime finishedAt = ZonedDateTime.now();
+                ReportWriter.RunMeta runMeta = new ReportWriter.RunMeta(runId,
+                        startedAt.toString(), finishedAt.toString(), "MANUAL",
+                        fingerprint.assetHashes(), fingerprint.evalAssets(), fingerprint.questionBankHash(),
+                        Duration.between(startedAt, finishedAt).toMillis(), "FULL");
                 written = new ReportWriter(Path.of("build", "reports", "eval-agent"))
                         .write(outcomes, new ReportWriter.Meta("stub", model, baseUrl, model,
-                                judgeRespondedModel, (int) options.timeoutMs()), options.compare());
+                                judgeRespondedModel, (int) options.timeoutMs()), runMeta, options.compare());
             } catch (java.io.IOException e) {
                 throw new IllegalStateException("评估报告写出失败", e);
             }
