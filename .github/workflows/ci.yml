@@ -163,6 +163,10 @@ jobs:
       - name: Install Playwright browsers
         working-directory: frontend
         run: pnpm exec playwright install --with-deps chromium
+      # MS-30 F1 观测看板：observability.spec 以 psql 直插观测行（缺 psql 则整组跳过），
+      # 显式安装使门控在 CI 真执行——service 容器 localhost:5432 invest/invest 与 spec 默认连接一致
+      - name: Install postgresql-client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
       # webServer 自动拉起后端(8080)与前端(3000)；.next 缺失时 e2e-frontend.sh 会先 build
       - name: Run e2e
         working-directory: frontend
