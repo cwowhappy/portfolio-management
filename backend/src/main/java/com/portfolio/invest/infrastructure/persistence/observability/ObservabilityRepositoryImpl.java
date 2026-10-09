@@ -7,6 +7,7 @@ import com.portfolio.invest.domain.observability.ToolCallObservation;
 import com.portfolio.invest.domain.observability.TurnObservation;
 import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import org.slf4j.Logger;
@@ -27,6 +28,10 @@ import org.springframework.stereotype.Repository;
  * <p><strong>截断：</strong>resultText 按 {@code invest.eval.observability.result-text-max-bytes}
  * UTF-8 字节安全截断——按码点边界裁剪不切半字符，超限时追加省略标记（含标记总长 ≤ 限额）；
  * 限额放不下标记（过小配置）时退化为无标记边界截断；非正限额视为关闭截断（护栏失效不吞观测原文）。
+ *
+ * <p><strong>滚动清理（Task 10）：</strong>{@link #purgeBefore} 沿 deleteRawBefore 先例直删两表
+ * （tool_invocation_obs 按 called_at、turn_observation 按 created_at，严格小于），保留天数由
+ * 调用方（IntelligenceCleanupService，invest.eval.observability.retention-days）折算成 cutoff。
  */
 @Repository
 public class ObservabilityRepositoryImpl implements ObservabilityRecorder {
@@ -55,6 +60,15 @@ public class ObservabilityRepositoryImpl implements ObservabilityRecorder {
             log.error("观测落库失败（conversationId={}，toolCount={}）",
                     turn == null ? null : turn.conversationId(), tools == null ? 0 : tools.size(), e);
         }
+    }
+
+    /** 滚动清理（Task 10）：两表按各自时间戳直删（严格小于，恰在 cutoff 的行保留），返回合计。 */
+    @Override
+    public int purgeBefore(Instant cutoff) {
+        Timestamp cutoffTs = Timestamp.from(cutoff);
+        int tools = jdbc.update("DELETE FROM tool_invocation_obs WHERE called_at < ?", cutoffTs);
+        int turns = jdbc.update("DELETE FROM turn_observation WHERE created_at < ?", cutoffTs);
+        return tools + turns;
     }
 
     private void writeTurn(TurnObservation turn) {

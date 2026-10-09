@@ -153,8 +153,8 @@ invest:
       pass-rate-drop-pp: 10
       flip-threshold: 3
       category-drop-pp: 15
-    observability:                      # 观测三项（Task 8/9 消费）
-      retention-days: 90                # 沿 NEWS_RETENTION=90 先例
+    observability:                      # 观测三项（Task 8/9/10 消费）
+      retention-days: 90                # 观测滚动清理（Task 10 消费），沿 NEWS_RETENTION=90 先例
       result-text-max-bytes: 2048       # 工具级 resultText 截断（需求决策 #13）
       unit-price-cny-per-mtok: 0.0      # >0 时看板显示估算成本（不入库）
     calc-tolerance-pct: 2               # 计算类断言相对容差（需求决策 #15；题域批次消费）

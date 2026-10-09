@@ -1,5 +1,6 @@
 package com.portfolio.invest.domain.observability;
 
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -20,4 +21,13 @@ public interface ObservabilityRecorder {
      * @param tools 该轮工具调用观测（空列表 = 仅落轮行）
      */
     void recordTurn(TurnObservation turn, List<ToolCallObservation> tools);
+
+    /**
+     * 滚动清理观测数据（Task 10）：直删两表中时间戳严格早于 cutoff 的行——
+     * tool_invocation_obs 按 {@code called_at}、turn_observation 按 {@code created_at}。
+     *
+     * @param cutoff 保留截止线（严格小于才删，恰在 cutoff 的行保留——沿清理任务统一口径）
+     * @return 两表删除行数合计（端口取粗粒度：调用方仅日志留痕，不分表细分）
+     */
+    int purgeBefore(Instant cutoff);
 }

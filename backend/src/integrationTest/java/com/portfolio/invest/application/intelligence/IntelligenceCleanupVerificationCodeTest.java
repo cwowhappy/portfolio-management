@@ -2,8 +2,10 @@ package com.portfolio.invest.application.intelligence;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.portfolio.invest.config.InvestProperties;
 import com.portfolio.invest.domain.intelligence.BindingCodeRepository;
 import com.portfolio.invest.domain.intelligence.NewsRepository;
+import com.portfolio.invest.domain.observability.ObservabilityRecorder;
 import com.portfolio.invest.domain.user.VerificationCode;
 import com.portfolio.invest.domain.user.VerificationCodeRepository;
 import com.portfolio.invest.domain.user.VerificationPurpose;
@@ -42,6 +44,10 @@ class IntelligenceCleanupVerificationCodeTest extends PostgresTestSupport {
     @Autowired
     VerificationCodeRepository codeRepository;
     @Autowired
+    ObservabilityRecorder observabilityRecorder;
+    @Autowired
+    InvestProperties properties;
+    @Autowired
     JdbcTemplate jdbc;
 
     @BeforeEach
@@ -60,8 +66,8 @@ class IntelligenceCleanupVerificationCodeTest extends PostgresTestSupport {
                 VerificationPurpose.REGISTER, "h-edge", 0, null, NOW.plusSeconds(600),
                 NOW.minus(Duration.ofDays(90))));
 
-        new IntelligenceCleanupService(newsRepository, bindingCodeRepository, codeRepository, CLOCK)
-                .cleanupNow();
+        new IntelligenceCleanupService(newsRepository, bindingCodeRepository, codeRepository,
+                observabilityRecorder, properties, CLOCK).cleanupNow();
 
         assertThat(count("vc-cln-old@test.local")).as("91 天前的码应删除").isZero();
         assertThat(count("vc-cln-edge@test.local"))

@@ -10,8 +10,9 @@ import java.util.Map;
  *
  * <p>token 三分量与 durationMs 允许 null（模型 usage 缺失 / PreCall 起点不在场——观测旁路
  * best-effort，缺失行仍计数不进均值插值，见读端口 {@link ObservabilityQueryRepository} 口径约定）；
- * trustStats 为 trust 回报 stats 字段子集（anchor/verified/sourced/corrections），null = 该轮无
- * trust 信号。user_id 弱引用（无 FK），用户删除随保留期自然过期。
+ * trustStats 为 trust 回报六键标量子集（verified/sourced/unverified/corrections/
+ * correctionFailures/exempted），null = 该轮无 trust 信号。user_id 弱引用（无 FK），
+ * 用户删除随保留期自然过期。
  */
 public record TurnObservation(
         Long userId,

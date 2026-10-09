@@ -26,8 +26,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 /**
  * 观测写端口真库契约（MS-30 B6，Testcontainers PG16 + V5）：recordTurn 批量 1+N 落库、
  * args/trust_stats JSONB 往返、resultText UTF-8 字节安全截断（默认 2048 + 中文边界 + 退化配置）、
- * 写入失败吞异常仅 ERROR 日志（§5.3 降级——观测自身失效不得阻断对话）。清理（purgeBefore）
- * 归 Task 10，本类不测。
+ * 写入失败吞异常仅 ERROR 日志（§5.3 降级——观测自身失效不得阻断对话）；purgeBefore 滚动清理
+ * （Task 10）删严格早于 cutoff 的行、恰在 cutoff 的行保留、返回两表合计。
  *
  * <p>@BeforeEach/@AfterEach 全表清空保持共享容器零残留（沿 Task 7 类序教训）。
  * 截断边界用直造实例注入小限额（Spring Bean 仍是默认 2048，不经测试改全局配置）。
@@ -59,6 +59,17 @@ class ObservabilityRepositoryImplTest extends PostgresTestSupport {
         return new ToolCallObservation(7L, "conv-obs-1", "msg-obs-1", toolName,
                 "{\"code\":\"600519\",\"limit\":5}", resultText, 1, "2026-10-06 09:30:00",
                 "data", false, false, 320L, Instant.parse("2026-10-06T01:30:05Z"));
+    }
+
+    /** 清理测试专用造数：指定时间戳（conv-purge 会话，与落库断言用例隔离）。 */
+    private static TurnObservation turnAt(Instant timestamp) {
+        return new TurnObservation(7L, "conv-purge", "msg-purge", 100, 50, 150, 1_000L, 1,
+                false, null, null, timestamp);
+    }
+
+    private static ToolCallObservation toolCallAt(Instant timestamp) {
+        return new ToolCallObservation(7L, "conv-purge", "msg-purge", "get_quote",
+                "{}", "ok", 0, null, null, false, false, 10L, timestamp);
     }
 
     /** 直造实例（注入非默认截断限额）：与 Spring Bean 同构造形态，仅配置不同。 */
@@ -221,5 +232,41 @@ class ObservabilityRepositoryImplTest extends PostgresTestSupport {
                     assertThat(event.getLevel()).isEqualTo(Level.ERROR);
                     assertThat(event.getFormattedMessage()).contains("conv-obs-1");
                 });
+    }
+
+    // ———— 滚动清理 purgeBefore（Task 10） ————
+
+    @Test
+    @DisplayName("给定两表各有过期/恰在cutoff/新鲜行，when purgeBefore，then只删严格早于cutoff的行且返回两表合计")
+    void givenExpiredBoundaryAndFreshRows_whenPurgeBefore_thenOnlyExpiredDeletedWithSumReturn() {
+        Instant cutoff = Instant.parse("2026-10-06T01:30:00Z");
+        recorder.recordTurn(turnAt(cutoff.minusSeconds(86_400)),
+                List.of(toolCallAt(cutoff.minusSeconds(86_400))));
+        recorder.recordTurn(turnAt(cutoff), List.of(toolCallAt(cutoff)));
+        recorder.recordTurn(turnAt(cutoff.plusSeconds(86_400)),
+                List.of(toolCallAt(cutoff.plusSeconds(86_400))));
+
+        int purged = recorder.purgeBefore(cutoff);
+
+        // 两表各删 1 行过期行（合计 2）；恰在 cutoff 与更新的行保留（严格小于口径）
+        assertThat(purged).isEqualTo(2);
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM turn_observation", Integer.class)).isEqualTo(2);
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM tool_invocation_obs", Integer.class)).isEqualTo(2);
+        assertThat(jdbc.queryForObject(
+                "SELECT min(created_at) FROM turn_observation", java.sql.Timestamp.class)
+                .toInstant()).isEqualTo(cutoff);
+        assertThat(jdbc.queryForObject(
+                "SELECT min(called_at) FROM tool_invocation_obs", java.sql.Timestamp.class)
+                .toInstant()).isEqualTo(cutoff);
+    }
+
+    @Test
+    @DisplayName("给定两表全空，when purgeBefore，then返回0不报错")
+    void givenEmptyTables_whenPurgeBefore_thenZeroReturned() {
+        int purged = recorder.purgeBefore(Instant.parse("2026-10-06T01:30:00Z"));
+
+        assertThat(purged).isZero();
     }
 }
