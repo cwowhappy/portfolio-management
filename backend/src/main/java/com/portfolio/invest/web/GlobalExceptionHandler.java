@@ -195,6 +195,34 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(status).body(new ApiError(e.code(), e.getMessage()));
     }
 
+    /**
+     * eval 域（MS-30 B5 admin 端点，照 intelligence 范式）：行缺失两码→404、基准置位
+     * 不合格（仅 COMPLETED 且非 DEGRADED 可置 true）→422、default→400。
+     */
+    @ExceptionHandler(com.portfolio.invest.domain.eval.EvalException.class)
+    public ResponseEntity<ApiError> eval(com.portfolio.invest.domain.eval.EvalException e) {
+        HttpStatus status = switch (e.code()) {
+            case com.portfolio.invest.domain.eval.EvalErrorCode.EVAL_RUN_NOT_FOUND,
+                 com.portfolio.invest.domain.eval.EvalErrorCode.PROMPT_ASSET_NOT_FOUND
+                    -> HttpStatus.NOT_FOUND;
+            case com.portfolio.invest.domain.eval.EvalErrorCode.ERR_BASELINE_INELIGIBLE
+                    -> HttpStatus.UNPROCESSABLE_CONTENT;
+            default -> HttpStatus.BAD_REQUEST;
+        };
+        return ResponseEntity.status(status).body(new ApiError(e.code(), e.getMessage()));
+    }
+
+    /**
+     * eval 运行互斥冲突（MS-30 B5）：手动触发撞进行中运行（单实例 AtomicBoolean 互斥）
+     * → 409 EVAL_RUN_IN_PROGRESS。
+     */
+    @ExceptionHandler(com.portfolio.invest.application.eval.EvalRunInProgressException.class)
+    public ResponseEntity<ApiError> evalRunInProgress(
+            com.portfolio.invest.application.eval.EvalRunInProgressException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ApiError("EVAL_RUN_IN_PROGRESS", e.getMessage()));
+    }
+
     @ExceptionHandler(com.portfolio.invest.domain.valuation.ValuationException.class)
     public ResponseEntity<ApiError> valuation(com.portfolio.invest.domain.valuation.ValuationException e) {
         HttpStatus status = switch (e.code()) {

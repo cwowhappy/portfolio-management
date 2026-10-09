@@ -2,10 +2,12 @@ package com.portfolio.invest.eval;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.portfolio.invest.application.eval.EvalAdminApplicationService;
 import com.portfolio.invest.application.eval.EvalHarvester;
 import com.portfolio.invest.application.eval.EvalScheduler;
 import com.portfolio.invest.application.eval.PromptVersionRegistrar;
 import com.portfolio.invest.support.PostgresTestSupport;
+import com.portfolio.invest.web.EvalTriggerController;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,6 +34,9 @@ class EvalModeContextGuardIntegrationTest extends PostgresTestSupport {
         assertThat(context.getBeanNamesForType(EvalScheduler.class)).isEmpty();
         assertThat(context.getBeanNamesForType(EvalHarvester.class)).isEmpty();
         assertThat(context.getBeanNamesForType(PromptVersionRegistrar.class)).isEmpty();
+        // B5：admin 触发链（用例 + web 面）同表达式门控——强依赖门控缺席的 EvalScheduler
+        assertThat(context.getBeanNamesForType(EvalAdminApplicationService.class)).isEmpty();
+        assertThat(context.getBeanNamesForType(EvalTriggerController.class)).isEmpty();
         // SchedulingConfig 条件化（Task 3）同场景兜底：调度后处理器缺席
         assertThat(context.getBeanNamesForType(ScheduledAnnotationBeanPostProcessor.class)).isEmpty();
     }

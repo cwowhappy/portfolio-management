@@ -94,6 +94,25 @@ class PromptAssetVersionRepositoryImplTest extends PostgresTestSupport {
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
+    @Test
+    @DisplayName("给定多资产多版本，when查版本链，then按类型键升序版本倒序（看板链形态）")
+    void givenMultipleAssetsAndVersions_whenFindVersionChain_thenOrderedTypeKeyAscVersionDesc() {
+        registrar.upsert(PromptAssetVersion.TYPE_SKILL, "probe.skill", "hash-a");  // v1
+        registrar.upsert(PromptAssetVersion.TYPE_SKILL, "probe.skill", "hash-b");  // v2
+        registrar.upsert(PromptAssetVersion.TYPE_TOOL_DESC, "probe.tool", "hash-c"); // v1
+
+        List<PromptAssetVersion> chain = repository.findVersionChain().stream()
+                .filter(v -> v.assetKey().startsWith("probe.")).toList();
+
+        assertThat(chain).extracting(PromptAssetVersion::assetKey, PromptAssetVersion::version)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("probe.skill", 2),
+                        org.assertj.core.groups.Tuple.tuple("probe.skill", 1),
+                        org.assertj.core.groups.Tuple.tuple("probe.tool", 1));
+        assertThat(chain.get(0).id()).isNotNull();
+        assertThat(chain.get(0).registeredAt()).isNotNull();
+    }
+
     private Integer countRows(String assetKey) {
         return jdbc.queryForObject(
                 "SELECT count(*) FROM prompt_asset_version WHERE asset_key = ?", Integer.class, assetKey);

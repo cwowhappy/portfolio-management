@@ -72,4 +72,13 @@ public record EvalRunRow(
         promptVersions = promptVersions == null ? Map.of() : Map.copyOf(promptVersions);
         verdictReasons = verdictReasons == null ? List.of() : List.copyOf(verdictReasons);
     }
+
+    /**
+     * 基准置位资格（MS-30 B5，设计规格 §2.5/Review Focus #5）：仅 COMPLETED 且非 DEGRADED
+     * 跑可置 baseline=true——PARTIAL（数字不完整）/FAILED（无产出）/DEGRADED（劣化跑）均拒。
+     * RECOVERED 恢复跑数字完整且判定通过，可置（baseline_candidate 的人工确认通道）。
+     */
+    public boolean eligibleAsBaseline() {
+        return STATUS_COMPLETED.equals(status) && !ALERT_DEGRADED.equals(alertStatus);
+    }
 }

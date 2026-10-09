@@ -29,4 +29,22 @@ public interface EvalRunRepository {
 
     /** 历史序上一跑（started_at DESC, id DESC 排除指定 id 的最近一行；恢复判定的输入来源）。 */
     Optional<EvalRunRow> findLatestExcluding(long runId);
+
+    /**
+     * 按 id 定位运行行（admin baseline 置位前的资格校验输入；缺失→调用方抛 NOT_FOUND）。
+     * MS-30 B5 扩展。
+     */
+    Optional<EvalRunRow> findById(long id);
+
+    /**
+     * 运行历史倒序（started_at DESC, id DESC 截 limit 行；RUNNING 行原样返回——停机残留
+     * 清扫归部署文档，查询侧不过滤）。MS-30 B5 扩展。
+     */
+    List<EvalRunRow> findRecent(int limit);
+
+    /** 清除当前基准行（置位新基准前先调，恒一基准部分唯一索引的前提；MS-30 B5 扩展）。 */
+    void clearBaseline();
+
+    /** 置/清指定行 baseline 标记（与 {@link #clearBaseline} 同事务内先清后置；MS-30 B5 扩展）。 */
+    void updateBaseline(long id, boolean baseline);
 }

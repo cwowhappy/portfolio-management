@@ -26,4 +26,17 @@ public interface PromptAssetVersionRepository {
 
     /** 全资产最新版本快照（每 (asset_type, asset_key) 取 version 最高行），供新版本号计算与版本链看板。 */
     List<PromptAssetVersion> latestSnapshot();
+
+    /**
+     * 全资产版本链（asset_type, asset_key 升序 + version 倒序，最新居首）——看板版本链查询
+     * （GET /api/admin/prompt-assets）的数据源。MS-30 B5 扩展。
+     */
+    List<PromptAssetVersion> findVersionChain();
+
+    /**
+     * 补注版本变更说明（PUT /api/admin/prompt-assets/{id}/note，需求决策 #12）。
+     *
+     * @return 更新行数（0 = 版本行不存在，调用方据此抛 NOT_FOUND）
+     */
+    int updateNote(long id, String note);
 }

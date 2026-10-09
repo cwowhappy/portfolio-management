@@ -22,6 +22,9 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
  * 断言（ApplicationContextRunner，沿 SchedulingConfigConditionTest 形态）：缺省/false
  * 三 bean 在（生产行为不变），true 三 bean 全缺席（子进程可启动）。完整上下文级守护见
  * integrationTest 的 EvalModeContextGuardIntegrationTest。
+ *
+ * <p>B5 扩：{@link EvalAdminApplicationService}（强依赖 EvalScheduler）与其 web 消费面
+ * 同表达式门控——eval 子进程内 admin 触发链必须整链缺席。
  */
 class EvalModeBeanGatingTest {
 
@@ -34,15 +37,16 @@ class EvalModeBeanGatingTest {
             .withBean(AlertNotifier.class, () -> mock(AlertNotifier.class))
             .withBean(MailSender.class, () -> mock(MailSender.class))
             .withUserConfiguration(PromptVersionRegistrar.class, EvalScheduler.class,
-                    EvalHarvester.class, SystemParentEnvironment.class);
+                    EvalHarvester.class, SystemParentEnvironment.class, EvalAdminApplicationService.class);
 
-    @DisplayName("Eval_MODE=true：调度器/收割器/登记器全缺席（子进程上下文可启动，C1 回归防线）")
+    @DisplayName("Eval_MODE=true：调度器/收割器/登记器/admin用例全缺席（子进程上下文可启动，C1 回归防线）")
     @Test
     void givenEvalModeTrue_whenContextRuns_thenSchedulerHarvesterRegistrarAbsent() {
         runner.withPropertyValues("Eval_MODE=true").run(context -> {
             assertThat(context).doesNotHaveBean(EvalScheduler.class);
             assertThat(context).doesNotHaveBean(EvalHarvester.class);
             assertThat(context).doesNotHaveBean(PromptVersionRegistrar.class);
+            assertThat(context).doesNotHaveBean(EvalAdminApplicationService.class);
         });
     }
 
@@ -53,6 +57,7 @@ class EvalModeBeanGatingTest {
             assertThat(context).hasSingleBean(EvalScheduler.class);
             assertThat(context).hasSingleBean(EvalHarvester.class);
             assertThat(context).hasSingleBean(PromptVersionRegistrar.class);
+            assertThat(context).hasSingleBean(EvalAdminApplicationService.class);
         });
     }
 
@@ -62,6 +67,7 @@ class EvalModeBeanGatingTest {
         runner.withPropertyValues("Eval_MODE=false").run(context -> {
             assertThat(context).hasSingleBean(EvalScheduler.class);
             assertThat(context).hasSingleBean(EvalHarvester.class);
+            assertThat(context).hasSingleBean(EvalAdminApplicationService.class);
         });
     }
 }

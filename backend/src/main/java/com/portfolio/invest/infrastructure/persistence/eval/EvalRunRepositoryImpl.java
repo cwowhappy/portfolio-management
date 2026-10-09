@@ -111,6 +111,28 @@ public class EvalRunRepositoryImpl implements EvalRunRepository {
                 """, ROW, runId).stream().findFirst();
     }
 
+    @Override
+    public Optional<EvalRunRow> findById(long id) {
+        return jdbc.query(SELECT_COLS + " WHERE id = ?", ROW, id).stream().findFirst();
+    }
+
+    @Override
+    public List<EvalRunRow> findRecent(int limit) {
+        return jdbc.query(SELECT_COLS + """
+                 ORDER BY started_at DESC, id DESC LIMIT ?
+                """, ROW, limit);
+    }
+
+    @Override
+    public void clearBaseline() {
+        jdbc.update("UPDATE eval_run SET baseline = false WHERE baseline");
+    }
+
+    @Override
+    public void updateBaseline(long id, boolean baseline) {
+        jdbc.update("UPDATE eval_run SET baseline = ? WHERE id = ?", baseline, id);
+    }
+
     // ———— JSONB 列读装配 ————
 
     /** by_category：{分类: [pass, fail, error]} → Map（缺值容忍旧档，短数组按 0 补齐）。 */

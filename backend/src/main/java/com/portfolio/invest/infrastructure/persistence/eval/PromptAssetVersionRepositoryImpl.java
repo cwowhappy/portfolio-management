@@ -64,6 +64,20 @@ public class PromptAssetVersionRepositoryImpl implements PromptAssetVersionRepos
                 """, ROW);
     }
 
+    @Override
+    public List<PromptAssetVersion> findVersionChain() {
+        return jdbc.query("""
+                SELECT id, asset_type, asset_key, version, content_hash, note, registered_at
+                  FROM prompt_asset_version
+                 ORDER BY asset_type, asset_key, version DESC
+                """, ROW);
+    }
+
+    @Override
+    public int updateNote(long id, String note) {
+        return jdbc.update("UPDATE prompt_asset_version SET note = ? WHERE id = ?", note, id);
+    }
+
     private static Instant toInstant(Timestamp ts) {
         return ts == null ? null : ts.toInstant();
     }
