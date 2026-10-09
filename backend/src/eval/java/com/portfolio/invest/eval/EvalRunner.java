@@ -230,6 +230,10 @@ public final class EvalRunner {
 
             AguiDriver driver = new AguiDriver((org.springframework.web.context.WebApplicationContext) context,
                     context.getBean(UserRepository.class));
+            // 计算类断言容差（需求决策 #15）：配置在主上下文环境里（application.yml invest.eval.*），
+            // 断言器是纯静态无 Spring——此处读出后逐题下传（CalcTolerance 纯函数收参数不读配置）
+            int calcTolerancePct = resolveCalcTolerancePct(context);
+            System.out.printf("[eval] 计算类断言容差：invest.eval.calc-tolerance-pct=%d%n", calcTolerancePct);
 
             List<QuestionOutcome> outcomes = new ArrayList<>();
             String judgeRespondedModel = null;
@@ -241,7 +245,8 @@ public final class EvalRunner {
                     System.out.printf("[eval] %-32s SKIPPED（real 轨预留）%n", question.id());
                     continue;
                 }
-                QuestionOutcome outcome = runOne(question, driver, stub, judge, options, context);
+                QuestionOutcome outcome = runOne(question, driver, stub, judge, options, context,
+                        calcTolerancePct);
                 outcomes.add(outcome);
                 if (outcome.judge() != null && outcome.judge().respondedModel() != null) {
                     judgeRespondedModel = outcome.judge().respondedModel();
@@ -274,12 +279,21 @@ public final class EvalRunner {
     }
 
     /**
+     * 计算类断言容差解析：读主上下文环境的 invest.eval.calc-tolerance-pct（application.yml
+     * 默认 2，部署可覆盖），未配置时回退 {@link AssertionEngine#DEFAULT_CALC_TOLERANCE_PCT}。
+     */
+    private static int resolveCalcTolerancePct(ConfigurableApplicationContext context) {
+        Integer pct = context.getEnvironment().getProperty("invest.eval.calc-tolerance-pct", Integer.class);
+        return pct != null ? pct : AssertionEngine.DEFAULT_CALC_TOLERANCE_PCT;
+    }
+
+    /**
      * 单题执行：桩注入 → 独立用户/threadId →（mcp 题为该用户 seed 扩展源）→ 逐轮 SSE →
      * 断言器（结构分）→ judge（主观细项）。
      */
     private QuestionOutcome runOne(EvalQuestion question, AguiDriver driver, EvalStubMarketService stub,
                                    DeepSeekJudge judge, Options options,
-                                   ConfigurableApplicationContext context) {
+                                   ConfigurableApplicationContext context, int calcTolerancePct) {
         long start = System.currentTimeMillis();
         String safeId = question.id().replaceAll("[^a-zA-Z0-9_-]", "_").toLowerCase(Locale.ROOT);
         String suffix = UUID.randomUUID().toString().substring(0, 8);
@@ -301,7 +315,8 @@ public final class EvalRunner {
                         question.turns().get(i), i, options.timeoutMs()));
             }
             AguiEventExtractor.Transcript transcript = AguiEventExtractor.extract(turns);
-            List<AssertionEngine.DimensionResult> dimensions = AssertionEngine.evaluate(question, transcript);
+            List<AssertionEngine.DimensionResult> dimensions =
+                    AssertionEngine.evaluate(question, transcript, calcTolerancePct);
             // LLM 实际所见的 TOOL 输出（state 落盘读回）：图表类调用 SSE 只有全量 ChartSpec，
             // 其摘要被双通道 skipSet 跳过——judge 数值核对的事实源须取模型真正看到的文本。
             // state 路径与上下文注入的 state-root 同源（--invest.eval.data-root 解析值）

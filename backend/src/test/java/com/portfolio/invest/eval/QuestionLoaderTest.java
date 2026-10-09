@@ -14,6 +14,8 @@ import org.junit.jupiter.api.Test;
  * rubric-answer-quality、断言维面 dataFidelity 全量声明（entityAlignment 全量声明，唯一豁免是
  * 无参工具的大盘指数题——无入参可对齐，沿 st-overview-market 先例）；并钉 category 词表与 main 侧
  * {@code EvalRegressionJudge.NEW_CATEGORIES} 的逐字对齐（Task 5 传导：错字则分类判定静默旁路）。
+ * Task 12 同口径钉 METRIC_CALC：容差维面 dataFidelityTolerance 全量声明、entityAlignment
+ * 无豁免（计算类必须先对准标的/数据源，容差锚才有意义）。
  */
 class QuestionLoaderTest {
 
@@ -42,5 +44,31 @@ class QuestionLoaderTest {
     void givenCategoryVocabulary_whenCheckedAgainstJudgeConstants_thenAlignedVerbatim() {
         assertThat(EvalQuestion.CATEGORIES).contains("MARKET_FACT");
         assertThat(EvalRegressionJudge.NEW_CATEGORIES).contains("MARKET_FACT");
+    }
+
+    @DisplayName("装载全量题库不抛：METRIC_CALC 恰 10 题且全部通过 schema 校验（stub + judge + 容差维面）")
+    @Test
+    void givenClasspathBank_whenLoaded_thenTenMetricCalcQuestionsPassSchema() {
+        List<EvalQuestion> all = QuestionLoader.loadFromClasspath();
+        List<EvalQuestion> metricCalc = all.stream()
+                .filter(q -> "METRIC_CALC".equals(q.category())).toList();
+
+        assertThat(metricCalc).hasSize(10);
+        assertThat(metricCalc).allSatisfy(q -> {
+            assertThat(q.mode()).isEqualTo("stub");
+            assertThat(q.judge()).isEqualTo("rubric-answer-quality");
+            // 计算类核心断言维面：容差锚非空（引擎逐锚核对的前提）
+            assertThat(q.expect().declaredDimensions()).contains("dataFidelityTolerance");
+            assertThat(q.expect().dataFidelityTolerance().anchorValues()).isNotEmpty();
+            // 计算类实体对齐无豁免：必须先对准标的/数据源（标的错则容差锚全盘失义）
+            assertThat(q.expect().entityAlignment()).isNotNull();
+        });
+    }
+
+    @DisplayName("category 词表与 judge 常量逐字对齐：METRIC_CALC 大写同现于题库词表与 NEW_CATEGORIES")
+    @Test
+    void givenCategoryVocabulary_whenCheckedAgainstJudgeConstants_thenMetricCalcAligned() {
+        assertThat(EvalQuestion.CATEGORIES).contains("METRIC_CALC");
+        assertThat(EvalRegressionJudge.NEW_CATEGORIES).contains("METRIC_CALC");
     }
 }
