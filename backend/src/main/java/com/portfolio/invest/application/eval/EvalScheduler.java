@@ -18,6 +18,7 @@ import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.core.env.Environment;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -45,10 +46,15 @@ import org.springframework.stereotype.Component;
  *
  * <p>触发即返回 runId（ProcessBuilder.start() 非阻塞；等待/收割在专属单线程守护 executor
  * 上进行——不引入 @Async/@EnableAsync，调度线程与手动端点都不被整跑时长占住）。RUNNING 行
- * 在触发时先插（triggeredBy 落真值，报告内恒 MANUAL 不采信）。eval 子进程上下文不注册本
- * bean 依赖的调度设施（SchedulingConfig 条件化缺席 → @Scheduled 注解惰性），无需再挂类级条件。
+ * 在触发时先插（triggeredBy 落真值，报告内恒 MANUAL 不采信）。
+ *
+ * <p>eval 子进程（--Eval_MODE=true）不注册本类与 {@link EvalHarvester}（类级条件沿
+ * SchedulingConfig 先例）——审查 C1：收割器曾无条件 @Service 强依赖门控缺席的
+ * PromptVersionRegistrar，导致子进程上下文装配必死（APPLICATION FAILED TO START）。
+ * 两态守护见 EvalModeBeanGatingTest（切片）与 EvalModeContextGuardIntegrationTest（全上下文）。
  */
 @Component
+@ConditionalOnExpression("!'true'.equals('${Eval_MODE:}')")
 public class EvalScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(EvalScheduler.class);
@@ -80,6 +86,9 @@ public class EvalScheduler {
     private final Executor watchExecutor;
     private final java.util.concurrent.atomic.AtomicBoolean running =
             new java.util.concurrent.atomic.AtomicBoolean();
+
+    /** 当前活子进程（停机 destroyForcibly 用，审查 I4——不留孤儿烧 LLM 预算）；看护收尾置 null。 */
+    private volatile Process liveProcess;
 
     /**
      * 主构造器（@Autowired：存在测试专用重载构造器时需显式指定注入入口）。父环境经
@@ -144,9 +153,12 @@ public class EvalScheduler {
     }
 
     /**
-     * 统一触发入口（定时/手动）：互斥 CAS → 插 RUNNING 行 → 起子进程 → 看护移交 executor
-     * 后立即返回 runId。未启用/缺 key 抛 {@link IllegalStateException}（手动端友好失败）；
-     * 进行中抛 {@link EvalRunInProgressException}；启动失败行标 FAILED 后抛出。
+     * 统一触发入口（定时/手动）：互斥 CAS → 起子进程 → 看护移交 executor 后立即返回 runId。
+     * 序：建数据根（I3：目录缺失 start() 抛 IOException）→ 删上一跑残留同名报告（C2：防
+     * 陈旧报告跨跑污染——早退/超时跑收割到旧文件即假告警）→ 派生 jar/命令（I2：先于插行，
+     * 派生抛异常不泄漏 RUNNING 行）→ 插 RUNNING 行 → 起进程（失败行标 FAILED）→ 移交看护。
+     * 未启用/缺 key 抛 {@link IllegalStateException}（手动端友好失败）；进行中抛
+     * {@link EvalRunInProgressException}。
      */
     public long triggerNow(String triggeredBy) {
         if (!props.getEval().isEnabled()) {
@@ -161,10 +173,17 @@ public class EvalScheduler {
         boolean handedOff = false;
         try {
             Path dataDir = resolveDataDir();
+            try {
+                Files.createDirectories(dataDir);
+            } catch (IOException e) {
+                throw new IllegalStateException("评测数据目录创建失败: " + dataDir, e);
+            }
             Path reportPath = dataDir.resolve(REPORT_SUBPATH);
-            long runId = runRepository.insertRunning(triggeredBy, reportPath.toString());
+            deleteStaleReport(reportPath);
             Path evalJar = resolveEvalJar();
-            ProcessBuilder builder = newProcessBuilder(command(evalJar, dataDir), parentEnv.get());
+            List<String> command = command(evalJar, dataDir);
+            long runId = runRepository.insertRunning(triggeredBy, reportPath.toString());
+            ProcessBuilder builder = newProcessBuilder(command, parentEnv.get());
             builder.directory(dataDir.toFile());
             builder.inheritIO(); // 子进程输出并入服务日志（运维可见逐题进度；不设管道防缓冲死锁）
             applyDatasourceOverlay(builder.environment());
@@ -175,14 +194,30 @@ public class EvalScheduler {
                 runRepository.markFailed(runId, List.of("评测子进程启动失败: " + e.getMessage()));
                 throw new IllegalStateException("评测子进程启动失败（" + evalJar + "）", e);
             }
+            liveProcess = process;
             log.info("eval 子进程已启动：runId={} triggeredBy={} jar={} dataRoot={}",
                     runId, triggeredBy, evalJar, dataDir);
             watchExecutor.execute(() -> awaitAndHarvest(runId, process, reportPath));
             handedOff = true;
             return runId;
         } finally {
-            if (!handedOff) { // 未移交看护（插行/启动失败）即就地释放互斥旗
+            if (!handedOff) { // 未移交看护（目录/派生/插行/启动失败）即就地释放互斥旗
                 running.set(false);
+            }
+        }
+    }
+
+    /**
+     * 删上一跑残留的固定名报告（json + md 两件，审查 C2）：runner 报告文件名恒定，任一跑
+     * 早退/超时后旧文件滞留，下一跑若再早退收割会读到旧报告（假 DEGRADED/RECOVERED+审计
+     * 错位）。删失败仅 WARN 不阻断（收割侧归档与理由留痕另有防线）。
+     */
+    private static void deleteStaleReport(Path reportPath) {
+        for (Path stale : new Path[]{reportPath, reportPath.resolveSibling("eval-report.md")}) {
+            try {
+                Files.deleteIfExists(stale);
+            } catch (IOException e) {
+                log.warn("上一跑残留报告删除失败（{}）：{}", stale, e.getMessage());
             }
         }
     }
@@ -215,6 +250,7 @@ public class EvalScheduler {
         } catch (Exception e) { // harvest 内已兜底标 FAILED；此处防御兜底日志（互斥旗仍须释放）
             log.error("eval 收割调用异常（runId={}）", runId, e);
         } finally {
+            liveProcess = null; // 进程已终：停机清理不再针对它
             running.set(false);
         }
     }
@@ -326,15 +362,25 @@ public class EvalScheduler {
     }
 
     /**
-     * code source 位置串 → 所在目录（纯函数，供直测）：BootJar 内类路径
-     * {@code jar:file:<dir>/app.jar!/BOOT-INF/classes!/} 取 jar 文件目录；dev/classes 的
-     * {@code file:<dir>/classes/java/main} 形态取目录本身父级。
+     * code source 位置串 → 所在目录（纯函数，供直测）三种形态：
+     * <ul>
+     *   <li>{@code jar:file:<dir>/app.jar!/BOOT-INF/classes!/}——经典 BootJar（剪 ! 截 jar 路径）；</li>
+     *   <li>{@code jar:nested:<dir>/app.jar/!BOOT-INF/classes!/}——Boot 3.2+ fat jar 的 nested
+     *       URL（审查 C3 实证：Boot 4.0.3 生产 jar 内 code source 即该形态，分隔符为
+     *       {@code /!}，剪 {@code /!} 截 jar 路径）；</li>
+     *   <li>{@code file:<dir>/classes/java/main}——dev/classes 目录取父级。</li>
+     * </ul>
      */
     static Path directoryOf(String locationSpec) {
         if (locationSpec.startsWith("jar:file:")) {
             String jarPath = locationSpec.substring("jar:file:".length());
             int bang = jarPath.indexOf('!');
             return Path.of(bang > 0 ? jarPath.substring(0, bang) : jarPath).getParent();
+        }
+        if (locationSpec.startsWith("jar:nested:")) {
+            String jarPath = locationSpec.substring("jar:nested:".length());
+            int cut = jarPath.indexOf("/!");
+            return Path.of(cut > 0 ? jarPath.substring(0, cut) : jarPath).getParent();
         }
         if (locationSpec.startsWith("file:")) {
             return Path.of(java.net.URI.create(locationSpec)).getParent();
@@ -371,9 +417,18 @@ public class EvalScheduler {
         });
     }
 
-    /** 停机清理：放弃排队看护任务（进行中的收割尽快结束；RUNNING 行留痕由运维/下轮核对）。 */
+    /**
+     * 停机清理：destroyForcibly 运行中的 eval 子进程（审查 I4——只关看护 executor 会留下
+     * 最长 120 分钟的孤儿 JVM 继续烧 LLM 预算），随后放弃排队看护任务（RUNNING 行留痕由
+     * 运维/下轮核对；被强杀进程的收割若来不及执行，行由 Task 7/部署侧清扫治理）。
+     */
     @PreDestroy
     void shutdown() {
+        Process process = liveProcess;
+        if (process != null) {
+            log.warn("停机清理：destroyForcibly 运行中的 eval 子进程（防孤儿继续烧 LLM 预算）");
+            process.destroyForcibly();
+        }
         if (watchExecutor instanceof ExecutorService service) {
             service.shutdown();
         }

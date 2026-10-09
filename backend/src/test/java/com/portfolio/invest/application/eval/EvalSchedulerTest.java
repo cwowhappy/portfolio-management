@@ -274,12 +274,57 @@ class EvalSchedulerTest {
     // ———— evalBootJar 派生（部署关键路径） ————
 
     @Test
-    @DisplayName("给定生产 jar/dev classes 两形态 code source，when解析目录，then各取所在目录")
+    @DisplayName("给定生产 jar/dev classes/nested 三形态 code source，when解析目录，then各取所在目录")
     void givenBootJarCodeSource_whenDirectoryOf_thenAppJarDirectory() {
         assertThat(EvalScheduler.directoryOf("jar:file:/opt/invest/app.jar!/BOOT-INF/classes!/"))
                 .isEqualTo(Path.of("/opt/invest"));
+        // Boot 3.2+ fat jar 的 nested 形态（审查 C3 实证）：jar:nested:<dir>/app.jar/!BOOT-INF/classes!/
+        assertThat(EvalScheduler.directoryOf("jar:nested:/opt/invest/app.jar/!BOOT-INF/classes!/"))
+                .isEqualTo(Path.of("/opt/invest"));
         assertThat(EvalScheduler.directoryOf("file:/repo/backend/build/classes/java/main"))
                 .isEqualTo(Path.of("/repo/backend/build/classes/java"));
+    }
+
+    @Test
+    @DisplayName("给定上一跑残留的同名报告，when再次触发，then先删旧报告（json+md）防跨跑污染")
+    void givenStaleReportFromPreviousRun_whenTriggerNow_thenStaleReportDeleted() throws Exception {
+        Path reportDir = dataDir.resolve(Path.of("build", "reports", "eval-agent"));
+        Files.createDirectories(reportDir);
+        Path staleJson = reportDir.resolve("eval-report.json");
+        Path staleMd = reportDir.resolve("eval-report.md");
+        Files.writeString(staleJson, "上一跑残留");
+        Files.writeString(staleMd, "上一跑残留");
+
+        scheduler().triggerNow("SCHEDULED");
+
+        // 起子进程前已删——假 starter 捕获的时点即真实 ProcessBuilder.start() 前夜
+        assertThat(started).hasSize(1);
+        assertThat(staleJson).doesNotExist();
+        assertThat(staleMd).doesNotExist();
+    }
+
+    @Test
+    @DisplayName("给定配置的数据根目录不存在，when触发，then先建目录再起子进程（防 start IOException）")
+    void givenDataRootMissing_whenTriggerNow_thenDirectoryCreatedBeforeStart() {
+        props.getEval().setDataRoot(dataDir.resolve("not-yet-created/deeper").toString());
+
+        scheduler().triggerNow("SCHEDULED");
+
+        assertThat(started).hasSize(1);
+        assertThat(dataDir.resolve("not-yet-created/deeper")).isDirectory();
+    }
+
+    @Test
+    @DisplayName("给定运行中子进程，when停机清理，then destroyForcibly 活进程（不留孤儿烧 LLM 预算）")
+    void givenLiveProcess_whenShutdown_thenProcessDestroyedForcibly() {
+        FakeProcess process = new FakeProcess(0, false);
+        EvalScheduler scheduler = new EvalScheduler(runRepository, harvester, props, environment,
+                () -> parentEnv, pb -> process, watchTasks::add); // 看护不执行 → 进程保持「活」
+        scheduler.triggerNow("SCHEDULED");
+
+        scheduler.shutdown();
+
+        assertThat(process.destroyed).isTrue();
     }
 
     @Test

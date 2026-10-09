@@ -27,6 +27,7 @@ import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
@@ -47,13 +48,19 @@ import org.springframework.stereotype.Service;
  *   <li>judge 调用先于 eval_run 最终 update（先判后写 alert_status/verdict_reasons）。</li>
  * </ol>
  *
- * <p>终态映射：报告缺失/不可解析 → FAILED；超时强杀/非零退出/报告 completeness=PARTIAL →
- * PARTIAL（不可为 baseline 候选）；其余 → COMPLETED。报告归档为 per-run 副本
- * （eval-report-&lt;runId&gt;.json）后入库——防后续轮次覆盖同名字报告导致基准行读到别跑数据。
- * 判定五态落 alert_status 时 INCOMPARABLE/NO_BASELINE 收敛为 NONE（值域 3 值），理由全量
- * 留 verdict_reasons。收割尽力而为：任何异常兜底标 FAILED 不向上抛（调度看护侧只管互斥旗）。
+ * <p>终态映射：超时强杀且报告未产出 → PARTIAL（无数字、理由留痕——§2.2.4 超时收割按
+ * PARTIAL 语义，审查 I1）；报告缺失/不可解析（非超时）→ FAILED；超时/非零退出/报告
+ * completeness=PARTIAL → PARTIAL（不可为 baseline 候选）；其余 → COMPLETED。报告归档为
+ * per-run 副本（eval-report-&lt;runId&gt;.json）后入库——防后续轮次覆盖同名字报告导致基准行
+ * 读到别跑数据。判定五态落 alert_status 时 INCOMPARABLE/NO_BASELINE 收敛为 NONE（值域 3 值），
+ * 理由全量留 verdict_reasons。收割尽力而为：任何异常兜底标 FAILED 不向上抛（调度看护侧只管互斥旗）。
+ *
+ * <p>eval 子进程（--Eval_MODE=true）不注册本类（类级条件沿 SchedulingConfig 先例）——审查
+ * C1：本类无条件 @Service 强依赖门控缺席的 {@link PromptVersionRegistrar}（+调度器又依赖本类），
+ * 曾致子进程上下文装配必死。守护见 EvalModeBeanGatingTest / EvalModeContextGuardIntegrationTest。
  */
 @Service
+@ConditionalOnExpression("!'true'.equals('${Eval_MODE:}')")
 public class EvalHarvester {
 
     private static final Logger log = LoggerFactory.getLogger(EvalHarvester.class);
@@ -124,8 +131,17 @@ public class EvalHarvester {
     private void doHarvest(long runId, Path reportPath, int exitCode, boolean timedOut) {
         JsonNode report = readReport(reportPath);
         if (report == null) {
+            if (timedOut) { // 审查 I1：超时强杀优先于 FAILED——§2.2.4 超时收割按 PARTIAL 语义（无数字、理由留痕）
+                runRepository.updateHarvested(runId, new EvalRunHarvest(EvalRunRow.STATUS_PARTIAL,
+                        Instant.now(clock), 0, 0, 0, Map.of(), Map.of(), null,
+                        EvalRunRow.ALERT_NONE, false,
+                        List.of("超时强杀且报告未产出: " + reportPath + "（exitCode=" + exitCode + "）"),
+                        null, reportPath.toString()));
+                log.warn("eval 超时强杀收割（无报告）：runId={} 落 PARTIAL", runId);
+                return;
+            }
             runRepository.markFailed(runId, List.of("评测报告缺失或不可解析: " + reportPath
-                    + "（exitCode=" + exitCode + (timedOut ? "，超时强杀" : "") + "）"));
+                    + "（exitCode=" + exitCode + "）"));
             return;
         }
 
@@ -329,7 +345,7 @@ public class EvalHarvester {
         lines.addAll(verdict.reasons());
         lines.add("运行：eval_run#" + runId + "（明细见 eval_run 行与报告归档）");
         lines.add("基准：题库 hash " + shortHash(questionBankHash)
-                + " / 提示词版本快照 " + promptVersions.size() + " 项");
+                + " / 提示词版本 " + versionShortCode(promptVersions));
         boolean ok = notifier.send(title, "red", lines);
         if (!ok) {
             log.warn("eval 回归告警飞书推送失败（runId={}），邮件降级", runId);
@@ -373,6 +389,24 @@ public class EvalHarvester {
         long denominator = (long) pass + fail + error;
         return denominator <= 0 ? "N/A（空跑）"
                 : String.format(Locale.ROOT, "%.2f%%", pass * 100.0 / denominator);
+    }
+
+    /**
+     * 提示词版本快照短码（审查 M1）：sorted {@code key=v} 行 SHA-256 前 8 位——沿
+     * {@link #shortHash} 8 位人读先例；版本全表在 eval_run.prompt_versions，告警只携指纹。
+     */
+    private static String versionShortCode(Map<String, Integer> promptVersions) {
+        String canonical = promptVersions.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> entry.getKey() + "=" + entry.getValue())
+                .collect(java.util.stream.Collectors.joining("\n"));
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(canonical.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(digest).substring(0, 8);
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 不可用", e);
+        }
     }
 
     /** hash 短码（前 8 位）：告警人读摘要用，全量值在库表/报告。 */

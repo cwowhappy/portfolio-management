@@ -286,7 +286,9 @@ class EvalHarvesterTest {
                 .contains("总通过率 100.00%→80.00%（降 20.00pp ≥ 阈值 10pp）",
                         "PASS→FAIL 翻转 4 题（≥ 阈值 3）：q.fail0、q.fail1、q.fail2、q.fail3");
         assertThat(lines.getValue()).anyMatch(l -> l.contains("eval_run#7"));
-        assertThat(lines.getValue()).anyMatch(l -> l.contains(BANK_HASH.substring(0, 8)));
+        // 基准指纹行：题库 hash 短码 + 提示词版本短码（均 8 位十六进制，M1 口径）
+        assertThat(lines.getValue()).anyMatch(l ->
+                l.matches("基准：题库 hash [0-9a-f]{8} / 提示词版本 [0-9a-f]{8}.*"));
         verify(mailSender, never()).send(anyString(), anyString(), anyString());
     }
 
@@ -411,6 +413,23 @@ class EvalHarvesterTest {
         assertThat(reasons.getValue().get(0)).contains("报告缺失");
         verify(runRepository, never()).updateHarvested(anyLong(), any());
         verifyNoInteractions(notifier);
+    }
+
+    @Test
+    @DisplayName("给定超时强杀且报告未产出，when收割，then落 PARTIAL（非 FAILED）且理由注明超时")
+    void givenTimedOutWithoutReport_whenHarvest_thenPartialWithTimeoutReason() throws Exception {
+        Path missing = dir.resolve("nope/eval-report.json");
+
+        harvester.harvest(7L, missing, 137, true);
+
+        // I1：timedOut 优先于「报告缺失→FAILED」——超时强杀的收割按 PARTIAL 语义（§2.2.4）
+        verify(runRepository, never()).markFailed(anyLong(), any());
+        EvalRunHarvest patch = capturedPatch();
+        assertThat(patch.status()).isEqualTo("PARTIAL");
+        assertThat(patch.totalPass()).isZero();
+        assertThat(patch.totalFail()).isZero();
+        assertThat(patch.baselineCandidate()).isFalse();
+        assertThat(patch.verdictReasons()).singleElement().asString().contains("超时");
     }
 
     @Test
