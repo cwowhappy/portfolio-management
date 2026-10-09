@@ -38,11 +38,16 @@ public class EvalAdminApplicationService {
 
     /**
      * 手动触发评测（triggered_by=MANUAL）：立即返回 runId（ProcessBuilder.start() 非阻塞）；
-     * 进行中抛 {@link EvalRunInProgressException}（web 层映射 409）；未启用/缺 key 抛
-     * {@code IllegalStateException}（调度器侧友好文案）。
+     * 进行中抛 {@link EvalRunInProgressException}（web 层映射 409）；未启用/缺 key/派生与启动
+     * 失败（调度器 {@code IllegalStateException}，文案面向运维）包 {@link
+     * EvalTriggerUnavailableException} 透出原文案（web 层映射 503，审查 I2）。
      */
     public long triggerManual() {
-        return scheduler.triggerNow("MANUAL");
+        try {
+            return scheduler.triggerNow("MANUAL");
+        } catch (IllegalStateException e) {
+            throw new EvalTriggerUnavailableException(e.getMessage(), e);
+        }
     }
 
     /** 运行历史倒序（RUNNING 行原样返回——前端轮询据此显示进行中；停机残留清扫归部署文档）。 */

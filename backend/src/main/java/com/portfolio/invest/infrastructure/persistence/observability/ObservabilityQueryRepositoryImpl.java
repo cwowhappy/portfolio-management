@@ -97,7 +97,8 @@ public class ObservabilityQueryRepositoryImpl implements ObservabilityQueryRepos
         Long total = jdbc.queryForObject(
                 "SELECT count(*) FROM tool_invocation_obs" + where, Long.class, params.toArray());
         params.add(size);
-        params.add(page * size);
+        // long 乘法防 int 溢出（审查 M2：溢出为负 OFFSET 即 500；web 层另有 @Max 护栏双保险）
+        params.add((long) page * size);
         List<ToolTraceRow> rows = jdbc.query(
                 TRACE_COLS + where + " ORDER BY called_at DESC, id DESC LIMIT ? OFFSET ?",
                 TRACE_ROW, params.toArray());
@@ -132,12 +133,14 @@ public class ObservabilityQueryRepositoryImpl implements ObservabilityQueryRepos
 
     @Override
     public TurnLatencyStat turnLatency(Instant since) {
-        // 无 GROUP BY 的聚合恒返回一行（空集时 percentile 为 null），不会抛 EmptyResultDataAccessException
+        // 无 GROUP BY 的聚合恒返回一行（空集时 percentile 为 null），不会抛 EmptyResultDataAccessException。
+        // 不加 duration_ms IS NOT NULL：percentile_cont 本就忽略 null，谓词只会把 null 行挡在
+        // 同查询的 count 之外（审查 I1——calls/turns 计数须与 cost 端点同母体，含 null 时长行）。
         return jdbc.queryForObject("""
                 SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY duration_ms) AS p50,
                        percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms) AS p95
                   FROM turn_observation
-                 WHERE created_at >= ? AND duration_ms IS NOT NULL
+                 WHERE created_at >= ?
                 """, TURN_STAT, Timestamp.from(since));
     }
 
@@ -149,7 +152,7 @@ public class ObservabilityQueryRepositoryImpl implements ObservabilityQueryRepos
                        percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms) AS p95,
                        count(*)::bigint AS turns
                   FROM turn_observation
-                 WHERE created_at >= ? AND duration_ms IS NOT NULL
+                 WHERE created_at >= ?
                  GROUP BY 1
                  ORDER BY 1
                 """.formatted(DAY_ZONE), DAY_LATENCY, Timestamp.from(since));
@@ -163,7 +166,7 @@ public class ObservabilityQueryRepositoryImpl implements ObservabilityQueryRepos
                        percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms) AS p95,
                        count(*)::bigint AS calls
                   FROM tool_invocation_obs
-                 WHERE called_at >= ? AND duration_ms IS NOT NULL
+                 WHERE called_at >= ?
                  GROUP BY tool_name
                  ORDER BY tool_name
                 """, TOOL_LATENCY, Timestamp.from(since));

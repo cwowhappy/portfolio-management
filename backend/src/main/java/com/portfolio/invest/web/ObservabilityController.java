@@ -29,7 +29,8 @@ public class ObservabilityController {
 
     /**
      * 工具调用明细（倒序分页）：from/to 为 ISO-8601 时刻（from 含/to 不含），tool 精确
-     * 匹配，failed=true/false 仅失败/仅成功（缺省不限）。
+     * 匹配，failed=true/false 仅失败/仅成功（缺省不限）。page 上限防 OFFSET 乘法溢出
+     * （审查 M2：int 乘积溢出为负 OFFSET 即 500）。
      */
     @GetMapping("/api/admin/observability/trace")
     public TracePageView trace(
@@ -37,7 +38,7 @@ public class ObservabilityController {
             @RequestParam(required = false) Instant to,
             @RequestParam(required = false) String tool,
             @RequestParam(required = false) Boolean failed,
-            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "0") @Min(0) @Max(100_000) int page,
             @RequestParam(defaultValue = "50") @Min(1) @Max(500) int size) {
         return TracePageView.from(service.trace(from, to, tool, failed, page, size), page);
     }

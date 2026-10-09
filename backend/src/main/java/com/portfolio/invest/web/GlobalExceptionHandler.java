@@ -223,6 +223,19 @@ public class GlobalExceptionHandler {
                 .body(new ApiError("EVAL_RUN_IN_PROGRESS", e.getMessage()));
     }
 
+    /**
+     * eval 触发不可用（MS-30 B5 审查 I2）：未启用/缺 DEEPSEEK_API_KEY/evalBootJar 派生或
+     * 子进程启动失败等服务端配置缺失类失败 → 503 EVAL_TRIGGER_UNAVAILABLE，透出调度器
+     * 面向运维的原文案（沿 AgentNotFoundException→503 AGENT_NOT_CONFIGURED 先例）。
+     */
+    @ExceptionHandler(com.portfolio.invest.application.eval.EvalTriggerUnavailableException.class)
+    public ResponseEntity<ApiError> evalTriggerUnavailable(
+            com.portfolio.invest.application.eval.EvalTriggerUnavailableException e) {
+        log.warn("eval 手动触发不可用: {}", e.getMessage());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(new ApiError("EVAL_TRIGGER_UNAVAILABLE", e.getMessage()));
+    }
+
     @ExceptionHandler(com.portfolio.invest.domain.valuation.ValuationException.class)
     public ResponseEntity<ApiError> valuation(com.portfolio.invest.domain.valuation.ValuationException e) {
         HttpStatus status = switch (e.code()) {

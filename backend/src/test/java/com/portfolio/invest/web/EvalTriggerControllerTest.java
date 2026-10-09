@@ -15,6 +15,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.portfolio.invest.application.eval.EvalAdminApplicationService;
 import com.portfolio.invest.application.eval.EvalRunInProgressException;
+import com.portfolio.invest.application.eval.EvalTriggerUnavailableException;
 import com.portfolio.invest.domain.eval.EvalErrorCode;
 import com.portfolio.invest.domain.eval.EvalException;
 import com.portfolio.invest.domain.eval.EvalRunRow;
@@ -107,6 +108,20 @@ class EvalTriggerControllerTest {
         mvc.perform(post("/api/admin/eval/run"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("EVAL_RUN_IN_PROGRESS"));
+    }
+
+    @DisplayName("触发不可用（未启用/缺key）返回503 EVAL_TRIGGER_UNAVAILABLE且透出调度器文案")
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void givenTriggerUnavailable_whenTriggerEval_then503WithSchedulerMessage() throws Exception {
+        when(service.triggerManual()).thenThrow(
+                new EvalTriggerUnavailableException("缺少 DEEPSEEK_API_KEY：评测子进程须真实 LLM，请在服务环境变量配置后重启"));
+
+        mvc.perform(post("/api/admin/eval/run"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("EVAL_TRIGGER_UNAVAILABLE"))
+                .andExpect(jsonPath("$.message").value(
+                        "缺少 DEEPSEEK_API_KEY：评测子进程须真实 LLM，请在服务环境变量配置后重启"));
     }
 
     @DisplayName("管理员查询运行历史返回倒序列表含得分判定与baseline标记")

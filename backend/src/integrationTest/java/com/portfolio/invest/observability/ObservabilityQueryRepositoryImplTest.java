@@ -201,12 +201,13 @@ class ObservabilityQueryRepositoryImplTest extends PostgresTestSupport {
     // ———— latency：percentile_cont 数值断言 ————
 
     @Test
-    @DisplayName("给定五档轮时长100..500，when整体百分位，thenp50=300且p95=480（线性插值）")
-    void givenFiveTurnDurations_whenTurnLatency_thenInterpolatedPercentiles() {
+    @DisplayName("给定五档轮时长100..500含null时延行，when整体百分位，thenp50=300且p95=480（percentile忽略null）")
+    void givenFiveTurnDurationsAndNullRow_whenTurnLatency_thenInterpolatedPercentilesIgnoreNull() {
         Instant now = Instant.now();
         for (int i = 1; i <= 5; i++) {
             insertTurn(10, 5, 15, (long) (i * 100), now.minusSeconds(60L * i));
         }
+        insertTurn(10, 5, 15, null, now.minusSeconds(30)); // null 时延行：percentile 忽略，不进插值
 
         ObservabilityQueryRepository.TurnLatencyStat stat =
                 repository.turnLatency(now.minus(java.time.Duration.ofDays(7)));
@@ -216,8 +217,8 @@ class ObservabilityQueryRepositoryImplTest extends PostgresTestSupport {
     }
 
     @Test
-    @DisplayName("给定跨两日的轮时长，when按日百分位，then各日独立插值与轮数")
-    void givenTurnsByDay_whenTurnLatencyByDay_thenPerDayPercentiles() {
+    @DisplayName("给定跨两日的轮时长含null时延行，when按日百分位，then各日独立插值且轮数含null行")
+    void givenTurnsByDayWithNullDuration_whenTurnLatencyByDay_thenPerDayPercentilesAndCountIncludesNull() {
         Instant now = Instant.now();
         LocalDate today = LocalDate.ofInstant(now, SHANGHAI);
         Instant day1 = now.minus(java.time.Duration.ofDays(1));
@@ -225,6 +226,7 @@ class ObservabilityQueryRepositoryImplTest extends PostgresTestSupport {
         insertTurn(10, 5, 15, 100L, day1);
         insertTurn(10, 5, 15, 200L, day1);
         insertTurn(10, 5, 15, 300L, day1);
+        insertTurn(10, 5, 15, null, day1); // null 时延行：turns 计数含、percentile 不进插值
         insertTurn(10, 5, 15, 400L, day2);
         insertTurn(10, 5, 15, 500L, day2);
 
@@ -236,7 +238,7 @@ class ObservabilityQueryRepositoryImplTest extends PostgresTestSupport {
         assertThat(yesterday.date()).isEqualTo(today.minusDays(1).toString());
         assertThat(yesterday.p50Ms()).isEqualTo(200.0);
         assertThat(yesterday.p95Ms()).isEqualTo(290.0); // 0.95*(3-1)=1.9 → 200+0.9*100
-        assertThat(yesterday.turns()).isEqualTo(3);
+        assertThat(yesterday.turns()).isEqualTo(4); // 计数含 null 时延行（与 cost.calls 同母体）
         ObservabilityQueryRepository.DailyLatencyStat twoDaysAgo = byDay.get(0);
         assertThat(twoDaysAgo.p50Ms()).isEqualTo(450.0);
         assertThat(twoDaysAgo.p95Ms()).isEqualTo(495.0); // 0.95*(2-1)=0.95 → 400+0.95*100
@@ -244,12 +246,13 @@ class ObservabilityQueryRepositoryImplTest extends PostgresTestSupport {
     }
 
     @Test
-    @DisplayName("给定按工具的调用时长，when按工具百分位，then各工具独立插值与计数")
-    void givenToolDurations_whenToolLatencyByTool_thenPerToolPercentiles() {
+    @DisplayName("给定按工具的调用时长含null时延行，when按工具百分位，then各工具独立插值且calls含null行")
+    void givenToolDurationsWithNull_whenToolLatencyByTool_thenPerToolPercentilesAndCallsIncludeNull() {
         Instant now = Instant.now();
         insertToolCall("get_quote", false, 100L, now.minusSeconds(3600));
         insertToolCall("get_quote", false, 200L, now.minusSeconds(1800));
         insertToolCall("get_quote", false, 300L, now.minusSeconds(1700));
+        insertToolCall("get_quote", false, null, now.minusSeconds(1600)); // null 时延行：calls 含、不进插值
         insertToolCall("get_kline", false, 400L, now.minusSeconds(900));
 
         List<ObservabilityQueryRepository.ToolLatencyStat> byTool =
@@ -260,7 +263,7 @@ class ObservabilityQueryRepositoryImplTest extends PostgresTestSupport {
                 .filter(s -> "get_quote".equals(s.tool())).findFirst().orElseThrow();
         assertThat(quote.p50Ms()).isEqualTo(200.0);
         assertThat(quote.p95Ms()).isEqualTo(290.0);
-        assertThat(quote.calls()).isEqualTo(3);
+        assertThat(quote.calls()).isEqualTo(4); // 计数含 null 时延行（与 cost byTool.calls 同母体）
         ObservabilityQueryRepository.ToolLatencyStat kline = byTool.stream()
                 .filter(s -> "get_kline".equals(s.tool())).findFirst().orElseThrow();
         assertThat(kline.p50Ms()).isEqualTo(400.0);

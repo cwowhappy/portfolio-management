@@ -136,6 +136,14 @@ class ObservabilityControllerTest {
                 .andExpect(status().isBadRequest());
     }
 
+    @DisplayName("page越界（防OFFSET乘法溢出）返回400")
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void givenOverflowingPage_whenGetTrace_then400() throws Exception {
+        mvc.perform(get("/api/admin/observability/trace").param("page", "100001"))
+                .andExpect(status().isBadRequest());
+    }
+
     @DisplayName("管理员查询cost返回byDay与byTool形状")
     @Test
     @WithMockUser(roles = "ADMIN")
