@@ -7,6 +7,7 @@ import com.portfolio.invest.support.PostgresTestSupport;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.DisplayName;
@@ -58,13 +59,13 @@ class EvalSchedulerEndToEndTest extends PostgresTestSupport {
     }
 
     @Test
-    @Timeout(1500)
-    @DisplayName("真实端到端：triggerNow 起真子进程跑完题库，eval_run 落终态行且收割链全走通")
+    @Timeout(1800)
+    @DisplayName("真实端到端：triggerNow 起真子进程跑完题库，两轨 eval_run 各落终态行且收割链全走通")
     void givenRealEnvironment_whenTriggerNow_thenFullChainHarvested() throws Exception {
         long runId = scheduler.triggerNow("MANUAL");
         assertThat(runId).isPositive();
 
-        Map<String, Object> row = awaitTerminalRow(runId);
+        Map<String, Object> row = awaitTerminalRow(runId, "AGENT");
 
         // 触发真值 + 终态非 RUNNING（真跑正常收尾应为 COMPLETED——收割链把报告吃进库表）
         assertThat(row.get("triggered_by")).isEqualTo("MANUAL");
@@ -83,26 +84,45 @@ class EvalSchedulerEndToEndTest extends PostgresTestSupport {
         Integer rubricRows = jdbc.queryForObject(
                 "SELECT count(*) FROM prompt_asset_version WHERE asset_type = 'EVAL_RUBRIC'", Integer.class);
         assertThat(rubricRows).isGreaterThanOrEqualTo(1);
+
+        // 抽取轨（MS-30 跟进②）：对话轨收割后顺序接续 --track=extraction 子进程，另落一行
+        // track=EXTRACT（不判回归：alert_status 恒 NONE，by_category 聚 EXTRACT 单类）
+        Map<String, Object> extractionRow = awaitTerminalRow(runId, "EXTRACT");
+        assertThat(extractionRow.get("track")).isEqualTo("EXTRACT");
+        assertThat(extractionRow.get("alert_status")).isEqualTo("NONE");
+        assertThat((String) extractionRow.get("by_category")).contains("EXTRACT");
+        assertThat(Files.isRegularFile(Path.of((String) extractionRow.get("report_path")))).isTrue();
     }
 
-    /** 轮询至终态（10s × 90 ≈ 15 分钟上限；子进程逐题输出经 inheritIO 直达本测试 stdout）。 */
-    private Map<String, Object> awaitTerminalRow(long runId) throws InterruptedException {
-        for (int i = 0; i < 90; i++) {
+    /** 轮询至终态（10s × 120 ≈ 20 分钟上限/轨；子进程逐题输出经 inheritIO 直达本测试 stdout）。 */
+    private Map<String, Object> awaitTerminalRow(long agentRunId, String track) throws InterruptedException {
+        for (int i = 0; i < 120; i++) {
             Thread.sleep(10_000);
-            Map<String, Object> row = jdbc.queryForMap("""
-                    SELECT id, triggered_by, status, total_pass, total_fail, total_error, alert_status,
-                           baseline_candidate, question_bank_hash, prompt_versions::text AS prompt_versions,
+            // 对话轨按主键直取；抽取轨行 id 不可知（看护内插），按同触发晚次 + track 定位；
+            // 行可能尚未插（对话轨收割在先）——queryForList 空结果继续轮询
+            List<Map<String, Object>> rows = jdbc.queryForList("""
+                    SELECT id, triggered_by, track, status, total_pass, total_fail, total_error, alert_status,
+                           baseline_candidate, question_bank_hash, by_category::text AS by_category,
+                           prompt_versions::text AS prompt_versions,
                            report_path, duration_ms
-                      FROM eval_run WHERE id = ?
-                    """, runId);
-            System.out.printf("[e2e] %ds runId=%d status=%s pass=%s fail=%s error=%s%n",
-                    (i + 1) * 10, runId, row.get("status"), row.get("total_pass"),
+                      FROM eval_run
+                     WHERE (? = 'AGENT' AND id = ?)
+                        OR (? = 'EXTRACT' AND track = 'EXTRACT'
+                            AND started_at >= (SELECT started_at FROM eval_run WHERE id = ?))
+                     ORDER BY id LIMIT 1
+                    """, track, agentRunId, track, agentRunId);
+            if (rows.isEmpty()) {
+                continue;
+            }
+            Map<String, Object> row = rows.get(0);
+            System.out.printf("[e2e] %ds track=%s runId=%s status=%s pass=%s fail=%s error=%s%n",
+                    (i + 1) * 10, track, row.get("id"), row.get("status"), row.get("total_pass"),
                     row.get("total_fail"), row.get("total_error"));
             if (!"RUNNING".equals(row.get("status"))) {
                 return row;
             }
         }
-        throw new AssertionError("eval 子进程 15 分钟未到终态（runId=" + runId + "）");
+        throw new AssertionError("eval " + track + " 轨 20 分钟未到终态（agentRunId=" + agentRunId + "）");
     }
 
     /** 共享容器自清（Task 3 教训）：eval_schema 残留 + 回流行 + 本跑 eval_run 行。 */

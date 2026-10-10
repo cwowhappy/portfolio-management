@@ -156,7 +156,7 @@ class EvalHarvesterTest {
     }
 
     private EvalRunRow completedRow(long id, String alertStatus) {
-        return new EvalRunRow(id, "SCHEDULED", "COMPLETED", Instant.now(), Instant.now(),
+        return new EvalRunRow(id, "SCHEDULED", "AGENT", "COMPLETED", Instant.now(), Instant.now(),
                 90, 10, 4, Map.of("MARKET_FACT", new int[]{45, 5, 2}),
                 Map.of("rubric.answer-quality", 1, "system.invest", 3),
                 BANK_HASH, alertStatus, true, false, List.of(), 600_000L, null);
@@ -398,7 +398,7 @@ class EvalHarvesterTest {
         // 基准报告另写一份：18 PASS + 2 FAIL（q.fail0/q.fail1 在基准侧为 FAIL）——明细以文件为准
         Path baselineReport = writeReport("baseline-report.json", 18, 2, 0, "FULL");
         when(runRepository.findBaseline()).thenReturn(Optional.of(
-                new EvalRunRow(3L, "SCHEDULED", "COMPLETED", Instant.now(), Instant.now(),
+                new EvalRunRow(3L, "SCHEDULED", "AGENT", "COMPLETED", Instant.now(), Instant.now(),
                         18, 2, 0, Map.of(), Map.of("rubric.answer-quality", 1), BANK_HASH,
                         "NONE", true, false, List.of(), 600_000L, baselineReport.toString())));
 
@@ -418,6 +418,137 @@ class EvalHarvesterTest {
         assertThat(base.totalPass()).isEqualTo(18);
         assertThat(base.totalFail()).isEqualTo(2);
         assertThat(base.totalError()).isZero();
+    }
+
+    // ———— 抽取轨（MS-30 跟进②：v3 报告 schema eval-extraction-report/3，无 runMeta） ————
+
+    /** 抽取轨报告 fixture（结构与 ExtractionEvalRunner.Report 真实产出对齐）：RUN 终态 + 三 kind 混排。 */
+    private Path writeExtractionReport(String reportStatus) throws Exception {
+        ObjectNode root = JSON.createObjectNode();
+        root.put("schema", "eval-extraction-report/3");
+        root.put("generatedAt", "2026-10-10T02:40:00+08:00[Asia/Shanghai]");
+        root.put("status", reportStatus);
+        ObjectNode subject = root.putObject("subjectModel");
+        subject.put("provider", "deepseek");
+        subject.put("model", "deepseek-v4-flash");
+        subject.put("baseUrl", "https://api.deepseek.com");
+        if ("SKIP".equals(reportStatus)) {
+            root.put("skipReason", "缺少 DEEPSEEK_API_KEY（fixture）");
+            Path report = dir.resolve("eval-extraction.json");
+            Files.writeString(report, JSON.writeValueAsString(root));
+            return report;
+        }
+        if ("ERROR".equals(reportStatus)) {
+            root.put("error", "IllegalStateException: 题库 schema 违约（fixture）");
+            Path report = dir.resolve("eval-extraction.json");
+            Files.writeString(report, JSON.writeValueAsString(root));
+            return report;
+        }
+        ObjectNode summary = root.putObject("summary");
+        summary.put("total", 4);
+        summary.put("newsTotal", 2);
+        summary.put("announcementTotal", 1);
+        summary.put("policyTotal", 1);
+        summary.put("parseSuccess", 3);
+        summary.put("parseFailed", 0);
+        summary.put("llmUnavailable", 0);
+        summary.put("error", 1);
+        summary.put("overallPass", 2);
+        ArrayNode questions = root.putArray("questions");
+        questions.add(extractionQuestion("news-001", "news", "SUCCESS", true, 3_200));
+        questions.add(extractionQuestion("news-002", "news", "SUCCESS", true, 4_100));
+        questions.add(extractionQuestion("ann-001", "announcement", "SUCCESS", false, 1_500));
+        questions.add(extractionQuestion("pol-001", "policy", "ERROR", false, 0));
+        Path report = dir.resolve("eval-extraction.json");
+        Files.writeString(report, JSON.writeValueAsString(root));
+        return report;
+    }
+
+    private static ObjectNode extractionQuestion(String id, String kind, String outcome,
+                                                 boolean pass, long durationMs) {
+        ObjectNode node = JSON.createObjectNode();
+        node.put("id", id);
+        node.put("kind", kind);
+        node.put("outcome", outcome);
+        node.put("pass", pass);
+        node.put("durationMs", durationMs);
+        node.put("inputTokens", 800);
+        return node;
+    }
+
+    @Test
+    @DisplayName("给定抽取轨 RUN 报告（v3 无 runMeta），when收割，then EXTRACT 单类聚合落库且不判回归不发告警")
+    void givenExtractionRunReport_whenHarvest_thenExtractCategoryAggregatedWithoutJudging() throws Exception {
+        Path report = writeExtractionReport("RUN");
+
+        harvester.harvest(7L, report, 0);
+
+        // totals 从其 summary 读：pass=overallPass；error 单列；原始 fail = total-overallPass-error；
+        // byCategory 聚合 EXTRACT 单类（三 kind 不入 judge 的 NEW_CATEGORIES，回归判定只参与总轨的口径反面——不参与）
+        EvalRunHarvest patch = capturedPatch();
+        assertThat(patch.status()).isEqualTo("COMPLETED");
+        assertThat(patch.totalPass()).isEqualTo(2);
+        assertThat(patch.totalFail()).isEqualTo(2); // 合并口径 = 原始 fail 1 + error 1
+        assertThat(patch.totalError()).isEqualTo(1);
+        assertThat(patch.byCategory()).containsOnlyKeys("EXTRACT");
+        assertThat(patch.byCategory().get("EXTRACT")).containsExactly(2, 1, 1);
+        // 抽取无 baseline 链（v1 语义）：不判回归、不任 baseline 候选、理由注明两口径
+        assertThat(patch.alertStatus()).isEqualTo("NONE");
+        assertThat(patch.baselineCandidate()).isFalse();
+        assertThat(patch.verdictReasons()).anyMatch(r -> r.contains("EXTRACT") && r.contains("不参与"));
+        assertThat(patch.verdictReasons()).anyMatch(r -> r.contains("token") && r.contains("不适用"));
+        // 报告无 runMeta：题库 hash 无通道（null 留痕）+ 版本快照仍取登记表最新（intel.* 版本锚）
+        assertThat(patch.questionBankHash()).isNull();
+        assertThat(patch.promptVersions()).containsEntry("system.invest", 3);
+        // durationMs 取逐题 durationMs 汇总（报告无 runMeta.totalDurationMs）
+        assertThat(patch.durationMs()).isEqualTo(8_800L);
+        // 报告归档同通道（per-run 副本防后续轮次覆盖）
+        assertThat(patch.reportPath()).contains("eval-report-7.json");
+        // 不判回归：judge 不调用；无资产回流通道（无 runMeta.evalAssets）
+        verify(judge, never()).judge(any(), any());
+        verifyNoInteractions(registrar);
+        verifyNoInteractions(notifier);
+    }
+
+    @Test
+    @DisplayName("给定抽取轨报告且非零退出/超时，when收割，then状态 PARTIAL（数字仍落）")
+    void givenExtractionReportNonZeroExit_whenHarvest_thenPartialStatus() throws Exception {
+        Path report = writeExtractionReport("RUN");
+
+        harvester.harvest(7L, report, 137, true);
+
+        assertThat(capturedPatch().status()).isEqualTo("PARTIAL");
+        assertThat(capturedPatch().baselineCandidate()).isFalse();
+    }
+
+    @Test
+    @DisplayName("给定抽取轨 SKIP 报告（缺 key），when收割，then落 PARTIAL 无数字理由留痕")
+    void givenExtractionSkipReport_whenHarvest_thenPartialWithSkipReason() throws Exception {
+        Path report = writeExtractionReport("SKIP");
+
+        harvester.harvest(7L, report, 0);
+
+        EvalRunHarvest patch = capturedPatch();
+        assertThat(patch.status()).isEqualTo("PARTIAL");
+        assertThat(patch.totalPass()).isZero();
+        assertThat(patch.totalFail()).isZero();
+        assertThat(patch.verdictReasons()).anyMatch(r -> r.contains("SKIP"));
+        verifyNoInteractions(notifier);
+    }
+
+    @Test
+    @DisplayName("给定抽取轨 ERROR 报告（框架异常），when收割，then行标 FAILED 理由留痕")
+    void givenExtractionErrorReport_whenHarvest_thenRowMarkedFailed() throws Exception {
+        Path report = writeExtractionReport("ERROR");
+
+        harvester.harvest(7L, report, 0);
+
+        verify(runRepository, never()).updateHarvested(anyLong(), any());
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<String>> reasons = ArgumentCaptor.forClass((Class) List.class);
+        verify(runRepository).markFailed(eq(7L), reasons.capture());
+        assertThat(reasons.getValue().get(0)).contains("框架异常");
+        verifyNoInteractions(notifier);
     }
 
     // ———— 兜底 ————

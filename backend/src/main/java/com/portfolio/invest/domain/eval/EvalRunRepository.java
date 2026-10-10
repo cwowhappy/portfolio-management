@@ -14,9 +14,11 @@ public interface EvalRunRepository {
     /**
      * 触发时插入 RUNNING 行（started_at 由库端 DEFAULT now() 生成）。
      *
+     * @param track 轨道（{@link EvalRunRow#TRACK_AGENT}/{@link EvalRunRow#TRACK_EXTRACT}，
+     *              MS-30 跟进②——同一晚两轨各落一行，V6 列）
      * @return 自增主键（runId，收割/看护的关联键）
      */
-    long insertRunning(String triggeredBy, String reportPath);
+    long insertRunning(String triggeredBy, String track, String reportPath);
 
     /** 收割 update 全列（判定先于本调用组装，见 {@link EvalRunHarvest} javadoc）。 */
     void updateHarvested(long id, EvalRunHarvest harvest);
@@ -24,10 +26,12 @@ public interface EvalRunRepository {
     /** 兜底终态：子进程启动失败/收割异常时标 FAILED + 理由留痕（finished_at=now()）。 */
     void markFailed(long id, List<String> reasons);
 
-    /** 当前基准行（baseline=true，部分唯一索引保证至多一行；无基准返回 empty → 首跑语义）。 */
+    /** 当前基准行（baseline=true 且 track=AGENT，部分唯一索引保证至多一行；无基准返回 empty → 首跑语义。
+     *  AGENT 过滤为纵深防御——EXTRACT 行经 eligibleAsBaseline 已无置位资格，防手工 UPDATE 绕过。 */
     Optional<EvalRunRow> findBaseline();
 
-    /** 历史序上一跑（started_at DESC, id DESC 排除指定 id 的最近一行；恢复判定的输入来源）。 */
+    /** 历史序上一跑（started_at DESC, id DESC 排除指定 id 的最近一行，仅 track=AGENT——
+     *  恢复判定的输入来源；抽取轨不参与判定，EXTRACT 行不算「上一跑」）。 */
     Optional<EvalRunRow> findLatestExcluding(long runId);
 
     /**

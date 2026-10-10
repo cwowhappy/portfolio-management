@@ -2,6 +2,7 @@ package com.portfolio.invest.application.eval;
 
 import com.portfolio.invest.config.InvestProperties;
 import com.portfolio.invest.domain.eval.EvalRunRepository;
+import com.portfolio.invest.domain.eval.EvalRunRow;
 import jakarta.annotation.PreDestroy;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -24,29 +25,40 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * 评测调度器（MS-30 B4，设计规格 §2.2 调度五步）：每晚定时 + 手动触发统一入口——
- * 构造 env 白名单子进程、超时看护、退出后收割。五个要点：
+ * 评测调度器（MS-30 B4，设计规格 §2.2 调度五步 + 跟进②两轨顺序）：每晚定时 + 手动触发
+ * 统一入口——构造 env 白名单子进程、超时看护、退出后收割。<b>互斥窗内顺序两轨</b>（MS-30
+ * 跟进②，终审 I-2 拍板「并入」，需求决策 #5 全量口径兑现为 86 题=64 对话+22 抽取，需求
+ * 81 的 ~25 新增实落 30）：对话轨（既有，timeout-minutes
+ * 护栏）→ 抽取轨（同 jar {@code --track=extraction}，extraction-timeout-minutes 独立短
+ * 超时，分钟级）；两轨各自落一行 eval_run（V6 track 列区分，triggeredBy 同值）、各自收割、
+ * 任一轨失败不挡另一轨。六个要点：
  * <ol>
  *   <li><b>互斥锁</b>：单实例 {@code AtomicBoolean}（手动与定时互斥，进行中再触发抛
- *       {@link EvalRunInProgressException}——手动端映射 409）；</li>
+ *       {@link EvalRunInProgressException}——手动端映射 409；互斥窗覆盖两轨全程）；</li>
  *   <li><b>env 白名单</b>：{@link #ENV_ALLOWLIST} 精确键 + {@code EVAL_*} 前缀透传，
  *       {@code ProcessBuilder.environment()} 先 clear 再放行——三个数据面 seeder
  *       （AdminSeedRunner/DevMarketDataSeed/HitlE2eSeed）读的环境变量缺席即静默跳过，
  *       零代码改动被禁；飞书/邮件凭证缺席 → 子进程外呼天然不可能；</li>
- *   <li><b>命令构造</b>（Task 2 裁定）：{@code java -jar <evalJar> --invest.eval.data-root=<dataDir>}
+ *   <li><b>命令构造</b>（Task 2 裁定）：对话轨 {@code java -jar <evalJar> --invest.eval.data-root=<dataDir>}
  *       仅此一参——datasource/hikari/allow-bean-overriding 等覆盖项由 runner 内部构造
- *       （Options.parse 拒未知参数）；库位置经 env 注入 {@code EVAL_DATASOURCE_*} 三元组
- *       （invest.eval.datasource.url 优先、缺省回退主 datasource 解析值——用户名/密码不
- *       依赖白名单外的 POSTGRES_* 回退链）；子进程 cwd=dataDir（报告落
- *       {@code <dataDir>/build/reports/eval-agent/}，runner 相对路径产出位）；</li>
+ *       （Options.parse 拒未知参数）；抽取轨 {@code java -jar <evalJar> --track=extraction}
+ *       一参也不带 data-root（抽取 runner 纯 JVM 拒未知参数，报告落 cwd 相对位）；库位置
+ *       经 env 注入 {@code EVAL_DATASOURCE_*} 三元组（invest.eval.datasource.url 优先、
+ *       缺省回退主 datasource 解析值——用户名/密码不依赖白名单外的 POSTGRES_* 回退链）；
+ *       两轨子进程 cwd=dataDir（报告各落 {@code <dataDir>/build/reports/eval-{agent,extraction}/}）；</li>
  *   <li><b>超时看护</b>：{@code waitFor(timeoutMinutes)} 超时 {@code destroyForcibly} →
- *       收割按 PARTIAL 语义；</li>
- *   <li><b>退出后</b>：调 {@link EvalHarvester#harvest(long, Path, int, boolean)}。</li>
+ *       收割按 PARTIAL 语义（抽取轨独立 {@code extraction-timeout-minutes} 同口径）；</li>
+ *   <li><b>退出后</b>：调 {@link EvalHarvester#harvest(long, Path, int, boolean)}
+ *       （收割器按报告 schema 自行分轨解析）；</li>
+ *   <li><b>两轨编排</b>（跟进②）：对话轨收割完成后才插抽取轨 RUNNING 行并起第二个子进程
+ *       （顺序非并行）；对话轨启动失败沿用整触发失败语义（同 jar 同 java，起不动则两轨皆然），
+ *       抽取轨插行/启动/收割失败只标自己那行不挡对话轨结果。</li>
  * </ol>
  *
- * <p>触发即返回 runId（ProcessBuilder.start() 非阻塞；等待/收割在专属单线程守护 executor
- * 上进行——不引入 @Async/@EnableAsync，调度线程与手动端点都不被整跑时长占住）。RUNNING 行
- * 在触发时先插（triggeredBy 落真值，报告内恒 MANUAL 不采信）。
+ * <p>触发即返回对话轨 runId（ProcessBuilder.start() 非阻塞；等待/收割在专属单线程守护
+ * executor 上进行——不引入 @Async/@EnableAsync，调度线程与手动端点都不被整跑时长占住）。
+ * RUNNING 行在触发时先插（triggeredBy 落真值，报告内恒 MANUAL 不采信）；抽取轨 RUNNING
+ * 行在看护任务内插（对话轨收割后）。
  *
  * <p>eval 子进程（--Eval_MODE=true）不注册本类与 {@link EvalHarvester}（类级条件沿
  * SchedulingConfig 先例）——审查 C1：收割器曾无条件 @Service 强依赖门控缺席的
@@ -74,8 +86,12 @@ public class EvalScheduler {
     /** 评测数据根缺省（与 EvalRunner.Options.DEFAULT_DATA_ROOT 对齐；调度侧恒以绝对路径传递）。 */
     private static final String DEFAULT_DATA_ROOT = "build/eval-agent";
 
-    /** 子进程报告固定产出位（runner 相对 cwd 的 ReportWriter 输出目录）。 */
+    /** 对话轨子进程报告固定产出位（runner 相对 cwd 的 ReportWriter 输出目录）。 */
     private static final Path REPORT_SUBPATH = Path.of("build", "reports", "eval-agent", "eval-report.json");
+
+    /** 抽取轨子进程报告固定产出位（ExtractionEvalRunner 相对 cwd 的 REPORT_DIR，跟进②）。 */
+    private static final Path EXTRACTION_REPORT_SUBPATH =
+            Path.of("build", "reports", "eval-extraction", "eval-report.json");
 
     private final EvalRunRepository runRepository;
     private final EvalHarvester harvester;
@@ -89,6 +105,14 @@ public class EvalScheduler {
 
     /** 当前活子进程（停机 destroyForcibly 用，审查 I4——不留孤儿烧 LLM 预算）；看护收尾置 null。 */
     private volatile Process liveProcess;
+
+    /**
+     * 停机旗（审查 I1 修复）：{@code shutdown()} 只优雅关 executor、<b>从不中断</b>看护线程——
+     * {@code isInterrupted()} 门在真实停机中永不触发。停机杀对话轨后 {@code waitFor} 正常返回
+     * （非中断）、对话轨照常收割，无本旗则停机窗口内仍会接续起新抽取子进程（context 关闭中
+     * 起进程 → 看护 daemon 随 JVM 退出 → 孤儿烧预算 + EXTRACT 行永滞 RUNNING）。
+     */
+    private volatile boolean shuttingDown;
 
     /**
      * 主构造器（@Autowired：存在测试专用重载构造器时需显式指定注入入口）。父环境经
@@ -153,12 +177,13 @@ public class EvalScheduler {
     }
 
     /**
-     * 统一触发入口（定时/手动）：互斥 CAS → 起子进程 → 看护移交 executor 后立即返回 runId。
+     * 统一触发入口（定时/手动）：互斥 CAS → 起对话轨子进程 → 看护移交 executor 后立即返回
+     * 对话轨 runId（抽取轨行/进程由看护任务在对话轨收割后接续，跟进②）。
      * 序：建数据根（I3：目录缺失 start() 抛 IOException）→ 删上一跑残留同名报告（C2：防
-     * 陈旧报告跨跑污染——早退/超时跑收割到旧文件即假告警）→ 派生 jar/命令（I2：先于插行，
-     * 派生抛异常不泄漏 RUNNING 行）→ 插 RUNNING 行 → 起进程（失败行标 FAILED）→ 移交看护。
-     * 未启用/缺 key 抛 {@link IllegalStateException}（手动端友好失败）；进行中抛
-     * {@link EvalRunInProgressException}。
+     * 陈旧报告跨跑污染——早退/超时跑收割到旧文件即假告警；两轨报告位都删）→ 派生 jar/命令
+     * （I2：先于插行，派生抛异常不泄漏 RUNNING 行）→ 插对话轨 RUNNING 行 → 起进程（失败行
+     * 标 FAILED）→ 移交看护。未启用/缺 key 抛 {@link IllegalStateException}（手动端友好
+     * 失败）；进行中抛 {@link EvalRunInProgressException}。
      */
     public long triggerNow(String triggeredBy) {
         if (!props.getEval().isEnabled()) {
@@ -180,9 +205,12 @@ public class EvalScheduler {
             }
             Path reportPath = dataDir.resolve(REPORT_SUBPATH);
             deleteStaleReport(reportPath);
+            Path extractionReportPath = dataDir.resolve(EXTRACTION_REPORT_SUBPATH);
+            deleteStaleReport(extractionReportPath);
             Path evalJar = resolveEvalJar();
             List<String> command = command(evalJar, dataDir);
-            long runId = runRepository.insertRunning(triggeredBy, reportPath.toString());
+            long runId = runRepository.insertRunning(triggeredBy, EvalRunRow.TRACK_AGENT,
+                    reportPath.toString());
             ProcessBuilder builder = newProcessBuilder(command, parentEnv.get());
             builder.directory(dataDir.toFile());
             builder.inheritIO(); // 子进程输出并入服务日志（运维可见逐题进度；不设管道防缓冲死锁）
@@ -195,9 +223,10 @@ public class EvalScheduler {
                 throw new IllegalStateException("评测子进程启动失败（" + evalJar + "）", e);
             }
             liveProcess = process;
-            log.info("eval 子进程已启动：runId={} triggeredBy={} jar={} dataRoot={}",
-                    runId, triggeredBy, evalJar, dataDir);
-            watchExecutor.execute(() -> awaitAndHarvest(runId, process, reportPath));
+            log.info("eval 子进程已启动：runId={} track={} triggeredBy={} jar={} dataRoot={}",
+                    runId, EvalRunRow.TRACK_AGENT, triggeredBy, evalJar, dataDir);
+            watchExecutor.execute(() -> watchAgentThenExtraction(
+                    runId, process, reportPath, extractionReportPath, evalJar, dataDir, triggeredBy));
             handedOff = true;
             return runId;
         } finally {
@@ -223,18 +252,78 @@ public class EvalScheduler {
     }
 
     /**
-     * 超时看护 + 收割（看护线程执行）：{@code waitFor(timeoutMinutes)} 超时
-     * {@code destroyForcibly} 收尸后以 timedOut=true 收割（PARTIAL 语义）；收割自身吞异常
-     * （Harvester 内兜底标 FAILED），互斥旗恒在 finally 释放。
+     * 两轨顺序看护（看护线程执行，跟进②）：对话轨等待+收割 → 插抽取轨 RUNNING 行、起第二
+     * 个子进程、等待+收割；互斥旗覆盖两轨全程，恒在 finally 释放。停机中（停机旗或看护线程
+     * 被中断——I1：真实停机靠旗，中断门是 shutdownNow 类粗暴路径的防御）对话轨按其口径
+     * 收割后<b>跳过抽取轨且不插 EXTRACT 行</b>——停机窗口不再起新子进程烧 LLM 预算。
      */
-    void awaitAndHarvest(long runId, Process process, Path reportPath) {
+    void watchAgentThenExtraction(long agentRunId, Process agentProcess, Path agentReport,
+                                  Path extractionReport, Path evalJar, Path dataDir,
+                                  String triggeredBy) {
+        try {
+            awaitAndHarvestTrack(agentRunId, agentProcess, agentReport,
+                    props.getEval().getTimeoutMinutes(), "对话轨");
+            if (shuttingDown || Thread.currentThread().isInterrupted()) {
+                log.info("eval 停机跳过抽取轨（EXTRACT 行不插）：agentRunId={}（shutdown 期间不起新子进程）",
+                        agentRunId);
+                return;
+            }
+            launchAndAwaitExtraction(extractionReport, evalJar, dataDir, triggeredBy);
+        } finally {
+            liveProcess = null; // 两轨进程均已终（或未起）：停机清理不再针对它们
+            running.set(false); // 互斥窗覆盖两轨全程
+        }
+    }
+
+    /**
+     * 抽取轨接续（跟进②）：插 RUNNING 行（track=EXTRACT）→ 起子进程（{@code --track=extraction}
+     * 单参，cwd/环境构造与对话轨同通道）→ 独立超时等待+收割。插行/启动失败只标自己那行
+     * （或留日志）不挡对话轨已收割结果；收割自身吞异常（Harvester 内兜底标 FAILED）。
+     */
+    private void launchAndAwaitExtraction(Path extractionReport, Path evalJar, Path dataDir,
+                                          String triggeredBy) {
+        long extractionRunId;
+        try {
+            extractionRunId = runRepository.insertRunning(triggeredBy, EvalRunRow.TRACK_EXTRACT,
+                    extractionReport.toString());
+        } catch (Exception e) { // 插行失败无从标行，仅留痕（对话轨结果不受挡）
+            log.error("eval 抽取轨 RUNNING 行插入失败（对话轨收割结果不受影响）", e);
+            return;
+        }
+        Process process;
+        try {
+            ProcessBuilder builder = newProcessBuilder(extractionCommand(evalJar), parentEnv.get());
+            builder.directory(dataDir.toFile());
+            builder.inheritIO();
+            applyDatasourceOverlay(builder.environment());
+            process = starter.start(builder);
+        } catch (IOException e) {
+            log.error("eval 抽取轨子进程启动失败（runId={}）", extractionRunId, e);
+            runRepository.markFailed(extractionRunId,
+                    List.of("抽取轨子进程启动失败: " + e.getMessage()));
+            return;
+        }
+        liveProcess = process;
+        log.info("eval 抽取轨子进程已启动：runId={} triggeredBy={} jar={}",
+                extractionRunId, triggeredBy, evalJar);
+        awaitAndHarvestTrack(extractionRunId, process, extractionReport,
+                props.getEval().getExtractionTimeoutMinutes(), "抽取轨");
+    }
+
+    /**
+     * 单轨超时看护 + 收割（不碰互斥旗——旗归 {@link #watchAgentThenExtraction} 两轨全程）：
+     * {@code waitFor(timeoutMinutes)} 超时 {@code destroyForcibly} 收尸后以 timedOut=true
+     * 收割（PARTIAL 语义）；收割自身吞异常（Harvester 内兜底标 FAILED）。
+     */
+    private void awaitAndHarvestTrack(long runId, Process process, Path reportPath,
+                                      int timeoutMinutes, String trackLabel) {
         boolean timedOut = false;
         int exitCode;
         try {
-            if (!process.waitFor(props.getEval().getTimeoutMinutes(), TimeUnit.MINUTES)) {
+            if (!process.waitFor(timeoutMinutes, TimeUnit.MINUTES)) {
                 timedOut = true;
-                log.error("eval 子进程超时（{} 分钟）runId={}，destroyForcibly 后按 PARTIAL 收割",
-                        props.getEval().getTimeoutMinutes(), runId);
+                log.error("eval {}子进程超时（{} 分钟）runId={}，destroyForcibly 后按 PARTIAL 收割",
+                        trackLabel, timeoutMinutes, runId);
                 process.destroyForcibly();
                 process.waitFor();
             }
@@ -247,11 +336,8 @@ public class EvalScheduler {
         }
         try {
             harvester.harvest(runId, reportPath, exitCode, timedOut);
-        } catch (Exception e) { // harvest 内已兜底标 FAILED；此处防御兜底日志（互斥旗仍须释放）
+        } catch (Exception e) { // harvest 内已兜底标 FAILED；此处防御兜底日志（互斥旗由上层释放）
             log.error("eval 收割调用异常（runId={}）", runId, e);
-        } finally {
-            liveProcess = null; // 进程已终：停机清理不再针对它
-            running.set(false);
         }
     }
 
@@ -306,6 +392,20 @@ public class EvalScheduler {
         command.add("-jar");
         command.add(evalJar.toString());
         command.add("--invest.eval.data-root=" + dataDir.toAbsolutePath());
+        return command;
+    }
+
+    /**
+     * 抽取轨命令构造（跟进②）：java -jar &lt;evalJar&gt; --track=extraction——不带 data-root
+     * （抽取轨纯 JVM 无状态目录，runner 拒未知参数；报告落 cwd 相对位
+     * {@code build/reports/eval-extraction/}，由 EvalRunner.main 分派进 ExtractionEvalRunner）。
+     */
+    private static List<String> extractionCommand(Path evalJar) {
+        List<String> command = new ArrayList<>();
+        command.add(Path.of(System.getProperty("java.home"), "bin", "java").toString());
+        command.add("-jar");
+        command.add(evalJar.toString());
+        command.add("--track=extraction");
         return command;
     }
 
@@ -418,12 +518,15 @@ public class EvalScheduler {
     }
 
     /**
-     * 停机清理：destroyForcibly 运行中的 eval 子进程（审查 I4——只关看护 executor 会留下
-     * 最长 120 分钟的孤儿 JVM 继续烧 LLM 预算），随后放弃排队看护任务（RUNNING 行留痕由
-     * 运维/下轮核对；被强杀进程的收割若来不及执行，行由 Task 7/部署侧清扫治理）。
+     * 停机清理：先置停机旗（审查 I1——优雅 {@code service.shutdown()} 从不中断看护线程，
+     * 看护在对话轨收割后据旗跳过抽取轨、不插 EXTRACT 行），再 destroyForcibly 运行中的
+     * eval 子进程（审查 I4——只关看护 executor 会留下最长 120 分钟的孤儿 JVM 继续烧 LLM
+     * 预算），随后放弃排队看护任务（RUNNING 行留痕由运维/下轮核对；被强杀进程的收割若来
+     * 不及执行，行由 Task 7/部署侧清扫治理）。
      */
     @PreDestroy
     void shutdown() {
+        shuttingDown = true; // 先于一切：旗对进行中看护可见（对话轨收割后的抽取轨接续门）
         Process process = liveProcess;
         if (process != null) {
             log.warn("停机清理：destroyForcibly 运行中的 eval 子进程（防孤儿继续烧 LLM 预算）");
