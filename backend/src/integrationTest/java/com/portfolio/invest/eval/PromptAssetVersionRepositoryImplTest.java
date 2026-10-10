@@ -18,13 +18,14 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
- * 提示词版本登记真库契约（Testcontainers PG16 + V5 prompt_asset_version）：启动对账 27 项
+ * 提示词版本登记真库契约（Testcontainers PG16 + V5 prompt_asset_version）：启动对账 29 项
  * 幂等（重复 registerAll 不增行、恒 v1）；upsert 同 hash 单行、变 hash version+1 且旧行保留
  * （append-only）；(asset_type, asset_key, version) 唯一约束兜底并发双写。
  *
  * <p>probe.* 键为测试专造资产，@BeforeEach/@AfterEach 双向清理（Task 3 教训：共享容器不留
- * 跨类污染）；真实 27 项由上下文启动 runner 与 registerAll 幂等共写，键固定、断言确定性不受
- * 类执行顺序影响。
+ * 跨类污染）；真实 29 项由上下文启动 runner 与 registerAll 幂等共写，键固定、断言确定性不受
+ * 类执行顺序影响。29 = MS-30 27 项 + MS-31 两项（system.invest.profile 画像模板骨架（B4，
+ * 实际注入内容 DB 派生不入版本链）+ digest.memory 摘要任务 prompt（B6））。
  */
 @SpringBootTest
 class PromptAssetVersionRepositoryImplTest extends PostgresTestSupport {
@@ -43,13 +44,13 @@ class PromptAssetVersionRepositoryImplTest extends PostgresTestSupport {
     }
 
     @Test
-    @DisplayName("给定真实 main 四类资产，when重复 registerAll，then恒 27 项且全部 v1（幂等不增行）")
-    void givenRealMainAssets_whenRegisterAllRepeated_thenStays27RowsAtVersion1() {
+    @DisplayName("给定真实 main 四类资产，when重复 registerAll，then恒 29 项且全部 v1（幂等不增行）")
+    void givenRealMainAssets_whenRegisterAllRepeated_thenStays29RowsAtVersion1() {
         registrar.registerAll();
         registrar.registerAll();
 
         List<PromptAssetVersion> snapshot = repository.latestSnapshot();
-        assertThat(snapshot).hasSize(27);
+        assertThat(snapshot).hasSize(29);
         assertThat(snapshot).allMatch(v -> v.version() == 1);
         assertThat(snapshot.stream().map(PromptAssetVersion::assetType).distinct())
                 .containsExactlyInAnyOrder(PromptAssetVersion.TYPE_SYSTEM_PROMPT,
