@@ -44,6 +44,9 @@ export function AuthNav() {
       <Link href="/settings/intelligence" className={linkClass}>
         情报订阅
       </Link>
+      <Link href="/settings/memory" className={linkClass}>
+        记忆与画像
+      </Link>
       <span className="px-1 text-[13px] text-[color:var(--color-ink)]">{user.username}</span>
       <button
         type="button"
