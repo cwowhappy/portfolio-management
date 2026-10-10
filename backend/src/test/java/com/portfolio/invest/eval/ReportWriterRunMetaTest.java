@@ -74,6 +74,29 @@ class ReportWriterRunMetaTest {
         assertThat(md).contains("run-uuid-1").contains("MANUAL").contains("FULL").contains("11111111");
     }
 
+    @DisplayName("token 预算超限：runMeta 携 tokenBudgetExceeded=true（markdown 运行行同步 PARTIAL）")
+    @Test
+    void givenTokenBudgetExceeded_whenWritten_thenFlagPresentAndMarkdownPartial() throws IOException {
+        ReportWriter.RunMeta runMeta = runMetaWithRubricHash("1".repeat(64), "b".repeat(64))
+                .withTokenBudgetExceeded();
+        JsonNode report = writeAndRead(runMeta, null);
+
+        assertThat(report.path("runMeta").path("tokenBudgetExceeded").asBoolean(false)).isTrue();
+        assertThat(report.path("runMeta").path("completeness").asText()).isEqualTo("PARTIAL");
+        String md = Files.readString(new ReportWriter(tmp).write(List.of(), meta, runMeta, null).md(),
+                StandardCharsets.UTF_8);
+        assertThat(md).contains("PARTIAL");
+    }
+
+    @DisplayName("未超限报告：runMeta 无 tokenBudgetExceeded 键（可选字段向后兼容，不改既有字段名）")
+    @Test
+    void givenNoTokenBudgetExceeded_whenWritten_thenFieldAbsent() throws IOException {
+        JsonNode report = writeAndRead(runMeta("1".repeat(64)), null);
+
+        assertThat(report.path("runMeta").has("tokenBudgetExceeded")).isFalse();
+        assertThat(report.path("runMeta").path("completeness").asText()).isEqualTo("FULL");
+    }
+
     // ———— --compare 基准可比性 ————
 
     @DisplayName("上次报告为 v1 旧档（无 runMeta）：标 BASELINE_INCOMPARABLE，既有 questionChanges 不回退")
@@ -142,7 +165,7 @@ class ReportWriterRunMetaTest {
                 List.of(
                         new ReportWriter.AssetHash("EVAL_RUBRIC", "rubric.answer-quality", rubricHash),
                         new ReportWriter.AssetHash("QUESTION_BANK", "question_bank.single-turn", "c".repeat(64))),
-                questionBankHash, 300_000, "FULL");
+                questionBankHash, 300_000, "FULL", null);
     }
 
     private JsonNode writeAndRead(ReportWriter.RunMeta runMeta, Path compareWith) throws IOException {

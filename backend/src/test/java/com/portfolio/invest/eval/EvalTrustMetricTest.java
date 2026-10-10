@@ -143,7 +143,7 @@ class EvalTrustMetricTest {
     private ReportWriter.Written write(List<QuestionOutcome> outcomes) throws IOException {
         ReportWriter.RunMeta runMeta = new ReportWriter.RunMeta(
                 "run-uuid", "2026-10-10T10:00:00+08:00", "2026-10-10T10:05:00+08:00", "MANUAL",
-                List.of(), List.of(), "a".repeat(64), 300_000, "FULL");
+                List.of(), List.of(), "a".repeat(64), 300_000, "FULL", null);
         ReportWriter.Meta meta =
                 new ReportWriter.Meta("stub", "deepseek-test", "https://base.example", "judge-test", null, 120_000);
         return new ReportWriter(tmp).write(outcomes, meta, runMeta, null);

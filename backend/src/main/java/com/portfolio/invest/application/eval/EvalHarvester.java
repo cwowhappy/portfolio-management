@@ -50,7 +50,9 @@ import org.springframework.stereotype.Service;
  *
  * <p>终态映射：超时强杀且报告未产出 → PARTIAL（无数字、理由留痕——§2.2.4 超时收割按
  * PARTIAL 语义，审查 I1）；报告缺失/不可解析（非超时）→ FAILED；超时/非零退出/报告
- * completeness=PARTIAL → PARTIAL（不可为 baseline 候选）；其余 → COMPLETED。报告归档为
+ * completeness=PARTIAL → PARTIAL（不可为 baseline 候选；token 预算超限中止由 runner 写
+ * completeness=PARTIAL + tokenBudgetExceeded，收割侧追加理由行进 verdict_reasons）；
+ * 其余 → COMPLETED。报告归档为
  * per-run 副本（eval-report-&lt;runId&gt;.json）后入库——防后续轮次覆盖同名字报告导致基准行
  * 读到别跑数据。判定五态落 alert_status 时 INCOMPARABLE/NO_BASELINE 收敛为 NONE（值域 3 值），
  * 理由全量留 verdict_reasons。收割尽力而为：任何异常兜底标 FAILED 不向上抛（调度看护侧只管互斥旗）。
@@ -189,11 +191,18 @@ public class EvalHarvester {
         boolean baselineCandidate = verdict.status() == JudgeVerdict.Status.RECOVERED
                 && EvalRunRow.STATUS_COMPLETED.equals(status);
 
+        // token 预算超限中止（终审 I-1 接线）：PARTIAL 语义经 completeness 通道已覆盖（不任
+        // baseline），此处只补「为什么 PARTIAL」的人读理由行追加进 verdict_reasons，不新增列
+        List<String> reasons = new ArrayList<>(verdict.reasons());
+        if (runMeta.path("tokenBudgetExceeded").asBoolean(false)) {
+            reasons.add("token 预算超限中止: 剩余题未跑即中止（invest.eval.token-budget，不任 baseline 候选）");
+        }
+
         // —— ⑦ 落库（judge 结论后写；total_fail 落合并口径 = 原始 fail + error） + 报告归档 ——
         Path archived = archiveReport(runId, reportPath);
         runRepository.updateHarvested(runId, new EvalRunHarvest(status, Instant.now(clock),
                 pass, fail + error, error, byCategory, promptVersions, questionBankHash,
-                alertStatus, baselineCandidate, verdict.reasons(),
+                alertStatus, baselineCandidate, reasons,
                 runMeta.path("totalDurationMs").isNumber() ? runMeta.path("totalDurationMs").asLong() : null,
                 archived.toString()));
 

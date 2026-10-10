@@ -500,8 +500,8 @@ public class InvestProperties {
     /**
      * 评测与可观测性（MS-30，设计规格 §3.3 样例逐字段落）：调度开关/评测库指向/数据目录/
      * 整跑护栏/回归三阈值/观测三项/计算容差。子进程命令行只收 data-root 一参 + env 白名单
-     * （runner 内部构造其余覆盖项），本组的 datasource/token-budget/calc-tolerance 由生产侧
-     * 调度器与后续任务（观测/题域）按需消费；cron 为声明位——@Scheduled 字面量为准。
+     * （runner 内部构造其余覆盖项），本组的 datasource 经 env 白名单、token-budget 与
+     * calc-tolerance 经子进程上下文环境由 runner 消费；cron 为声明位——@Scheduled 字面量为准。
      */
     public static class Eval {
         /** 定时总开关（缺 DEEPSEEK_API_KEY 时调度器静默跳过并留痕，沿 IntelligenceChatPort 空 key 先例）。 */
@@ -515,8 +515,12 @@ public class InvestProperties {
         private String jarPath = "";
         /** 整跑护栏：超时 destroyForcibly → 收割按 PARTIAL 语义。 */
         private int timeoutMinutes = 120;
-        /** 当次 eval token 护栏（超限中止标 PARTIAL；执行端接线归题域批次）。 */
-        private long tokenBudget = 5_000_000L;
+        /**
+         * 当次 eval token 护栏（终审 I-1 已接线）：EvalRunner 每题累计题级 tokenUsage.totalTokens，
+         * 超限即中止剩余题（SKIPPED）并 runMeta 标 PARTIAL+tokenBudgetExceeded（收割不任 baseline）；
+         * 默认 7,500,000 = 64 题全量实测 total 2,447,427（2026-10-10）的 ~3 倍，留题库扩展余量。
+         */
+        private long tokenBudget = 7_500_000L;
         private Regression regression = new Regression();
         private Observability observability = new Observability();
         /** 计算类断言相对容差（百分点，需求决策 #15；题域批次消费）。 */

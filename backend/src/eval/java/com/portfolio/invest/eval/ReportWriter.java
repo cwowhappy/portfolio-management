@@ -41,13 +41,23 @@ public final class ReportWriter {
     /**
      * 运行指纹（runMeta，设计规格 §2.4）：runId/起止时间/触发方式/资产清单/题库聚合 hash/
      * 总时长/完整度。completeness=FULL 表示 runner 走完整个题库循环并落报告（单题 ERROR 仍属
-     * 完整运行）；PARTIAL 语义（超时 destroyForcibly/非零退出）由收割侧落库，不经本字段。
-     * triggeredBy 子进程不可知触发来源，缺省 MANUAL——eval_run.triggered_by 落库口径以
-     * 调度/收割侧为准（Task 6）。
+     * 完整运行）；超时 destroyForcibly/非零退出的 PARTIAL 由收割侧落库，不经本字段；token
+     * 预算超限中止（终审 I-1 接线）例外——runner 侧即标 PARTIAL 并携
+     * {@code tokenBudgetExceeded=true}（可选字段，仅超限时写出，既有字段名不变——收割侧
+     * 据此注 verdict_reasons 理由行）。triggeredBy 子进程不可知触发来源，缺省 MANUAL——
+     * eval_run.triggered_by 落库口径以调度/收割侧为准（Task 6）。
      */
     public record RunMeta(String runId, String startedAt, String finishedAt, String triggeredBy,
                           List<AssetHash> assetHashes, List<AssetHash> evalAssets,
-                          String questionBankHash, long totalDurationMs, String completeness) {}
+                          String questionBankHash, long totalDurationMs, String completeness,
+                          Boolean tokenBudgetExceeded) {
+
+        /** 便捷派生：标 token 预算超限（completeness 翻 PARTIAL + 置标记，与 runner 超限路径同口径）。 */
+        public RunMeta withTokenBudgetExceeded() {
+            return new RunMeta(runId, startedAt, finishedAt, triggeredBy, assetHashes, evalAssets,
+                    questionBankHash, totalDurationMs, "PARTIAL", Boolean.TRUE);
+        }
+    }
 
     public record Written(Path json, Path md) {}
 
@@ -107,6 +117,10 @@ public final class ReportWriter {
         node.put("questionBankHash", runMeta.questionBankHash());
         node.put("totalDurationMs", runMeta.totalDurationMs());
         node.put("completeness", runMeta.completeness());
+        // token 预算超限标记（终审 I-1 接线，可选字段：仅超限时写 true，未超限报告无该键——向后兼容）
+        if (Boolean.TRUE.equals(runMeta.tokenBudgetExceeded())) {
+            node.put("tokenBudgetExceeded", true);
+        }
         return node;
     }
 
