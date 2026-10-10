@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import MarkdownView from "@/components/shared/MarkdownView";
 import { createWikiEntry } from "@/lib/wikiApi";
 import { useSaveAction } from "@/lib/useSaveAction";
+import { useDialogA11y } from "@/lib/useDialogA11y";
 
 /** 行业下钻页「保存研究结论」入口：预填行业上下文，存为 RESEARCH_NOTE，成功深链 /wiki。 */
 export default function ResearchNoteDialog({ industryCode, industryName }: {
@@ -17,6 +18,17 @@ export default function ResearchNoteDialog({ industryCode, industryName }: {
   const [preview, setPreview] = useState(false);
   const [saved, setSaved] = useState(false);
   const { saving, error, setError, run, reset } = useSaveAction();
+  // P3-⑤：Escape 关闭（saving 在途不关，与取消按钮同口径）+ 初始焦点 + 焦点返还 + Tab 圈定。
+  // 本组件常驻、浮层条件渲染（{open && …}）——传 open 作为 active，让钩子在浮层出现/消失时机
+  // 做焦点捕获与返还
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const onOverlayKeyDown = useDialogA11y(
+    overlayRef,
+    () => {
+      if (!saving) setOpen(false);
+    },
+    open,
+  );
 
   const openDialog = () => {
     setTitle(`${industryName || industryCode} 研究结论`);
@@ -45,6 +57,12 @@ export default function ResearchNoteDialog({ industryCode, industryName }: {
       </button>
       {open && (
         <div data-testid="research-note-dialog"
+          ref={overlayRef}
+          tabIndex={-1}
+          role="dialog"
+          aria-modal="true"
+          aria-label="保存研究结论到知识库"
+          onKeyDown={onOverlayKeyDown}
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
           onClick={(e) => { if (e.target === e.currentTarget && !saving) setOpen(false); }}>
           <div className="w-full max-w-2xl rounded-2xl border border-[color:var(--color-line)] bg-[color:var(--color-bg)] p-5 space-y-3">

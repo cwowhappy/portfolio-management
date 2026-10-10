@@ -35,7 +35,14 @@ export function newThreadId(): string {
 }
 
 async function request<T>(path: string, schema: z.ZodType<T>, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, { cache: "no-store", ...init });
+  let res: Response;
+  try {
+    res = await fetch(path, { cache: "no-store", ...init });
+  } catch (e) {
+    // P3-⑦：传输层失败（断网 / keepalive PUT 体积超限被浏览器拒绝等）此前裸抛 TypeError，
+    // errorStatus 无法分类、调用方只能吞。与 HTTP 错误同口径包成带 status 的错误（0 表传输层）
+    throw Object.assign(new Error(e instanceof Error ? e.message : "网络请求失败"), { status: 0 });
+  }
   if (!res.ok) {
     let message = "请求失败";
     try {

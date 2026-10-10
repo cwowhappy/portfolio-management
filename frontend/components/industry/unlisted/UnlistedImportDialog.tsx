@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   companiesTemplateHref,
   fundingEventsTemplateHref,
@@ -9,6 +9,7 @@ import {
 } from "@/lib/industryCurationApi";
 import type { CurationImportResult } from "@/lib/types";
 import { useSaveAction } from "@/lib/useSaveAction";
+import { useDialogA11y } from "@/lib/useDialogA11y";
 
 /**
  * 策展双目标 CSV 导入对话框（决策 #3/#5b）：顶部切换「策展企业 / 融资事件」两模板两端点。
@@ -23,6 +24,11 @@ export default function UnlistedImportDialog({ onClose, onImported }: {
   const [file, setFile] = useState<File | null>(null);
   const [result, setResult] = useState<CurationImportResult | null>(null);
   const { saving, error, setError, run, reset } = useSaveAction("导入失败");
+  // P3-⑤：Escape 关闭（saving 在途不关，与取消按钮同口径）+ 初始焦点 + 焦点返还 + Tab 圈定
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const onOverlayKeyDown = useDialogA11y(overlayRef, () => {
+    if (!saving) onClose();
+  });
 
   const isCompanies = target === "companies";
   const templateHref = isCompanies ? companiesTemplateHref() : fundingEventsTemplateHref();
@@ -46,6 +52,12 @@ export default function UnlistedImportDialog({ onClose, onImported }: {
 
   return (
     <div data-testid="curation-import-dialog"
+      ref={overlayRef}
+      tabIndex={-1}
+      role="dialog"
+      aria-modal="true"
+      aria-label="批量导入"
+      onKeyDown={onOverlayKeyDown}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
       onClick={(e) => { if (e.target === e.currentTarget && !saving) onClose(); }}>
       <div className="w-full max-w-xl space-y-3 rounded-2xl border border-[color:var(--color-line)] bg-[color:var(--color-bg)] p-5">

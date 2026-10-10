@@ -36,6 +36,8 @@ function upCls(v: number): string {
   return v > 0 ? "up" : v < 0 ? "down" : "flat";
 }
 
+const PERIOD_LABEL = { day: "日K", week: "周K", month: "月K" } as const;
+
 export default function MarketBoard() {
   const [overview, setOverview] = useState<MarketOverview | null>(null);
   const [query, setQuery] = useState("");
@@ -140,17 +142,26 @@ export default function MarketBoard() {
 
   const switchPeriod = useCallback(
     async (p: "day" | "week" | "month") => {
+      const prev = period; // 失败回滚基线（P3-③）
       setPeriod(p);
       if (!selected) return;
       const seq = ++requestSeqRef.current;
       try {
         const bars = await fetchKline(selected.code, p, 120);
-        if (seq === requestSeqRef.current) setKline(bars);
+        if (seq === requestSeqRef.current) {
+          setKline(bars);
+          setError(null); // 上次失败的提示随本次成功清除
+        }
       } catch {
-        // 保持旧图
+        // 过期响应（已被更新的切换/选股取代）不处理：seq 守卫与成功路径同口径
+        if (seq !== requestSeqRef.current) return;
+        // P3-③：失败不再静默——周期标签回滚到旧值（与保留的旧图一致，消除「标签已翻数据未换」
+        // 的错位态），并给出可见错误提示
+        setPeriod(prev);
+        setError(`K线获取失败，已还原为${PERIOD_LABEL[prev]}`);
       }
     },
-    [selected],
+    [selected, period],
   );
 
   return (
@@ -294,7 +305,7 @@ export default function MarketBoard() {
                         : "text-[color:var(--color-ink-faint)] hover:text-[color:var(--color-ink-dim)]")
                     }
                   >
-                    {{ day: "日K", week: "周K", month: "月K" }[p]}
+                    {PERIOD_LABEL[p]}
                   </button>
                 ))}
               </div>

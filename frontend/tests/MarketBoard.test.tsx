@@ -241,7 +241,7 @@ describe("MarketBoard", () => {
     await waitFor(() => expect(m.fetchKline).toHaveBeenCalledWith("600519", "week", 120));
   });
 
-  it("切换周期失败时保留旧图不报错", async () => {
+  it("切换周期失败：周期标签回滚（与保留的旧图一致）并显示可见错误", async () => {
     render(<MarketBoard />);
     await waitFor(() => expect(screen.getByText("上证指数")).toBeTruthy());
     await selectStock();
@@ -249,7 +249,11 @@ describe("MarketBoard", () => {
     m.fetchKline.mockRejectedValue(new Error("boom"));
     fireEvent.click(screen.getByRole("button", { name: "月K" }));
     await waitFor(() => expect(m.fetchKline).toHaveBeenCalledWith("600519", "month", 120));
+    // 旧图保留 + 标签回滚日K + 可见错误（P3-③，不再静默）
     expect(screen.getByText("走势 · 前复权")).toBeTruthy();
+    await waitFor(() => expect(screen.getByText(/K线获取失败/)).toBeTruthy());
+    expect(screen.getByRole("button", { name: "日K" }).className).toContain("panel-2");
+    expect(screen.getByRole("button", { name: "月K" }).className).not.toContain("panel-2");
   });
 
   it("PE 优先用行情值，缺失时回退财务值；PB 同理", async () => {

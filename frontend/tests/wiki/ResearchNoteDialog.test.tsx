@@ -96,4 +96,52 @@ describe("ResearchNoteDialog", () => {
     fireEvent.click(screen.getByTestId("research-note-save"));
     await waitFor(() => expect(createSpy).toHaveBeenCalledTimes(2));
   });
+
+  // P3-⑤：模态可达性——初始焦点入浮层、Escape 关闭 + 焦点返还触发按钮、Tab 首尾圈定
+  describe("可达性（P3-⑤）", () => {
+    it("打开即聚焦标题输入；Tab/Shift+Tab 首尾循环；Escape 关闭并返还焦点", () => {
+      render(<ResearchNoteDialog industryCode="801120" industryName="白酒" />);
+      const trigger = screen.getByTestId("research-note-open");
+      trigger.focus(); // 浏览器点击即聚焦，jsdom 需显式补齐
+      fireEvent.click(trigger);
+      const dialog = screen.getByTestId("research-note-dialog");
+      expect(dialog.getAttribute("role")).toBe("dialog");
+      expect(dialog.getAttribute("aria-modal")).toBe("true");
+
+      // 初始焦点入浮层：首个可聚焦元素（标题输入）
+      expect(document.activeElement).toBe(screen.getByTestId("research-note-title"));
+
+      // Tab 圈定：末位（取消）Tab 回首位；首位 Shift+Tab 到末位
+      const cancel = screen.getByRole("button", { name: "取消" });
+      cancel.focus();
+      fireEvent.keyDown(dialog, { key: "Tab" });
+      expect(document.activeElement).toBe(screen.getByTestId("research-note-title"));
+      fireEvent.keyDown(dialog, { key: "Tab", shiftKey: true });
+      expect(document.activeElement).toBe(cancel);
+
+      // Escape 关闭 + 焦点返还触发按钮
+      fireEvent.keyDown(dialog, { key: "Escape" });
+      expect(screen.queryByTestId("research-note-dialog")).toBeNull();
+      expect(document.activeElement).toBe(trigger);
+    });
+
+    it("保存中（saving）Escape 不关闭（防误触丢失输入，与取消按钮禁用同口径）", async () => {
+      let resolveSave!: (v: wikiReturn) => void;
+      const pending = new Promise<wikiReturn>((res) => {
+        resolveSave = res;
+      });
+      vi.spyOn(wikiApi, "createWikiEntry").mockReturnValue(pending);
+      render(<ResearchNoteDialog industryCode="801120" industryName="白酒" />);
+      fireEvent.click(screen.getByTestId("research-note-open"));
+      fireEvent.change(screen.getByTestId("research-note-content"), { target: { value: "结论" } });
+      fireEvent.click(screen.getByTestId("research-note-save"));
+      await waitFor(() =>
+        expect((screen.getByTestId("research-note-save") as HTMLButtonElement).disabled).toBe(true),
+      );
+      const dialog = screen.getByTestId("research-note-dialog");
+      fireEvent.keyDown(dialog, { key: "Escape" });
+      expect(screen.getByTestId("research-note-dialog")).toBeTruthy();
+      resolveSave(saved);
+    });
+  });
 });

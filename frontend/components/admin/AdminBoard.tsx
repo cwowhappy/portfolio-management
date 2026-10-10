@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { adminApi, type AdminUserView } from "@/lib/adminApi";
 import { checkPassword } from "@/lib/password";
+import { useDialogA11y } from "@/lib/useDialogA11y";
 import McpTokenSection from "@/components/admin/McpTokenSection";
 import ObservabilitySection from "@/components/admin/observability/ObservabilitySection";
 
@@ -41,6 +42,11 @@ function ResetPasswordDialog({
   const [pwd, setPwd] = useState("");
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // P3-⑤：Escape 关闭（busy 在途不关，与取消按钮同口径）+ 初始焦点 + 焦点返还 + Tab 圈定
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const onOverlayKeyDown = useDialogA11y(overlayRef, () => {
+    if (!busy) onCancel();
+  });
 
   async function submit() {
     const check = checkPassword(pwd);
@@ -57,6 +63,9 @@ function ResetPasswordDialog({
 
   return (
     <div
+      ref={overlayRef}
+      tabIndex={-1}
+      onKeyDown={onOverlayKeyDown}
       className="fixed inset-0 z-50 grid place-items-center bg-black/40 px-4"
       role="dialog"
       aria-modal="true"
@@ -130,6 +139,11 @@ function BindEmailDialog({
 }) {
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // P3-⑤：与重置密码弹窗同一可达性口径
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const onOverlayKeyDown = useDialogA11y(overlayRef, () => {
+    if (!busy) onCancel();
+  });
 
   async function submit() {
     const value = email.trim();
@@ -142,6 +156,9 @@ function BindEmailDialog({
 
   return (
     <div
+      ref={overlayRef}
+      tabIndex={-1}
+      onKeyDown={onOverlayKeyDown}
       className="fixed inset-0 z-50 grid place-items-center bg-black/40 px-4"
       role="dialog"
       aria-modal="true"

@@ -216,6 +216,56 @@ describe("AdminBoard", () => {
       expect(alert.textContent).toContain("重置失败");
       await vi.waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     });
+
+    // P3-⑤：模态可达性——初始焦点入浮层、Escape 关闭 + 焦点返还触发按钮、Tab 首尾圈定
+    it("打开即聚焦首个输入；Tab/Shift+Tab 首尾循环；Escape 关闭并返还焦点", async () => {
+      render(<AdminBoard />);
+      const table = await screen.findByRole("table");
+      const aliceRow = within(table).getByText("alice").closest("tr")!;
+      const trigger = within(aliceRow).getByRole("button", { name: "重置密码" });
+      trigger.focus(); // 浏览器点击即聚焦，jsdom 需显式补齐
+      fireEvent.click(trigger);
+      const dialog = screen.getByRole("dialog", { name: "为 alice 重置密码" });
+
+      // 初始焦点入浮层：首个可聚焦元素（新密码输入，与 autoFocus 一致不冲突）
+      await vi.waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText("新密码")));
+
+      // Tab 圈定：末位（确认重置）Tab 回首位；首位 Shift+Tab 到末位
+      const last = screen.getByRole("button", { name: "确认重置" });
+      last.focus();
+      fireEvent.keyDown(dialog, { key: "Tab" });
+      expect(document.activeElement).toBe(screen.getByLabelText("新密码"));
+      fireEvent.keyDown(dialog, { key: "Tab", shiftKey: true });
+      expect(document.activeElement).toBe(last);
+
+      // Escape 关闭 + 焦点返还触发按钮
+      fireEvent.keyDown(dialog, { key: "Escape" });
+      await vi.waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      expect(document.activeElement).toBe(trigger);
+      expect(api.resetPassword).not.toHaveBeenCalled();
+    });
+
+    it("提交在途（busy）时 Escape 不关闭（防误触丢失输入）", async () => {
+      let resolveReset!: (v: AdminUserView) => void;
+      api.resetPassword.mockReturnValue(
+        new Promise((res) => {
+          resolveReset = res;
+        }),
+      );
+      await openDialog();
+      fireEvent.change(screen.getByLabelText("新密码"), { target: { value: "Passw0rd123" } });
+      fireEvent.change(screen.getByLabelText("确认新密码"), { target: { value: "Passw0rd123" } });
+      fireEvent.click(screen.getByRole("button", { name: "确认重置" }));
+      // 在途（取消按钮 disabled 即 busy 已生效）：Escape 不关闭
+      await vi.waitFor(() =>
+        expect((screen.getByRole("button", { name: "取消" }) as HTMLButtonElement).disabled).toBe(
+          true,
+        ),
+      );
+      fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+      expect(screen.getByRole("dialog")).toBeTruthy();
+      resolveReset(approvedUser);
+    });
   });
 
   describe("绑定邮箱弹窗", () => {
@@ -273,6 +323,22 @@ describe("AdminBoard", () => {
       const alert = await screen.findByRole("alert");
       expect(alert.textContent).toContain("邮箱已被占用");
       await vi.waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    });
+
+    // P3-⑤：与重置密码弹窗同一可达性口径（Escape + 焦点往返）
+    it("打开即聚焦邮箱输入；Escape 关闭并返还焦点给触发按钮", async () => {
+      render(<AdminBoard />);
+      const table = await screen.findByRole("table");
+      const aliceRow = within(table).getByText("alice").closest("tr")!;
+      const trigger = within(aliceRow).getByRole("button", { name: "绑定邮箱" });
+      trigger.focus();
+      fireEvent.click(trigger);
+      const dialog = screen.getByRole("dialog", { name: "为 alice 绑定邮箱" });
+      await vi.waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText("邮箱")));
+      fireEvent.keyDown(dialog, { key: "Escape" });
+      await vi.waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      expect(document.activeElement).toBe(trigger);
+      expect(api.setEmail).not.toHaveBeenCalled();
     });
   });
 });

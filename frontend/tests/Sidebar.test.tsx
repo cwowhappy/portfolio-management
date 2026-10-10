@@ -91,19 +91,45 @@ describe("Sidebar", () => {
     );
   });
 
-  it("点击删除按钮移除会话", async () => {
+  it("点击删除按钮移除会话（confirm 确认后）", async () => {
     installConversationsApi({
       list: [
         session("t1", "会话一", now - 1_000),
         session("t2", "会话二", now - 2_000),
       ],
     });
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     renderSidebar(null);
     await waitFor(() => expect(screen.getByText("会话一")).toBeTruthy());
     const del = screen.getAllByRole("button", { name: "删除会话" })[0];
     fireEvent.click(del);
     await waitFor(() => expect(screen.queryByText("会话一")).toBeNull());
     expect(screen.getByText("会话二")).toBeTruthy();
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+  });
+
+  // P3-⑤：删除会话属破坏性操作，先 confirm（对齐 GroupManager 先例），取消则不删
+  it("删除会话先弹 confirm；取消则不发起删除", async () => {
+    installConversationsApi({
+      list: [session("t1", "会话一", now - 1_000)],
+    });
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    renderSidebar(null);
+    await waitFor(() => expect(screen.getByText("会话一")).toBeTruthy());
+    fireEvent.click(screen.getAllByRole("button", { name: "删除会话" })[0]);
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("会话一")).toBeTruthy(); // 未删除
+  });
+
+  it("confirm 文案带会话标题与不可恢复警示（照 GroupManager 风格）", async () => {
+    installConversationsApi({
+      list: [session("t1", "贵州茅台估值分析", now - 1_000)],
+    });
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    renderSidebar(null);
+    await waitFor(() => expect(screen.getByText("贵州茅台估值分析")).toBeTruthy());
+    fireEvent.click(screen.getAllByRole("button", { name: "删除会话" })[0]);
+    expect(confirmSpy).toHaveBeenCalledWith("确认删除会话「贵州茅台估值分析」？删除后不可恢复。");
   });
 
   it("health=null 显示连接中", async () => {

@@ -55,6 +55,9 @@ interface ChatRuntimeContextValue {
     msgs: ChatMessage[],
     opts?: { keepalive?: boolean; ifMatch?: string },
   ) => Promise<void>;
+  // P3-⑦：保存失败的可见错误文案（可手动关闭 / 下次保存成功自动清除）；null 为无错误
+  persistError: string | null;
+  dismissPersistError: () => void;
   setRunning: (running: boolean) => void;
 }
 
@@ -172,6 +175,8 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   const [currentThreadId, setCurrentThreadId] = useState<string>("");
   const [running, setRunning] = useState(false);
   const [ready, setReady] = useState(false);
+  // P3-⑦：保存失败可见错误（会话区渲染错误条，可消失）
+  const [persistError, setPersistError] = useState<string | null>(null);
   // 已成功保存过的会话：首次保存后 refresh 一次同步后端派生标题，后续保存只做本地乐观更新
   const persistedThreads = useRef<Set<string>>(new Set());
 
@@ -270,15 +275,29 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
           persistedThreads.current.add(threadId);
           await refresh();
         }
+        setPersistError(null); // 下次成功保存自动清除错误条（P3-⑦）
       } catch (e) {
         console.error("[RuntimeProvider] 保存会话失败", threadId, e);
         // 409（乐观锁并发冲突）向上抛给 flushPersist 做 GET+union 重试；
-        // 其余错误维持「只记日志，不打断聊天」
+        // 其余失败不再静默（只记日志）：置可见错误条（P3-⑦），不打断聊天
         if (errorStatus(e) === 409) throw e;
+        const detail =
+          errorStatus(e) === 413
+            ? "内容过长"
+            : e instanceof Error && e.message
+              ? e.message
+              : "网络异常";
+        setPersistError(
+          errorStatus(e) === 413
+            ? `会话保存失败（${detail}），请精简后重试`
+            : `会话保存失败（${detail}），请稍后重试`,
+        );
       }
     },
     [refresh],
   );
+
+  const dismissPersistError = useCallback(() => setPersistError(null), []);
 
   const value = useMemo(
     () => ({
@@ -289,9 +308,21 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       switchThread,
       deleteThread,
       persistMessages,
+      persistError,
+      dismissPersistError,
       setRunning,
     }),
-    [sessions, currentThreadId, running, newThread, switchThread, deleteThread, persistMessages],
+    [
+      sessions,
+      currentThreadId,
+      running,
+      newThread,
+      switchThread,
+      deleteThread,
+      persistMessages,
+      persistError,
+      dismissPersistError,
+    ],
   );
 
   // 未解析出 threadId 前不渲染聊天内容（服务端/客户端首帧一致，避免 hydration 错误）
