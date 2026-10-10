@@ -143,6 +143,20 @@ describe("MemorySettingsPage 记忆管理区", () => {
     expect(screen.queryByText(/已同步清除/)).toBeNull(); // purged=0 不提示
   });
 
+  it("终审 F-6：删除成功但 reload 失败 → 不出「已同步清除」失真提示，走既有错误通道", async () => {
+    api.fetchMemory.mockResolvedValueOnce(fullView()).mockRejectedValueOnce(new Error("刷新失败"));
+    api.deleteCuratedLine.mockResolvedValueOnce({ purgedLedgerLines: 2 });
+    render(<MemorySettingsPage />);
+    await screen.findByText("- 偏好白酒股");
+
+    fireEvent.click(screen.getByTestId("memory-curated-delete-2"));
+
+    expect(await screen.findByText("刷新失败")).toBeTruthy();
+    // notice 随 reload 成文：刷新失败时不得先给「已同步清除 N 行」的失真提示
+    expect(screen.queryByTestId("memory-notice")).toBeNull();
+    expect(screen.queryByText(/已同步清除/)).toBeNull();
+  });
+
   it("行编辑：行内 input 回填原文，保存 PUT 四字段 + reload 后新行渲染", async () => {
     const updated = fullView();
     updated.curated.lines = [TITLE, "## 偏好", "- 偏好新能源"];

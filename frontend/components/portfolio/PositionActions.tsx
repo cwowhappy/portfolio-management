@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { addCashDividend, addStockDividend, deletePosition, editTrade, fetchDeleteImpact, fetchTrades, sell } from "@/lib/portfolioApi";
 import type { DeleteImpact, PositionView } from "@/lib/types";
+import { useDialogA11y } from "@/lib/useDialogA11y";
 
 const inputClass =
   "rounded-md border border-[color:var(--color-line)] bg-[color:var(--color-bg-soft)] px-3 py-2 text-[14px] text-[color:var(--color-ink)] placeholder:text-[color:var(--color-ink-faint)] focus:border-[color:var(--color-up)] focus:outline-none";
@@ -26,6 +27,16 @@ export default function PositionActions({ position, onChanged }: { position: Pos
   // DeleteImpact=预检数字就绪（明示将删交易/分红笔数与已实现盈亏）
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmImpact, setConfirmImpact] = useState<DeleteImpact | null | undefined>(undefined);
+  // 终审 F-2：Escape 关闭（busy 在途不关，与取消按钮同口径）+ 初始焦点 + 焦点返还 + Tab 圈定。
+  // 本组件常驻、浮层条件渲染（{confirmOpen && …}）——传 confirmOpen 作为 active
+  const confirmRef = useRef<HTMLDivElement>(null);
+  const onConfirmKeyDown = useDialogA11y(
+    confirmRef,
+    () => {
+      if (!busy) setConfirmOpen(false);
+    },
+    confirmOpen,
+  );
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -182,6 +193,12 @@ export default function PositionActions({ position, onChanged }: { position: Pos
 
       {confirmOpen && (
         <div data-testid="delete-confirm-dialog"
+          ref={confirmRef}
+          tabIndex={-1}
+          role="dialog"
+          aria-modal="true"
+          aria-label={`删除持仓 ${position.stockName}`}
+          onKeyDown={onConfirmKeyDown}
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded-2xl border border-[color:var(--color-line)] bg-[color:var(--color-bg)] p-5 space-y-3">
             <div className="font-[family-name:var(--font-display)] text-[15px]">删除持仓 · {position.stockName}</div>

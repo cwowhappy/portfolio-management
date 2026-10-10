@@ -127,3 +127,38 @@ describe("ImportDialog", () => {
     expect(screen.queryByTestId("import-dialog")).toBeNull();
   });
 });
+
+// 终审 F-2：portfolio 两裸浮层之一接线 useDialogA11y——Escape 关闭（saving 在途不关）+
+// 初始焦点入浮层 + 关闭后焦点返还触发元素 + Tab 圈定（沿 UnlistedImportDialog 测试口径）
+describe("ImportDialog 可达性（终审 F-2）", () => {
+  it("打开为 role=dialog 且聚焦首个可聚焦元素（下载模板链接）；Escape 关闭并返还焦点给触发按钮", () => {
+    render(<ImportDialog onImported={vi.fn()} />);
+    const trigger = screen.getByRole("button", { name: "批量导入" });
+    trigger.focus(); // 浏览器点击即聚焦，jsdom 需显式补齐
+    fireEvent.click(trigger);
+
+    const dialog = screen.getByTestId("import-dialog");
+    expect(dialog.getAttribute("role")).toBe("dialog");
+    expect(dialog.getAttribute("aria-modal")).toBe("true");
+    expect(document.activeElement).toBe(screen.getByRole("link", { name: "下载模板" }));
+
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    expect(screen.queryByTestId("import-dialog")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it("Tab 在浮层内首尾循环：末位（取消）Tab 回首位（下载模板），首位 Shift+Tab 到末位", () => {
+    render(<ImportDialog onImported={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "批量导入" }));
+    const dialog = screen.getByTestId("import-dialog");
+
+    const cancel = screen.getByRole("button", { name: "取消" });
+    const first = screen.getByRole("link", { name: "下载模板" });
+    cancel.focus();
+    fireEvent.keyDown(dialog, { key: "Tab" });
+    expect(document.activeElement).toBe(first);
+
+    fireEvent.keyDown(dialog, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(cancel);
+  });
+});

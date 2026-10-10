@@ -355,6 +355,14 @@ function Probe() {
         存败
       </button>
       <button
+        data-testid="persist-keepalive-fail"
+        onClick={() =>
+          void ctx.persistMessages("t1", [msg("user", "超长内容")], { keepalive: true }).catch(() => {})
+        }
+      >
+        存败k
+      </button>
+      <button
         data-testid="persist-409"
         onClick={() =>
           void ctx
@@ -662,6 +670,35 @@ describe("RuntimeProvider", () => {
     expect(screen.getByTestId("persist-error").textContent).toContain(
       "Request body exceeds the keepalive limit",
     );
+  });
+
+  it("保存失败（keepalive 传输层 TypeError）→ 归因为「内容过长」而非裸 Failed to fetch（终审 F-5）", async () => {
+    // keepalive PUT 超 64KB 浏览器配额的主场景：fetch 直接抛 TypeError（status=0），非 413。
+    // 传输层失败 + keepalive 场景归因「内容过长」，兑现设计承诺的精简引导文案
+    const api = installConversationsApi({ list: [{ id: "t1", title: "一", updatedAt: 1 }] });
+    const inner = api.fetchMock;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        if (/\/messages$/.test(String(input)) && init?.method === "PUT") {
+          throw new TypeError("Failed to fetch");
+        }
+        return inner(input, init);
+      }),
+    );
+    render(
+      <RuntimeProvider>
+        <Probe />
+      </RuntimeProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId("thread").textContent).toBe("t1"));
+    fireEvent.click(screen.getByTestId("persist-keepalive-fail"));
+    await waitFor(() =>
+      expect(screen.getByTestId("persist-error").textContent).toContain("会话保存失败（内容过长）"),
+    );
+    expect(screen.getByTestId("persist-error").textContent).toContain("请精简后重试");
+    // 原始英文 TypeError 文案不透出给用户
+    expect(screen.getByTestId("persist-error").textContent).not.toContain("Failed to fetch");
   });
 
   it("409 仍向上抛给调用方（flushPersist 重试语义不变），且不置保存失败错误条", async () => {

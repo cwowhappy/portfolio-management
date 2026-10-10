@@ -148,3 +148,40 @@ describe("PositionActions", () => {
     expect(onChanged).not.toHaveBeenCalled();
   });
 });
+
+// 终审 F-2：portfolio 两裸浮层之二接线 useDialogA11y——Escape 关闭（busy 在途不关，与取消按钮
+// 同口径）+ 初始焦点入浮层 + 关闭后焦点返还触发元素 + Tab 圈定（沿 UnlistedImportDialog 口径）
+describe("PositionActions 删除确认弹窗可达性（终审 F-2）", () => {
+  it("打开为 role=dialog；Escape 关闭（不删除）并返还焦点给删除按钮", async () => {
+    render(<PositionActions position={position} onChanged={vi.fn()} />);
+    const del = screen.getByRole("button", { name: "删除" });
+    del.focus(); // 浏览器点击即聚焦，jsdom 需显式补齐
+    fireEvent.click(del);
+
+    const dialog = await screen.findByTestId("delete-confirm-dialog");
+    expect(dialog.getAttribute("role")).toBe("dialog");
+    expect(dialog.getAttribute("aria-modal")).toBe("true");
+
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    expect(screen.queryByTestId("delete-confirm-dialog")).toBeNull();
+    expect(vi.mocked(deletePosition)).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(del);
+  });
+
+  it("Tab 在浮层内首尾循环：末位（取消）Tab 回首位（确认删除），首位 Shift+Tab 到末位", async () => {
+    render(<PositionActions position={position} onChanged={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "删除" }));
+    const dialog = await screen.findByTestId("delete-confirm-dialog");
+    // 预检数字就绪后确认删除解除禁用，浮层内首=确认删除、末=取消
+    await screen.findByText(/将永久删除 3 笔交易、1 笔分红/);
+
+    const confirm = screen.getByRole("button", { name: "确认删除" });
+    const cancel = screen.getByRole("button", { name: "取消" });
+    cancel.focus();
+    fireEvent.keyDown(dialog, { key: "Tab" });
+    expect(document.activeElement).toBe(confirm);
+
+    fireEvent.keyDown(dialog, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(cancel);
+  });
+});

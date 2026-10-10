@@ -281,14 +281,18 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         // 409（乐观锁并发冲突）向上抛给 flushPersist 做 GET+union 重试；
         // 其余失败不再静默（只记日志）：置可见错误条（P3-⑦），不打断聊天
         if (errorStatus(e) === 409) throw e;
-        const detail =
-          errorStatus(e) === 413
-            ? "内容过长"
-            : e instanceof Error && e.message
-              ? e.message
-              : "网络异常";
+        // 终审 F-5：keepalive PUT 超 64KB 浏览器配额的主场景是 fetch 直接抛 TypeError
+        // （status=0 传输层，非 413）——传输层失败且 keepalive 场景按「内容过长」归因，
+        // 兑现设计承诺的精简引导文案；非 keepalive 的传输层失败保留原始信息（断网诊断）
+        const status = errorStatus(e);
+        const tooLarge = status === 413 || (status === 0 && opts?.keepalive === true);
+        const detail = tooLarge
+          ? "内容过长"
+          : e instanceof Error && e.message
+            ? e.message
+            : "网络异常";
         setPersistError(
-          errorStatus(e) === 413
+          tooLarge
             ? `会话保存失败（${detail}），请精简后重试`
             : `会话保存失败（${detail}），请稍后重试`,
         );

@@ -164,24 +164,26 @@ export function MemoryManagementSection() {
   const requestSeqRef = useRef(0);
   const { saving, error: actionError, run } = useSaveAction("操作失败");
 
-  // 服务端回执驱动（非乐观）：任何写操作成功后 reload 全视图；行去留只由服务端决定
-  const reload = useCallback(() => {
+  // 服务端回执驱动（非乐观）：任何写操作成功后 reload 全视图；行去留只由服务端决定。
+  // 返回 Promise 且失败上抛（内部已 setLoadError）：调用方按需感知刷新成败——
+  // 终审 F-6：notice 须随 reload 成文，刷新失败时不得给「已同步清除」类失真提示
+  const reload = useCallback(async () => {
     const seq = ++requestSeqRef.current;
-    fetchMemory()
-      .then((v) => {
-        if (seq !== requestSeqRef.current) return; // 已有更新的 reload，丢弃过期响应
-        setView(v);
-        setLoadError(null);
-        setEditing(null); // 新视图落地后行号/内容可能漂移，行内编辑一并收起
-      })
-      .catch((e) => {
-        if (seq !== requestSeqRef.current) return;
-        setLoadError(e instanceof Error ? e.message : "加载失败");
-      });
+    try {
+      const v = await fetchMemory();
+      if (seq !== requestSeqRef.current) return; // 已有更新的 reload，丢弃过期响应
+      setView(v);
+      setLoadError(null);
+      setEditing(null); // 新视图落地后行号/内容可能漂移，行内编辑一并收起
+    } catch (e) {
+      if (seq !== requestSeqRef.current) return;
+      setLoadError(e instanceof Error ? e.message : "加载失败");
+      throw e;
+    }
   }, []);
 
   useEffect(() => {
-    reload();
+    reload().catch(() => {}); // 失败已在 reload 内经 setLoadError 呈现，此处仅防未处理 rejection
   }, [reload]);
 
   // 409（hash 冲突）/410（行漂移）统一分流：提示已刷新并拉最新视图；
@@ -193,9 +195,9 @@ export function MemoryManagementSection() {
         await action();
       } catch (e) {
         if (e instanceof MemoryApiError && (e.status === 409 || e.status === 410)) {
-          setNotice("内容已变化，已刷新");
           setEditing(null);
-          reload();
+          await reload(); // 刷新失败上抛走 useSaveAction 红字（notice 不成文，终审 F-6 同口径）
+          setNotice("内容已变化，已刷新");
           return;
         }
         throw e;
@@ -207,8 +209,10 @@ export function MemoryManagementSection() {
     if (baseHash == null) return;
     runMutation(async () => {
       const r = await deleteCuratedLine({ lineIndex, expectLine, baseHash });
+      // notice 随 reload 成文（终审 F-6）：删除成功但刷新失败 → 不提示「已同步清除」，
+      // 失败经 reload 上抛走 useSaveAction 行内红字
+      await reload();
       setNotice(r.purgedLedgerLines > 0 ? purgedNotice(r.purgedLedgerLines) : null);
-      reload();
     });
   };
 
@@ -221,7 +225,7 @@ export function MemoryManagementSection() {
     runMutation(async () => {
       await editCuratedLine({ lineIndex, expectLine, newLine: draft, baseHash });
       setEditing(null);
-      reload();
+      await reload();
     });
   };
 
@@ -231,7 +235,7 @@ export function MemoryManagementSection() {
     const { date, hash } = ledger;
     runMutation(async () => {
       await deleteLedgerSection(date, { sectionHeader: section.header, baseHash: hash });
-      reload();
+      await reload();
     });
   };
 
