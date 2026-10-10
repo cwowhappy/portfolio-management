@@ -24,6 +24,8 @@ import com.portfolio.invest.application.memory.MemoryFilesView;
 import com.portfolio.invest.application.memory.MemoryManagementApplicationService;
 import com.portfolio.invest.application.memory.MemoryReadOnlyException;
 import com.portfolio.invest.application.memory.MemoryStaleException;
+import com.portfolio.invest.application.memory.ProfileConfigApplicationService;
+import com.portfolio.invest.application.memory.ProfileConfigView;
 import com.portfolio.invest.application.memory.SectionKind;
 import com.portfolio.invest.domain.user.User;
 import com.portfolio.invest.domain.user.UserRole;
@@ -31,7 +33,9 @@ import com.portfolio.invest.domain.user.UserStatus;
 import com.portfolio.invest.infrastructure.security.AuthenticatedUser;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -58,12 +62,25 @@ class MemoryControllerTest {
     @MockitoBean
     private MemoryManagementApplicationService service;
 
+    @MockitoBean
+    private ProfileConfigApplicationService profileConfigService;
+
     /** 构造已认证主体：控制器 currentUserId(auth) 会 cast auth.getPrincipal() 为 AuthenticatedUser。 */
     private Authentication auth() {
         var user = User.reconstitute(1L, "u", "p", UserRole.USER, UserStatus.APPROVED, true,
                 Instant.now(), Instant.now());
         var principal = new AuthenticatedUser(user);
         return new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities());
+    }
+
+    /** 预览 Map 允许 null 段值（失败/为空段），Map.of 不收 null 故手工构建。 */
+    private static Map<String, String> preview(String style, String industry, String watchlist, String holdings) {
+        Map<String, String> map = new LinkedHashMap<>();
+        map.put(ProfileConfigApplicationService.KEY_STYLE, style);
+        map.put(ProfileConfigApplicationService.KEY_INDUSTRY, industry);
+        map.put(ProfileConfigApplicationService.KEY_WATCHLIST, watchlist);
+        map.put(ProfileConfigApplicationService.KEY_HOLDINGS, holdings);
+        return map;
     }
 
     @Test
@@ -140,6 +157,59 @@ class MemoryControllerTest {
 
         verify(service).deleteLedgerSection(1L, LocalDate.of(2026, 10, 9),
                 "## Memory Flush — 2026-10-09T13:58:45Z", "hash-ledger");
+    }
+
+    @Test
+    @DisplayName("GET profile-config 返回 200：开关+预览同刻同源（§3.5 四段 enabled/preview）")
+    void givenConfigAndPreview_whenGetProfileConfig_thenReturnEnabledAndPreviewPerSection() throws Exception {
+        when(profileConfigService.config(1L))
+                .thenReturn(new ProfileConfigView(true, false, true, false));
+        when(profileConfigService.preview(1L)).thenReturn(preview(
+                "<risk_profile>平衡型</risk_profile>",
+                "<watched_industries>801017, 801120</watched_industries>", null, null));
+
+        mvc.perform(get("/api/memory/profile-config").with(authentication(auth())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.style.enabled").value(true))
+                .andExpect(jsonPath("$.style.preview").value("<risk_profile>平衡型</risk_profile>"))
+                .andExpect(jsonPath("$.industry.enabled").value(false))
+                .andExpect(jsonPath("$.industry.preview")
+                        .value("<watched_industries>801017, 801120</watched_industries>"))
+                .andExpect(jsonPath("$.watchlist.enabled").value(true))
+                .andExpect(jsonPath("$.watchlist.preview").value((Object) null))
+                .andExpect(jsonPath("$.holdings.enabled").value(false))
+                .andExpect(jsonPath("$.holdings.preview").value((Object) null));
+    }
+
+    @Test
+    @DisplayName("PUT profile-config 返回 200 保存回执（保存后开关+预览最新态）")
+    void givenSaveRequest_whenPutProfileConfig_thenSaveAndReturnLatestState() throws Exception {
+        when(profileConfigService.config(1L))
+                .thenReturn(new ProfileConfigView(true, false, true, false));
+        when(profileConfigService.preview(1L)).thenReturn(preview(
+                "<risk_profile>平衡型</risk_profile>", null, null, null));
+
+        mvc.perform(put("/api/memory/profile-config").with(authentication(auth())).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"style\":true,\"industry\":false,\"watchlist\":true,\"holdings\":false}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.style.enabled").value(true))
+                .andExpect(jsonPath("$.style.preview").value("<risk_profile>平衡型</risk_profile>"))
+                .andExpect(jsonPath("$.holdings.enabled").value(false));
+
+        verify(profileConfigService).save(1L, true, false, true, false);
+    }
+
+    @Test
+    @DisplayName("未登录访问 profile-config 两端点均 401")
+    void givenAnonymous_whenAccessProfileConfig_then401() throws Exception {
+        mvc.perform(get("/api/memory/profile-config"))
+                .andExpect(status().isUnauthorized());
+
+        mvc.perform(put("/api/memory/profile-config").with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"style\":true,\"industry\":true,\"watchlist\":true,\"holdings\":true}"))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
