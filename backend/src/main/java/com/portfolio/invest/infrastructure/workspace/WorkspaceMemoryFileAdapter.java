@@ -40,8 +40,10 @@ import org.springframework.stereotype.Component;
  * 解析（与 HarnessAgentFactory 装配口径一致）。
  *
  * <p>并发窗口：所有校验与写入基于「单次读快照（hash 与行同源）+ 同目录 temp 文件
- * {@code ATOMIC_MOVE} 覆盖」，与库 consolidation 的读交错不会产出半文件；读后写前的库写入
- * 由 baseHash 三层校验拦截。校验通过到落盘之间仍存在不可消除的微小窗口，属乐观并发既定
+ * {@code ATOMIC_MOVE} 覆盖」，与库 consolidation 的读交错不会产出半文件；行级变更操作
+ * （删除/编辑）读后写前的库写入由 baseHash 三层校验防护。append 与跨账本清除无 baseHash
+ * 可比对（盲读盲写），与库 flush 并发时存在毫秒级交错窗口、可能静默丢失一段——已知既定
+ * 风险（终审 F-4 注记）。校验通过到落盘之间仍存在不可消除的微小窗口，属乐观并发既定
  * 语义（交错写入由下一轮读取以 hash 变化暴露）。
  */
 @Component

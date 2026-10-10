@@ -236,7 +236,8 @@ class MemoryDigestServiceTest {
         // 失败用户零写入，成功用户照常写
         verify(memoryPort, never()).appendExternalEvent(eq(1L), any(), any());
         verify(memoryPort).appendExternalEvent(eq(2L), any(), any());
-        // 批完成即推进（非全成功）——失败用户次日由扩大窗口覆盖
+        // 批完成即推进（非全成功）——失败用户该窗口不重试：游标已推进到批时刻，
+        // 次日窗口自批时刻起，其当日事件不再覆盖（损失该用户当日摘要，终审 F-3 口径）
         verify(cursorRepository).save(new MemoryDigestCursor(NOW));
     }
 

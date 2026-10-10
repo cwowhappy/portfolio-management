@@ -234,6 +234,6 @@ invest:
 
 ### 8.3 事件驱动记忆（F03）
 
-`MemoryDigestScheduler`（cron `0 7 21 * * *` Asia/Shanghai 字面量；`invest.profile.digest-enabled` 开关；无 `DEEPSEEK_API_KEY` 静默跳过）逐 enabled 用户：journal timeline 窗口事件 → 复用 `IntelligenceChatPort`（系统 key，失败/无 key 返回 empty 跳批）摘要 ≤5 条 bullet → `appendExternalEvent` 写当日账本「外部事件摘要」节（文件不存在则创建）。全局单行游标 `memory_digest_cursor`（V7 seed id=1）：**批执行完成即推进**（批首 now 一次取定贯穿窗口止/节头/游标），单用户失败 WARN 跳过不挡批，次日窗口扩大自动重试（at-least-once）。
+`MemoryDigestScheduler`（cron `0 7 21 * * *` Asia/Shanghai 字面量；`invest.profile.digest-enabled` 开关；无 `DEEPSEEK_API_KEY` 静默跳过）逐 enabled 用户：journal timeline 窗口事件 → 复用 `IntelligenceChatPort`（系统 key，失败/无 key 返回 empty 跳批）摘要 ≤5 条 bullet → `appendExternalEvent` 写当日账本「外部事件摘要」节（文件不存在则创建）。全局单行游标 `memory_digest_cursor`（V7 seed id=1）：**批执行完成即推进**（批首 now 一次取定贯穿窗口止/节头/游标）。单用户失败 WARN 跳过**不重试该窗口**——游标已推进到批时刻，次日窗口自批时刻起，其当日事件不再覆盖（损失该用户当日摘要）；at-least-once 仅对批级失败成立（全批顶层异常/环境前置门不推进游标，次日窗口扩大自动覆盖）。
 
 测试锚：BDD 中文两场景（`features/memory/memory.feature`：删除不复活 / 授权后模型上下文含画像段——BDD 假 Model 录制判读）；e2e `e2e/memory.spec.ts`（fs 直种工作区真浏览器）。
