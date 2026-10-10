@@ -234,6 +234,11 @@ public final class EvalRunner {
             // 断言器是纯静态无 Spring——此处读出后逐题下传（CalcTolerance 纯函数收参数不读配置）
             int calcTolerancePct = resolveCalcTolerancePct(context);
             System.out.printf("[eval] 计算类断言容差：invest.eval.calc-tolerance-pct=%d%n", calcTolerancePct);
+            // token 预算护栏（终审 I-1 执行端接线）：同上经主上下文环境读入，逐题累计题级
+            // tokenUsage.totalTokens，超限中止剩余题（超时护栏 120min 仍是第一道防线）
+            long tokenBudget = resolveTokenBudget(context);
+            TokenBudgetGuard tokenGuard = new TokenBudgetGuard(tokenBudget);
+            System.out.printf("[eval] token 预算护栏：invest.eval.token-budget=%d%n", tokenBudget);
 
             List<QuestionOutcome> outcomes = new ArrayList<>();
             String judgeRespondedModel = null;
@@ -245,9 +250,21 @@ public final class EvalRunner {
                     System.out.printf("[eval] %-32s SKIPPED（real 轨预留）%n", question.id());
                     continue;
                 }
+                if (tokenGuard.exceeded()) {
+                    // 预算耗尽：剩余题不再起 LLM，占位口径同 real 轨预留跳过
+                    outcomes.add(tokenGuard.skippedOutcome(question));
+                    System.out.printf("[eval] %-32s SKIPPED（token 预算超限中止）%n", question.id());
+                    continue;
+                }
                 QuestionOutcome outcome = runOne(question, driver, stub, judge, options, context,
                         calcTolerancePct);
                 outcomes.add(outcome);
+                boolean wasExceeded = tokenGuard.exceeded();
+                tokenGuard.accumulate(outcome);
+                if (!wasExceeded && tokenGuard.exceeded()) {
+                    System.out.printf("[eval] token 预算超限：%s（剩余 %d 题中止，runMeta 标 PARTIAL）%n",
+                            tokenGuard.skipReason(), questions.size() - outcomes.size());
+                }
                 if (outcome.judge() != null && outcome.judge().respondedModel() != null) {
                     judgeRespondedModel = outcome.judge().respondedModel();
                 }
@@ -257,13 +274,18 @@ public final class EvalRunner {
 
             ReportWriter.Written written;
             try {
-                // runMeta（报告 schema v2，§2.4）：runner 正常收尾恒 FULL（PARTIAL 由收割侧超时/
-                // 非零退出落库）；triggeredBy 子进程不可知触发来源，缺省 MANUAL（落库口径归 Task 6）
+                // runMeta（报告 schema v2，§2.4）：runner 正常收尾 FULL（超时/非零退出的 PARTIAL 由
+                // 收割侧落库）；token 预算超限中止例外——runner 侧即标 PARTIAL + tokenBudgetExceeded
+                // （收割按 PARTIAL 语义不任 baseline 并注理由行）。triggeredBy 子进程不可知触发来源，
+                // 缺省 MANUAL（落库口径归 Task 6）
                 ZonedDateTime finishedAt = ZonedDateTime.now();
+                boolean tokenBudgetExceeded = tokenGuard.exceeded();
                 ReportWriter.RunMeta runMeta = new ReportWriter.RunMeta(runId,
                         startedAt.toString(), finishedAt.toString(), "MANUAL",
                         fingerprint.assetHashes(), fingerprint.evalAssets(), fingerprint.questionBankHash(),
-                        Duration.between(startedAt, finishedAt).toMillis(), "FULL");
+                        Duration.between(startedAt, finishedAt).toMillis(),
+                        tokenBudgetExceeded ? "PARTIAL" : "FULL",
+                        tokenBudgetExceeded ? Boolean.TRUE : null);
                 written = new ReportWriter(Path.of("build", "reports", "eval-agent"))
                         .write(outcomes, new ReportWriter.Meta("stub", model, baseUrl, model,
                                 judgeRespondedModel, (int) options.timeoutMs()), runMeta, options.compare());
@@ -285,6 +307,16 @@ public final class EvalRunner {
     private static int resolveCalcTolerancePct(ConfigurableApplicationContext context) {
         Integer pct = context.getEnvironment().getProperty("invest.eval.calc-tolerance-pct", Integer.class);
         return pct != null ? pct : AssertionEngine.DEFAULT_CALC_TOLERANCE_PCT;
+    }
+
+    /**
+     * token 预算解析（终审 I-1 执行端接线，沿 calc-tolerance-pct resolve 先例）：读主上下文
+     * 环境的 invest.eval.token-budget（application.yml 默认 7,500,000 = 64 题实测 2.45M 的
+     * ~3 倍，部署可覆盖），未配置时回退 {@link TokenBudgetGuard#DEFAULT_TOKEN_BUDGET}。
+     */
+    private static long resolveTokenBudget(ConfigurableApplicationContext context) {
+        Long budget = context.getEnvironment().getProperty("invest.eval.token-budget", Long.class);
+        return budget != null ? budget : TokenBudgetGuard.DEFAULT_TOKEN_BUDGET;
     }
 
     /**

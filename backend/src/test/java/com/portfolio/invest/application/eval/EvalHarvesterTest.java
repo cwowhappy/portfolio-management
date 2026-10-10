@@ -88,11 +88,16 @@ class EvalHarvesterTest {
     // ———— 报告 fixture（结构与 ReportWriter schema v2 对齐） ————
 
     private Path writeReport(int pass, int fail, int error, String completeness) throws Exception {
-        return writeReport("eval-report.json", pass, fail, error, completeness);
+        return writeReport("eval-report.json", pass, fail, error, completeness, false);
     }
 
     private Path writeReport(String filename, int pass, int fail, int error, String completeness)
             throws Exception {
+        return writeReport(filename, pass, fail, error, completeness, false);
+    }
+
+    private Path writeReport(String filename, int pass, int fail, int error, String completeness,
+                             boolean tokenBudgetExceeded) throws Exception {
         ObjectNode root = JSON.createObjectNode();
         root.put("schema", "eval-agent-report/2");
         ObjectNode runMeta = root.putObject("runMeta");
@@ -110,6 +115,8 @@ class EvalHarvesterTest {
         runMeta.put("questionBankHash", BANK_HASH);
         runMeta.put("totalDurationMs", 900_000);
         runMeta.put("completeness", completeness);
+        // token 预算超限标记（终审 I-1 接线，可选字段：仅超限报告携带）
+        if (tokenBudgetExceeded) runMeta.put("tokenBudgetExceeded", true);
         ObjectNode summary = root.putObject("summary");
         summary.put("total", pass + fail + error);
         summary.put("pass", pass);
@@ -216,6 +223,21 @@ class EvalHarvesterTest {
         assertThat(patch.baselineCandidate()).isFalse();
         // PARTIAL 恢复不发恢复卡（数字不可靠，baseline_candidate 未置位则「待人工确认」不成立）
         verifyNoInteractions(notifier);
+    }
+
+    @Test
+    @DisplayName("给定 runMeta.tokenBudgetExceeded=true，when收割，then状态 PARTIAL 且 verdict_reasons 追加 token 超限理由行")
+    void givenTokenBudgetExceeded_whenHarvest_thenPartialWithTokenReason() throws Exception {
+        Path report = writeReport("eval-report.json", 14, 0, 6, "PARTIAL", true);
+
+        harvester.harvest(7L, report, 0);
+
+        EvalRunHarvest patch = capturedPatch();
+        assertThat(patch.status()).isEqualTo("PARTIAL");
+        assertThat(patch.baselineCandidate()).isFalse();
+        // 判定理由保留 + token 超限理由行追加（「为什么 PARTIAL」人读留痕，不新增列）
+        assertThat(patch.verdictReasons()).hasSize(2);
+        assertThat(patch.verdictReasons()).anyMatch(r -> r.contains("token 预算超限"));
     }
 
     @Test
