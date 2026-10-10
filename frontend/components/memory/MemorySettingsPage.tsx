@@ -6,17 +6,38 @@ import {
   deleteLedgerSection,
   editCuratedLine,
   fetchMemory,
+  fetchProfileConfig,
   MemoryApiError,
   MemorySectionKind,
   MemoryView,
+  ProfileConfigView,
+  saveProfileConfig,
 } from "@/lib/memoryApi";
 import { useSaveAction } from "@/lib/useSaveAction";
 
-// 记忆与画像设置页（MS-31）：F2 先交付下半「记忆管理区」，F3 在本文件上方补
-// 「画像授权区」（授权低频在上、管理高频在下，首屏给管理）。
+// 记忆与画像设置页（MS-31）：上半「画像授权区」（F3）+ 下半「记忆管理区」（F2），
+// 授权低频在上、管理高频在下（设计规格 §2.4，首屏给管理）。
 
 type LedgerFileView = MemoryView["ledgers"][number];
 type LedgerSectionView = LedgerFileView["sections"][number];
+
+/** 四段开关本地草稿形态（与 ProfileConfigView 四键同构，PUT 全量保存体） */
+type ProfileDraft = { style: boolean; industry: boolean; watchlist: boolean; holdings: boolean };
+
+/** 四段展示元数据（需求决策 #3 四类数据口径：投资风格/关注行业/自选股/持仓汇总） */
+const PROFILE_SECTIONS: { key: keyof ProfileDraft; label: string }[] = [
+  { key: "style", label: "投资风格" },
+  { key: "industry", label: "关注行业" },
+  { key: "watchlist", label: "自选股" },
+  { key: "holdings", label: "持仓汇总" },
+];
+
+const toDraft = (v: ProfileConfigView): ProfileDraft => ({
+  style: v.style.enabled,
+  industry: v.industry.enabled,
+  watchlist: v.watchlist.enabled,
+  holdings: v.holdings.enabled,
+});
 
 /** kind 徽标中文标签（设计规格 §2.4：FLUSH→对话记忆 / EXTERNAL_EVENT→事件摘要） */
 const KIND_LABEL: Record<MemorySectionKind, string> = {
@@ -32,9 +53,105 @@ export default function MemorySettingsPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-6 p-6" data-testid="memory-settings">
       <h1 className="text-xl font-semibold">记忆与画像</h1>
-      {/* F3：画像授权区（profile-config-form）将插在此处上方 */}
+      <ProfileConfigSection />
       <MemoryManagementSection />
     </div>
+  );
+}
+
+/**
+ * 画像注入授权区（F3，设计规格 §3.5）：四段独立开关（默认关 opt-in，PUT 全量保存）
+ * + 每段折叠预览（preview 为注入侧同一渲染路径直出的段全串——「所见即所注入」，
+ * 数据源失败/空段 null → 「暂不可用」；disabled 段也出预览「先看再开」）。
+ * 保存成功以 PUT 回执（ProfileConfigView）覆盖本地，非乐观。
+ */
+export function ProfileConfigSection() {
+  const [view, setView] = useState<ProfileConfigView | null>(null);
+  const [draft, setDraft] = useState<ProfileDraft | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const { saving, error: actionError, run } = useSaveAction("保存失败");
+
+  useEffect(() => {
+    fetchProfileConfig()
+      .then((v) => {
+        setView(v);
+        setDraft(toDraft(v));
+        setLoadError(null);
+      })
+      .catch((e) => setLoadError(e instanceof Error ? e.message : "加载失败"));
+  }, []);
+
+  // 全量 PUT 四布尔；成功以服务端回执覆盖本地（回执含最新预览，一并刷新）
+  const onSave = () => {
+    if (draft == null) return;
+    run(async () => {
+      const saved = await saveProfileConfig(draft);
+      setView(saved);
+      setDraft(toDraft(saved));
+    });
+  };
+
+  const error = loadError ?? actionError;
+
+  return (
+    <section
+      data-testid="profile-config-form"
+      className="space-y-4"
+      aria-labelledby="profile-config-heading"
+    >
+      <h2 id="profile-config-heading" className="font-medium">画像注入授权</h2>
+      {error && (
+        <div role="alert" className="text-sm text-[color:var(--color-up)]">
+          {error}
+        </div>
+      )}
+      {view == null && loadError == null && (
+        <div className="text-sm text-[color:var(--color-ink-faint)]">画像加载中…</div>
+      )}
+      {view != null && draft != null && (
+        <div className="space-y-3">
+          <p className="text-sm text-[color:var(--color-ink-dim)]">
+            开启后对应画像将在对话时注入助手上下文，仅用于个性化参考；每段可先展开预览再决定是否授权。
+          </p>
+          {PROFILE_SECTIONS.map(({ key, label }) => (
+            <div key={key} className="space-y-1 rounded-lg border border-[color:var(--color-line)] p-3">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  data-testid={`profile-toggle-${key}`}
+                  checked={draft[key]}
+                  disabled={saving}
+                  onChange={(e) => setDraft({ ...draft, [key]: e.target.checked })}
+                />
+                <span className="font-medium">{label}</span>
+              </label>
+              <details data-testid={`profile-preview-${key}`}>
+                <summary className="cursor-pointer text-xs text-[color:var(--color-ink-dim)]">
+                  展开预览将注入的内容
+                </summary>
+                <div className="mt-1">
+                  {view[key].preview ? (
+                    <pre className="overflow-x-auto whitespace-pre-wrap rounded-md border border-[color:var(--color-line)] p-2 font-mono text-sm">
+                      {view[key].preview}
+                    </pre>
+                  ) : (
+                    <p className="text-sm text-[color:var(--color-ink-faint)]">暂不可用</p>
+                  )}
+                </div>
+              </details>
+            </div>
+          ))}
+          <button
+            data-testid="profile-config-save"
+            className="rounded border border-[color:var(--color-line)] px-3 py-1 text-sm disabled:opacity-50"
+            disabled={saving}
+            onClick={onSave}
+          >
+            保存
+          </button>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -182,24 +299,30 @@ export function MemoryManagementSection() {
               ) : (
                 <div key={i} className="group flex items-center gap-2">
                   <span className="flex-1 whitespace-pre-wrap font-mono text-sm">{line}</span>
-                  <span className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-                    <button
-                      data-testid={`memory-curated-edit-${i}`}
-                      className="rounded border border-[color:var(--color-line)] px-2 py-0.5 text-xs disabled:opacity-50"
-                      disabled={saving}
-                      onClick={() => setEditing({ lineIndex: i, draft: line })}
-                    >
-                      编辑
-                    </button>
-                    <button
-                      data-testid={`memory-curated-delete-${i}`}
-                      className="rounded border border-[color:var(--color-line)] px-2 py-0.5 text-xs text-[color:var(--color-up)] disabled:opacity-50"
-                      disabled={saving}
-                      onClick={() => onDeleteCuratedLine(i, line)}
-                    >
-                      删除
-                    </button>
-                  </span>
+                  {/* 只读标题行（行 0 / '# ' 开头，与后端 WorkspaceMemoryFileAdapter 同口径）
+                      UI 预拦不渲染行级操作，普通行照常 */}
+                  {!(i === 0 || line.startsWith("# ")) && (
+                    <span className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                      <button
+                        data-testid={`memory-curated-edit-${i}`}
+                        aria-label={`编辑第 ${i + 1} 行`}
+                        className="rounded border border-[color:var(--color-line)] px-2 py-0.5 text-xs disabled:opacity-50"
+                        disabled={saving}
+                        onClick={() => setEditing({ lineIndex: i, draft: line })}
+                      >
+                        编辑
+                      </button>
+                      <button
+                        data-testid={`memory-curated-delete-${i}`}
+                        aria-label={`删除第 ${i + 1} 行`}
+                        className="rounded border border-[color:var(--color-line)] px-2 py-0.5 text-xs text-[color:var(--color-up)] disabled:opacity-50"
+                        disabled={saving}
+                        onClick={() => onDeleteCuratedLine(i, line)}
+                      >
+                        删除
+                      </button>
+                    </span>
+                  )}
                 </div>
               ),
             )}
