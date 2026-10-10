@@ -167,23 +167,26 @@ export function MemoryManagementSection() {
   // 服务端回执驱动（非乐观）：任何写操作成功后 reload 全视图；行去留只由服务端决定。
   // 返回 Promise 且失败上抛（内部已 setLoadError）：调用方按需感知刷新成败——
   // 终审 F-6：notice 须随 reload 成文，刷新失败时不得给「已同步清除」类失真提示
-  const reload = useCallback(async () => {
+  //（setState 全部收在 .then/.catch 回调内——effect 直呼本函数须过 set-state-in-effect 规则）
+  const reload = useCallback(() => {
     const seq = ++requestSeqRef.current;
-    try {
-      const v = await fetchMemory();
-      if (seq !== requestSeqRef.current) return; // 已有更新的 reload，丢弃过期响应
-      setView(v);
-      setLoadError(null);
-      setEditing(null); // 新视图落地后行号/内容可能漂移，行内编辑一并收起
-    } catch (e) {
-      if (seq !== requestSeqRef.current) return;
-      setLoadError(e instanceof Error ? e.message : "加载失败");
-      throw e;
-    }
+    return fetchMemory()
+      .then((v) => {
+        if (seq !== requestSeqRef.current) return; // 已有更新的 reload，丢弃过期响应
+        setView(v);
+        setLoadError(null);
+        setEditing(null); // 新视图落地后行号/内容可能漂移，行内编辑一并收起
+      })
+      .catch((e) => {
+        if (seq !== requestSeqRef.current) return;
+        setLoadError(e instanceof Error ? e.message : "加载失败");
+        throw e;
+      });
   }, []);
 
   useEffect(() => {
-    reload().catch(() => {}); // 失败已在 reload 内经 setLoadError 呈现，此处仅防未处理 rejection
+    // 失败已在 reload 内经 setLoadError 呈现，此处仅防未处理 rejection（终审 F-6）
+    reload().catch(() => {});
   }, [reload]);
 
   // 409（hash 冲突）/410（行漂移）统一分流：提示已刷新并拉最新视图；
