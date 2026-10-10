@@ -252,6 +252,17 @@ class MemoryControllerTest {
     }
 
     @Test
+    @DisplayName("记忆文件 IO 失败（UncheckedIOException）映射 503 SERVICE_UNAVAILABLE（终审 F-1）")
+    void givenIoFailure_whenGet_then503() throws Exception {
+        when(service.load(1L)).thenThrow(
+                new java.io.UncheckedIOException("记忆文件读取失败", new java.io.IOException("disk")));
+
+        mvc.perform(get("/api/memory").with(authentication(auth())))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("SERVICE_UNAVAILABLE"));
+    }
+
+    @Test
     @DisplayName("编辑请求 newLine 含换行返回 400 且不触达服务（B2 评审 Minor-2）")
     void givenNewLineWithLineBreak_whenEdit_then400NoServiceCall() throws Exception {
         mvc.perform(put("/api/memory/curated").with(authentication(auth())).with(csrf())
