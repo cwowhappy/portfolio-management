@@ -21,6 +21,10 @@ const REBALANCE_OPTIONS = [
 const windowLabel = (v: string): string =>
   WINDOW_OPTIONS.find((w) => w.value === v)?.label ?? `未识别(${v})`;
 
+// P3-⑨（MS-31 C1 同行收口）：再平衡值同口径经 REBALANCE_OPTIONS 映射标签回显
+const rebalanceLabel = (v: string): string =>
+  REBALANCE_OPTIONS.find((r) => r.value === v)?.label ?? `未识别(${v})`;
+
 // 与 RiskStatsCards 同口径：后端 toPlainString 小数 → 两位百分比/比率
 function pct(s: string): string {
   return `${(Number(s) * 100).toFixed(2)}%`;
@@ -118,7 +122,7 @@ export default function BacktestCard() {
       {result && (
         <div className="space-y-3">
           <div className="text-xs text-[color:var(--color-ink-faint)]">
-            {result.planName} · {result.windowStart} ~ {result.windowEnd} · 窗口 {windowLabel(result.window)} · 再平衡 {result.rebalance}
+            {result.planName} · {result.windowStart} ~ {result.windowEnd} · 窗口 {windowLabel(result.window)} · 再平衡 {rebalanceLabel(result.rebalance)}
           </div>
           <div className="grid grid-cols-3 gap-4">
             <div className="rounded-xl border border-[color:var(--color-line-soft)] px-4 py-3">

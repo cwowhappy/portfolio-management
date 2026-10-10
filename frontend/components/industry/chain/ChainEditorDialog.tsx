@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { fetchUnlistedCompanies } from "@/lib/industryUnlistedApi";
 import { saveChain, deleteChain } from "@/lib/industryCurationApi";
 import { useSaveAction } from "@/lib/useSaveAction";
+import { useDialogA11y } from "@/lib/useDialogA11y";
 import type { ChainView, UnlistedCompany } from "@/lib/types";
 
 const TIERS = [
@@ -46,6 +47,11 @@ export default function ChainEditorDialog({ industryCode, initial, onClose, onCh
   })) ?? [newStage()]);
   const [companies, setCompanies] = useState<UnlistedCompany[]>([]);
   const { saving, error, setError, run } = useSaveAction("保存失败");
+  // P3-⑤（MS-31 C1）：Escape 关闭（saving 在途不关，与取消按钮同口径）+ 初始焦点 + 焦点返还 + Tab 圈定
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const onOverlayKeyDown = useDialogA11y(overlayRef, () => {
+    if (!saving) onClose();
+  });
 
   // 未上市成员下拉数据源（当前行业策展名单；失败静默——空下拉不影响上市成员编辑）
   useEffect(() => {
@@ -123,6 +129,12 @@ export default function ChainEditorDialog({ industryCode, initial, onClose, onCh
   const inputCls = "rounded-md border border-[color:var(--color-line)] bg-[color:var(--color-bg)] px-2 py-1 text-sm";
   return (
     <div data-testid="chain-editor-dialog"
+      ref={overlayRef}
+      tabIndex={-1}
+      role="dialog"
+      aria-modal="true"
+      aria-label={initial ? "编辑产业链" : "新增产业链"}
+      onKeyDown={onOverlayKeyDown}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
       onClick={(e) => { if (e.target === e.currentTarget && !saving) onClose(); }}>
       <div className="max-h-[85vh] w-full max-w-2xl space-y-3 overflow-y-auto rounded-2xl border border-[color:var(--color-line)] bg-[color:var(--color-bg)] p-5">
