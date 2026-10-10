@@ -56,4 +56,11 @@ class InvestSystemPromptTest {
                 .contains("<!--advice-->")
                 .contains("最后一行");
     }
+
+    @DisplayName("工具规范第 11 条扩展（MS-31 决议 #7）：系统提示注入的用户画像同禁传 MCP（§3.4 原文）")
+    @Test
+    void whenPromptText_thenClause11CoversInjectedUserProfile() {
+        assertThat(InvestSystemPrompt.TEXT).contains(
+                "以及系统提示注入的用户画像（投资风格/关注行业/自选股/持仓汇总），禁止作为参数传给任何 MCP 工具");
+    }
 }

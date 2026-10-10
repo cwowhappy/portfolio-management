@@ -6,6 +6,7 @@ import com.portfolio.invest.application.portfolio.PortfolioApplicationService;
 import com.portfolio.invest.application.portfolio.PortfolioOverviewView;
 import com.portfolio.invest.application.screening.WatchlistApplicationService;
 import com.portfolio.invest.application.screening.WatchlistItemView;
+import com.portfolio.invest.config.InvestProperties;
 import com.portfolio.invest.domain.memory.ProfileSectionRenderer;
 import com.portfolio.invest.domain.memory.UserProfileConfig;
 import com.portfolio.invest.domain.memory.UserProfileConfigRepository;
@@ -14,7 +15,6 @@ import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
@@ -54,13 +54,15 @@ public class ProfileConfigApplicationService {
             IndustryWatchApplicationService industryWatchService,
             WatchlistApplicationService watchlistService,
             PortfolioApplicationService portfolioService,
-            @Value("${invest.profile.watchlist-limit:30}") int watchlistLimit) {
+            InvestProperties props) {
         this.repository = repository;
         this.allocationService = allocationService;
         this.industryWatchService = industryWatchService;
         this.watchlistService = watchlistService;
         this.portfolioService = portfolioService;
-        this.watchlistLimit = watchlistLimit;
+        // MS-31 B5：换注入 InvestProperties（getProfile().getWatchlistLimit()，缺省 30 同前）
+        //——消除与 B5 注入侧 builder 的双机制同键漂移面（预览/注入同一配置源）
+        this.watchlistLimit = props.getProfile().getWatchlistLimit();
     }
 
     /** 四开关；无配置行 = 全关。 */

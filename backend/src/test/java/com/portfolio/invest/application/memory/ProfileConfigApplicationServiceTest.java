@@ -13,6 +13,7 @@ import com.portfolio.invest.application.portfolio.PortfolioApplicationService;
 import com.portfolio.invest.application.portfolio.PortfolioOverviewView;
 import com.portfolio.invest.application.screening.WatchlistApplicationService;
 import com.portfolio.invest.application.screening.WatchlistItemView;
+import com.portfolio.invest.config.InvestProperties;
 import com.portfolio.invest.domain.allocation.RiskProfile;
 import com.portfolio.invest.domain.memory.ProfileSectionRenderer;
 import com.portfolio.invest.domain.memory.UserProfileConfig;
@@ -53,8 +54,10 @@ class ProfileConfigApplicationServiceTest {
     }
 
     private ProfileConfigApplicationService newService(int watchlistLimit) {
+        InvestProperties props = new InvestProperties();
+        props.getProfile().setWatchlistLimit(watchlistLimit);
         return new ProfileConfigApplicationService(
-                repo, allocation, industryWatch, watchlist, portfolio, watchlistLimit);
+                repo, allocation, industryWatch, watchlist, portfolio, props);
     }
 
     private void givenAllSourcesHealthy() {

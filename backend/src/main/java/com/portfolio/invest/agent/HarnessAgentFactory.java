@@ -33,6 +33,8 @@ public class HarnessAgentFactory {
     private final ObservabilityRecorder observabilityRecorder;
     /** MS-30 B6：工具观测 argsJson 序列化（域端口不引 Jackson，序列化归 agent 侧调用方）。 */
     private final ObjectMapper mapper;
+    /** MS-31 B5：画像注入块构建（AG-UI 与飞书两调用方同走 build——决议 #13 飞书同权自动成立）。 */
+    private final ProfileContextBuilder profileContextBuilder;
 
     public HarnessAgentFactory(UserToolkitFactory toolkitFactory,
                                SkillApplicationService skillApplicationService,
@@ -40,7 +42,8 @@ public class HarnessAgentFactory {
                                Model model,
                                InvestProperties props,
                                ObservabilityRecorder observabilityRecorder,
-                               ObjectMapper mapper) {
+                               ObjectMapper mapper,
+                               ProfileContextBuilder profileContextBuilder) {
         this.toolkitFactory = toolkitFactory;
         this.skillApplicationService = skillApplicationService;
         this.builtInSkillRepository = builtInSkillRepository;
@@ -49,6 +52,7 @@ public class HarnessAgentFactory {
         this.trust = props.getTrust();
         this.observabilityRecorder = observabilityRecorder;
         this.mapper = mapper;
+        this.profileContextBuilder = profileContextBuilder;
     }
 
     public HarnessAgent build(Long userId) {
@@ -58,7 +62,7 @@ public class HarnessAgentFactory {
         TrustAgentHook trustHook = new TrustAgentHook(trust);
         return HarnessAgent.builder()
                 .name("invest")
-                .sysPrompt(InvestSystemPrompt.TEXT)
+                .sysPrompt(systemPrompt(userId))
                 .model(model)
                 .toolkit(toolkitFactory.build(userId))
                 .skillRepository(builtInSkillRepository)
@@ -85,5 +89,16 @@ public class HarnessAgentFactory {
 
     static SkillFilter skillFilter(List<String> enabled) {
         return SkillFilter.only(enabled.toArray(new String[0]));
+    }
+
+    /**
+     * 系统提示词（MS-31 B5，设计规格 §3.3）：画像块存在时 {@code TEXT + "\n\n" + block}
+     * （拼接序固定）；块缺位（授权全关/无数据/构建异常）回落裸 {@link InvestSystemPrompt#TEXT}
+     * ——与现状<b>逐字节一致</b>（回归红线，同包测试以 UTF-8 字节比对锁定）。
+     */
+    String systemPrompt(Long userId) {
+        return profileContextBuilder.build(userId)
+                .map(block -> InvestSystemPrompt.TEXT + "\n\n" + block)
+                .orElseGet(() -> InvestSystemPrompt.TEXT);
     }
 }

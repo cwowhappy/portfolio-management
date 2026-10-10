@@ -159,3 +159,7 @@ invest:
       result-text-max-bytes: 2048       # 工具级 resultText 截断（需求决策 #13）
       unit-price-cny-per-mtok: 0.0      # >0 时看板显示估算成本（不入库）
     calc-tolerance-pct: 2               # 计算类断言相对容差（需求决策 #15；EvalRunner 读入下传 AssertionEngine 容差维面）
+  profile:                              # MS-31 记忆与画像（设计规格 §3.6）
+    watchlist-limit: 30                 # 注入的自选股条目上限（预览与注入同源同上限）
+    block-max-chars: 800                # 画像块整块截断阈值（超限截断附「（已截断）」）
+    digest-enabled: true                # F03 每日摘要开关（false = 21:07 调度器静默跳过）
