@@ -46,7 +46,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 // @DataJpaTest 切片 + 真实 PG：@ServiceConnection 复用 testFixtures 的 JVM 单例容器，整个测试进程只起一个 Postgres。
 // Boot 4 的 @DataJpaTest 不含 Flyway 自动配置（schema 由 Flyway 管），需 @ImportAutoConfiguration 显式引入；
 // RepositoryImpl 适配器不在切片扫描范围内，用 @Import 显式装配。
-// @DataJpaTest 默认每个用例事务回滚：@BeforeEach 植入的固定 app_user 行（42/43/44）随事务回滚，不污染其他用例。
+// @DataJpaTest 默认每个用例事务回滚：@BeforeEach 植入的固定 app_user 行（94050/94051/94052）随事务回滚，不污染其他用例。
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @ImportAutoConfiguration(FlywayAutoConfiguration.class)
@@ -70,13 +70,13 @@ class PortfolioRepositoryImplTest {
     void seedUsers() {
         jdbcTemplate.update(
                 "INSERT INTO app_user(id, username, password_hash, role, status) VALUES (?, ?, ?, ?, ?)",
-                42L, "portfolio-t4-42", "h", "USER", "PENDING");
+                94050L, "portfolio-t4-94050", "h", "USER", "PENDING");
         jdbcTemplate.update(
                 "INSERT INTO app_user(id, username, password_hash, role, status) VALUES (?, ?, ?, ?, ?)",
-                43L, "portfolio-t4-43", "h", "USER", "PENDING");
+                94051L, "portfolio-t4-94051", "h", "USER", "PENDING");
         jdbcTemplate.update(
                 "INSERT INTO app_user(id, username, password_hash, role, status) VALUES (?, ?, ?, ?, ?)",
-                44L, "portfolio-t4-44", "h", "USER", "PENDING");
+                94052L, "portfolio-t4-94052", "h", "USER", "PENDING");
     }
 
     private Portfolio savePortfolio(Long userId) {
@@ -87,15 +87,15 @@ class PortfolioRepositoryImplTest {
     @DisplayName("组合按用户保存与查询")
     @Test
     void whenSavePortfolio_thenQueryableByUser() {
-        Portfolio saved = savePortfolio(42L);
+        Portfolio saved = savePortfolio(94050L);
         assertThat(saved.id()).isNotNull();
-        assertThat(repository.findPortfolioByUserId(42L)).isPresent();
+        assertThat(repository.findPortfolioByUserId(94050L)).isPresent();
     }
 
     @DisplayName("分组与持仓按组合查询")
     @Test
     void givenGroupAndPosition_whenQueryByPortfolio_thenReturned() {
-        Portfolio p = savePortfolio(43L);
+        Portfolio p = savePortfolio(94051L);
         HoldingGroup g = repository.saveGroup(HoldingGroup.create(p.id(), "华泰", GroupType.ACCOUNT, Instant.now()));
 
         Position pos = Position.create(p.id(), g.id(), "600519", "贵州茅台", Instant.now())
@@ -110,7 +110,7 @@ class PortfolioRepositoryImplTest {
     @DisplayName("删除分组前先清空持仓")
     @Test
     void givenGroupWithPosition_whenDeletePositionThenGroup_thenGroupDeleted() {
-        Portfolio p = savePortfolio(44L);
+        Portfolio p = savePortfolio(94052L);
         HoldingGroup g = repository.saveGroup(HoldingGroup.create(p.id(), "东财", GroupType.ACCOUNT, Instant.now()));
         Position savedPos = repository.savePosition(Position.create(p.id(), g.id(), "000858", "五粮液", Instant.now()));
 
@@ -125,7 +125,7 @@ class PortfolioRepositoryImplTest {
     @DisplayName("交易分红现金流水往返")
     @Test
     void whenSaveTradeDividendAndCashTx_thenReadBack() {
-        Portfolio p = savePortfolio(43L);
+        Portfolio p = savePortfolio(94051L);
         HoldingGroup g = repository.saveGroup(HoldingGroup.create(p.id(), "华泰", GroupType.ACCOUNT, Instant.now()));
         Position savedPos = repository.savePosition(Position.create(p.id(), g.id(), "600519", "贵州茅台", Instant.now())
                 .applyBuy(new BigDecimal("1500"), new BigDecimal("100"), new BigDecimal("5")));
@@ -165,13 +165,13 @@ class PortfolioRepositoryImplTest {
     @DisplayName("组合级批量流水：跨持仓跨分组全量返回，且只含本组合")
     @Test
     void givenPositionsAcrossGroups_whenFindFlowsByPortfolioId_thenAllFlowsOfThatPortfolioOnly() {
-        Portfolio p = savePortfolio(42L);
+        Portfolio p = savePortfolio(94050L);
         HoldingGroup g1 = repository.saveGroup(HoldingGroup.create(p.id(), "华泰", GroupType.ACCOUNT, Instant.now()));
         HoldingGroup g2 = repository.saveGroup(HoldingGroup.create(p.id(), "东财", GroupType.ACCOUNT, Instant.now()));
         Position posA = repository.savePosition(Position.create(p.id(), g1.id(), "600519", "贵州茅台", Instant.now()));
         Position posB = repository.savePosition(Position.create(p.id(), g2.id(), "000858", "五粮液", Instant.now()));
         // 他人组合的流水：不应混入本组合的批量结果
-        Portfolio other = savePortfolio(43L);
+        Portfolio other = savePortfolio(94051L);
         HoldingGroup otherGroup = repository.saveGroup(HoldingGroup.create(other.id(), "国君", GroupType.ACCOUNT, Instant.now()));
         Position otherPos = repository.savePosition(
                 Position.create(other.id(), otherGroup.id(), "600036", "招商银行", Instant.now()));
@@ -192,7 +192,7 @@ class PortfolioRepositoryImplTest {
     @DisplayName("组合级交易区间下推：两端含边界，from/to 可空四分支")
     @Test
     void givenTradesAroundBounds_whenFindTradesByPortfolioIdInRange_thenBoundsInclusiveFourBranches() {
-        Portfolio p = savePortfolio(42L);
+        Portfolio p = savePortfolio(94050L);
         HoldingGroup g = repository.saveGroup(HoldingGroup.create(p.id(), "华泰", GroupType.ACCOUNT, Instant.now()));
         Position posA = repository.savePosition(Position.create(p.id(), g.id(), "600519", "贵州茅台", Instant.now()));
         Position posB = repository.savePosition(Position.create(p.id(), g.id(), "000858", "五粮液", Instant.now()));
@@ -221,7 +221,7 @@ class PortfolioRepositoryImplTest {
     @DisplayName("组合级分红区间下推：两端含边界，from/to 可空四分支")
     @Test
     void givenDividendsAroundBounds_whenFindDividendsByPortfolioIdInRange_thenBoundsInclusiveFourBranches() {
-        Portfolio p = savePortfolio(42L);
+        Portfolio p = savePortfolio(94050L);
         HoldingGroup g = repository.saveGroup(HoldingGroup.create(p.id(), "华泰", GroupType.ACCOUNT, Instant.now()));
         Position posA = repository.savePosition(Position.create(p.id(), g.id(), "600519", "贵州茅台", Instant.now()));
         Position posB = repository.savePosition(Position.create(p.id(), g.id(), "000858", "五粮液", Instant.now()));
@@ -256,17 +256,17 @@ class PortfolioRepositoryImplTest {
     @Test
     @Transactional(propagation = Propagation.NOT_SUPPORTED) // 关闭测试托管事务：种子须为提交态，并发事务才可见
     void whenLockSameGroupInTwoTransactions_thenSecondBlocksUntilFirstCommits() throws Exception {
-        // NOT_SUPPORTED 下本用例（含 @BeforeEach 的 42/43/44）均为即时提交，收尾须手动清理共享容器
+        // NOT_SUPPORTED 下本用例（含 @BeforeEach 的 94050/94051/94052）均为即时提交，收尾须手动清理共享容器
         jdbcTemplate.update(
                 "INSERT INTO app_user(id, username, password_hash, role, status) VALUES (?, ?, ?, ?, ?)",
-                45L, "portfolio-t4-45", "h", "USER", "PENDING");
+                94053L, "portfolio-t4-94053", "h", "USER", "PENDING");
         Long portfolioId = null;
         try {
             TransactionTemplate tx = new TransactionTemplate(transactionManager);
             // 种子放同一提交态事务（@Modifying insertPortfolioIfAbsent 需写事务；提交后并发事务才可见）
             final HoldingGroup g = tx.execute(status -> {
-                repository.insertPortfolioIfAbsent(45L);
-                Portfolio p = repository.findPortfolioByUserId(45L).orElseThrow();
+                repository.insertPortfolioIfAbsent(94053L);
+                Portfolio p = repository.findPortfolioByUserId(94053L).orElseThrow();
                 return repository.saveGroup(HoldingGroup.create(p.id(), "锁组", GroupType.ACCOUNT, Instant.now()));
             });
             portfolioId = g.portfolioId();
@@ -312,7 +312,7 @@ class PortfolioRepositoryImplTest {
                 jdbcTemplate.update("DELETE FROM holding_group WHERE portfolio_id = ?", portfolioId);
                 jdbcTemplate.update("DELETE FROM portfolio WHERE id = ?", portfolioId);
             }
-            jdbcTemplate.update("DELETE FROM app_user WHERE id IN (42, 43, 44, 45)");
+            jdbcTemplate.update("DELETE FROM app_user WHERE id IN (94050, 94051, 94052, 94053)");
         }
     }
 }

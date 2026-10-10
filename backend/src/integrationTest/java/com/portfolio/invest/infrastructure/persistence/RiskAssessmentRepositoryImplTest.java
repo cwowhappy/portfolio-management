@@ -43,7 +43,7 @@ class RiskAssessmentRepositoryImplTest {
     void seedUsers() {
         jdbcTemplate.update(
                 "INSERT INTO app_user(id, username, password_hash, role, status) VALUES (?, ?, ?, ?, ?)",
-                42L, "risk-t3-42", "h", "USER", "PENDING");
+                94042L, "risk-t3-94042", "h", "USER", "PENDING");
     }
 
     private Map<String, String> allAnswers(String optionId) {
@@ -55,11 +55,11 @@ class RiskAssessmentRepositoryImplTest {
     @Test
     void whenSaveAndReadBack_thenFieldsPreserved() {
         RiskAssessment saved = repository.save(
-                RiskAssessment.grade(42L, allAnswers("C"), Instant.parse("2026-09-15T00:00:00Z")));
+                RiskAssessment.grade(94042L, allAnswers("C"), Instant.parse("2026-09-15T00:00:00Z")));
         assertThat(saved.totalScore()).isEqualTo(24); // 8*3
         assertThat(saved.profile()).isEqualTo(RiskProfile.BALANCED);
 
-        RiskAssessment read = repository.findByUserId(42L).orElseThrow();
+        RiskAssessment read = repository.findByUserId(94042L).orElseThrow();
         assertThat(read.totalScore()).isEqualTo(24);
         assertThat(read.profile()).isEqualTo(RiskProfile.BALANCED);
         assertThat(read.answers()).containsEntry("Q1", "C").hasSize(8);
@@ -68,13 +68,13 @@ class RiskAssessmentRepositoryImplTest {
     @DisplayName("重测覆盖：同用户第二次保存不增行、值更新")
     @Test
     void whenSaveTwiceForSameUser_thenUpsertSingleRow() {
-        repository.save(RiskAssessment.grade(42L, allAnswers("E"), Instant.now()));
-        repository.save(RiskAssessment.grade(42L, allAnswers("A"), Instant.now()));
+        repository.save(RiskAssessment.grade(94042L, allAnswers("E"), Instant.now()));
+        repository.save(RiskAssessment.grade(94042L, allAnswers("A"), Instant.now()));
 
         Integer rows = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM risk_assessment WHERE user_id = 42", Integer.class);
+                "SELECT COUNT(*) FROM risk_assessment WHERE user_id = 94042", Integer.class);
         assertThat(rows).isEqualTo(1);
-        assertThat(repository.findByUserId(42L)).hasValueSatisfying(a -> {
+        assertThat(repository.findByUserId(94042L)).hasValueSatisfying(a -> {
             assertThat(a.totalScore()).isEqualTo(40);
             assertThat(a.profile()).isEqualTo(RiskProfile.AGGRESSIVE);
         });
