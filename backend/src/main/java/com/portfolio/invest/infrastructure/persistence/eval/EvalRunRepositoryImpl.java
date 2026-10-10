@@ -29,7 +29,7 @@ public class EvalRunRepositoryImpl implements EvalRunRepository {
     private static final ObjectMapper JSON = new ObjectMapper();
 
     private static final String SELECT_COLS = """
-            SELECT id, triggered_by, status, started_at, finished_at, total_pass, total_fail,
+            SELECT id, triggered_by, track, status, started_at, finished_at, total_pass, total_fail,
                    total_error, by_category, prompt_versions, question_bank_hash, alert_status,
                    baseline, baseline_candidate, verdict_reasons, duration_ms, report_path
               FROM eval_run
@@ -38,6 +38,7 @@ public class EvalRunRepositoryImpl implements EvalRunRepository {
     private static final RowMapper<EvalRunRow> ROW = (rs, i) -> new EvalRunRow(
             rs.getLong("id"),
             rs.getString("triggered_by"),
+            rs.getString("track"),
             rs.getString("status"),
             toInstant(rs.getTimestamp("started_at")),
             toInstant(rs.getTimestamp("finished_at")),
@@ -61,12 +62,12 @@ public class EvalRunRepositoryImpl implements EvalRunRepository {
     }
 
     @Override
-    public long insertRunning(String triggeredBy, String reportPath) {
+    public long insertRunning(String triggeredBy, String track, String reportPath) {
         Long id = jdbc.queryForObject("""
-                INSERT INTO eval_run (triggered_by, status, report_path)
-                VALUES (?, 'RUNNING', ?)
+                INSERT INTO eval_run (triggered_by, track, status, report_path)
+                VALUES (?, ?, 'RUNNING', ?)
                 RETURNING id
-                """, Long.class, triggeredBy, reportPath);
+                """, Long.class, triggeredBy, track, reportPath);
         if (id == null) {
             throw new IllegalStateException("eval_run RUNNING 行插入未返回 id");
         }
@@ -100,13 +101,14 @@ public class EvalRunRepositoryImpl implements EvalRunRepository {
 
     @Override
     public Optional<EvalRunRow> findBaseline() {
-        return jdbc.query(SELECT_COLS + " WHERE baseline LIMIT 1", ROW).stream().findFirst();
+        return jdbc.query(SELECT_COLS + " WHERE baseline AND track = 'AGENT' LIMIT 1", ROW)
+                .stream().findFirst();
     }
 
     @Override
     public Optional<EvalRunRow> findLatestExcluding(long runId) {
         return jdbc.query(SELECT_COLS + """
-                 WHERE id <> ?
+                 WHERE id <> ? AND track = 'AGENT'
                  ORDER BY started_at DESC, id DESC LIMIT 1
                 """, ROW, runId).stream().findFirst();
     }

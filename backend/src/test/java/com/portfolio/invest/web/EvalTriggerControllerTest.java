@@ -65,7 +65,7 @@ class EvalTriggerControllerTest {
     private PersistentTokenRepository persistentTokenRepository;
 
     private EvalRunRow runRow(long id, String status, String alertStatus, boolean baseline) {
-        return new EvalRunRow(id, "SCHEDULED", status,
+        return new EvalRunRow(id, "SCHEDULED", "AGENT", status,
                 Instant.parse("2026-10-10T02:17:00Z"), Instant.parse("2026-10-10T03:25:00Z"),
                 18, 2, 0, Map.of("MARKET_FACT", new int[]{10, 0, 0}),
                 Map.of("system.invest", 3), "qb-hash", alertStatus, baseline, false,

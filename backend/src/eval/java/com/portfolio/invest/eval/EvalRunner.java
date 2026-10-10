@@ -30,7 +30,39 @@ import org.springframework.context.ConfigurableApplicationContext;
  */
 public final class EvalRunner {
 
-    /** 命令行参数（--list / --real / --compare=&lt;path&gt; / --timeout-ms=&lt;n&gt; / --invest.eval.data-root=&lt;path&gt;）。 */
+    /**
+     * 轨道分派参数（MS-30 跟进②，终审 I-2 拍板「并入」）：evalBootJar 单 Start-Class
+     * （本类）不变，argv 含 {@code --track=extraction} 时 main 转发
+     * {@link ExtractionEvalRunner}（两轨独立 main 语义保留、本地 {@code make eval-extraction}
+     * 仍直调 Extraction main）。轨别参数从剩余 argv <b>剥离</b>——两轨参数解析均拒未知参数，
+     * 透传即炸（对话轨 Options.parse / 抽取轨 run 均如此）。取值：{@code agent}（缺省，对话轨）/
+     * {@code extraction}（抽取轨，纯 JVM 无 Spring 无 DB，22 题 flash 分钟级）。
+     */
+    record TrackDispatch(String track, String[] remaining) {
+
+        static final String TRACK_AGENT = "agent";
+        static final String TRACK_EXTRACTION = "extraction";
+
+        static TrackDispatch parse(String[] args) {
+            String track = TRACK_AGENT;
+            List<String> remaining = new ArrayList<>();
+            for (String arg : args) {
+                if (arg.startsWith("--track=")) {
+                    track = arg.substring("--track=".length()).toLowerCase(Locale.ROOT);
+                } else {
+                    remaining.add(arg);
+                }
+            }
+            if (!TRACK_AGENT.equals(track) && !TRACK_EXTRACTION.equals(track)) {
+                throw new IllegalArgumentException("未知 --track 取值: --track=" + track
+                        + "（支持 --track=agent（对话轨，缺省）/ --track=extraction（抽取轨））");
+            }
+            return new TrackDispatch(track, remaining.toArray(String[]::new));
+        }
+    }
+
+    /** 命令行参数（--list / --real / --compare=&lt;path&gt; / --timeout-ms=&lt;n&gt; / --invest.eval.data-root=&lt;path&gt;；
+     *  轨别参数 --track=&lt;v&gt; 由 {@link TrackDispatch} 先行剥离，不进本 Options）。 */
     record Options(boolean list, boolean real, Path compare, long timeoutMs, String dataRoot) {
 
         /** 评测数据目录默认值：state/workspace 相对 backend/build（Gradle JavaExec 工作目录成立）；部署机裸进程须显式传绝对路径。 */
@@ -90,7 +122,14 @@ public final class EvalRunner {
     }
 
     public static void main(String[] args) {
-        int exitCode = new EvalRunner().run(Options.parse(args));
+        // —— 轨道分派（MS-30 跟进②）：--track=extraction 转抽取轨 main（其内 System.exit(0)
+        //    即终止 JVM，不返回）；--track=agent/缺省走本类对话轨 ——
+        TrackDispatch dispatch = TrackDispatch.parse(args);
+        if (TrackDispatch.TRACK_EXTRACTION.equals(dispatch.track())) {
+            ExtractionEvalRunner.main(dispatch.remaining());
+            return; // 理论不可达：Extraction main 内恒 System.exit
+        }
+        int exitCode = new EvalRunner().run(Options.parse(dispatch.remaining()));
         System.exit(exitCode);
     }
 

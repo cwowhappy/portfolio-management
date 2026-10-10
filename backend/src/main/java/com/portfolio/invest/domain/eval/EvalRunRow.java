@@ -21,6 +21,8 @@ import java.util.Map;
  *
  * @param id               主键（IDENTITY）
  * @param triggeredBy      触发方式（SCHEDULED/MANUAL——落库真值归调度侧，报告内恒 MANUAL 不采信）
+ * @param track            轨道（AGENT=对话轨，判定/baseline 语义；EXTRACT=抽取轨，仅留痕——
+ *                         MS-30 跟进②，V6 列，存量行回填 AGENT）
  * @param status           运行状态（RUNNING/COMPLETED/PARTIAL/FAILED）
  * @param startedAt        触发时间
  * @param finishedAt       收割完成时间（RUNNING 行为 null）
@@ -40,6 +42,7 @@ import java.util.Map;
 public record EvalRunRow(
         long id,
         String triggeredBy,
+        String track,
         String status,
         Instant startedAt,
         Instant finishedAt,
@@ -67,6 +70,14 @@ public record EvalRunRow(
     public static final String ALERT_DEGRADED = "DEGRADED";
     public static final String ALERT_RECOVERED = "RECOVERED";
 
+    /**
+     * 轨道值域（MS-30 跟进②，V6 track 列）：AGENT=对话轨（既有回归判定/baseline 语义，
+     * 存量行回填值）；EXTRACT=抽取轨（落库留痕，不参与判定/baseline——v1 简化，收割侧
+     * alert_status 恒 NONE）。
+     */
+    public static final String TRACK_AGENT = "AGENT";
+    public static final String TRACK_EXTRACT = "EXTRACT";
+
     public EvalRunRow {
         byCategory = byCategory == null ? Map.of() : Map.copyOf(byCategory);
         promptVersions = promptVersions == null ? Map.of() : Map.copyOf(promptVersions);
@@ -77,8 +88,11 @@ public record EvalRunRow(
      * 基准置位资格（MS-30 B5，设计规格 §2.5/Review Focus #5）：仅 COMPLETED 且非 DEGRADED
      * 跑可置 baseline=true——PARTIAL（数字不完整）/FAILED（无产出）/DEGRADED（劣化跑）均拒。
      * RECOVERED 恢复跑数字完整且判定通过，可置（baseline_candidate 的人工确认通道）。
+     * 仅对话轨有资格（MS-30 跟进②）：EXTRACT 轨不参与判定/baseline——若放行，恒一基准
+     * 会被抽取行占位而 findBaseline（track='AGENT' 过滤）静默失明。
      */
     public boolean eligibleAsBaseline() {
-        return STATUS_COMPLETED.equals(status) && !ALERT_DEGRADED.equals(alertStatus);
+        return STATUS_COMPLETED.equals(status) && !ALERT_DEGRADED.equals(alertStatus)
+                && TRACK_AGENT.equals(track);
     }
 }

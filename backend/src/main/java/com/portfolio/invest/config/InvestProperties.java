@@ -516,6 +516,12 @@ public class InvestProperties {
         /** 整跑护栏：超时 destroyForcibly → 收割按 PARTIAL 语义。 */
         private int timeoutMinutes = 120;
         /**
+         * 抽取轨独立超时（分钟，MS-30 跟进②）：对话轨收割后顺序接续的抽取子进程
+         * （--track=extraction，22 题纯 JVM 分钟级）远短于对话轨整跑护栏，独立短超时
+         * 避免对话轨 120 分钟量级拖住抽取轨收割。
+         */
+        private int extractionTimeoutMinutes = 30;
+        /**
          * 当次 eval token 护栏（终审 I-1 已接线）：EvalRunner 每题累计题级 tokenUsage.totalTokens，
          * 超限即中止剩余题（SKIPPED）并 runMeta 标 PARTIAL+tokenBudgetExceeded（收割不任 baseline）；
          * 默认 7,500,000 = 64 题全量实测 total 2,447,427（2026-10-10）的 ~3 倍，留题库扩展余量。
@@ -538,6 +544,10 @@ public class InvestProperties {
         public void setJarPath(String jarPath) { this.jarPath = jarPath; }
         public int getTimeoutMinutes() { return timeoutMinutes; }
         public void setTimeoutMinutes(int timeoutMinutes) { this.timeoutMinutes = timeoutMinutes; }
+        public int getExtractionTimeoutMinutes() { return extractionTimeoutMinutes; }
+        public void setExtractionTimeoutMinutes(int extractionTimeoutMinutes) {
+            this.extractionTimeoutMinutes = extractionTimeoutMinutes;
+        }
         public long getTokenBudget() { return tokenBudget; }
         public void setTokenBudget(long tokenBudget) { this.tokenBudget = tokenBudget; }
         public Regression getRegression() { return regression; }

@@ -16,7 +16,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
  * V5__ms30_eval_observability.sql 迁移契约（MS-30 B1）：@SpringBootTest 在真实 PG
- * （Testcontainers）上跑全量迁移（V1~V5）后断言——eval_run / prompt_asset_version /
+ * （Testcontainers）上跑全量迁移（V1~V6）后断言——eval_run / prompt_asset_version /
  * tool_invocation_obs / turn_observation 四表存在、eval_run 的恒一基准部分唯一索引生效
  * （第二条 baseline=true 必被拒）。DDL 逐字对照设计规格 §六（features/eval-observability）。
  *

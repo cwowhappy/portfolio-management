@@ -57,6 +57,15 @@ import org.springframework.stereotype.Service;
  * 读到别跑数据。判定五态落 alert_status 时 INCOMPARABLE/NO_BASELINE 收敛为 NONE（值域 3 值），
  * 理由全量留 verdict_reasons。收割尽力而为：任何异常兜底标 FAILED 不向上抛（调度看护侧只管互斥旗）。
  *
+ * <p><b>两轨兼容（MS-30 跟进②）</b>：按报告 schema 分轨解析——{@code eval-agent-report/2}
+ * 走上述对话轨链路；{@code eval-extraction-report/3}（无 runMeta）走抽取轨分支：totals 从
+ * 其 summary 读（pass=overallPass、error 单列、原始 fail = total−overallPass−error）、
+ * byCategory 聚合 <b>EXTRACT 单类</b>（news/announcement/policy 三 kind 不入 judge 的
+ * 分类词表，与「抽取/对话老题仅参与总轨」口径一致）、<b>不判回归不任 baseline</b>（v1 简化：
+ * 抽取无 baseline 链，alert_status 恒 NONE、verdict_reasons 注明；token 护栏对抽取轨
+ * 不适用——抽取 runner 无题级 tokenUsage 累计通道，一并注明）、prompt_versions 仍取登记表
+ * 最新快照（intel.* 提示词的版本锚消费通道）、durationMs 取逐题汇总、报告归档同通道。
+ *
  * <p>eval 子进程（--Eval_MODE=true）不注册本类（类级条件沿 SchedulingConfig 先例）——审查
  * C1：本类无条件 @Service 强依赖门控缺席的 {@link PromptVersionRegistrar}（+调度器又依赖本类），
  * 曾致子进程上下文装配必死。守护见 EvalModeBeanGatingTest / EvalModeContextGuardIntegrationTest。
@@ -147,6 +156,12 @@ public class EvalHarvester {
             return;
         }
 
+        // —— 轨道分派（MS-30 跟进②）：抽取轨报告 schema（无 runMeta）走独立分支，不进判定链 ——
+        if (report.path("schema").asText("").startsWith("eval-extraction-report/")) {
+            harvestExtraction(runId, reportPath, report, exitCode, timedOut);
+            return;
+        }
+
         // —— ① 原始计数（报告 JSON 直读，judge 输入的唯一口径） ——
         JsonNode summary = report.path("summary");
         JsonNode runMeta = report.path("runMeta");
@@ -215,6 +230,62 @@ public class EvalHarvester {
         }
         log.info("eval 收割完成：runId={} status={} alert={}（pass={} fail={}（含 error={}）判定={}",
                 runId, status, alertStatus, pass, fail + error, error, verdict.status());
+    }
+
+    // ———— 抽取轨收割（MS-30 跟进②，schema=eval-extraction-report/3，无 runMeta） ————
+
+    /**
+     * 抽取轨分支：totals 从其 summary 读（pass=overallPass、error 单列留痕、原始 fail
+     * = total−overallPass−error）、byCategory 聚合 EXTRACT 单类、不判回归不任 baseline
+     * （v1 简化：抽取无 baseline 链——alert_status 恒 NONE，理由注明不参与判定与 token
+     * 护栏不适用）、prompt_versions 取登记表最新快照（intel.* 提示词版本锚）、durationMs
+     * 逐题汇总、报告归档同通道。SKIP（缺 key 未跑）/ERROR（框架异常）报告无 summary：
+     * SKIP → PARTIAL 理由留痕；ERROR → FAILED（沿对话轨「报告不可用」口径）。
+     */
+    private void harvestExtraction(long runId, Path reportPath, JsonNode report,
+                                   int exitCode, boolean timedOut) {
+        String reportStatus = report.path("status").asText("");
+        if ("SKIP".equals(reportStatus)) {
+            runRepository.updateHarvested(runId, new EvalRunHarvest(EvalRunRow.STATUS_PARTIAL,
+                    Instant.now(clock), 0, 0, 0, Map.of(), Map.of(), null,
+                    EvalRunRow.ALERT_NONE, false,
+                    List.of("抽取轨 SKIP 未跑: " + report.path("skipReason").asText("（无理由）")),
+                    null, reportPath.toString()));
+            log.warn("eval 抽取轨 SKIP 收割：runId={} 落 PARTIAL", runId);
+            return;
+        }
+        if ("ERROR".equals(reportStatus)) {
+            runRepository.markFailed(runId, List.of("抽取轨框架异常（报告 status=ERROR）: "
+                    + report.path("error").asText("（无明细）")));
+            log.error("eval 抽取轨框架异常收割：runId={} 落 FAILED", runId);
+            return;
+        }
+        JsonNode summary = report.path("summary");
+        int total = summary.path("total").asInt(0);
+        int pass = summary.path("overallPass").asInt(0);
+        int error = summary.path("error").asInt(0);
+        int fail = Math.max(0, total - pass - error); // parseFailed/llmUnavailable/维度 FAIL 合计
+        Map<String, int[]> byCategory = Map.of("EXTRACT", new int[]{pass, fail, error});
+        String status = timedOut || exitCode != 0 ? EvalRunRow.STATUS_PARTIAL : EvalRunRow.STATUS_COMPLETED;
+        List<String> reasons = List.of(
+                "EXTRACT 轨不参与回归判定（v1 语义：无 baseline 链，落库留痕不判劣化/恢复）",
+                "token 护栏不适用于 EXTRACT 轨（抽取 runner 无题级 tokenUsage 累计通道）");
+        // 版本快照仍取登记表最新（报告无 runMeta 无回流通道；intel.* 抽取提示词的版本锚消费位）
+        Map<String, Integer> promptVersions = snapshotVersions();
+        // 报告无 runMeta.totalDurationMs：逐题 durationMs 汇总（无题目时留 null）
+        long durationSum = 0;
+        boolean anyQuestion = false;
+        for (JsonNode question : report.path("questions")) {
+            durationSum += question.path("durationMs").asLong(0);
+            anyQuestion = true;
+        }
+        Path archived = archiveReport(runId, reportPath);
+        runRepository.updateHarvested(runId, new EvalRunHarvest(status, Instant.now(clock),
+                pass, fail + error, error, byCategory, promptVersions, null,
+                EvalRunRow.ALERT_NONE, false, reasons,
+                anyQuestion ? durationSum : null, archived.toString()));
+        log.info("eval 抽取轨收割完成：runId={} status={}（pass={} fail={}（含 error={}），不参与判定）",
+                runId, status, pass, fail + error, error);
     }
 
     // ———— 历史组装 ————

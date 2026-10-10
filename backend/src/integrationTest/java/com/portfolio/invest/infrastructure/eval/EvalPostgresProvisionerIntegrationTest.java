@@ -24,14 +24,14 @@ import org.testcontainers.containers.PostgreSQLContainer;
  *
  * <p>纯 JDBC 无 Spring 上下文（重置发生在子进程 main 内、上下文启动前）。端到端项按设计规格
  * 测试矩阵「独立 schema 重置端到端（起真 schema 跑 Flyway 断言表数）」：用返回 URL 程序化跑
- * Flyway V1~V5，钉死全部表与 history 表落 eval_schema、public 不受波及——首跑冒烟正是靠
+ * Flyway V1~V6，钉死全部表与 history 表落 eval_schema、public 不受波及——首跑冒烟正是靠
  * 这条拦住了「search_path 缺 public 导致 V3 gin_trgm_ops 解析失败」。
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class EvalPostgresProvisionerIntegrationTest extends PostgresTestSupport {
 
     /**
-     * 共享容器卫生（Task 2 引入、Task 3 全量 check 暴露）：端到端用例把 V1~V5 全量迁进
+     * 共享容器卫生（Task 2 引入、Task 3 全量 check 暴露）：端到端用例把 V1~V6 全量迁进
      * eval_schema 后不回收，而同容器的 IntelligenceMigrationTest 以不带 schema 限定的
      * information_schema 计数断言表唯一——两类执行顺序翻转（重编译使类发现序重排）即双份
      * 计数失败（clean HEAD 复现：expected 1 but was 2）。@AfterAll 整体 DROP 回收，恢复
@@ -87,7 +87,7 @@ class EvalPostgresProvisionerIntegrationTest extends PostgresTestSupport {
     }
 
     @Test
-    @DisplayName("端到端：reset 后经返回 URL 跑 Flyway V1~V5——表全落 eval_schema 且 public 不增")
+    @DisplayName("端到端：reset 后经返回 URL 跑 Flyway V1~V6——表全落 eval_schema 且 public 不增")
     void whenFlywayMigratesViaReturnedUrl_thenAllTablesLandInEvalSchemaOnly() throws SQLException {
         PostgreSQLContainer<?> pg = PostgresTestSupport.postgres();
         // 前置复刻「同库已装 pg_trgm 于 public」的 dev/deploy 库前提（侦察结论 §6）：扩展是库级对象，

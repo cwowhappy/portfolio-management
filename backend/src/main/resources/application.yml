@@ -148,6 +148,7 @@ invest:
       url: ${EVAL_DATASOURCE_URL:}      # 空 = 回退主 datasource（currentSchema 由 provisioner 拼）
     data-root: ${INVEST_EVAL_DATA_ROOT:}    # 空 = build/eval-agent（本地）；部署机绝对路径
     timeout-minutes: 120                # 整跑护栏（超时 destroyForcibly → 收割按 PARTIAL）
+    extraction-timeout-minutes: 30      # 抽取轨独立超时（MS-30 跟进②：对话轨收割后顺序接续 --track=extraction，22 题纯 JVM 分钟级）
     token-budget: 7500000               # 当次 eval token 护栏（runner 每题累计 token_usage，超限中止剩余题标 PARTIAL；64 题实测 2.45M 的 ~3 倍）
     regression:                         # 相对回归三阈值（§3.1，含等于）
       pass-rate-drop-pp: 10
