@@ -22,6 +22,7 @@ public class InvestProperties {
     private Trust trust = new Trust();
     private Eval eval = new Eval();
     private Profile profile = new Profile();
+    private Report report = new Report();
 
     public Llm getLlm() {
         return llm;
@@ -117,6 +118,14 @@ public class InvestProperties {
 
     public void setProfile(Profile profile) {
         this.profile = profile;
+    }
+
+    public Report getReport() {
+        return report;
+    }
+
+    public void setReport(Report report) {
+        this.report = report;
     }
 
     public static class Llm {
@@ -615,6 +624,44 @@ public class InvestProperties {
         public void setBlockMaxChars(int blockMaxChars) { this.blockMaxChars = blockMaxChars; }
         public boolean isDigestEnabled() { return digestEnabled; }
         public void setDigestEnabled(boolean digestEnabled) { this.digestEnabled = digestEnabled; }
+    }
+
+    /**
+     * 深度研究工作流（MS-32，设计规格 §八 / Global Constraints #1）：执行/配额/校验/陈旧度
+     * 四组参数 + 研究草稿字节上限，代码默认值与 yml 键逐字钉死（B7~B12 编排器消费）。
+     */
+    public static class Report {
+        private Execution execution = new Execution(Duration.ofSeconds(240), Duration.ofMinutes(15), 15, 2);
+        private Quota quota = new Quota(500_000L, 150_000L);
+        private Validation validation = new Validation(new BigDecimal("0.01"), new BigDecimal("0.03"),
+                new BigDecimal("0.005"), 0.10, 1);
+        private Staleness staleness = new Staleness(Duration.ofMinutes(5), new BigDecimal("0.02"));
+        /** 研究草稿字节上限（UTF-8 字节口径，128KB）。 */
+        private int draftMaxBytes = 131072;
+
+        public Execution getExecution() { return execution; }
+        public void setExecution(Execution execution) { this.execution = execution; }
+        public Quota getQuota() { return quota; }
+        public void setQuota(Quota quota) { this.quota = quota; }
+        public Validation getValidation() { return validation; }
+        public void setValidation(Validation validation) { this.validation = validation; }
+        public Staleness getStaleness() { return staleness; }
+        public void setStaleness(Staleness staleness) { this.staleness = staleness; }
+        public int getDraftMaxBytes() { return draftMaxBytes; }
+        public void setDraftMaxBytes(int draftMaxBytes) { this.draftMaxBytes = draftMaxBytes; }
+
+        /** 执行护栏（execution）：单轮超时 / 整跑超时 / 单轮最大迭代 / Agent 池大小。 */
+        public record Execution(Duration roundTimeout, Duration totalTimeout, int maxItersPerRound, int poolSize) {}
+
+        /** Token 配额（quota）：当日总预算 / 单任务上限。 */
+        public record Quota(long dailyTokenBudget, long perTaskTokenCap) {}
+
+        /** 数值校验（validation）：相对/绝对/价格三容差 + 未溯源比例线 + 重生成轮次上限。 */
+        public record Validation(BigDecimal relative, BigDecimal absolute, BigDecimal price,
+                                 double unverifiedRatioMax, int maxRegenRounds) {}
+
+        /** 陈旧度（staleness）：重查 TTL / 变更判定相对阈值。 */
+        public record Staleness(Duration recheckTtl, BigDecimal changedRelative) {}
     }
 
     /** SMTP 发信（M01-F06，阿里云企业邮箱）。空值 = 未启用，发信入口返回「系统未配置邮件服务」。 */
