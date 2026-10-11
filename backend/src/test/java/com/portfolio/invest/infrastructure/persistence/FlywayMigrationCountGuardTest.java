@@ -17,10 +17,11 @@ class FlywayMigrationCountGuardTest {
 
     /**
      * 当前迁移文件数（V1 基线 squash + V2 research + V3 intelligence + V4 p2 索引清理
-     * + V5 MS-30 评测/观测四表 + V6 eval_run 增 track 列 + V7 MS-31 记忆与画像两表）。
+     * + V5 MS-30 评测/观测四表 + V6 eval_run 增 track 列 + V7 MS-31 记忆与画像两表
+     * + V8 MS-32 深度研究工作流研报四表+配额表）。
      * 新增迁移须同步 +1（删并迁移则相应调整），随 commit 一起改。
      */
-    private static final int EXPECTED_MIGRATION_COUNT = 7;
+    private static final int EXPECTED_MIGRATION_COUNT = 8;
 
     @Test
     @DisplayName("迁移目录 .sql 文件数与预期常量一致（新增迁移须同步 +1，B9-⑤）")
