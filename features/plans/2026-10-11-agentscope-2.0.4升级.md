@@ -3,7 +3,7 @@
 > 依据：[docs/research/2026-10-11-AgentScope-Java版本演进调研.md](../../docs/research/2026-10-11-AgentScope-Java版本演进调研.md)（版本现状/逐版本变更/影响评估）
 > 分支：`chore/upgrade-agentscope-2.0.4`
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development（本仓既定执行方式）来逐任务实施本计划。步骤用 checkbox（`- [ ]`）跟踪。
-> 状态：进行中
+> 状态：**已完成（2026-10-12，PR #110）**——smoke §1–§8 全绿 ×2、e2e 全绿（HITL 2/2 补跑通过）；§9 研报节两红（模型侧归因非升级回归），详见文末「执行偏差记录」
 
 **Goal:** 四构件 2.0.3 → 2.0.4，三个 `RuntimeContextAware` Hook 的 rc 供给迁到自建桥接中间件，行为零回归。
 
@@ -59,7 +59,7 @@
 - Consumes: `io.agentscope.core.middleware.MiddlewareBase`（2.0.3/2.0.4 双版同签名）
 - Produces: `public final class RuntimeContextBridgeMiddleware implements MiddlewareBase`；构造 `RuntimeContextBridgeMiddleware(Consumer<RuntimeContext>... consumers)` 与 `(List<Consumer<RuntimeContext>>)`；包私有 `int consumerCount()`（Task 3 断言口）；`order()` 恒 `Integer.MAX_VALUE`。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```java
 package com.portfolio.invest.agent;
@@ -128,12 +128,12 @@ class RuntimeContextBridgeMiddlewareTest {
 }
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `cd backend && ./gradlew test --tests "com.portfolio.invest.agent.RuntimeContextBridgeMiddlewareTest" --console=plain`
 Expected: 编译失败，`cannot find symbol: class RuntimeContextBridgeMiddleware`
 
-- [ ] **Step 3: 最小实现**
+- [x] **Step 3: 最小实现**
 
 ```java
 package com.portfolio.invest.agent;
@@ -200,12 +200,12 @@ public final class RuntimeContextBridgeMiddleware implements MiddlewareBase {
 }
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `cd backend && ./gradlew test --tests "com.portfolio.invest.agent.RuntimeContextBridgeMiddlewareTest" --console=plain`
 Expected: 4 个用例全 PASS
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add backend/src/main/java/com/portfolio/invest/agent/RuntimeContextBridgeMiddleware.java \
@@ -229,12 +229,12 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 - Consumes: Task 1 的桥接中间件（javadoc 引用）。
 - Produces: 三个 Hook 各保留 `public void setRuntimeContext(RuntimeContext rc)` 为**普通公开方法**（签名/方法体不变）——测试与编排器的直接调用面零改动。
 
-- [ ] **Step 1: 跑三个 Hook 既有测试确认基线绿**
+- [x] **Step 1: 跑三个 Hook 既有测试确认基线绿**
 
 Run: `cd backend && ./gradlew test --tests "com.portfolio.invest.agent.trust.TrustAgentHookTest" --tests "com.portfolio.invest.agent.observability.ObservabilityAgentHookTest" --tests "com.portfolio.invest.agent.report.ReportUsageHookTest" --console=plain`
 Expected: 全 PASS（行为基线）
 
-- [ ] **Step 2: 逐文件三处机械修改 + javadoc 注记**
+- [x] **Step 2: 逐文件三处机械修改 + javadoc 注记**
 
 每个文件同款三处（以 TrustAgentHook 为例）：
 
@@ -271,12 +271,12 @@ javadoc 钉版注记三处同款改写（各文件类注释里「Hook API 2.0.3 
 
 `@SuppressWarnings("deprecation")`（onEvent 上）三处全部**保留**（Hook 仍 deprecated）。
 
-- [ ] **Step 3: 复跑 Step 1 三套测试**
+- [x] **Step 3: 复跑 Step 1 三套测试**
 
 Run: 同 Step 1
 Expected: 全 PASS（摘接口不改行为；测试直接调 `setRuntimeContext`，普通方法照常可达）
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```bash
 git add backend/src/main/java/com/portfolio/invest/agent/trust/TrustAgentHook.java \
@@ -301,7 +301,7 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 - Consumes: Task 1 `RuntimeContextBridgeMiddleware(Consumer<RuntimeContext>...)` 与 `consumerCount()`；Task 2 三 Hook 的 `setRuntimeContext(RuntimeContext)`。
 - Produces: `build(Long)` / `buildReportAgent(Long, ReportUsageHook)` 装配含桥接（对话链路行为零变更红线不破——装配面增一枚行为中性中间件）。
 
-- [ ] **Step 1: 扩装配测试（先红）**
+- [x] **Step 1: 扩装配测试（先红）**
 
 `HarnessAgentFactoryTest` 既有用例「MS-29 B5 + MS-30 B6 挂载」追加桥接断言：
 
@@ -320,12 +320,12 @@ assertThat(bridge.order()).isEqualTo(Integer.MAX_VALUE);
 
 `HarnessAgentFactoryReportTest` 同款（buildReportAgent 路径，`hooks.size()` 为 3：trust/observability/usage）。
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `cd backend && ./gradlew test --tests "com.portfolio.invest.agent.HarnessAgentFactoryTest" --tests "com.portfolio.invest.agent.HarnessAgentFactoryReportTest" --console=plain`
 Expected: 新增断言 FAIL——`rc 桥接中间件未装配`
 
-- [ ] **Step 3: 接线（两装配点同款）**
+- [x] **Step 3: 接线（两装配点同款）**
 
 `build(Long)`（观测 hook 提局部变量以便方法引用）：
 
@@ -358,17 +358,17 @@ builder 链（其余行不动）：
                 .middleware(new TrustWireMessageIdMiddleware())
 ```
 
-- [ ] **Step 4: 跑两套装配测试确认通过**
+- [x] **Step 4: 跑两套装配测试确认通过**
 
 Run: 同 Step 2
 Expected: 全 PASS
 
-- [ ] **Step 5: 跑 agent 包全量单测（装配无外溢）**
+- [x] **Step 5: 跑 agent 包全量单测（装配无外溢）**
 
 Run: `cd backend && ./gradlew test --tests "com.portfolio.invest.agent.*" --console=plain`
 Expected: 全 PASS
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add backend/src/main/java/com/portfolio/invest/agent/HarnessAgentFactory.java \
@@ -388,7 +388,7 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 - Consumes: Task 1-3 已就位（2.0.4 上唯一编译碰撞 RuntimeContextAware 已摘）。
 - Produces: 四构件 2.0.4 依赖树（starter 直依 Boot 4.0.3、BOM 锁 Jackson 2.21.1，调研 §4.1 已证兼容）。
 
-- [ ] **Step 1: 改版本号**
+- [x] **Step 1: 改版本号**
 
 ```groovy
     // AgentScope Java 2.0.4（2.0.3→2.0.4：RuntimeContextAware 删除 → rc 供给改
@@ -403,18 +403,18 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
     implementation 'io.agentscope:agentscope-harness:2.0.4'
 ```
 
-- [ ] **Step 2: 编译（主代码 + 三测试源集）**
+- [x] **Step 2: 编译（主代码 + 三测试源集）**
 
 Run: `cd backend && ./gradlew compileJava compileTestJava compileIntegrationTestJava compileBddJava --console=plain`
 Expected: PASS。**应急口**：若 `STUB_AGENT` 桩（`TrustAgentHookTest.java:36` 等匿名 `Agent` 实现）因 2.0.4 接口新增抽象方法编译红——为桩补空实现（同文件既有桩风格），逐个记录到交付注记。
 
-- [ ] **Step 3: 后端全量门禁**
+- [x] **Step 3: 后端全量门禁**
 
 Run: `make test-backend`
 Expected: 全绿（单元+切片 / Testcontainers 集成 / BDD / ArchUnit / JaCoCo ≥80%）
 重点回归面：`ReportWorkflowOrchestratorIntegrationTest`（真值池同源）、HITL 相关 BDD 场景（#3100/#3104 修复面）、`TrustEventWireContractTest`。
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```bash
 git add backend/build.gradle
@@ -435,17 +435,17 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 
 **Interfaces:** 无代码接口；只改「现状陈述」类版本字符串。
 
-- [ ] **Step 1: 逐文件 grep `2\.0\.3`，仅改现状陈述**
+- [x] **Step 1: 逐文件 grep `2\.0\.3`，仅改现状陈述**
 
 历史事实保真不动：ADR（0001/0010/0011）、`docs/technology/research/**`、`features/**`、build.gradle 注释里「自 2.0.3 实现，PR #2495」（该句陈述的是映射特性引入时点，保留）。
 `01-Agent实现.md` / `07-HITL人工审批.md` 中「钉版 2.0.3」类现状句改为 2.0.4 并补一句 rc 桥接（指向 `RuntimeContextBridgeMiddleware`）。
 
-- [ ] **Step 2: 链接门禁**
+- [x] **Step 2: 链接门禁**
 
 Run: `make check-links`
 Expected: OK 零断链
 
-- [ ] **Step 3: 提交**
+- [x] **Step 3: 提交**
 
 ```bash
 git add AGENTS.md README.md docs/technology/
@@ -458,17 +458,17 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 
 **Files:** 无代码改动（验证任务，产出记录进 PR 描述与计划状态行）。
 
-- [ ] **Step 1: make smoke（真实行情 + AI 对话）**
+- [x] **Step 1: make smoke（真实行情 + AI 对话）**
 
 Run: `make smoke`
 Expected: 全绿。桥接真流证据链：trust.anchors/trust.correction Custom 事件携带 rc 源 messageId、turn_observation 落行非零、研报真值池非空。
 
-- [ ] **Step 2: 前端 e2e（HITL 审批卡）**
+- [x] **Step 2: 前端 e2e（HITL 审批卡）**
 
 Run: `cd frontend && pnpm test:e2e`
 Expected: 全绿（2.0.4 #3100/#3104 修复面 + 桥接后 SSE 流完整性；注意 e2e 复用 .next 须先清——见 dev 教训）。
 
-- [ ] **Step 3: 回填计划状态行与索引**
+- [x] **Step 3: 回填计划状态行与索引**
 
 `features/plans/2026-10-11-agentscope-2.0.4升级.md` 头部状态改「已完成（YYYY-MM-DD，PR #N）」，勾选全部任务框；`features/plans/README.md` 索引表加行。开 PR（目标 main，标题 `chore: agentscope 2.0.3 → 2.0.4（rc 桥接迁移）`），调研报告与计划随 PR 同行。
 
@@ -478,3 +478,12 @@ Expected: 全绿（2.0.4 #3100/#3104 修复面 + 桥接后 SSE 流完整性；�
 
 - **Task 4 编译红的非预期面**：调研为 import 级对照，方法级/字节码级差异（如 `GenerateOptions` 构造、`Msg.builder()` 面）若冒头，按「最小桩适配 + 交付注记记录」处理，不顺手重构。
 - **2.0.5 patch 抢跑**：上游 main 已进 2.0.5-SNAPSHOT 双轨；若执行期间 2.0.5 正式发布，仍按本计划升 2.0.4（变更面已勘明），2.0.5 另立小任务。
+
+---
+
+## 执行偏差记录（2026-10-12，Task 6 真流回归）
+
+- **smoke §9 两红（归因：模型侧，非升级回归）**：两次真 LLM 全链分别以 `VALIDATION_FAILED`（taskId=18，205,457 tokens——草稿缺字面「## 关键假设」标题行，反馈重生成轮耗尽）与 `QUOTA_TASK_CAP`（taskId=19，456,581 tokens > 400k 单任务上限——DRAFTING 自校正轮冗长化，消息数 19→31）终态。归因依据：①失败路径（提示词模板/校验门/重生成循环/配额逻辑）本分支零 diff；②桥接真流证据链全绿——研报内部轮 trust 日志 `verified=93/203`、`sourced=130`，真值池活跃非空（S1「真值池恒空」形态不复现）；③§1–§8 两轮全绿。当日配额台账已结算 662,038/500,000，无法当日三跑复核；台账显示昨日（MS-32 收口期）亦有 538k 用量——研报工作流贴近 cap 运行为既有状态。**遗留观察项**：若 2.0.4 上 §9 持续红，优先排查 2.0.4 ChatUsage 计数口径变化对 cap 的影响（本次无法在授权范围内做 2.0.3 对照 A/B）。
+- **环境假红一处（已自行处置，与升级无关）**：首轮 smoke §6 邮件红——`MAIL_SMTP_PASSWORD` 值含 `#`，后端经 `make dev-backend` 启动时被 make `-include` 截断（dev-process-lessons #44 既有教训），SMTP 526 认证失败；改 bash source 完整值重启后端后 §6 真 SMTP 发信绿（分支零触碰 mail/auth 文件）。
+- **e2e**：清 `.next` fresh build 后全量 **76 passed / 1 flaky（chat SSE 用例重试通过）/ 20 skipped / 0 failed**；跳过中 18 例为数据态门控（industry/intelligence/screener/wiki 空库双态——高频复发模式 #6 既有接受态）、2 例为 HITL env 门控（本地测试进程缺 `E2E_HITL_MCP_URL`）；后者已带 env 定向补跑 **2/2 通过**（写工具弹卡批准/拒绝不落盘 + 两卡并列逐张批准——2.0.4 #3100/#3104 修复面真浏览器全链验证）。
+- **教训回填项未落库（待主会话重裁）**：裁决项「Gradle `--tests` 过滤跑的结果会被后续 `:test` up-to-date 复用」经本机复现实验**证伪**——Gradle 9.7.0 下过滤跑（结果集 1 个 XML）后紧接全量 `:test` 会重新执行（257 个 XML），反向（全量→过滤跑）同样重新执行（257→1）；过滤器参与 up-to-date 输入计算，两种顺序均无「过滤结果冒充全量」的假绿。按「不实测不写」红线未写入 dev-process-lessons，实验证据见 Task 6 报告。
