@@ -46,6 +46,7 @@ public class ScenarioContext {
     private Long researchReviewId;
     private String researchSnapshotJson;
     private Long researchWikiEntryId;
+    private Long reportId;
     private Long falsifierId;
     private Long falsifierHitId;
     private Long firstFalsifierReviewId;
@@ -226,6 +227,14 @@ public class ScenarioContext {
 
     public void setResearchWikiEntryId(Long researchWikiEntryId) {
         this.researchWikiEntryId = researchWikiEntryId;
+    }
+
+    public Long getReportId() {
+        return reportId;
+    }
+
+    public void setReportId(Long reportId) {
+        this.reportId = reportId;
     }
 
     public Long getFalsifierId() {
