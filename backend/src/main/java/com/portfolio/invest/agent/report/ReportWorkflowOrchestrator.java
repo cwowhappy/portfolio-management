@@ -34,9 +34,11 @@ import org.springframework.stereotype.Component;
  * COLLECTING→ANALYZING→DRAFTING→VALIDATING（三轮 call 续会话 + 校验门），
  * 多轮驱动替代超大 maxIters（同 sessionId=report-&lt;taskId&gt; 续会话，D3 失败重来 = 新任务新会话）。
  *
- * <p><strong>每轮护栏（call 返回后）：</strong>①真值池快照累积——
- * {@code TrustContext.current(rc).invocations()} 并入任务级池（B0 探针 1：PRE_CALL fresh
- * 每轮自动清池，快照无损累积，门只吃累积池）；②单任务 token 上限（ReportUsageHook 累计，
+ * <p><strong>每轮护栏（call 返回后）：</strong>①真值池快照累积——排空 {@link ReportUsageHook}
+ * 在 POST_CALL 时点采集的真值（Ruling-21 修复③主通道：HarnessAgent 对编排器裸 rc 恒派生新实例，
+ * 工具记录与 hook 同见派生 rc，编排器自有 rc 上直读恒空——S1 真 LLM 实证 + 字节码归因，详见
+ * {@link ReportUsageHook} 类注释②；派生池下一轮 PRE_CALL 被 fresh 覆盖，故 hook 抢先快照、
+ * 此处排空防跨轮重复，门只吃累积池）；②单任务 token 上限（ReportUsageHook 累计，
  * 严格大于即 {@code FAILED(QUOTA_TASK_CAP)}）；③任务总超时（{@code FAILED(TIMEOUT)}）。</p>
  *
  * <p><strong>VALIDATING：</strong>payload 围栏提取（格式失败 → 格式反馈重试 1 轮，整任务一次；
@@ -287,10 +289,10 @@ public class ReportWorkflowOrchestrator {
                     .sessionId(sessionId(task.id())).build();
         }
 
-        /** 单轮调用：返回最终消息文本；返回后快照真值池 + 双上限卡点（§3.2 全程护栏）。 */
+        /** 单轮调用：返回最终消息文本；返回后排空 hook 采集真值 + 双上限卡点（§3.2 全程护栏）。 */
         String round(String prompt) {
             String text = runner.call(rc, prompt);
-            pool.addAll(TrustContext.current(rc).invocations());
+            pool.addAll(usageHook.drainTruthInvocations());
             checkCaps();
             return text;
         }

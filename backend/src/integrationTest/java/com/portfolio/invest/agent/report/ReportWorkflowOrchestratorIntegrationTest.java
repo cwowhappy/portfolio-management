@@ -21,6 +21,7 @@ import com.portfolio.invest.domain.research.ResearchStage;
 import com.portfolio.invest.support.PostgresTestSupport;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.hook.PostCallEvent;
 import io.agentscope.core.hook.PostReasoningEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -95,20 +96,32 @@ class ReportWorkflowOrchestratorIntegrationTest extends PostgresTestSupport {
 
             @Override
             public String call(RuntimeContext rc, String userPrompt) {
+                // Ruling-21 修复③拓扑拟真（与单测 ScriptedRunner 同款）：派生新 rc 模拟
+                // HarnessAgent.ensureSessionDefaults，真值记录进派生 rc，轮末代拟 harness
+                // 接线（setRuntimeContext + POST_CALL）——编排器只经 hook 通道拿真值
+                RuntimeContext derived = RuntimeContext.builder(rc).build();
+                String result;
                 switch (++calls) {
                     case 1:
-                        seedPool(rc, truth("get_quote", QUOTE_TRUTH));
+                        seedPool(derived, truth("get_quote", QUOTE_TRUTH));
                         charge(usageHook, 1200L);
-                        return "收集小结：get_quote 已取数";
+                        result = "收集小结：get_quote 已取数";
+                        break;
                     case 2:
-                        seedPool(rc, truth("get_valuation", VALUATION_TRUTH));
+                        seedPool(derived, truth("get_valuation", VALUATION_TRUTH));
                         charge(usageHook, 800L);
-                        return "分析小结：估值分位中等";
+                        result = "分析小结：估值分位中等";
+                        break;
                     default:
-                        seedPool(rc, truth("get_financials", FINANCIALS_TRUTH));
+                        seedPool(derived, truth("get_financials", FINANCIALS_TRUTH));
                         charge(usageHook, 500L);
-                        return fencedReport("贵州茅台深度研报（集成）", VALID_CONTENT_MD, "无特别局限");
+                        result = fencedReport("贵州茅台深度研报（集成）", VALID_CONTENT_MD, "无特别局限");
                 }
+                usageHook.setRuntimeContext(derived);
+                usageHook.onEvent(new PostCallEvent(STUB_AGENT, Msg.builder()
+                        .id("round-" + calls).role(MsgRole.ASSISTANT).textContent("轮收尾").build()))
+                        .block();
+                return result;
             }
         };
     }

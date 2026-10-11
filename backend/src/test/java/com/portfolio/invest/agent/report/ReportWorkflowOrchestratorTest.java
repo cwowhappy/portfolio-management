@@ -18,6 +18,7 @@ import com.portfolio.invest.domain.research.StageCompletionService;
 import com.portfolio.invest.domain.research.StrategyDoc;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.hook.PostCallEvent;
 import io.agentscope.core.hook.PostReasoningEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -58,9 +59,12 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
  * ⑨执行队列满拒绝（真单线程 ThreadPoolTaskExecutor 被占满）。
  *
  * <p>真值池注入走反射（{@code TrustContext.fresh/record} 包私有于 trust 包，B0 Ruling-1
- * 同款取舍——ReportProbeTest 因同包可直调，本类在 report 包须反射）；fake runner 每轮
- * call 首先调 fresh(rc) 模拟生产 TrustAgentHook PRE_CALL 清池时序（B0 探针 1-c 语义），
- * 再 record 本轮真值——编排器 call 返回后快照累积，跨轮无损依赖该时序。
+ * 同款取舍——ReportProbeTest 因同包可直调，本类在 report 包须反射）；<b>Ruling-21 修复③拓扑
+ * 拟真</b>：fake runner 每轮先派生新 rc（{@code RuntimeContext.builder(rc).build()}，模拟
+ * HarnessAgent.ensureSessionDefaults 对裸 rc 恒派生新实例的字节码实证行为），剧本步在
+ * <b>派生 rc</b> 上 fresh+record 本轮真值（生产中工具装饰器只见派生 rc），轮末 runner 代拟
+ * harness 接线（hook.setRuntimeContext(派生 rc) + POST_CALL）——编排器在自有 rc 上直读恒空，
+ * 只能经 {@link ReportUsageHook#drainTruthInvocations()} 拿到真值，回归旧读法全剧本即红。
  */
 class ReportWorkflowOrchestratorTest {
 
@@ -435,6 +439,7 @@ class ReportWorkflowOrchestratorTest {
             AtomicReference<ReportUsageHook> capturedHook) {
         ResearchProjectRepository projectRepository = projectRepository();
         ReportAgentRunnerFactory runnerFactory = (userId, usageHook) -> {
+            runner.wire(usageHook);
             if (capturedHook != null) {
                 capturedHook.set(usageHook);
             }
@@ -611,10 +616,13 @@ class ReportWorkflowOrchestratorTest {
         }
     }
 
-    /** 剧本 runner：按调用序回放（每步收到 rc 可注真值/充电量/推时钟）；剧本耗尽即抛（未预期轮转 AGENT_ERROR）。 */
+    /** 剧本 runner：按调用序回放（每步收到派生 rc 可注真值/推时钟）；剧本耗尽即抛（未预期轮转 AGENT_ERROR）。
+     * Ruling-21 修复③拓扑拟真：每轮派生新 rc（ensureSessionDefaults 字节码行为）+ 轮末代拟
+     * harness 接线（setRuntimeContext(派生 rc) + POST_CALL）——真值只经 hook 通道可达编排器。 */
     private static final class ScriptedRunner implements ReportAgentRunner {
         private final List<Function<RuntimeContext, String>> script;
         private final List<String> prompts = new ArrayList<>();
+        private volatile ReportUsageHook hook;
         private int calls;
 
         static ScriptedRunner of(@SuppressWarnings("unchecked") Function<RuntimeContext, String>... steps) {
@@ -623,6 +631,10 @@ class ReportWorkflowOrchestratorTest {
 
         private ScriptedRunner(List<Function<RuntimeContext, String>> script) {
             this.script = script;
+        }
+
+        void wire(ReportUsageHook hook) {
+            this.hook = hook;
         }
 
         int calls() {
@@ -639,7 +651,20 @@ class ReportWorkflowOrchestratorTest {
             if (calls >= script.size()) {
                 throw new RejectedExecutionException("剧本耗尽：第 " + (calls + 1) + " 轮未被预期");
             }
-            return script.get(calls++).apply(rc);
+            // 模拟 HarnessAgent.ensureSessionDefaults：对编排器裸 rc 派生新实例（工具/hook 只见它）
+            RuntimeContext derived = RuntimeContext.builder(rc).build();
+            String result = script.get(calls++).apply(derived);
+            ReportUsageHook wired = hook;
+            if (wired != null) {
+                wired.setRuntimeContext(derived);
+                wired.onEvent(new PostCallEvent(STUB_AGENT, endOfRoundMsg())).block();
+            }
+            return result;
+        }
+
+        private static Msg endOfRoundMsg() {
+            return Msg.builder().id("round-" + System.nanoTime()).role(MsgRole.ASSISTANT)
+                    .textContent("轮收尾").build();
         }
     }
 
