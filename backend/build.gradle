@@ -102,14 +102,16 @@ dependencies {
     // Boot BOM 不管 pdfbox，显式钉 3.0.x 最新（与 commons-csv 同款显式版本惯例）
     implementation 'org.apache.pdfbox:pdfbox:3.0.8'
 
-    // AgentScope Java 2.0.3（权限确认 HITL → AG-UI interrupt 映射自 2.0.3 实现，PR #2495）
-    implementation 'io.agentscope:agentscope-core:2.0.3'
+    // AgentScope Java 2.0.4（2.0.3→2.0.4：RuntimeContextAware 删除 → rc 供给改
+    // RuntimeContextBridgeMiddleware；HITL 审批链路修复 #3100/#3104、并发隔离 #3279/#3283；
+    // 版本演进与影响评估见 docs/research/2026-10-11-AgentScope-Java版本演进调研.md）
+    implementation 'io.agentscope:agentscope-core:2.0.4'
     // DeepSeek 模型支持（OpenAI 兼容扩展）
-    implementation 'io.agentscope:agentscope-extensions-model-openai:2.0.3'
+    implementation 'io.agentscope:agentscope-extensions-model-openai:2.0.4'
     // AG-UI 协议端点
-    implementation 'io.agentscope:agentscope-agui-spring-boot-starter:2.0.3'
+    implementation 'io.agentscope:agentscope-agui-spring-boot-starter:2.0.4'
     // Harness Agent：会话持久化 / 上下文压缩 / 长期记忆
-    implementation 'io.agentscope:agentscope-harness:2.0.3'
+    implementation 'io.agentscope:agentscope-harness:2.0.4'
 
     // feishu-messaging P2：飞书官方 SDK（ws 长连接收事件；自带 relocated okhttp，guava/gson 为传递依赖）
     implementation 'com.larksuite.oapi:oapi-sdk:2.8.5'

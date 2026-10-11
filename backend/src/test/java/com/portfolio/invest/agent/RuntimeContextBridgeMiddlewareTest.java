@@ -21,7 +21,7 @@ class RuntimeContextBridgeMiddlewareTest {
 
     @Test
     @DisplayName("onAgent 把 ctx 依序送抵全部消费者后放行 next，事件流原样透传")
-    void deliversCtxThenDelegates() {
+    void givenCtxAndConsumers_whenOnAgent_thenDeliversCtxThenDelegates() {
         List<String> seq = new ArrayList<>();
         List<RuntimeContext> seen = new ArrayList<>();
         RuntimeContext ctx = RuntimeContext.builder().userId("42").sessionId("s-1").build();
@@ -40,14 +40,14 @@ class RuntimeContextBridgeMiddlewareTest {
 
     @Test
     @DisplayName("order 恒为 Integer.MAX_VALUE——中间件链降序排序下最外层、先于一切")
-    void orderIsOutermost() {
+    void givenBridgeMiddleware_whenOrder_thenOutermostMaxValue() {
         assertThat(new RuntimeContextBridgeMiddleware(rc -> { }).order())
                 .isEqualTo(Integer.MAX_VALUE);
     }
 
     @Test
     @DisplayName("null ctx 照送不拦截（裸调用路径，Hook 侧自防 null）")
-    void nullCtxStillDelivered() {
+    void givenNullCtx_whenOnAgent_thenStillDelivered() {
         List<RuntimeContext> seen = new ArrayList<>();
         RuntimeContextBridgeMiddleware mw = new RuntimeContextBridgeMiddleware(seen::add);
         mw.onAgent(null, null, new AgentInput(List.of()), input -> Flux.empty())
@@ -57,7 +57,7 @@ class RuntimeContextBridgeMiddlewareTest {
 
     @Test
     @DisplayName("consumerCount 暴露消费者数（装配断言口）")
-    void consumerCountReflectsConsumers() {
+    void givenTwoConsumers_whenConsumerCount_thenReflectsConsumerCount() {
         assertThat(new RuntimeContextBridgeMiddleware(rc -> { }, rc -> { }).consumerCount())
                 .isEqualTo(2);
     }
