@@ -92,6 +92,15 @@ class HarnessAgentFactoryTest {
         assertThat(trustIndex).isLessThan(observabilityIndex);
         assertThat(agent.getDelegate().getMiddlewares())
                 .anyMatch(m -> m instanceof com.portfolio.invest.agent.trust.TrustWireMessageIdMiddleware);
+        List<io.agentscope.core.middleware.MiddlewareBase> middlewares = agent.getDelegate().getMiddlewares();
+        RuntimeContextBridgeMiddleware bridge = middlewares.stream()
+                .filter(RuntimeContextBridgeMiddleware.class::isInstance)
+                .map(RuntimeContextBridgeMiddleware.class::cast)
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("rc 桥接中间件未装配"));
+        // 防「加 hook 忘桥接」：消费者数与 hook 数同源
+        assertThat(bridge.consumerCount()).isEqualTo(hooks.size());
+        assertThat(bridge.order()).isEqualTo(Integer.MAX_VALUE);
     }
 
     private static int indexOfInstance(List<io.agentscope.core.hook.Hook> hooks, Class<?> type) {
