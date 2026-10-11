@@ -55,11 +55,7 @@ public class UserToolkitFactory {
     }
 
     public Toolkit build(Long userId) {
-        Toolkit toolkit = new Toolkit();
-        toolkit.registerTool(investTools);
-        // 用户态工具（F09/F10 + 公告检索 + 知识库检索）：userId 经构造注入，不进 LLM 上下文
-        toolkit.registerTool(new UserInvestTools(userId, portfolioService, allocationService,
-                intelligenceQueryService, wikiService, mapper));
+        Toolkit toolkit = buildCore(userId);
         // 预填内置工具名，防 MCP 同名工具静默覆盖内置（ToolRegistry.register 为 Map.put 后写覆盖）
         Set<String> names = new HashSet<>(toolkit.getToolNames());
         Set<String> mcpNames = new HashSet<>();
@@ -90,6 +86,25 @@ public class UserToolkitFactory {
             }
         }
         return decorateWithRecording(toolkit, mcpNames);
+    }
+
+    /**
+     * 研报任务工具集（MS-32 B8，buildReportAgent 消费）：仅内置 + 用户态 + 真值装饰
+     * （mcpNames 空集 → 全部内置语义分桶）——MCP 循环整体不走，repository/clientPool 零咨询，
+     * 天然无 MCP 写工具（研报链路不出现 HITL 审批卡）。
+     */
+    public Toolkit buildWithoutMcp(Long userId) {
+        return decorateWithRecording(buildCore(userId), Set.of());
+    }
+
+    /** 核心装配：内置 InvestTools + 用户态工具（userId 经构造注入，不进 LLM 上下文）。 */
+    private Toolkit buildCore(Long userId) {
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(investTools);
+        // 用户态工具（F09/F10 + 公告检索 + 知识库检索）：userId 经构造注入，不进 LLM 上下文
+        toolkit.registerTool(new UserInvestTools(userId, portfolioService, allocationService,
+                intelligenceQueryService, wikiService, mapper));
+        return toolkit;
     }
 
     /**

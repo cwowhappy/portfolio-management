@@ -2,15 +2,18 @@ package com.portfolio.invest.agent;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.portfolio.invest.agent.observability.ObservabilityAgentHook;
-import com.portfolio.invest.application.skill.SkillApplicationService;
+import com.portfolio.invest.agent.report.ReportUsageHook;
+import com.portfolio.invest.agent.report.ReportWorkflowPrompt;
 import com.portfolio.invest.agent.trust.TrustAgentHook;
 import com.portfolio.invest.agent.trust.TrustWireMessageIdMiddleware;
+import com.portfolio.invest.application.skill.SkillApplicationService;
 import com.portfolio.invest.config.InvestProperties;
 import com.portfolio.invest.domain.observability.ObservabilityRecorder;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.skill.repository.ClasspathSkillRepository;
 import io.agentscope.core.state.JsonFileAgentStateStore;
+import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
@@ -35,6 +38,8 @@ public class HarnessAgentFactory {
     private final ObjectMapper mapper;
     /** MS-31 B5：画像注入块构建（AG-UI 与飞书两调用方同走 build——决议 #13 飞书同权自动成立）。 */
     private final ProfileContextBuilder profileContextBuilder;
+    /** MS-32 B8：深研执行档（maxItersPerRound，buildReportAgent 消费）。 */
+    private final InvestProperties.Report report;
 
     public HarnessAgentFactory(UserToolkitFactory toolkitFactory,
                                SkillApplicationService skillApplicationService,
@@ -53,6 +58,7 @@ public class HarnessAgentFactory {
         this.observabilityRecorder = observabilityRecorder;
         this.mapper = mapper;
         this.profileContextBuilder = profileContextBuilder;
+        this.report = props.getReport();
     }
 
     public HarnessAgent build(Long userId) {
@@ -87,6 +93,45 @@ public class HarnessAgentFactory {
                 .build();
     }
 
+    /**
+     * 研报任务 Agent 变体（MS-32 B8，B9 编排器消费）：复用 {@link #build(Long)} 全管线，五处差异——
+     * ①name=invest-report（区别对话链路，观测/留痕可归因）②sysPrompt 尾接深研指引块
+     * （{@link #reportSystemPrompt}，恒注入非 skill）③maxIters 取 report 执行档
+     * （invest.report.execution.max-iters-per-round）④toolkit 无 MCP（{@link #reportToolkit}，
+     * 天然无 MCP 写工具）⑤追加 {@link ReportUsageHook}（既有双 hook 后，整任务 token 累计）。
+     * <strong>对话链路红线：build(Long) 与 systemPrompt(userId) 行为零变更。</strong>
+     */
+    public HarnessAgent buildReportAgent(Long userId, ReportUsageHook usageHook) {
+        List<String> enabled = skillApplicationService.enabledSkillCodes(userId);
+        TrustAgentHook trustHook = new TrustAgentHook(trust);
+        return HarnessAgent.builder()
+                .name("invest-report")
+                .sysPrompt(reportSystemPrompt(userId))
+                .model(model)
+                .maxIters(report.getExecution().maxItersPerRound())
+                .toolkit(reportToolkit(userId))
+                .skillRepository(builtInSkillRepository)
+                .skillFilter(skillFilter(enabled))
+                .disableDefaultWorkspaceSkills()
+                .disableDynamicSkills()
+                .workspace(Paths.get(config.getWorkspace()))
+                .stateStore(new JsonFileAgentStateStore(Paths.get(config.getStateRoot())))
+                .compaction(CompactionConfig.builder()
+                        .triggerMessages(config.getCompaction().getTriggerMessages())
+                        .keepMessages(config.getCompaction().getKeepMessages())
+                        .flushBeforeCompact(config.getCompaction().isFlushBeforeCompact())
+                        .build())
+                .memory(MemoryConfig.builder()
+                        .flushTrigger(MemoryConfig.FlushTrigger.throttled(config.getMemory().getFlushMinGap()))
+                        .build())
+                // 既有双 hook 原样（trust 先行、观测后行）+ 研报用量钩子追加在后
+                .hook(trustHook)
+                .hook(new ObservabilityAgentHook(observabilityRecorder, trustHook, mapper))
+                .hook(usageHook)
+                .middleware(new TrustWireMessageIdMiddleware())
+                .build();
+    }
+
     static SkillFilter skillFilter(List<String> enabled) {
         return SkillFilter.only(enabled.toArray(new String[0]));
     }
@@ -100,5 +145,18 @@ public class HarnessAgentFactory {
         return profileContextBuilder.build(userId)
                 .map(block -> InvestSystemPrompt.TEXT + "\n\n" + block)
                 .orElseGet(() -> InvestSystemPrompt.TEXT);
+    }
+
+    /**
+     * MS-32 B8 包私有接缝（红线测试断言口，不内省已构建 agent）：
+     * 研报系统提示词 = 对话提示词（含画像块，不吞）+ 空行 + 深研指引块（恒注入，非 skill）。
+     */
+    String reportSystemPrompt(Long userId) {
+        return systemPrompt(userId) + "\n\n" + ReportWorkflowPrompt.BLOCK;
+    }
+
+    /** MS-32 B8 包私有接缝（红线测试断言口）：研报工具集 = {@code buildWithoutMcp} 产物（无 MCP 名）。 */
+    Toolkit reportToolkit(Long userId) {
+        return toolkitFactory.buildWithoutMcp(userId);
     }
 }
