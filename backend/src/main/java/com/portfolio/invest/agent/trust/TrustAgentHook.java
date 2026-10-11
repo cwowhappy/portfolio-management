@@ -10,7 +10,6 @@ import io.agentscope.core.hook.PostCallEvent;
 import io.agentscope.core.hook.PostReasoningEvent;
 import io.agentscope.core.hook.PostSummaryEvent;
 import io.agentscope.core.hook.PreCallEvent;
-import io.agentscope.core.hook.RuntimeContextAware;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -46,8 +45,9 @@ import reactor.core.publisher.Mono;
  *       清理，CurrentUserHolder 先例）。</li>
  *   <li><strong>幂等防重</strong>：同回合三锚点任一处理后置标记，PRE_CALL 重置（ruling 1）。</li>
  *   <li>Middleware 路线（无弃用标记）只能改事件流、够不到 state/返回值的 Msg 改写——不采用，
- *       详见任务报告取舍记录。Hook API 2.0.3 标记 forRemoval，仓库钉版 2.0.3，升级时需随上游
- *       替代口迁移。</li>
+ *       详见任务报告取舍记录（MS-29 B5 历史结论保真）。Hook API 2.0.4 仍在（forRemoval 未
+ *       兑现）、仓库钉版 2.0.4；rc 供给自 2.0.4 起经 RuntimeContextBridgeMiddleware（框架侧
+ *       RuntimeContextAware 已删，PR #3279）。</li>
  * </ul>
  *
  * <p><strong>事件契约（§4.3）：</strong>{@code trust.correction}（有大偏差修正时，每条替换一个事件，
@@ -62,7 +62,7 @@ import reactor.core.publisher.Mono;
  * WARN 日志，SSE 不中断。留痕：每处理回合一条结构化 INFO（字段名供 MS-30 看板取数，见
  * {@code logTurn}）。
  */
-public class TrustAgentHook implements Hook, RuntimeContextAware {
+public class TrustAgentHook implements Hook {
 
     /** 跨轮数值池的 Msg metadata 键（§2.2；{@code _chat_usage} 先例风格）。 */
     public static final String POOL_METADATA_KEY = "_trust_pool";
@@ -95,7 +95,9 @@ public class TrustAgentHook implements Hook, RuntimeContextAware {
         return lastReport;
     }
 
-    @Override
+    /** rc 供给口：2.0.3 由框架经 RuntimeContextAware 回调；2.0.4 起由
+     *  {@link com.portfolio.invest.agent.RuntimeContextBridgeMiddleware} 在 onAgent 入口送抵
+     *  （时序契约一致，先于 PRE_CALL）。签名不变——测试/编排器直接调用兼容面。 */
     public void setRuntimeContext(RuntimeContext rc) {
         this.runtimeContext = rc;
     }
