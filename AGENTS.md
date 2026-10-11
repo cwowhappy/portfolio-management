@@ -54,11 +54,11 @@ infrastructure ──→ {domain, application, config}
 
 | 包 | 职责 |
 |---|---|
-| `web/` | HTTP 接入层：21 个 `@RestController`（Auth/UserAdmin/Conversation/Market/Health/Valuation/Portfolio/Journal/Allocation/Analytics/Screening/Watchlist/McpConfig/SkillConfig/Industry/IndustryWatch/Wiki/IndustryCuration/Research/Intelligence/IntelligenceSubscription）+ `InvestAguiRuntimeContextResolver`（AG-UI 请求上下文）+ `GlobalExceptionHandler`（`@RestControllerAdvice`，异常→HTTP 状态映射）。只做路由/参数校验/异常翻译 |
+| `web/` | HTTP 接入层：26 个 `@RestController`（Auth/UserAdmin/Conversation/Market/Health/Valuation/Portfolio/Journal/Allocation/Analytics/Screening/Watchlist/McpConfig/SkillConfig/Industry/IndustryWatch/Wiki/IndustryCuration/Research/ReportTask/Intelligence/IntelligenceSubscription/EvalTrigger/Observability/McpAdminToken/Memory）+ `InvestAguiRuntimeContextResolver`（AG-UI 请求上下文）+ `GlobalExceptionHandler`（`@RestControllerAdvice`，异常→HTTP 状态映射）。只做路由/参数校验/异常翻译 |
 | `application/` | 用例编排与事务边界，`*ApplicationService` 结尾；持有对外 DTO |
 | `domain/` | **纯 POJO，零 Spring/JPA 注解**；实体/值对象/仓库接口（由 infrastructure 实现） |
 | `infrastructure/` | `persistence`（JPA 实体+仓库实现+Flyway）、`security`、`seed`、`market`（东方财富/新浪客户端 + 缓存/限流装饰器）、`cache`（`TtlCache` + `CacheConfig`） |
-| `agent/` | 独立能力域：`InvestSystemPrompt`（提示词）、`InvestTools`（`@Tool` 数据工具）、`AgentConfig`（装配）、`HarnessAgentFactory`（按用户构建 HarnessAgent）、`UserToolkitFactory`（按用户装配内置工具 + 已启用 MCP 工具，写工具标记触发审批）、`McpClientPool`（MCP 客户端按 endpoint 复用）、`CurrentUserHolder`（请求级 userId ThreadLocal）、`chart/`（聊天图表 spec）、`AguiEventNonNullCodec` + `AguiWireJsonConfig`（AG-UI 事件序列化剥 null 字段）。**不并入 DDD 分层**，消费 `application`（market/valuation/skill）与 `domain`（market/valuation/mcp） |
+| `agent/` | 独立能力域：`InvestSystemPrompt`（提示词）、`InvestTools`（`@Tool` 数据工具）、`AgentConfig`（装配）、`HarnessAgentFactory`（按用户构建 HarnessAgent）、`UserToolkitFactory`（按用户装配内置工具 + 已启用 MCP 工具，写工具标记触发审批）、`McpClientPool`（MCP 客户端按 endpoint 复用）、`CurrentUserHolder`（请求级 userId ThreadLocal）、`chart/`（聊天图表 spec）、`report/`（MS-32 研报工作流编排：`ReportWorkflowOrchestrator` 编排器 + `ReportValidationGate` 校验门 + `ReportUsageHook` 用量与真值钩子）、`AguiEventNonNullCodec` + `AguiWireJsonConfig`（AG-UI 事件序列化剥 null 字段）。**不并入 DDD 分层**，消费 `application`（market/valuation/skill/research）与 `domain`（market/valuation/mcp/research） |
 | `config/` | 仅配置属性（`InvestProperties`，`@ConfigurationProperties(prefix="invest")`），不得依赖任何业务包 |
 
 完整规则见 `docs/technology/conventions/01-后端DDD分包规范.md`（**新增后端代码前必读**）。规则由 ArchUnit 强制（3 个测试类、21 条规则：`PackageConventionsTest` / `CodingConventionsTest` / `TestSourceSetConventionsTest`，位于 `backend/src/test/java/com/portfolio/invest/architecture/`），违反即构建失败；新增能力域/域时需在 `PackageConventionsTest` 登记依赖白名单。

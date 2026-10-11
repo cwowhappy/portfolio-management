@@ -193,6 +193,16 @@ Playwright e2e 位于 `frontend/e2e/`，配置见 `frontend/playwright.config.ts
 | GET /api/memory/profile-config | 画像授权四开关 + 四段预览同刻一次拉取（预览与注入同一渲染路径） |
 | PUT /api/memory/profile-config | 四开关全量保存（body `{style, industry, watchlist, holdings}`，回执返回保存后开关+预览） |
 
+**深度研究（研报）**（前端经 /api/research/** 反代，需登录，按归属隔离、非本人 404；MS-32 M19）：
+
+| 端点 | 说明 |
+|---|---|
+| POST /api/research/projects/{id}/report-tasks | 发起研报生成（异步受理 202 `{taskId, quotaRemaining}`；402 日配额耗尽 / 409 已有活跃任务 / 404 项目不存在） |
+| GET /api/research/projects/{id}/report-tasks/latest | 轮询最新任务（`{status, stage, tokenUsage, errorCode?, reportId?}`；FAILED 透出错误码，SUCCEEDED 回连 reportId） |
+| GET /api/research/projects/{id}/reports | 项目研报列表（createdAt 倒序，含确认状态 PENDING_CONFIRM/CONFIRMED/REJECTED） |
+| GET /api/research/reports/{id} | 研报详情（contentMd + 关键假设锚点视图——假设条目携带锚点四态 FRESH/STALE/CHANGED/UNVERIFIABLE，打开时重查注入） |
+| POST /api/research/reports/{id}/confirm | 确认定稿 / 拒绝留痕（body `{action: CONFIRM 或 REJECT, reason?}`，REJECT 必填 reason；终态再操作 409） |
+
 ## 目录结构
 
 ```
