@@ -181,7 +181,7 @@ public class PortfolioApplicationService {
         var position = repository
                 .findPositionByPortfolioIdAndGroupIdAndStockCode(p.id(), cmd.groupId(), cmd.stockCode())
                 .orElseGet(() -> Position.create(p.id(), cmd.groupId(), cmd.stockCode(), cmd.stockName(), Instant.now()));
-        var updated = position.applyBuy(cmd.price(), cmd.quantity(), cmd.fee());
+        var updated = position.applyBuy(cmd.price(), cmd.quantity(), cmd.fee(), Instant.now());
         // 关键：新建持仓时 updated.id() 为 null，必须用 savePosition 返回的已持久化实体（含生成的 id）
         var saved = repository.savePosition(updated);
         repository.saveTrade(new Trade(
@@ -197,7 +197,7 @@ public class PortfolioApplicationService {
         }
         Portfolio p = getOrCreatePortfolio(userId);
         var position = requirePosition(p.id(), cmd.positionId());
-        var updated = position.applySell(cmd.price(), cmd.quantity(), cmd.fee());
+        var updated = position.applySell(cmd.price(), cmd.quantity(), cmd.fee(), Instant.now());
         repository.savePosition(updated);
         repository.saveTrade(new Trade(
                 null, updated.id(), TradeType.SELL,
@@ -259,13 +259,13 @@ public class PortfolioApplicationService {
             // 同日先交易后分红（买入/卖出先行，分红再按当时股数/成本作用）。
             if (d == null || (t != null && !t.tradeDate().isAfter(d.exDate()))) {
                 acc = t.type() == TradeType.BUY
-                        ? acc.applyBuy(t.price(), t.quantity(), t.fee())
-                        : acc.applySell(t.price(), t.quantity(), t.fee());
+                        ? acc.applyBuy(t.price(), t.quantity(), t.fee(), Instant.now())
+                        : acc.applySell(t.price(), t.quantity(), t.fee(), Instant.now());
                 ti++;
             } else {
                 acc = d.type() == DividendType.CASH
-                        ? acc.applyCashDividend(d.cashPerShare().multiply(acc.quantity()))
-                        : acc.applyStockDividend(d.stockRatio());
+                        ? acc.applyCashDividend(d.cashPerShare().multiply(acc.quantity()), Instant.now())
+                        : acc.applyStockDividend(d.stockRatio(), Instant.now());
                 di++;
             }
         }

@@ -25,7 +25,7 @@ class DisciplineCheckServiceTest {
     }
 
     private static Falsifier predicateFalsifier(FalsifierPredicate predicate, String threshold) {
-        return Falsifier.ofPredicate(9L, predicate, new BigDecimal(threshold), null);
+        return Falsifier.ofPredicate(9L, predicate, new BigDecimal(threshold), null, Instant.now());
     }
 
     private static Falsifier disabledFalsifier() {
@@ -157,7 +157,7 @@ class DisciplineCheckServiceTest {
     void givenSellWithFalsifiers_whenCheck_thenPendingItemsPerEnabledFalsifier() {
         var context = ctx(new BigDecimal("0.10"), null, null, null, null, List.of(
                 predicateFalsifier(FalsifierPredicate.PRICE_BELOW, "13.00"),
-                Falsifier.ofEvent(9L, "业绩连续两季低于预期"),
+                Falsifier.ofEvent(9L, "业绩连续两季低于预期", Instant.now()),
                 disabledFalsifier()));
         var items = DisciplineCheckService.check(context, CheckType.SELL, null);
 

@@ -12,7 +12,8 @@ class ResearchProjectTest {
     private static final Instant CREATED = Instant.parse("2026-09-28T08:00:00Z");
 
     private static ResearchProject project() {
-        return ResearchProject.create(1L, "600519", "贵州茅台", "BK0477", "茅台消费降级研究", ResearchStage.NEW_ANALYSIS);
+        return ResearchProject.create(1L, "600519", "贵州茅台", "BK0477", "茅台消费降级研究",
+                ResearchStage.NEW_ANALYSIS, CREATED);
     }
 
     @DisplayName("立项携带全部字段且默认 ACTIVE")
@@ -42,7 +43,7 @@ class ResearchProjectTest {
     @Test
     void givenEnabledProject_whenWithIntelligenceAlertFalse_thenNewInstanceAndOriginalUntouched() {
         var p = project();
-        var disabled = p.withIntelligenceAlert(false);
+        var disabled = p.withIntelligenceAlert(false, CREATED);
         assertThat(disabled.intelligenceAlertEnabled()).isFalse();
         // 不可变：原实例保持开，其余字段原样携带（照 changeStage 先例）
         assertThat(p.intelligenceAlertEnabled()).isTrue();
@@ -51,38 +52,39 @@ class ResearchProjectTest {
         assertThat(disabled.currentStage()).isEqualTo(p.currentStage());
         assertThat(disabled.status()).isEqualTo(p.status());
         // 再切回开，双向往返
-        assertThat(disabled.withIntelligenceAlert(true).intelligenceAlertEnabled()).isTrue();
+        assertThat(disabled.withIntelligenceAlert(true, CREATED).intelligenceAlertEnabled()).isTrue();
     }
 
     @DisplayName("withIntelligenceAlert 同值幂等返回原实例（照 changeStage 同值语义）")
     @Test
     void givenSameValue_whenWithIntelligenceAlert_thenSameInstance() {
         var p = project();
-        assertThat(p.withIntelligenceAlert(true)).isSameAs(p);
-        var disabled = p.withIntelligenceAlert(false);
-        assertThat(disabled.withIntelligenceAlert(false)).isSameAs(disabled);
+        assertThat(p.withIntelligenceAlert(true, CREATED)).isSameAs(p);
+        var disabled = p.withIntelligenceAlert(false, CREATED);
+        assertThat(disabled.withIntelligenceAlert(false, CREATED)).isSameAs(disabled);
     }
 
     @DisplayName("既有 wither（archive/changeStage/rename）携带情报开关字段")
     @Test
     void givenDisabledProject_whenOtherWithers_thenFlagCarriedThrough() {
-        var p = project().withIntelligenceAlert(false);
-        assertThat(p.archive().intelligenceAlertEnabled()).isFalse();
-        assertThat(p.changeStage(ResearchStage.REVIEW).intelligenceAlertEnabled()).isFalse();
-        assertThat(p.rename("新标题").intelligenceAlertEnabled()).isFalse();
+        var p = project().withIntelligenceAlert(false, CREATED);
+        assertThat(p.archive(CREATED).intelligenceAlertEnabled()).isFalse();
+        assertThat(p.changeStage(ResearchStage.REVIEW, CREATED).intelligenceAlertEnabled()).isFalse();
+        assertThat(p.rename("新标题", CREATED).intelligenceAlertEnabled()).isFalse();
     }
 
     @DisplayName("行业代码可空（立项不强制行业）")
     @Test
     void givenNullIndustry_whenCreate_thenSucceed() {
-        var p = ResearchProject.create(1L, "600519", "贵州茅台", null, "无行业研究", ResearchStage.REVIEW);
+        var p = ResearchProject.create(1L, "600519", "贵州茅台", null, "无行业研究", ResearchStage.REVIEW,
+                CREATED);
         assertThat(p.industryCode()).isNull();
     }
 
     @DisplayName("标的代码空白抛CODE_BLANK")
     @Test
     void givenBlankStockCode_whenCreate_thenThrowCodeBlank() {
-        assertThatThrownBy(() -> ResearchProject.create(1L, "  ", "贵州茅台", null, "标题", ResearchStage.STRATEGY))
+        assertThatThrownBy(() -> ResearchProject.create(1L, "  ", "贵州茅台", null, "标题", ResearchStage.STRATEGY, CREATED))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.CODE_BLANK));
     }
@@ -90,7 +92,7 @@ class ResearchProjectTest {
     @DisplayName("标的代码缺失抛CODE_BLANK")
     @Test
     void givenNullStockCode_whenCreate_thenThrowCodeBlank() {
-        assertThatThrownBy(() -> ResearchProject.create(1L, null, "贵州茅台", null, "标题", ResearchStage.STRATEGY))
+        assertThatThrownBy(() -> ResearchProject.create(1L, null, "贵州茅台", null, "标题", ResearchStage.STRATEGY, CREATED))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.CODE_BLANK));
     }
@@ -98,7 +100,7 @@ class ResearchProjectTest {
     @DisplayName("标的名称空白抛NAME_BLANK")
     @Test
     void givenBlankStockName_whenCreate_thenThrowNameBlank() {
-        assertThatThrownBy(() -> ResearchProject.create(1L, "600519", "", null, "标题", ResearchStage.STRATEGY))
+        assertThatThrownBy(() -> ResearchProject.create(1L, "600519", "", null, "标题", ResearchStage.STRATEGY, CREATED))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.NAME_BLANK));
     }
@@ -106,7 +108,7 @@ class ResearchProjectTest {
     @DisplayName("标题空白抛TITLE_BLANK")
     @Test
     void givenBlankTitle_whenCreate_thenThrowTitleBlank() {
-        assertThatThrownBy(() -> ResearchProject.create(1L, "600519", "贵州茅台", null, "  ", ResearchStage.STRATEGY))
+        assertThatThrownBy(() -> ResearchProject.create(1L, "600519", "贵州茅台", null, "  ", ResearchStage.STRATEGY, CREATED))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.TITLE_BLANK));
     }
@@ -114,7 +116,7 @@ class ResearchProjectTest {
     @DisplayName("初始阶段缺失抛STAGE_REQUIRED")
     @Test
     void givenNullStage_whenCreate_thenThrowStageRequired() {
-        assertThatThrownBy(() -> ResearchProject.create(1L, "600519", "贵州茅台", null, "标题", null))
+        assertThatThrownBy(() -> ResearchProject.create(1L, "600519", "贵州茅台", null, "标题", null, CREATED))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.STAGE_REQUIRED));
     }
@@ -122,7 +124,7 @@ class ResearchProjectTest {
     @DisplayName("归属用户缺失抛USER_REQUIRED")
     @Test
     void givenNullUser_whenCreate_thenThrowUserRequired() {
-        assertThatThrownBy(() -> ResearchProject.create(null, "600519", "贵州茅台", null, "标题", ResearchStage.STRATEGY))
+        assertThatThrownBy(() -> ResearchProject.create(null, "600519", "贵州茅台", null, "标题", ResearchStage.STRATEGY, CREATED))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.USER_REQUIRED));
     }
@@ -131,7 +133,7 @@ class ResearchProjectTest {
     @Test
     void givenActiveProject_whenArchive_thenArchivedNewInstance() {
         var p = project();
-        var archived = p.archive();
+        var archived = p.archive(CREATED);
         assertThat(archived.status()).isEqualTo(ProjectStatus.ARCHIVED);
         // 不可变聚合：原实例保持 ACTIVE，其余字段原样携带
         assertThat(p.status()).isEqualTo(ProjectStatus.ACTIVE);
@@ -143,7 +145,7 @@ class ResearchProjectTest {
     @DisplayName("changeStage 支持任意跳转（D4：NEW_ANALYSIS 直达 REVIEW）")
     @Test
     void givenNewAnalysis_whenChangeStageToReview_thenJumpDirectly() {
-        var p = project().changeStage(ResearchStage.REVIEW);
+        var p = project().changeStage(ResearchStage.REVIEW, CREATED);
         assertThat(p.currentStage()).isEqualTo(ResearchStage.REVIEW);
         assertThat(p.status()).isEqualTo(ProjectStatus.ACTIVE);
     }
@@ -151,14 +153,15 @@ class ResearchProjectTest {
     @DisplayName("changeStage 支持回退（D4：REVIEW 退回 NEW_ANALYSIS）")
     @Test
     void givenReviewStage_whenChangeStageBack_thenJumpBackward() {
-        var p = project().changeStage(ResearchStage.REVIEW).changeStage(ResearchStage.NEW_ANALYSIS);
+        var p = project().changeStage(ResearchStage.REVIEW, CREATED).changeStage(ResearchStage.NEW_ANALYSIS,
+                CREATED);
         assertThat(p.currentStage()).isEqualTo(ResearchStage.NEW_ANALYSIS);
     }
 
     @DisplayName("changeStage 缺失抛STAGE_REQUIRED")
     @Test
     void givenNullStage_whenChangeStage_thenThrowStageRequired() {
-        assertThatThrownBy(() -> project().changeStage(null))
+        assertThatThrownBy(() -> project().changeStage(null, CREATED))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.STAGE_REQUIRED));
     }
@@ -166,14 +169,14 @@ class ResearchProjectTest {
     @DisplayName("rename 更新标题并返回新实例")
     @Test
     void givenNewTitle_whenRename_thenTitleUpdated() {
-        var p = project().rename("茅台新标题");
+        var p = project().rename("茅台新标题", CREATED);
         assertThat(p.title()).isEqualTo("茅台新标题");
     }
 
     @DisplayName("rename 空白标题抛TITLE_BLANK")
     @Test
     void givenBlankTitle_whenRename_thenThrowTitleBlank() {
-        assertThatThrownBy(() -> project().rename(null))
+        assertThatThrownBy(() -> project().rename(null, CREATED))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.TITLE_BLANK));
     }

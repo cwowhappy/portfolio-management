@@ -19,12 +19,12 @@ class EntryPlanTest {
     @DisplayName("kellyRatio 简化凯利：f* = p − (1−p)/b（0.6/2.0 → 0.4）")
     @Test
     void givenWinRateAndPayoff_whenKellyRatio_thenSimplifiedKelly() {
-        var plan = EntryPlan.of(1L, new BigDecimal("0.6"), new BigDecimal("2.0"), List.of(batch("0.4")));
+        var plan = EntryPlan.of(1L, new BigDecimal("0.6"), new BigDecimal("2.0"), List.of(batch("0.4")), CREATED);
         // 契约公式 f* = p − (1−p)/b = 0.6 − 0.4/2.0 = 0.4
         //（brief Step1 示例值 0.2 与其自述公式算术不符，以 Interfaces 逐字契约公式为准）
         assertThat(plan.kellyRatio()).isEqualByComparingTo("0.4");
 
-        var plan2 = EntryPlan.of(1L, new BigDecimal("0.55"), new BigDecimal("1.5"), List.of(batch("0.4")));
+        var plan2 = EntryPlan.of(1L, new BigDecimal("0.55"), new BigDecimal("1.5"), List.of(batch("0.4")), CREATED);
         // f* = 0.55 − 0.45/1.5 = 0.55 − 0.3 = 0.25
         assertThat(plan2.kellyRatio()).isEqualByComparingTo("0.25");
     }
@@ -32,15 +32,15 @@ class EntryPlanTest {
     @DisplayName("kellyRatio 参数任一为空返回 null（D23 手动可选，不估）")
     @Test
     void givenMissingParams_whenKellyRatio_thenNull() {
-        assertThat(EntryPlan.of(1L, null, new BigDecimal("2.0"), List.of(batch("0.4"))).kellyRatio()).isNull();
-        assertThat(EntryPlan.of(1L, new BigDecimal("0.6"), null, List.of(batch("0.4"))).kellyRatio()).isNull();
-        assertThat(EntryPlan.of(1L, null, null, List.of(batch("0.4"))).kellyRatio()).isNull();
+        assertThat(EntryPlan.of(1L, null, new BigDecimal("2.0"), List.of(batch("0.4")), CREATED).kellyRatio()).isNull();
+        assertThat(EntryPlan.of(1L, new BigDecimal("0.6"), null, List.of(batch("0.4")), CREATED).kellyRatio()).isNull();
+        assertThat(EntryPlan.of(1L, null, null, List.of(batch("0.4")), CREATED).kellyRatio()).isNull();
     }
 
     @DisplayName("kellyRatio 负值原样返回不裁剪（无意义仓位由调用方判断）")
     @Test
     void givenNegativeKelly_whenKellyRatio_thenReturnedAsIs() {
-        var plan = EntryPlan.of(1L, new BigDecimal("0.3"), new BigDecimal("2.0"), List.of(batch("0.4")));
+        var plan = EntryPlan.of(1L, new BigDecimal("0.3"), new BigDecimal("2.0"), List.of(batch("0.4")), CREATED);
         // f* = 0.3 − 0.7/2.0 = −0.05
         assertThat(plan.kellyRatio()).isEqualByComparingTo("-0.05");
     }
@@ -56,7 +56,7 @@ class EntryPlanTest {
         assertThatThrownBy(() -> EntryPlan.validateBatches(batches))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.RATIO_SUM_EXCEEDED));
-        assertThatThrownBy(() -> EntryPlan.of(1L, null, null, batches))
+        assertThatThrownBy(() -> EntryPlan.of(1L, null, null, batches, CREATED))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.RATIO_SUM_EXCEEDED));
     }
@@ -69,7 +69,7 @@ class EntryPlanTest {
                         new BigDecimal("2600.00"), new BigDecimal("0.60")),
                 new EntryBatch(2, new BigDecimal("11.00"), new BigDecimal("12.00"), 100, null,
                         new BigDecimal("0.40")));
-        var plan = EntryPlan.of(1L, new BigDecimal("0.6"), new BigDecimal("2.0"), batches);
+        var plan = EntryPlan.of(1L, new BigDecimal("0.6"), new BigDecimal("2.0"), batches, CREATED);
         assertThat(plan.batches()).hasSize(2);
         assertThat(plan.kellyRatio()).isEqualByComparingTo("0.4");
     }
@@ -154,10 +154,10 @@ class EntryPlanTest {
     @DisplayName("of 空批次抛 BATCH_REQUIRED（至少一批）")
     @Test
     void givenEmptyBatches_whenOf_thenThrowBatchRequired() {
-        assertThatThrownBy(() -> EntryPlan.of(1L, null, null, List.of()))
+        assertThatThrownBy(() -> EntryPlan.of(1L, null, null, List.of(), CREATED))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.BATCH_REQUIRED));
-        assertThatThrownBy(() -> EntryPlan.of(1L, null, null, null))
+        assertThatThrownBy(() -> EntryPlan.of(1L, null, null, null, CREATED))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.BATCH_REQUIRED));
     }
@@ -166,7 +166,7 @@ class EntryPlanTest {
     @Test
     void givenNullProjectId_whenOf_thenThrowProjectRequired() {
         assertThatThrownBy(() -> EntryPlan.of(null, new BigDecimal("0.6"), new BigDecimal("2.0"),
-                List.of(batch("0.4"))))
+                List.of(batch("0.4")), CREATED))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.PROJECT_REQUIRED));
     }
@@ -176,7 +176,7 @@ class EntryPlanTest {
     void givenWinRateOutOfRange_whenOf_thenThrowKellyParamInvalid() {
         for (BigDecimal bad : new BigDecimal[]{BigDecimal.ZERO, BigDecimal.ONE,
                 new BigDecimal("1.2"), new BigDecimal("-0.1")}) {
-            assertThatThrownBy(() -> EntryPlan.of(1L, bad, new BigDecimal("2.0"), List.of(batch("0.4"))))
+            assertThatThrownBy(() -> EntryPlan.of(1L, bad, new BigDecimal("2.0"), List.of(batch("0.4")), CREATED))
                     .isInstanceOfSatisfying(ResearchException.class,
                             e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.KELLY_PARAM_INVALID));
         }
@@ -185,15 +185,15 @@ class EntryPlanTest {
     @DisplayName("payoffRatio 非正抛 KELLY_PARAM_INVALID；winRate/payoff 均空合法（D23 手动可选）")
     @Test
     void givenNonPositivePayoff_whenOf_thenThrowKellyParamInvalid() {
-        assertThatThrownBy(() -> EntryPlan.of(1L, new BigDecimal("0.6"), BigDecimal.ZERO, List.of(batch("0.4"))))
+        assertThatThrownBy(() -> EntryPlan.of(1L, new BigDecimal("0.6"), BigDecimal.ZERO, List.of(batch("0.4")), CREATED))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.KELLY_PARAM_INVALID));
         assertThatThrownBy(() -> EntryPlan.of(1L, new BigDecimal("0.6"), new BigDecimal("-2.0"),
-                List.of(batch("0.4"))))
+                List.of(batch("0.4")), CREATED))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.KELLY_PARAM_INVALID));
         // 两参数均可空（D23 手动可选，kellyRatio 返回 null）
-        assertThat(EntryPlan.of(1L, null, null, List.of(batch("0.4"))).kellyRatio()).isNull();
+        assertThat(EntryPlan.of(1L, null, null, List.of(batch("0.4")), CREATED).kellyRatio()).isNull();
     }
 
     // ---- 构造与还原 ----
@@ -202,7 +202,7 @@ class EntryPlanTest {
     @Test
     void givenValidInput_whenOf_thenFieldsCarriedWithDefensiveCopy() {
         var source = new ArrayList<>(List.of(batch("0.4")));
-        var plan = EntryPlan.of(1L, new BigDecimal("0.6"), new BigDecimal("2.0"), source);
+        var plan = EntryPlan.of(1L, new BigDecimal("0.6"), new BigDecimal("2.0"), source, CREATED);
         assertThat(plan.id()).isNull();
         assertThat(plan.projectId()).isEqualTo(1L);
         assertThat(plan.winRate()).isEqualByComparingTo("0.6");

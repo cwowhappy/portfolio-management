@@ -171,7 +171,7 @@ class UserAdminControllerIntegrationTest extends PostgresTestSupport {
 
     private void approveDirect(String username) {
         var user = userRepository.findByUsername(username).orElseThrow();
-        userRepository.save(user.approve());
+        userRepository.save(user.approve(Instant.now()));
     }
 
     private void seedAdmin(String username, String password) {

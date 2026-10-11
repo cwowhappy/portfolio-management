@@ -53,7 +53,8 @@ public final class AguiDriver {
         // BCrypt 与 SecurityConfig 的 PasswordEncoder 同款，登录照常走 HTTP 认证
         String password = "eval-pass-123456";
         String hash = new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder().encode(password);
-        userRepository.save(com.portfolio.invest.domain.user.User.register(username, hash).approve());
+        userRepository.save(com.portfolio.invest.domain.user.User
+                .register(username, hash, java.time.Instant.now()).approve(java.time.Instant.now()));
         var login = mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(MAPPER.writeValueAsString(java.util.Map.of(

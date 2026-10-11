@@ -43,7 +43,7 @@ class ConversationRepositoryImplTest {
 
     @BeforeEach
     void seedUser() {
-        userId = users.save(User.register("conv-owner", "h")).id();
+        userId = users.save(User.register("conv-owner", "h", Instant.now())).id();
     }
 
     @DisplayName("按归属保存与查询")

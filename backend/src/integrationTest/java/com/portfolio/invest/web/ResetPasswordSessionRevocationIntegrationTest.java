@@ -161,7 +161,7 @@ class ResetPasswordSessionRevocationIntegrationTest extends PostgresTestSupport 
 
     private void approveDirect(String username) {
         var user = userRepository.findByUsername(username).orElseThrow();
-        userRepository.save(user.approve());
+        userRepository.save(user.approve(Instant.now()));
     }
 
     /** 直存 APPROVED 管理员（参照 UserAdminControllerIntegrationTest.seedAdmin）。 */

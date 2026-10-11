@@ -16,7 +16,8 @@ class FalsifierReviewTest {
     @Test
     void givenFourConclusions_whenCreate_thenReviewCarriesConclusionAndReason() {
         for (ReviewConclusion conclusion : ReviewConclusion.values()) {
-            FalsifierReview review = FalsifierReview.create(5L, conclusion, "跌破下限，处置：" + conclusion.label());
+            FalsifierReview review = FalsifierReview.create(5L, conclusion,
+                    "跌破下限，处置：" + conclusion.label(), NOW);
 
             assertThat(review.id()).isNull();
             assertThat(review.projectId()).isEqualTo(5L);
@@ -29,10 +30,10 @@ class FalsifierReviewTest {
     @DisplayName("create：projectId/conclusion 缺失 → PROJECT_REQUIRED / CONCLUSION_REQUIRED")
     @Test
     void givenMissingProjectOrConclusion_whenCreate_thenRejected() {
-        assertThatThrownBy(() -> FalsifierReview.create(null, ReviewConclusion.EXIT, "跌破下限"))
+        assertThatThrownBy(() -> FalsifierReview.create(null, ReviewConclusion.EXIT, "跌破下限", NOW))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.PROJECT_REQUIRED));
-        assertThatThrownBy(() -> FalsifierReview.create(5L, null, "跌破下限"))
+        assertThatThrownBy(() -> FalsifierReview.create(5L, null, "跌破下限", NOW))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.CONCLUSION_REQUIRED));
     }
@@ -40,17 +41,18 @@ class FalsifierReviewTest {
     @DisplayName("create：理由空白 → REVIEW_REASON_REQUIRED；超 1000 字 → REVIEW_REASON_REQUIRED（DB 列宽）")
     @Test
     void givenBlankOrOverlongReason_whenCreate_thenRejected() {
-        assertThatThrownBy(() -> FalsifierReview.create(5L, ReviewConclusion.HOLD, null))
+        assertThatThrownBy(() -> FalsifierReview.create(5L, ReviewConclusion.HOLD, null, NOW))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.REVIEW_REASON_REQUIRED));
-        assertThatThrownBy(() -> FalsifierReview.create(5L, ReviewConclusion.HOLD, "   "))
+        assertThatThrownBy(() -> FalsifierReview.create(5L, ReviewConclusion.HOLD, "   ", NOW))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.REVIEW_REASON_REQUIRED));
-        assertThatThrownBy(() -> FalsifierReview.create(5L, ReviewConclusion.HOLD, "长".repeat(1001)))
+        assertThatThrownBy(() -> FalsifierReview.create(5L, ReviewConclusion.HOLD, "长".repeat(1001), NOW))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.REVIEW_REASON_REQUIRED));
         // 恰 1000 字放行（边界内）
-        assertThat(FalsifierReview.create(5L, ReviewConclusion.HOLD, "长".repeat(1000)).reason()).hasSize(1000);
+        assertThat(FalsifierReview.create(5L, ReviewConclusion.HOLD, "长".repeat(1000), NOW).reason())
+                .hasSize(1000);
     }
 
     @DisplayName("reconstitute：持久化还原字段保真（append-only：聚合无任何 update 方法）")

@@ -61,7 +61,7 @@ class PrincipleRuleTest {
     void givenRule_whenUpdate_thenNewInstanceAndMetricKept() {
         PrincipleRule original = PrincipleRule.reconstitute(9L, 1L, PrincipleMetric.STOCK_PE_MAX,
                 new BigDecimal("40"), true, null, NOW, NOW, 0L);
-        PrincipleRule updated = original.update(new BigDecimal("30"), false, "收紧");
+        PrincipleRule updated = original.update(new BigDecimal("30"), false, "收紧", NOW);
         assertThat(updated).isNotSameAs(original);
         assertThat(updated.metric()).isEqualTo(PrincipleMetric.STOCK_PE_MAX);
         assertThat(updated.threshold()).isEqualByComparingTo("30");

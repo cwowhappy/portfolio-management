@@ -99,7 +99,7 @@ class PortfolioRepositoryImplTest {
         HoldingGroup g = repository.saveGroup(HoldingGroup.create(p.id(), "华泰", GroupType.ACCOUNT, Instant.now()));
 
         Position pos = Position.create(p.id(), g.id(), "600519", "贵州茅台", Instant.now())
-                .applyBuy(new BigDecimal("1500"), new BigDecimal("100"), new BigDecimal("5"));
+                .applyBuy(new BigDecimal("1500"), new BigDecimal("100"), new BigDecimal("5"), Instant.now());
         Position savedPos = repository.savePosition(pos);
 
         assertThat(repository.findGroupsByPortfolioId(p.id())).hasSize(1);
@@ -128,7 +128,7 @@ class PortfolioRepositoryImplTest {
         Portfolio p = savePortfolio(94051L);
         HoldingGroup g = repository.saveGroup(HoldingGroup.create(p.id(), "华泰", GroupType.ACCOUNT, Instant.now()));
         Position savedPos = repository.savePosition(Position.create(p.id(), g.id(), "600519", "贵州茅台", Instant.now())
-                .applyBuy(new BigDecimal("1500"), new BigDecimal("100"), new BigDecimal("5")));
+                .applyBuy(new BigDecimal("1500"), new BigDecimal("100"), new BigDecimal("5"), Instant.now()));
 
         Trade savedTrade = repository.saveTrade(new Trade(null, savedPos.id(), TradeType.BUY,
                 LocalDate.of(2026, 8, 27), new BigDecimal("1500"), new BigDecimal("100"),

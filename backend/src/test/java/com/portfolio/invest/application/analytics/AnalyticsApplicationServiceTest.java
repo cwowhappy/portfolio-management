@@ -157,9 +157,10 @@ class AnalyticsApplicationServiceTest {
 
         // 直接 Position 聚合（写侧事实源等价重放）：买 → 卖 → 同日分红按卖出后余量计金额
         Position afterBuySell = Position.create(9L, null, "600519", "贵州茅台", Instant.now())
-                .applyBuy(TEN, new BigDecimal("100"), BigDecimal.ZERO)
-                .applySell(TWELVE, new BigDecimal("100"), BigDecimal.ZERO);
-        Position writeSide = afterBuySell.applyCashDividend(ONE.multiply(afterBuySell.quantity()));
+                .applyBuy(TEN, new BigDecimal("100"), BigDecimal.ZERO, Instant.now())
+                .applySell(TWELVE, new BigDecimal("100"), BigDecimal.ZERO, Instant.now());
+        Position writeSide = afterBuySell.applyCashDividend(ONE.multiply(afterBuySell.quantity()),
+                Instant.now());
 
         Optional<TradeStatsView> stats = service.tradeStats(1L);
         assertThat(stats).isPresent();

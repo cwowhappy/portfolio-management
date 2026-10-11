@@ -512,14 +512,14 @@ public class AnalyticsApplicationService {
                 Trade t = e.trade();
                 BigDecimal fee = zeroIfNull(t.fee());
                 if (t.type() == TradeType.BUY) {
-                    agg = agg.applyBuy(t.price(), t.quantity(), fee);
+                    agg = agg.applyBuy(t.price(), t.quantity(), fee, e.createdAt());
                     stockEvents.add(new StockEvent(t.tradeDate(), pos.stockCode(), t.quantity()));
                     cashEvents.add(new CashEvent(t.tradeDate(),
                             t.price().multiply(t.quantity()).add(fee).negate()));
                     buys.add(new TradeStatsCalculator.BuyLot(pos.stockCode(), t.tradeDate(), t.quantity()));
                 } else {
                     BigDecimal realizedBefore = agg.realizedPnl();
-                    agg = agg.applySell(t.price(), t.quantity(), fee);
+                    agg = agg.applySell(t.price(), t.quantity(), fee, e.createdAt());
                     sells.add(new TradeStatsCalculator.SellLot(pos.stockCode(), t.tradeDate(), t.quantity(),
                             agg.realizedPnl().subtract(realizedBefore)));
                     stockEvents.add(new StockEvent(t.tradeDate(), pos.stockCode(), t.quantity().negate()));
@@ -528,12 +528,12 @@ public class AnalyticsApplicationService {
                 }
             } else if (e.dividend().type() == DividendType.CASH) {
                 BigDecimal total = zeroIfNull(e.dividend().cashPerShare()).multiply(agg.quantity());
-                agg = agg.applyCashDividend(total);
+                agg = agg.applyCashDividend(total, e.createdAt());
                 cashEvents.add(new CashEvent(e.dividend().exDate(), total));
             } else {
                 BigDecimal ratio = zeroIfNull(e.dividend().stockRatio());
                 BigDecimal bonusQty = ratio.multiply(agg.quantity());
-                agg = agg.applyStockDividend(ratio);
+                agg = agg.applyStockDividend(ratio, e.createdAt());
                 stockEvents.add(new StockEvent(e.dividend().exDate(), pos.stockCode(), bonusQty));
             }
         }

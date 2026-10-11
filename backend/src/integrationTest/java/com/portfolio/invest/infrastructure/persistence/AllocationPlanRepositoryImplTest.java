@@ -73,7 +73,7 @@ class AllocationPlanRepositoryImplTest {
         AllocationPlan saved = repository.save(
                 AllocationPlan.create(94043L, "平衡", PlanSource.CUSTOM, w60_40(), Instant.now()));
         repository.save(saved.updateWeights(Map.of(
-                AssetClass.STOCK, new BigDecimal("40"), AssetClass.BOND, new BigDecimal("60"))));
+                AssetClass.STOCK, new BigDecimal("40"), AssetClass.BOND, new BigDecimal("60")), Instant.now()));
 
         var found = repository.findByIdAndUserId(saved.id(), 94043L).orElseThrow();
         assertThat(found.weights().get(AssetClass.STOCK)).isEqualByComparingTo("40");
@@ -113,7 +113,7 @@ class AllocationPlanRepositoryImplTest {
     void givenPlanAlreadyActive_whenActivateAgain_thenDbKeepsSingleActive() {
         AllocationPlan saved = repository.save(
                 AllocationPlan.create(94043L, "A", PlanSource.CUSTOM, w60_40(), Instant.now()));
-        repository.save(saved.activate());
+        repository.save(saved.activate(Instant.now()));
         AllocationPlan other = repository.save(
                 AllocationPlan.create(94043L, "B", PlanSource.CUSTOM, w60_40(), Instant.now()));
         assertThat(other.active()).isFalse();

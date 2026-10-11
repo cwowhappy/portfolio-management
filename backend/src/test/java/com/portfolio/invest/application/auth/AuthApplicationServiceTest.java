@@ -84,7 +84,7 @@ class AuthApplicationServiceTest {
     @DisplayName("用户名已存在且非REJECTED被拒")
     @Test
     void givenExistingNonRejectedUsername_whenRegister_thenReject() {
-        when(repo.findByUsername("alice")).thenReturn(Optional.of(User.register("alice", "h").approve()));
+        when(repo.findByUsername("alice")).thenReturn(Optional.of(User.register("alice", "h", NOW).approve(NOW)));
         assertThatThrownBy(() -> service.register(new RegisterCommand("alice", "abc12345", EMAIL, "123456")))
                 .isInstanceOf(UserException.class).hasMessageContaining("用户名已存在");
     }
@@ -92,7 +92,7 @@ class AuthApplicationServiceTest {
     @DisplayName("被拒用户同名重新注册复用行")
     @Test
     void givenRejectedUserReregisters_whenRegister_thenReuseRow() {
-        User rejected = User.register("alice", "h").reject();
+        User rejected = User.register("alice", "h", NOW).reject(NOW);
         when(repo.findByUsername("alice")).thenReturn(Optional.of(rejected));
         when(encoder.encode("abc12345")).thenReturn("$2a$hash");
         when(repo.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -105,7 +105,7 @@ class AuthApplicationServiceTest {
     @Test
     void givenRejectedUserWithSameEmail_whenRegister_thenSucceedsWithoutEmailTaken() {
         // R2：assertEmailAvailable 语义是「未被他人绑定」——自己的旧行不算占用
-        User rejected = User.register("alice", "h", EMAIL).reject();
+        User rejected = User.register("alice", "h", EMAIL, NOW).reject(NOW);
         when(repo.findByUsername("alice")).thenReturn(Optional.of(rejected));
         when(encoder.encode("abc12345")).thenReturn("$2a$hash");
         when(repo.save(any())).thenAnswer(inv -> inv.getArgument(0));

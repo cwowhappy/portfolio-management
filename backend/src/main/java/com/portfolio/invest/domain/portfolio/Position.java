@@ -71,17 +71,17 @@ public final class Position {
     }
 
     /** 买入：数量、成本、现金净贡献更新；摊薄成本价随之变化。 */
-    public Position applyBuy(BigDecimal price, BigDecimal qty, BigDecimal fee) {
+    public Position applyBuy(BigDecimal price, BigDecimal qty, BigDecimal fee, Instant now) {
         requirePositive(price, "买入价格");
         requirePositive(qty, "买入数量");
         requireNonNegative(fee, "手续费");
         BigDecimal cost = price.multiply(qty).add(fee);
         return copy(quantity.add(qty), costBasis.add(cost), totalBuyCost.add(cost),
-                cumulativeCashDividend, realizedPnl, netCashFlow.subtract(cost));
+                cumulativeCashDividend, realizedPnl, netCashFlow.subtract(cost), now);
     }
 
     /** 卖出：按精确移除成本匹配，计算已实现收益与现金流入。 */
-    public Position applySell(BigDecimal price, BigDecimal qty, BigDecimal fee) {
+    public Position applySell(BigDecimal price, BigDecimal qty, BigDecimal fee, Instant now) {
         requirePositive(price, "卖出价格");
         requirePositive(qty, "卖出数量");
         requireNonNegative(fee, "手续费");
@@ -96,20 +96,20 @@ public final class Position {
                 : costBasis.multiply(remaining).divide(quantity, SCALE, RM);
         BigDecimal realized = proceeds.subtract(costBasis.subtract(newCostBasis));
         return copy(remaining, newCostBasis, totalBuyCost, cumulativeCashDividend,
-                realizedPnl.add(realized), netCashFlow.add(proceeds));
+                realizedPnl.add(realized), netCashFlow.add(proceeds), now);
     }
 
     /** 现金分红：降低摊薄成本，增加现金净贡献与累计分红。 */
-    public Position applyCashDividend(BigDecimal totalAmount) {
+    public Position applyCashDividend(BigDecimal totalAmount, Instant now) {
         requireNonNegative(totalAmount, "分红金额");
         return copy(quantity, costBasis.subtract(totalAmount), totalBuyCost,
-                cumulativeCashDividend.add(totalAmount), realizedPnl, netCashFlow.add(totalAmount));
+                cumulativeCashDividend.add(totalAmount), realizedPnl, netCashFlow.add(totalAmount), now);
     }
 
     /** 送股：按比例增股数，摊薄每股成本（成本总额不变）。 */
-    public Position applyStockDividend(BigDecimal ratio) {
+    public Position applyStockDividend(BigDecimal ratio, Instant now) {
         BigDecimal bonus = quantity.multiply(ratio);
-        return copy(quantity.add(bonus), costBasis, totalBuyCost, cumulativeCashDividend, realizedPnl, netCashFlow);
+        return copy(quantity.add(bonus), costBasis, totalBuyCost, cumulativeCashDividend, realizedPnl, netCashFlow, now);
     }
 
     /** 移动到新分组（FR-A2：编辑持仓可改所属分组）。 */
@@ -128,12 +128,13 @@ public final class Position {
     }
 
     private Position copy(BigDecimal newQuantity, BigDecimal newCostBasis, BigDecimal newTotalBuyCost,
-                          BigDecimal newDividend, BigDecimal newRealized, BigDecimal newNetCashFlow) {
+                          BigDecimal newDividend, BigDecimal newRealized, BigDecimal newNetCashFlow,
+                          Instant now) {
         return new Position(id, portfolioId, groupId, stockCode, stockName,
                 newQuantity.setScale(SCALE, RM), newCostBasis.setScale(SCALE, RM),
                 newTotalBuyCost.setScale(SCALE, RM), newDividend.setScale(SCALE, RM),
                 newRealized.setScale(SCALE, RM), newNetCashFlow.setScale(SCALE, RM),
-                createdAt, Instant.now(), version);
+                createdAt, now, version);
     }
 
     private static BigDecimal z() {

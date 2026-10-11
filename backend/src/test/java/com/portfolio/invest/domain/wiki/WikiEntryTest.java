@@ -56,7 +56,7 @@ class WikiEntryTest {
     void givenEntry_whenUpdate_thenNewInstance() {
         WikiEntry original = WikiEntry.reconstitute(5L, 1L, WikiEntryType.CONCEPT, "护城河", "旧内容",
                 "质量", null, NOW, NOW, 0L);
-        WikiEntry updated = original.update("护城河（修订）", "新内容", "质量", null);
+        WikiEntry updated = original.update("护城河（修订）", "新内容", "质量", null, NOW);
         assertThat(updated).isNotSameAs(original);
         assertThat(updated.id()).isEqualTo(5L);
         assertThat(updated.type()).isEqualTo(WikiEntryType.CONCEPT);
@@ -90,7 +90,7 @@ class WikiEntryTest {
                 "SOP_REVIEW", null, NOW, NOW, 0L);
         assertThat(legacy.projectId()).isNull();
 
-        WikiEntry updated = restored.update("复盘回流（改）", "结论2", "SOP_REVIEW", null);
+        WikiEntry updated = restored.update("复盘回流（改）", "结论2", "SOP_REVIEW", null, NOW);
         assertThat(updated.projectId()).isEqualTo(5L); // projectId 不可变，update 保留
     }
 }

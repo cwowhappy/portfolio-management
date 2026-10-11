@@ -229,7 +229,8 @@ public class ResearchApplicationService {
     @Transactional
     public ProjectView createProject(Long userId, CreateProjectCommand cmd) {
         ResearchProject project = repository.save(ResearchProject.create(userId, cmd.stockCode(),
-                cmd.stockName(), cmd.industryCode(), cmd.title().trim(), ResearchStage.NEW_ANALYSIS));
+                cmd.stockName(), cmd.industryCode(), cmd.title().trim(), ResearchStage.NEW_ANALYSIS,
+                clock.instant()));
         writeEvent(project, "立项：" + project.stockName(),
                 "研究项目「" + project.title() + "」立项");
         if (Boolean.TRUE.equals(cmd.withTemplate())) {
@@ -251,10 +252,10 @@ public class ResearchApplicationService {
     public ProjectDetailView updateProject(Long userId, Long projectId, UpdateProjectCommand cmd) {
         ResearchProject current = requireProject(userId, projectId);
         if (cmd.title() != null) {
-            current = repository.save(current.rename(cmd.title().trim()));
+            current = repository.save(current.rename(cmd.title().trim(), clock.instant()));
         }
         if (cmd.currentStage() != null && cmd.currentStage() != current.currentStage()) {
-            current = repository.save(current.changeStage(cmd.currentStage()));
+            current = repository.save(current.changeStage(cmd.currentStage(), clock.instant()));
             writeEvent(current, "阶段变更：" + cmd.currentStage().label(),
                     "当前阶段变更为「" + cmd.currentStage().label() + "」");
         }
@@ -272,7 +273,7 @@ public class ResearchApplicationService {
     @Transactional
     public ProjectView archiveProject(Long userId, Long projectId) {
         ResearchProject project = requireProject(userId, projectId);
-        ResearchProject archived = repository.save(project.archive());
+        ResearchProject archived = repository.save(project.archive(clock.instant()));
         if (project.status() != ProjectStatus.ARCHIVED) {
             writeEvent(archived, "已归档", "研究项目「" + archived.title() + "」已归档");
         }
@@ -287,7 +288,7 @@ public class ResearchApplicationService {
     @Transactional
     public ProjectView setIntelligenceAlert(Long userId, Long projectId, SetIntelligenceAlertCommand cmd) {
         ResearchProject project = requireProject(userId, projectId);
-        return ProjectView.from(repository.save(project.withIntelligenceAlert(cmd.enabled())));
+        return ProjectView.from(repository.save(project.withIntelligenceAlert(cmd.enabled(), clock.instant())));
     }
 
     /** 策略查询：未创建过草稿 → NOT_FOUND（详情视图以 strategy=null 表达同一事实）。 */
@@ -301,9 +302,10 @@ public class ResearchApplicationService {
     public StrategyView saveStrategyDraft(Long userId, Long projectId, SaveStrategyCommand cmd) {
         requireProject(userId, projectId);
         StrategyDoc existing = repository.findStrategy(projectId)
-                .orElseGet(() -> StrategyDoc.draftOf(projectId));
+                .orElseGet(() -> StrategyDoc.draftOf(projectId, clock.instant()));
         StrategyDoc saved = repository.saveStrategy(existing.saveDraft(cmd.thesis(), cmd.valuationLow(),
-                cmd.valuationHigh(), cmd.positionPlan(), cmd.buyConditions(), cmd.riskNotes()));
+                cmd.valuationHigh(), cmd.positionPlan(), cmd.buyConditions(), cmd.riskNotes(),
+                clock.instant()));
         return StrategyView.from(saved);
     }
 
@@ -312,7 +314,7 @@ public class ResearchApplicationService {
     public StrategyView finalizeStrategy(Long userId, Long projectId) {
         ResearchProject project = requireProject(userId, projectId);
         StrategyDoc doc = requireStrategy(projectId);
-        StrategyDoc finalized = repository.saveStrategy(doc.finalizeDoc());
+        StrategyDoc finalized = repository.saveStrategy(doc.finalizeDoc(clock.instant()));
         if (doc.state() != StrategyState.FINALIZED) {
             writeEvent(project, "策略定稿",
                     "策略文档定稿，估值区间 " + finalized.valuationLow() + " ~ " + finalized.valuationHigh());
@@ -325,7 +327,7 @@ public class ResearchApplicationService {
     public StrategyView reviseStrategy(Long userId, Long projectId) {
         ResearchProject project = requireProject(userId, projectId);
         StrategyDoc doc = requireStrategy(projectId);
-        StrategyDoc revised = repository.saveStrategy(doc.revise());
+        StrategyDoc revised = repository.saveStrategy(doc.revise(clock.instant()));
         if (doc.state() == StrategyState.FINALIZED) {
             writeEvent(project, "策略修订", "定稿策略修订回草稿（覆盖式）");
         }
@@ -349,9 +351,9 @@ public class ResearchApplicationService {
         List<Falsifier> falsifiers = items.stream()
                 .map(item -> switch (item.kind()) {
                     case PREDICATE -> Falsifier.ofPredicate(strategy.id(), item.predicate(),
-                            item.threshold(), item.note());
+                            item.threshold(), item.note(), clock.instant());
                     case EVENT -> Falsifier.ofEvent(strategy.id(), item.note(),
-                            Boolean.TRUE.equals(item.eventChecked()));
+                            Boolean.TRUE.equals(item.eventChecked()), clock.instant());
                 })
                 .toList();
         repository.saveFalsifiers(strategy.id(), falsifiers);
@@ -373,7 +375,8 @@ public class ResearchApplicationService {
     @Transactional
     public EntryPlanView saveEntryPlan(Long userId, Long projectId, SaveEntryPlanCommand cmd) {
         requireProject(userId, projectId);
-        EntryPlan plan = EntryPlan.of(projectId, cmd.winRate(), cmd.payoffRatio(), toBatches(cmd.batches()));
+        EntryPlan plan = EntryPlan.of(projectId, cmd.winRate(), cmd.payoffRatio(), toBatches(cmd.batches()),
+                clock.instant());
         return EntryPlanView.from(entryPlanRepository.save(plan));
     }
 
@@ -400,7 +403,7 @@ public class ResearchApplicationService {
     public CheckRecordView submitCheck(Long userId, Long projectId, SubmitCheckCommand cmd) {
         ResearchProject project = requireProject(userId, projectId);
         CheckRecord record = checkRepository.insert(CheckRecord.create(projectId, cmd.checkType(),
-                cmd.items(), cmd.result(), cmd.overrideReason()));
+                cmd.items(), cmd.result(), cmd.overrideReason(), clock.instant()));
         long hitCount = cmd.items().stream().filter(item -> item.outcome() == CheckOutcome.HIT).count();
         writeEvent(project, "纪律检查：" + cmd.checkType().label() + "/" + cmd.result().label(),
                 "纪律检查「" + cmd.checkType().label() + "」结论「" + cmd.result().label()
@@ -454,7 +457,8 @@ public class ResearchApplicationService {
                                                      SubmitFalsifierReviewCommand cmd) {
         ResearchProject project = requireProject(userId, projectId);
         // 域校验（结论/理由）先于 hit 资源解析：请求体非法 → 422，与 hitId 无关且零写库
-        FalsifierReview review = FalsifierReview.create(projectId, cmd.conclusion(), cmd.reason());
+        FalsifierReview review = FalsifierReview.create(projectId, cmd.conclusion(), cmd.reason(),
+                clock.instant());
         if (cmd.hitId() != null) {
             checkRepository.findHit(projectId, cmd.hitId())
                     .orElseThrow(() -> new ResearchException(ResearchErrorCode.NOT_FOUND, "证伪命中留痕不存在"));
@@ -490,7 +494,7 @@ public class ResearchApplicationService {
                 .orElse(List.of());
         String snapshot = reviewComposer.compose(userId, project, cmd.periodStart(), cmd.periodEnd(), batches);
         Review saved = reviewRepository.save(Review.create(projectId, cmd.tier(),
-                cmd.periodStart(), cmd.periodEnd(), snapshot, autoCircle(snapshot)));
+                cmd.periodStart(), cmd.periodEnd(), snapshot, autoCircle(snapshot), clock.instant()));
         writeEvent(project, "复盘创建：" + cmd.tier().label(),
                 cmd.tier().label() + " " + cmd.periodStart() + "~" + cmd.periodEnd() + " 创建，快照已定格");
         return ReviewView.from(saved);
@@ -506,7 +510,7 @@ public class ResearchApplicationService {
         requireProject(userId, projectId);
         Review existing = requireReview(projectId, reviewId);
         Review saved = reviewRepository.save(existing.correct(toJson(cmd.answers()), toJson(cmd.overrides()),
-                cmd.narrative(), cmd.tradeIds()));
+                cmd.narrative(), cmd.tradeIds(), clock.instant()));
         return ReviewView.from(saved);
     }
 
@@ -540,7 +544,7 @@ public class ResearchApplicationService {
             throw new ResearchException(ResearchErrorCode.REFLUX_WIKI_UNAVAILABLE,
                     "知识库写入失败，复盘已保留，请稍后重试回流");
         }
-        Review confirmed = reviewRepository.save(review.refluxConfirm(entry.id()));
+        Review confirmed = reviewRepository.save(review.refluxConfirm(entry.id(), clock.instant()));
         // F08 时间线：回流成功才写事件（幂等早退/降级路径不写）
         writeEvent(project, "复盘回流知识库", "复盘叙述已写入知识库条目「" + entry.title() + "」");
         return ReviewView.from(confirmed);
@@ -553,7 +557,8 @@ public class ResearchApplicationService {
     @Transactional
     public FeedbackView submitFeedback(Long userId, Long projectId, SubmitFeedbackCommand cmd) {
         requireProject(userId, projectId);
-        ResearchFeedback feedback = ResearchFeedback.create(projectId, cmd.reviewId(), cmd.stage(), cmd.content());
+        ResearchFeedback feedback = ResearchFeedback.create(projectId, cmd.reviewId(), cmd.stage(), cmd.content(),
+                clock.instant());
         if (cmd.reviewId() != null) {
             requireReview(projectId, cmd.reviewId());
         }

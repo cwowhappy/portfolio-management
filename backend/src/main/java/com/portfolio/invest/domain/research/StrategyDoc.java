@@ -44,11 +44,10 @@ public final class StrategyDoc {
     }
 
     /** 新建草稿（内容字段全空，随 saveDraft 逐步补全）。 */
-    public static StrategyDoc draftOf(Long projectId) {
+    public static StrategyDoc draftOf(Long projectId, Instant now) {
         if (projectId == null) {
             throw new ResearchException(ResearchErrorCode.PROJECT_REQUIRED, "归属项目不能为空");
         }
-        Instant now = Instant.now();
         return new StrategyDoc(null, projectId, StrategyState.DRAFT, null, null, null,
                 null, null, null, null, null, now, now);
     }
@@ -65,12 +64,12 @@ public final class StrategyDoc {
 
     /** DRAFT 态暂存六字段（均可空，字段不完整可存）；整组覆盖，未提供字段不残留旧值。 */
     public StrategyDoc saveDraft(String thesis, BigDecimal valuationLow, BigDecimal valuationHigh,
-                                 String positionPlan, String buyConditions, String riskNotes) {
+                                 String positionPlan, String buyConditions, String riskNotes, Instant now) {
         if (state == StrategyState.FINALIZED) {
             throw new ResearchException(ResearchErrorCode.STRATEGY_FINALIZED, "策略已定稿，须先修订回草稿再修改");
         }
         return new StrategyDoc(id, projectId, StrategyState.DRAFT, thesis, valuationLow, valuationHigh,
-                positionPlan, buyConditions, riskNotes, null, version, createdAt, Instant.now());
+                positionPlan, buyConditions, riskNotes, null, version, createdAt, now);
     }
 
     /**
@@ -80,7 +79,7 @@ public final class StrategyDoc {
      * <p>命名说明：不能叫 {@code finalize()}——与 {@link Object#finalize()} 返回类型
      * （void）冲突无法编译，故按「领域动作 + 实体」惯例取名 finalizeDoc。
      */
-    public StrategyDoc finalizeDoc() {
+    public StrategyDoc finalizeDoc(Instant now) {
         if (state == StrategyState.FINALIZED) {
             return this;
         }
@@ -92,18 +91,17 @@ public final class StrategyDoc {
             throw new ResearchException(ResearchErrorCode.VALUATION_RANGE_INVALID,
                     "估值下限必须小于上限");
         }
-        Instant now = Instant.now();
         return new StrategyDoc(id, projectId, StrategyState.FINALIZED, thesis, valuationLow, valuationHigh,
                 positionPlan, buyConditions, riskNotes, now, version, createdAt, now);
     }
 
     /** 修订（D13 覆盖式）：FINALIZED→DRAFT、清 finalizedAt，内容字段保留待 saveDraft 覆盖；DRAFT 态幂等返回。 */
-    public StrategyDoc revise() {
+    public StrategyDoc revise(Instant now) {
         if (state == StrategyState.DRAFT) {
             return this;
         }
         return new StrategyDoc(id, projectId, StrategyState.DRAFT, thesis, valuationLow, valuationHigh,
-                positionPlan, buyConditions, riskNotes, null, version, createdAt, Instant.now());
+                positionPlan, buyConditions, riskNotes, null, version, createdAt, now);
     }
 
     public Long id() { return id; }

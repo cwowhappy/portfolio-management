@@ -20,7 +20,7 @@ class FalsifierEvaluatorTest {
     private static final String NOTE_VALUATION = "东财估值 2026-09-26";
 
     private static Falsifier predicate(FalsifierPredicate p, String threshold) {
-        return Falsifier.ofPredicate(9L, p, new BigDecimal(threshold), null);
+        return Falsifier.ofPredicate(9L, p, new BigDecimal(threshold), null, Instant.now());
     }
 
     private static Falsifier disabledPredicate(FalsifierPredicate p, String threshold) {
@@ -148,7 +148,7 @@ class FalsifierEvaluatorTest {
     void givenNullSnapshot_whenEvaluate_thenAllPredicatesSkipped() {
         var falsifiers = List.of(
                 predicate(FalsifierPredicate.PRICE_BELOW, "13.00"),
-                Falsifier.ofEvent(9L, "业绩连续两季低于预期"));
+                Falsifier.ofEvent(9L, "业绩连续两季低于预期", Instant.now()));
 
         var results = FalsifierEvaluator.evaluate(falsifiers, null);
 
@@ -164,7 +164,7 @@ class FalsifierEvaluatorTest {
     @Test
     void givenEventFalsifier_whenEvaluate_thenPendingWithoutAutoHit() {
         var results = FalsifierEvaluator.evaluate(
-                List.of(Falsifier.ofEvent(9L, "业绩连续两季低于预期")),
+                List.of(Falsifier.ofEvent(9L, "业绩连续两季低于预期", Instant.now())),
                 snapshot("12.34", "25.6", "3.5", NOTE_PRICE));
 
         assertThat(results).hasSize(1);

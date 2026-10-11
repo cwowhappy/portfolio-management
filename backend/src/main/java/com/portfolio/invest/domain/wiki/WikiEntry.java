@@ -63,10 +63,10 @@ public final class WikiEntry {
     }
 
     /** 更新可变字段（type/userId/projectId 不可变），返回新实例。 */
-    public WikiEntry update(String title, String content, String category, String industryCode) {
+    public WikiEntry update(String title, String content, String category, String industryCode, Instant now) {
         validate(title, content);
         return new WikiEntry(id, userId, type, title, content, category, industryCode, projectId,
-                createdAt, Instant.now(), version);
+                createdAt, now, version);
     }
 
     /** 类型特有列从轻校验（校验从轻，避免堵死用户路径——设计规格 §3.1）。 */

@@ -31,14 +31,14 @@ public final class User {
         this.updatedAt = updatedAt;
     }
 
-    public static User register(String username, String passwordHash) {
-        return register(username, passwordHash, null);
+    public static User register(String username, String passwordHash, Instant now) {
+        return register(username, passwordHash, null, now);
     }
 
     /** 注册可携带邮箱：非空即视为已验证（注册流程邮箱来自用户自有输入，验证码另行发送）。 */
-    public static User register(String username, String passwordHash, String email) {
+    public static User register(String username, String passwordHash, String email, Instant now) {
         return new User(null, username, passwordHash, UserRole.USER,
-                UserStatus.PENDING, true, email, email != null, Instant.now(), Instant.now());
+                UserStatus.PENDING, true, email, email != null, now, now);
     }
 
     /** 从持久化还原：不做状态校验（语义不同于 register 的业务注册）。 */
@@ -54,43 +54,43 @@ public final class User {
     }
 
     /** 被拒用户重新注册：复用同一行，换密码、恢复 PENDING。 */
-    public User reRegister(String passwordHash) {
-        return reRegister(passwordHash, this.email);
+    public User reRegister(String passwordHash, Instant now) {
+        return reRegister(passwordHash, this.email, now);
     }
 
-    public User reRegister(String passwordHash, String email) {
+    public User reRegister(String passwordHash, String email, Instant now) {
         requireStatus(UserStatus.REJECTED, "状态非拒绝，仅被拒绝用户可重新注册");
         return new User(id, username, passwordHash, UserRole.USER,
-                UserStatus.PENDING, true, email, email != null, createdAt, Instant.now());
+                UserStatus.PENDING, true, email, email != null, createdAt, now);
     }
 
     /** 管理员代填/注册流程绑定邮箱：绑定即视为已验证。 */
-    public User bindEmail(String email) {
-        return new User(id, username, passwordHash, role, status, enabled, email, true, createdAt, Instant.now());
+    public User bindEmail(String email, Instant now) {
+        return new User(id, username, passwordHash, role, status, enabled, email, true, createdAt, now);
     }
 
-    public User approve() {
+    public User approve(Instant now) {
         requireStatus(UserStatus.PENDING, "状态非待审核，仅待审核用户可通过");
-        return withStatus(UserStatus.APPROVED);
+        return withStatus(UserStatus.APPROVED, now);
     }
 
-    public User reject() {
+    public User reject(Instant now) {
         requireStatus(UserStatus.PENDING, "状态非待审核，仅待审核用户可拒绝");
-        return withStatus(UserStatus.REJECTED);
+        return withStatus(UserStatus.REJECTED, now);
     }
 
-    public User enable() {
+    public User enable(Instant now) {
         requireStatus(UserStatus.APPROVED, "状态非已通过，仅已通过用户可启用/停用");
-        return new User(id, username, passwordHash, role, status, true, email, emailVerified, createdAt, Instant.now());
+        return new User(id, username, passwordHash, role, status, true, email, emailVerified, createdAt, now);
     }
 
-    public User disable() {
+    public User disable(Instant now) {
         requireStatus(UserStatus.APPROVED, "状态非已通过，仅已通过用户可启用/停用");
-        return new User(id, username, passwordHash, role, status, false, email, emailVerified, createdAt, Instant.now());
+        return new User(id, username, passwordHash, role, status, false, email, emailVerified, createdAt, now);
     }
 
-    public User withPassword(String passwordHash) {
-        return new User(id, username, passwordHash, role, status, enabled, email, emailVerified, createdAt, Instant.now());
+    public User withPassword(String passwordHash, Instant now) {
+        return new User(id, username, passwordHash, role, status, enabled, email, emailVerified, createdAt, now);
     }
 
     public User withId(Long id) {
@@ -101,8 +101,8 @@ public final class User {
         return status == UserStatus.APPROVED && enabled;
     }
 
-    private User withStatus(UserStatus s) {
-        return new User(id, username, passwordHash, role, s, enabled, email, emailVerified, createdAt, Instant.now());
+    private User withStatus(UserStatus s, Instant now) {
+        return new User(id, username, passwordHash, role, s, enabled, email, emailVerified, createdAt, now);
     }
 
     private void requireStatus(UserStatus expected, String message) {

@@ -90,7 +90,8 @@ class ProfileConfigApplicationServiceTest {
     @DisplayName("config 有配置行时四开关如实回读")
     void givenConfigRow_whenConfig_thenFlagsReadBack() {
         when(repo.findByUserId(UID)).thenReturn(Optional.of(
-                UserProfileConfig.defaults(UID).update(true, false, true, true)));
+                UserProfileConfig.defaults(UID, Instant.now()).update(true, false, true, true,
+                        Instant.now())));
 
         assertThat(service.config(UID))
                 .isEqualTo(new ProfileConfigView(true, false, true, true));

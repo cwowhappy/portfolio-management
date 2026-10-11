@@ -24,6 +24,7 @@ import com.portfolio.invest.domain.user.UserRepository;
 import com.portfolio.invest.domain.user.UserRole;
 import com.portfolio.invest.domain.user.UserSessionRegistry;
 import com.portfolio.invest.domain.user.UserStatus;
+import java.time.Instant;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -51,7 +52,7 @@ class UserAdminApplicationServiceTest {
     }
 
     private User pendingUser(long id) {
-        return User.register("u" + id, "h").withId(id);
+        return User.register("u" + id, "h", Instant.now()).withId(id);
     }
 
     private User userWith(long id, String email, boolean emailVerified) {
@@ -77,16 +78,16 @@ class UserAdminApplicationServiceTest {
     @DisplayName("停用与启用")
     @Test
     void givenUser_whenDisableAndEnable_thenToggleEnabled() {
-        when(repo.findById(1L)).thenReturn(Optional.of(pendingUser(1L).approve()));
+        when(repo.findById(1L)).thenReturn(Optional.of(pendingUser(1L).approve(Instant.now())));
         assertThat(service.disable(1L).enabled()).isFalse();
-        when(repo.findById(1L)).thenReturn(Optional.of(pendingUser(1L).approve().disable()));
+        when(repo.findById(1L)).thenReturn(Optional.of(pendingUser(1L).approve(Instant.now()).disable(Instant.now())));
         assertThat(service.enable(1L).enabled()).isTrue();
     }
 
     @DisplayName("重置密码")
     @Test
     void givenApprovedUser_whenResetPassword_thenSucceed() {
-        when(repo.findById(1L)).thenReturn(Optional.of(pendingUser(1L).approve()));
+        when(repo.findById(1L)).thenReturn(Optional.of(pendingUser(1L).approve(Instant.now())));
         when(encoder.encode("xyz12345")).thenReturn("$2a$new");
         assertThat(service.resetPassword(1L, "xyz12345").enabled()).isTrue();
     }
@@ -94,7 +95,7 @@ class UserAdminApplicationServiceTest {
     @DisplayName("重置密码后吊销该用户rememberMe令牌")
     @Test
     void givenApprovedUser_whenResetPassword_thenRevokeRememberMeTokens() {
-        when(repo.findById(1L)).thenReturn(Optional.of(pendingUser(1L).approve()));
+        when(repo.findById(1L)).thenReturn(Optional.of(pendingUser(1L).approve(Instant.now())));
         when(encoder.encode("xyz12345")).thenReturn("$2a$new");
         service.resetPassword(1L, "xyz12345");
         org.mockito.Mockito.verify(tokenStore).removeUserTokens("u1");
@@ -202,11 +203,11 @@ class UserAdminApplicationServiceTest {
     @DisplayName("停用与启用发布UserStatusChangedEvent")
     @Test
     void givenApprovedUser_whenDisableOrEnable_thenPublishesStatusChangedEvent() {
-        when(repo.findById(1L)).thenReturn(Optional.of(pendingUser(1L).approve()));
+        when(repo.findById(1L)).thenReturn(Optional.of(pendingUser(1L).approve(Instant.now())));
         service.disable(1L);
         verify(publisher).publishEvent(new UserStatusChangedEvent("u1"));
 
-        when(repo.findById(1L)).thenReturn(Optional.of(pendingUser(1L).approve().disable()));
+        when(repo.findById(1L)).thenReturn(Optional.of(pendingUser(1L).approve(Instant.now()).disable(Instant.now())));
         service.enable(1L);
         verify(publisher, times(2)).publishEvent(new UserStatusChangedEvent("u1"));
     }
@@ -214,7 +215,7 @@ class UserAdminApplicationServiceTest {
     @DisplayName("重置密码不变更状态不发事件")
     @Test
     void givenApprovedUser_whenResetPassword_thenNoStatusChangedEvent() {
-        when(repo.findById(1L)).thenReturn(Optional.of(pendingUser(1L).approve()));
+        when(repo.findById(1L)).thenReturn(Optional.of(pendingUser(1L).approve(Instant.now())));
         when(encoder.encode("xyz12345")).thenReturn("$2a$new");
 
         service.resetPassword(1L, "xyz12345");

@@ -37,7 +37,7 @@ class UserRepositoryImplTest {
     @DisplayName("保存后按用户名与id可查回")
     @Test
     void whenSaveUser_thenFindableByUsernameAndId() {
-        User saved = userRepository.save(User.register("bob", "hash"));
+        User saved = userRepository.save(User.register("bob", "hash", java.time.Instant.now()));
         assertThat(saved.id()).isNotNull();
         assertThat(userRepository.findByUsername("bob")).isPresent();
         assertThat(userRepository.findById(saved.id())).get().satisfies(u -> {
@@ -49,26 +49,26 @@ class UserRepositoryImplTest {
     @DisplayName("username唯一约束生效")
     @Test
     void givenSameUsernameSaved_whenSaveDuplicate_thenUniqueConstraintViolated() {
-        userRepository.save(User.register("carol", "h1"));
-        assertThatThrownBy(() -> userRepository.save(User.register("carol", "h2")))
+        userRepository.save(User.register("carol", "h1", java.time.Instant.now()));
+        assertThatThrownBy(() -> userRepository.save(User.register("carol", "h2", java.time.Instant.now())))
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
     @DisplayName("findAll返回全部")
     @Test
     void givenSavedUsers_whenFindAll_thenAllReturned() {
-        userRepository.save(User.register("dave", "h"));
+        userRepository.save(User.register("dave", "h", java.time.Instant.now()));
         assertThat(userRepository.findAll()).isNotEmpty();
     }
 
     @DisplayName("邮箱可落库回查且唯一索引兜底")
     @Test
     void whenSaveUserWithEmail_thenFindByEmailAndUniqueEnforced() {
-        userRepository.save(User.register("carol", "hash", "carol@example.com"));
+        userRepository.save(User.register("carol", "hash", "carol@example.com", java.time.Instant.now()));
         assertThat(userRepository.findByEmail("carol@example.com")).isPresent();
         assertThat(userRepository.findByEmail("nobody@example.com")).isEmpty();
 
-        User dup = User.register("dave", "hash", "carol@example.com");
+        User dup = User.register("dave", "hash", "carol@example.com", java.time.Instant.now());
         assertThatThrownBy(() -> userRepository.save(dup))
                 .isInstanceOf(DataIntegrityViolationException.class);
     }

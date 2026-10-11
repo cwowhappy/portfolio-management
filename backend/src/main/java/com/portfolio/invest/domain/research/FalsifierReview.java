@@ -30,7 +30,7 @@ public final class FalsifierReview {
     }
 
     /** 新建评审留痕：结论必选四值之一；理由非空白且 ≤ 1000 字。 */
-    public static FalsifierReview create(Long projectId, ReviewConclusion conclusion, String reason) {
+    public static FalsifierReview create(Long projectId, ReviewConclusion conclusion, String reason, Instant now) {
         if (projectId == null) {
             throw new ResearchException(ResearchErrorCode.PROJECT_REQUIRED, "归属项目不能为空");
         }
@@ -43,7 +43,7 @@ public final class FalsifierReview {
         if (reason.length() > REASON_MAX_LENGTH) {
             throw new ResearchException(ResearchErrorCode.REVIEW_REASON_REQUIRED, "评审理由长度不能超过1000字");
         }
-        return new FalsifierReview(null, projectId, conclusion, reason, Instant.now());
+        return new FalsifierReview(null, projectId, conclusion, reason, now);
     }
 
     /** 持久化还原（JPA 转换器用，不做校验）。 */

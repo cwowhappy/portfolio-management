@@ -311,7 +311,7 @@ class TrustHookIntegrationTest extends PostgresTestSupport {
                 List.of(TextBlock.builder().text("茅台现价15.20元。").build()));
         String hash = new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder().encode("abc12345");
         var user = userRepository.save(com.portfolio.invest.domain.user.User
-                .register("trust_hook_feishu", hash).approve());
+                .register("trust_hook_feishu", hash, java.time.Instant.now()).approve(java.time.Instant.now()));
 
         io.agentscope.harness.agent.HarnessAgent agent = harnessAgentFactory.build(user.id());
         Msg reply = agent.call(
