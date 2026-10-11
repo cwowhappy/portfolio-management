@@ -30,6 +30,7 @@
 | MS-29 | trust-provenance | [features/trust-provenance/08-复盘总结/复盘总结.md](../../features/trust-provenance/08-复盘总结/复盘总结.md) |
 | MS-30 | eval-observability | [features/eval-observability/08-复盘总结/复盘总结.md](../../features/eval-observability/08-复盘总结/复盘总结.md) |
 | MS-31 | memory-personalization | [features/memory-personalization/08-复盘总结/复盘总结.md](../../features/memory-personalization/08-复盘总结/复盘总结.md) |
+| MS-32 | deep-research | [features/deep-research/08-复盘总结/复盘总结.md](../../features/deep-research/08-复盘总结/复盘总结.md) |
 | 跨 MS-15/M14/M03 | feishu-messaging | [复盘总结](../../features/feishu-messaging/08-复盘总结/复盘总结.md)（2026-10-11 补建）· [P0 验证记录](../../features/feishu-messaging/03-实施计划/P0-验证记录.md) |
 | MS-15 | account-email | [复盘总结](../../features/account-email/08-复盘总结/复盘总结.md)（2026-10-11 补建） |
 
@@ -153,6 +154,7 @@
 | 2026-10-06~10 | MS-29 立项侦察七路前置；MS-30 拍板三件跟进 PR 收口 | 机制假设靠侦察证实；悬空项显式拍板 |
 | 2026-10-10 | 单分支全周期裁定（MS-31 首次执行，立项 PR 制废除） | 减少分支/PR 切换，规划与实现同变更单元评审 |
 | 2026-10-11 | MS-31 交付：复盘成熟形态（首跑观察项清单 + 评审链拦截择要 + deferred 台账说明） | — |
+| 2026-10-11 | MS-32 交付：smoke 真跑抓出全绿之下三系统性缺陷——探针拟真度分层沉淀（#51）；跨源集桩变更核查入建议清单 | 真值池 POST_CALL 通道为 agentscope 升级首要回归面 |
 
 ---
 
@@ -174,7 +176,7 @@
 ### 4.2 测试与质量门
 
 9. **mock 单测对库内/框架行为全盲，关键改动必须真浏览器 e2e 或真实依赖测试兜底**（≥7 特性：MS-08/12/19、mcp-hitl、P1-10、MS-31、account-email[补建回溯：e2e 404 逼出 catch-all 反代缺口]）。五类实例：库内默认值解析（agentId）、`import type` 擦除副作用注册、useInterrupt 元素 memo、`.next` 陈旧构建、服务层数值刻度 fixture 失真——绿的只是自己的假设，错误全在 mock 边界之外。fixture 必须取服务层真实产出形态（MS-12 固化、MS-30 沿用：zod fixture 从集成测试真实响应抄录）。
-10. **隔离跑单类 ≠ 全量套件，宣称完成前必须全量真跑**（5 次：MS-04/06、mcp-hitl、MS-14、MS-31）。共享 Testcontainers 容器的跨类种子冲突（userId 撞 AdminSeed/主键冲突/哨兵 id 碰撞——测试种子用高位哨兵 id 且须离散化）与格式门（collector 漏 ruff format）只在全量暴露；`make test 2>&1 | tail` 会吞 exit code（管道退出码 = tail 的 0）。
+10. **隔离跑单类 ≠ 全量套件，宣称完成前必须全量真跑**（6 次：MS-04/06、mcp-hitl、MS-14、MS-31、MS-32）。共享 Testcontainers 容器的跨类种子冲突（userId 撞 AdminSeed/主键冲突/哨兵 id 碰撞——测试种子用高位哨兵 id 且须离散化）与格式门（collector 漏 ruff format）只在全量暴露；`make test 2>&1 | tail` 会吞 exit code（管道退出码 = tail 的 0）。MS-32 新形态：**改共享资产面（prompt 资产计数锚）只跑包级定向，跨源集（integrationTest）计数锚潜伏红**——凡动 EvalAssetHasher/PromptVersionRegistrar 消费面，定向范围须含 integrationTest 源集。
 11. **新增 Flyway 迁移 = 改多处，版本断言漏同步是最高频返工**（6 次：MS-04/06/09/11/16/17，见 [code-review-lessons.md](code-review-lessons.md)）。止住靠机制化：迁移文件数=断言数双向守卫 → MS-30/31 的 Flyway 计数守卫测试前置（4→5、6→7 先改守卫再落迁移）。
 12. **测试断言本身会固化 bug / 写错**（MS-08×2 + code-review-2026-10 B5 + MS-14）。CSV 断言没算固定列、表头漏 BOM、EmailCodeServiceTest 四分支断言固化枚举行为——先归因实现、看 diff 后确认测试自身错时，改测试口径而非迁就。
 13. **测试基座用真实迁移构建，不用手工 DDL 副本**（code-review-lessons 2026-08-31 轮 + MS-10）。测「假 schema」的唯一约束改了测试还绿；跨服务数据面（shenwan_industry_mapping）在 Testcontainers 空库须测试内自种。
@@ -228,7 +230,8 @@
 46. **macOS `strings` 读不了 .class**（0xCAFEBABE 撞 Mach-O 魔数静默输出空，险些误判「上游无此文案」）：核对 jar 常量用 `javap -v`；agentscope jar 在仓库 `.gradle-home`。
 47. **e2e 清 `.next` 前必须先停前端服务**——对运行中的 Next 服务清 `.next` 当场炸全量套件，重启即恢复（两操作互斥）。
 48. **本地 dev DB 是本机 Homebrew postgres（localhost:5432）非 docker**：修 Flyway 状态连本机 psql。
-49. **上游框架的文档不可全信，以源码/实测为准**（MS-16~18 三连）：MCP client `buildSync()` 后必须 `initialize()` 握手（SDK 不强制、报错要跑起来才见）；agentscope Javadoc「not thread-safe」与实际并发实现不符（过时）；「等上游实现」的依赖项记录在验证文档并绑定版本号（2.0.1 勘误 → 2.0.3 消解），升级窗口加迁移探针（forRemoval 钉版，MS-29）。
+49. **上游框架的文档不可全信，以源码/实测为准**（MS-16~18 三连 + MS-32）：MCP client `buildSync()` 后必须 `initialize()` 握手（SDK 不强制、报错要跑起来才见）；agentscope Javadoc「not thread-safe」与实际并发实现不符（过时）；「等上游实现」的依赖项记录在验证文档并绑定版本号（2.0.1 勘误 → 2.0.3 消解），升级窗口加迁移探针（forRemoval 钉版，MS-29）；MS-32：`HarnessAgent.ensureSessionDefaults` 对裸 rc 恒派生新实例（无文档行为）——编排器侧 rc 与工具侧 rc 断裂，字节码确诊。
+51. **探针/单测拟真度分层：原语级（单测可证）< 装配级（字节码可证）< 运行时链路级（只有真跑可证）**（mcp-hitl P0 真握手 + MS-32 真值池 rc 断裂）：MS-32 的 B0 探针轮在前两层全过，真值池快照机制却在 smoke 真 LLM 链路失效（工具调用全 SUCCESS、快照恒空）——三缺陷（另含 cap 撞线/parser 裸换行）在单测 2426 + BDD 34 + e2e 76 **全绿之下**仍然存在。**smoke 级真跑是涉及框架运行时链路的唯一充分验收**；跨源集改桩时 grep 范围显式含 bdd/integrationTest/eval（MS-32 终审 C-1：修复波漏迁 bdd 桩，全量 make test 才拦下）。
 50. **Gradle 测试任务 UP-TO-DATE 假绿**（飞书 + MS-09/11 两特性）：env 门控类测试（如 `@SpringBootTest(properties=...)` 换密钥）重跑被 UP-TO-DATE 跳过、显示旧结果——验证证据要「全新跑」：`--rerun-tasks` / cleanTest，收口口径写明「全新证据」（MS-09 `--rerun-tasks`、MS-11 cleanTest）；同因，`@SpringBootTest(properties=...)` 只认编译期常量，运行时拼接值（如 `Base64.encode()`）直接编译失败，用固定字面量（P1-10）。
 
 ---
@@ -240,13 +243,13 @@
 | # | 模式 | 复发次数（特性） | 现行拦截机制 | 状态 |
 |---|---|---|---|---|
 | 1 | 计划凭记忆写、不对照真实代码/实测（签名/清单/先验/刻度/时点） | 7（MS-06/08/09/11/12/13 + invest-sop） | 计划核实清单（签名/类型/数值刻度/时点口径）+ 设计事实锚点 + 已知答案测试 | 仍在复发，维度逐轮扩出 |
-| 2 | mock/fixture 盲区：单测绿 ≠ 真行为 | ≥7（MS-08/12/19、mcp-hitl、P1-10、MS-31、account-email） | 真浏览器 e2e fresh build + 真实序列化 round-trip + fixture 取服务层真实产出 | 有兜底、无根治 |
+| 2 | mock/fixture 盲区：单测绿 ≠ 真行为 | ≥8（MS-08/12/19、mcp-hitl、P1-10、MS-31、account-email、MS-32[smoke 抓全绿之下三缺陷]） | 真浏览器 e2e fresh build + 真实序列化 round-trip + fixture 取服务层真实产出 + 框架运行时链路走 smoke 真跑（#51） | 有兜底、无根治 |
 | 3 | Flyway 版本断言/迁移配套漏同步 | 6 次（MS-04/06/09/11/16/17） | Flyway 计数守卫测试前置（MS-30/31 起机制化） | 已机制化止住 |
-| 4 | 隔离跑 ≠ 全量跑（种子冲突/格式门） | 5（MS-04/06、mcp-hitl、MS-14、MS-31） | 收口门全量 make test；哨兵 id 约定 | 仍偶发（哨兵碰撞 MS-31） |
+| 4 | 隔离跑 ≠ 全量跑（种子冲突/格式门/跨源集计数锚） | 6（MS-04/06、mcp-hitl、MS-14、MS-31、MS-32） | 收口门全量 make test；哨兵 id 约定；共享资产面定向含 integrationTest | 仍偶发（哨兵碰撞 MS-31、资产锚 MS-32） |
 | 5 | 文档/口径「两文件一致地错」与引用数字失实 | ≥4（PR #32、MS-11、MS-20~23、MS-31） | git 实证引用数字 + 终审跨文档对照 + 链接门禁 | 靠终审兜底 |
 | 6 | CI 空库与本地真库数据面分叉 | 3（MS-09/13/14 同象） | or() 双态断言 + 空库门控 skip | 未收敛（接受态） |
 | 7 | 「先提交后验证」/修复波漏 lint | 2（MS-08、MS-31；MS-14 格式门归 #4） | verification-before-completion + 看断言计数不看 tail | 纪律项 |
-| 8 | 上游框架契约与文档不符（握手/Javadoc 过时/null 序列化） | 3（mcp-hitl ×2、MS-16/17、MS-29） | P0 源码核实 + 真握手冒烟 + 版本绑定留档 | 新接框架必踩一次 |
+| 8 | 上游框架契约与文档不符（握手/Javadoc 过时/null 序列化/rc 派生无文档） | 4（mcp-hitl ×2、MS-16/17、MS-29、MS-32） | P0 源码核实 + 真握手冒烟 + 版本绑定留档 + 字节码确诊（#51 分层） | 新接框架必踩一次 |
 | 9 | 验证证据不新鲜（UP-TO-DATE 假绿/复用旧 .next） | 3（MS-09/11、飞书、MS-19） | `--rerun-tasks`/cleanTest + `E2E_FRESH_BUILD=1` 收口写明「全新证据」 | 已有开关，靠纪律启用 |
 
 > 维护约定：每次特性交付复盘回填时，本文第四/五章滚动增补（复发次数 +1、新拦截机制、状态变更）；流程形态变更（新环节/新门禁）更新第二章并同步 [features/README.md](../../features/README.md) 的流程描述。
