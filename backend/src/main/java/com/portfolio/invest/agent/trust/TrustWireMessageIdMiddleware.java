@@ -26,7 +26,7 @@ import reactor.core.publisher.Flux;
  */
 public final class TrustWireMessageIdMiddleware implements MiddlewareBase {
 
-    /** RuntimeContext 字符串键：最近一次文本块的线上 messageId（replyId）。 */
+    /** RuntimeContext 字符串键：最近一次文本块的线上 messageId（复合 id {@code replyId + "-" + blockId}）。 */
     public static final String RC_KEY = "trust.wireMessageId";
 
     @Override

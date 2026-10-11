@@ -3,7 +3,7 @@
 > 依据：[docs/research/2026-10-11-AgentScope-Java版本演进调研.md](../../docs/research/2026-10-11-AgentScope-Java版本演进调研.md)（版本现状/逐版本变更/影响评估）
 > 分支：`chore/upgrade-agentscope-2.0.4`
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development（本仓既定执行方式）来逐任务实施本计划。步骤用 checkbox（`- [ ]`）跟踪。
-> 状态：**已完成（2026-10-12，PR #110）**——smoke §1–§8 全绿 ×2、e2e 全绿（HITL 2/2 补跑通过）；§9 研报节两红（模型侧归因非升级回归），详见文末「执行偏差记录」
+> 状态：**已完成（2026-10-12，PR #110）**——smoke §1–§8 全绿（§6 首轮环境假红处置后二轮全绿）、e2e 全绿（HITL 2/2 补跑通过）；§9 研报节两红（模型侧归因非升级回归），详见文末「执行偏差记录」
 
 **Goal:** 四构件 2.0.3 → 2.0.4，三个 `RuntimeContextAware` Hook 的 rc 供给迁到自建桥接中间件，行为零回归。
 

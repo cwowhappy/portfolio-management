@@ -54,7 +54,8 @@ import reactor.core.publisher.Mono;
  * 先发）value={messageId, snippet, occ, replacement, note}；{@code trust.anchors}（每 assistant
  * 末轮一次）value={messageId, payload}（payload v1 见 {@link TrustTurnReport#toPayload()}，
  * advice（B6）/confidence（B7）键已接入）。messageId 取 {@link TrustWireMessageIdMiddleware} 观察到的
- * AG-UI 线上 id（TEXT_MESSAGE 的 replyId，观察缺席回退 {@link Msg#getId()}——线上同源）。发射经
+ * AG-UI 线上 id（TEXT_MESSAGE 的复合 id，2.0.4 #3010：{@code replyId + "-" + blockId}；观察缺席回退
+ * {@link Msg#getId()}——线上同源）。发射经
  * {@code deferContextual → AgentEventEmitter.fromContext}（B0 探针 2），emitter 不可得时静默跳过
  * （飞书 call() 路无消费者，不报错）。
  *
@@ -293,8 +294,9 @@ public class TrustAgentHook implements Hook {
 
     /**
      * Custom 事件携带的 messageId（§4.3「AG-UI 线上 messageId 同源」）：优先取
-     * {@link TrustWireMessageIdMiddleware} 观察到的线上 replyId（TEXT_MESSAGE messageId），
-     * 观察缺席（如装配未挂中间件/无文本块事件）时回退 assistant Msg id。
+     * {@link TrustWireMessageIdMiddleware} 观察到的线上复合 id（TEXT_MESSAGE messageId =
+     * {@code replyId + "-" + blockId}，2.0.4 #3010），观察缺席（如装配未挂中间件/无文本块事件）时回退
+     * assistant Msg id。
      */
     private String messageId(Msg original) {
         if (runtimeContext != null) {
