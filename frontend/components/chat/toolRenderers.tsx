@@ -14,20 +14,9 @@ import { ChartCard, type ChartCardBuilder } from "@/components/chat/charts/Chart
 import DraftCard from "@/components/chat/DraftCard";
 import { buildCandlestickOption, buildLineOption, buildBarOption } from "@/components/charts/optionBuilders";
 import { KlineParamsSchema, ValuationParamsSchema, OverviewParamsSchema, FinancialsParamsSchema, ScreeningParamsSchema, FinancialsTrendParamsSchema, IndustryParamsSchema, PortfolioParamsSchema, AllocationParamsSchema, SearchNewsParamsSchema, SearchAnnouncementsParamsSchema, MacroBriefParamsSchema } from "@/lib/tool-params";
-import { extractResearchDraftJson, type ResearchDraft } from "@/lib/research-draft";
+import { extractResearchDraftJson } from "@/lib/research-draft";
 import { safeUrl } from "@/lib/url";
 import { buildPieOption } from "@/components/charts/optionBuilders";
-
-// P2 接通（D9：落库=用户确认，D20：未保存不自动暂存）：STRATEGY 草稿「保存到项目」→
-// saveStrategyDraft。对话上下文暂无「会话↔研究项目」绑定（P3 上下文注入），无法定位目标
-// 项目 id → 引导先立项（DraftCard 行内提示 + 前往研究页链接）；其余阶段草稿的落库端点属
-// P3/P4（建仓计划/复盘），先提示到项目页记录。
-async function saveResearchDraft(draft: ResearchDraft): Promise<void> {
-  if (draft.stage !== "STRATEGY") {
-    throw new Error("当前仅支持保存「策略」草稿，其余阶段请在研究项目页对应分区记录");
-  }
-  throw new Error("请先在研究页立项");
-}
 
 // ===== MS-20（Task 12）：search_news 新闻检索列表卡 =====
 // 后端契约：{"items":[{title,summary,direction,importance,keyNumbers,stockCodes,url,publishedAt}],"total":n}，
@@ -614,7 +603,9 @@ export function ChartToolRenderers() {
   // 块确定可得，不扫描助手消息），渲染器从工具结果文本提取 ```research-draft 围栏内 JSON 交
   // DraftCard；无围栏（参数错误文本）原样透传 → DraftCard 降级卡。参数 schema 为具名重载
   // 必填的类型载体（运行时不校验，ToolCallRenderer 直接透传 partialJSONParse 产物），渲染
-  // 不消费 parameters，就地定义而不入 tool-params.ts（本任务限定只动四文件）。 =====
+  // 不消费 parameters，就地定义而不入 tool-params.ts（本任务限定只动四文件）。
+  // MS-32 F4（SOP v2 轻量）：保存流由 DraftCard 内嵌 ProjectPickerDialog 承接（拉 ACTIVE
+  // 项目 → saveStrategyDraft PUT），此处不再传 onSave 落库桩。 =====
   useRenderTool({
     name: "research_draft",
     parameters: z.object({
@@ -629,7 +620,7 @@ export function ChartToolRenderers() {
           </div>
         );
       }
-      return <DraftCard raw={extractResearchDraftJson(p.result) ?? p.result} onSave={saveResearchDraft} />;
+      return <DraftCard raw={extractResearchDraftJson(p.result) ?? p.result} />;
     },
   });
   // ===== MS-20（Task 12）：search_news 新闻检索——列表卡（非图表通道），参数 schema 引

@@ -2,9 +2,9 @@
 // 投研草稿只读卡（invest-sop P1，草稿围栏双通道的前端半边）。卡片壳照 InterruptApprovalCard，
 // safeParse + 判别分发 + 失败降级照 ChartCard：raw 为渲染器从工具结果 ```research-draft 围栏
 // 提取的 JSON 文本；解析失败/版本不识别 → 降级折叠卡「草稿格式不兼容」，不白屏不抛错。
-// 「保存到项目」P2 起经可选 onSave 接线落库（D9：落库=用户确认）；无 onSave 保持 P1 行内提示。
+// MS-32 F4（SOP v2 轻量）：STRATEGY 草稿「保存到项目」内嵌 ProjectPickerDialog 直存
+// （D9：落库=用户确认）；分析/建仓/复盘无可直存端点，出引导文案到研究项目页操作。
 import { useMemo, useState, type ReactNode } from "react";
-import Link from "next/link";
 import {
   ResearchDraftSchema,
   type AnalysisDraft,
@@ -12,7 +12,7 @@ import {
   type ReviewDraft,
   type StrategyDraft,
 } from "@/lib/research-draft";
-import type { ResearchDraft } from "@/lib/research-draft";
+import ProjectPickerDialog from "@/components/chat/ProjectPickerDialog";
 
 /** stage → 中文标题（与 InvestTools 工具描述四阶段文案对齐） */
 const STAGE_TITLES = {
@@ -145,13 +145,11 @@ function ReviewRows({ draft }: { draft: ReviewDraft }) {
 export interface DraftCardProps {
   /** 渲染器从工具结果围栏提取的 JSON 文本（无围栏时为原始文本，走降级卡） */
   raw: string;
-  /** P2 落库接线（D9：落库=用户确认）：点击「保存到项目」时回调解析后的草稿。
-   *  抛错 → 错误文案行内展示并附「前往研究页」链接；缺省保持 P1 no-op 提示。 */
-  onSave?: (draft: ResearchDraft) => Promise<void>;
 }
 
-/** 草稿只读卡：safeParse 成功 → 表单化只读展示 + 「保存到项目」（onSave 接线 / P1 提示）；失败 → 降级折叠卡。 */
-export default function DraftCard({ raw, onSave }: DraftCardProps) {
+/** 草稿只读卡：safeParse 成功 → 表单化只读展示（STRATEGY 可直存研究项目，其余阶段出引导
+ *  文案——对应落库端点属项目页面板/AI 研报，不在对话内直存）；失败 → 降级折叠卡。 */
+export default function DraftCard({ raw }: DraftCardProps) {
   const draft = useMemo(() => {
     let json: unknown;
     try {
@@ -162,9 +160,7 @@ export default function DraftCard({ raw, onSave }: DraftCardProps) {
     const check = ResearchDraftSchema.safeParse(json);
     return check.success ? check.data : null;
   }, [raw]);
-  const [toast, setToast] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [saveMsg, setSaveMsg] = useState<{ text: string; ok: boolean } | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   if (draft == null) {
     return (
@@ -179,24 +175,6 @@ export default function DraftCard({ raw, onSave }: DraftCardProps) {
     );
   }
 
-  const handleSave = async () => {
-    if (!onSave) {
-      setToast(true);
-      return;
-    }
-    if (saving) return; // 防连点
-    setSaving(true);
-    setSaveMsg(null);
-    try {
-      await onSave(draft);
-      setSaveMsg({ text: "已保存到研究项目", ok: true });
-    } catch (e) {
-      setSaveMsg({ text: e instanceof Error ? e.message : "保存失败", ok: false });
-    } finally {
-      setSaving(false);
-    }
-  };
-
   return (
     <div className="tool-card my-2 w-full max-w-[560px] px-3.5 py-2.5">
       <p className="text-[13px] font-medium text-[color:var(--color-ink)]">
@@ -206,34 +184,24 @@ export default function DraftCard({ raw, onSave }: DraftCardProps) {
       {draft.stage === "STRATEGY" && <StrategyRows draft={draft} />}
       {draft.stage === "POSITION" && <EntryPlanRows draft={draft} />}
       {draft.stage === "REVIEW" && <ReviewRows draft={draft} />}
-      <div className="mt-2.5 flex flex-wrap items-center gap-2.5">
-        <button
-          type="button"
-          onClick={() => void handleSave()}
-          disabled={saving}
-          className="rounded-md border border-[color:var(--color-up)]/50 px-3 py-1 text-[12px] text-[color:var(--color-up)] hover:bg-[color:var(--color-up)]/10 disabled:opacity-60"
-        >
-          保存到项目
-        </button>
-        {saving && (
-          <span className="text-[12px] text-[color:var(--color-ink-faint)]">保存中…</span>
-        )}
-        {!saving && saveMsg && (
-          <span className="flex items-center gap-1.5 text-[12px]">
-            <span className={saveMsg.ok ? "text-[color:var(--color-up)]" : "text-[color:var(--color-down)]"}>
-              {saveMsg.text}
-            </span>
-            {!saveMsg.ok && (
-              <Link href="/research" className="text-[color:var(--color-accent)] hover:underline">
-                前往研究页
-              </Link>
-            )}
-          </span>
-        )}
-        {toast && (
-          <span className="text-[12px] text-[color:var(--color-ink-faint)]">研究项目功能即将上线</span>
-        )}
-      </div>
+      {draft.stage === "STRATEGY" ? (
+        <div className="mt-2.5 flex flex-wrap items-center gap-2.5">
+          <button
+            type="button"
+            onClick={() => setPickerOpen(true)}
+            className="rounded-md border border-[color:var(--color-up)]/50 px-3 py-1 text-[12px] text-[color:var(--color-up)] hover:bg-[color:var(--color-up)]/10"
+          >
+            保存到项目
+          </button>
+          {pickerOpen && (
+            <ProjectPickerDialog draft={draft} onClose={() => setPickerOpen(false)} />
+          )}
+        </div>
+      ) : (
+        <p className="mt-2.5 text-[12px] leading-relaxed text-[color:var(--color-ink-faint)]">
+          分析/建仓/复盘类草稿请到研究项目页对应面板操作，或对项目发起 AI 研报
+        </p>
+      )}
     </div>
   );
 }
