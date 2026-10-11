@@ -89,6 +89,7 @@ class UserToolkitFactoryTest {
                 mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
                 mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
                 mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
+                mock(com.portfolio.invest.application.wiki.WikiApplicationService.class),
                 new com.fasterxml.jackson.databind.ObjectMapper(), TOOL_TIMEOUT).build(1L);
     }
 
@@ -157,6 +158,7 @@ class UserToolkitFactoryTest {
                 mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
                 mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
                 mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
+                mock(com.portfolio.invest.application.wiki.WikiApplicationService.class),
                 new com.fasterxml.jackson.databind.ObjectMapper(), TOOL_TIMEOUT).build(1L);
 
         assertThat(toolkit.getTool("trade_cal")).as("配置缺失 → MCP 工具不注册").isNull();
@@ -187,6 +189,7 @@ class UserToolkitFactoryTest {
                 mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
                 mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
                 mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
+                mock(com.portfolio.invest.application.wiki.WikiApplicationService.class),
                 new com.fasterxml.jackson.databind.ObjectMapper(), TOOL_TIMEOUT).build(1L);
 
         assertThat(toolkit.getTool("trade_cal")).as("配置停用 → MCP 工具不注册").isNull();
@@ -218,6 +221,7 @@ class UserToolkitFactoryTest {
                 mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
                 mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
                 mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
+                mock(com.portfolio.invest.application.wiki.WikiApplicationService.class),
                 new com.fasterxml.jackson.databind.ObjectMapper(), TOOL_TIMEOUT).build(1L);
 
         assertThat(toolkit.getTool("trade_cal")).as("密钥缺失 → MCP 工具不注册").isNull();
@@ -243,6 +247,7 @@ class UserToolkitFactoryTest {
                 mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
                 mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
                 mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
+                mock(com.portfolio.invest.application.wiki.WikiApplicationService.class),
                 new com.fasterxml.jackson.databind.ObjectMapper(), TOOL_TIMEOUT).build(1L);
 
         assertThat(toolkit.getTool("search_stock")).as("内置工具不受影响").isNotNull();
@@ -276,13 +281,14 @@ class UserToolkitFactoryTest {
                 mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
                 mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
                 mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
+                mock(com.portfolio.invest.application.wiki.WikiApplicationService.class),
                 new com.fasterxml.jackson.databind.ObjectMapper(), TOOL_TIMEOUT).build(1L);
 
         assertThat(toolkit.getTool("b_tool")).as("正常端点 B 的工具照常注册（单点失败不拖垮装配）").isNotNull();
         assertThat(toolkit.getTool("search_stock")).as("内置工具不受影响").isNotNull();
     }
 
-    @DisplayName("装配后内置工具按名集合断言（InvestTools 13 + UserInvestTools 3 = 16，增删注册即红，B9-③）")
+    @DisplayName("装配后内置工具按名集合断言（InvestTools 13 + UserInvestTools 4 = 17，增删注册即红，B9-③）")
     @Test
     void givenInvestToolsAndUserServices_whenBuild_thenRegistersUserTools() {
         InvestTools investTools = mock(InvestTools.class);
@@ -294,19 +300,20 @@ class UserToolkitFactoryTest {
                 mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
                 mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
                 mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
+                mock(com.portfolio.invest.application.wiki.WikiApplicationService.class),
                 new com.fasterxml.jackson.databind.ObjectMapper(), TOOL_TIMEOUT).build(1L);
 
-        // 按名集合断言替代 hasSize(16)：注册增删（或意外混入 MCP/装饰器改名）都直接点名失败，
-        // 而非计数恰好掩盖换名；inline mock 保留 @Tool 注解扫描（13+3 共 16 名）
+        // 按名集合断言替代 hasSize(17)：注册增删（或意外混入 MCP/装饰器改名）都直接点名失败，
+        // 而非计数恰好掩盖换名；inline mock 保留 @Tool 注解扫描（13+4 共 17 名）
         assertThat(toolkit.getToolNames())
-                .as("内置 16 工具名（InvestTools 13 + UserInvestTools 3，无 MCP 环境）")
+                .as("内置 17 工具名（InvestTools 13 + UserInvestTools 4，无 MCP 环境）")
                 .containsExactlyInAnyOrder(
                         // InvestTools @Tool（13）
                         "search_stock", "get_quote", "get_kline", "get_financials", "get_news",
                         "search_news", "macro_brief", "get_market_overview", "get_valuation",
                         "screen_stocks", "analyze_financials", "analyze_industry", "research_draft",
-                        // UserInvestTools @Tool（3）
-                        "analyze_portfolio", "suggest_allocation", "search_announcements");
+                        // UserInvestTools @Tool（4）
+                        "analyze_portfolio", "suggest_allocation", "search_announcements", "search_wiki");
     }
 
     @DisplayName("token 为 v1 密文 → 解密后的明文进入客户端装配")
@@ -335,6 +342,7 @@ class UserToolkitFactoryTest {
                 mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
                 mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
                 mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
+                mock(com.portfolio.invest.application.wiki.WikiApplicationService.class),
                 new com.fasterxml.jackson.databind.ObjectMapper(), TOOL_TIMEOUT).build(1L);
 
         assertThat(toolkit.getTool("trade_cal")).as("密文经解密后装配成功").isNotNull();
@@ -371,6 +379,7 @@ class UserToolkitFactoryTest {
                 mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
                 mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
                 mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
+                mock(com.portfolio.invest.application.wiki.WikiApplicationService.class),
                 new com.fasterxml.jackson.databind.ObjectMapper(), TOOL_TIMEOUT).build(1L);
 
         assertThat(toolkit.getTool("mx_tool")).as("解密失败只跳过故障 provider，其余照常").isNotNull();
@@ -404,6 +413,7 @@ class UserToolkitFactoryTest {
                 mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
                 mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
                 mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
+                mock(com.portfolio.invest.application.wiki.WikiApplicationService.class),
                 new com.fasterxml.jackson.databind.ObjectMapper(), TOOL_TIMEOUT).build(1L);
 
         verify(listTools).block(TOOL_TIMEOUT);
@@ -438,6 +448,7 @@ class UserToolkitFactoryTest {
                 mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
                 mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
                 mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
+                mock(com.portfolio.invest.application.wiki.WikiApplicationService.class),
                 new com.fasterxml.jackson.databind.ObjectMapper(), java.time.Duration.ofMillis(100)).build(1L);
         long elapsedMs = java.time.Duration.ofNanos(System.nanoTime() - start).toMillis();
 
@@ -490,6 +501,7 @@ class UserToolkitFactoryTest {
                 mock(com.portfolio.invest.application.portfolio.PortfolioApplicationService.class),
                 mock(com.portfolio.invest.application.allocation.AllocationApplicationService.class),
                 mock(com.portfolio.invest.application.intelligence.IntelligenceQueryService.class),
+                mock(com.portfolio.invest.application.wiki.WikiApplicationService.class),
                 new com.fasterxml.jackson.databind.ObjectMapper(), TOOL_TIMEOUT).build(1L);
 
         AgentTool tradeCal = toolkit.getTool("trade_cal");

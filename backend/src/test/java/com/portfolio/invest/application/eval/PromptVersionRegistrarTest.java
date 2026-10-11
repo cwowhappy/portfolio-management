@@ -27,9 +27,9 @@ import org.mockito.ArgumentCaptor;
 
 /**
  * 启动对账幂等单元守护（MS-30 B3，设计规格 §4.1/§4.2）：同 hash 不增行、变 hash
- * version+1（对账锚点断言）；真实采集面覆盖 main 四类 29 项（系统提示词 3——MS-31 B5 起
- * 含 system.invest.profile / digest.memory + @Tool 16 + SKILL 6 + 情报 prompt 4——
- * LEAD_SYSTEM_PROMPT 改 public 后含第 4 项）；run() 旁路降级
+ * version+1（对账锚点断言）；真实采集面覆盖 main 四类 30 项（系统提示词 3——MS-31 B5 起
+ * 含 system.invest.profile / digest.memory + @Tool 17——MS-32 B5 增 search_wiki +
+ * SKILL 6 + 情报 prompt 4——LEAD_SYSTEM_PROMPT 改 public 后含第 4 项）；run() 旁路降级
  * 不阻断启动。端口 mock，采集面走真实 Toolkit/Skill classpath（零 LLM 零网络）。
  */
 class PromptVersionRegistrarTest {
@@ -76,17 +76,17 @@ class PromptVersionRegistrarTest {
     }
 
     @Test
-    @DisplayName("给定真实采集面，when启动对账，then覆盖 main 四类 29 项且 hash 均为 64 位十六进制")
-    void givenRealMainAssets_whenRegisterAll_thenCovers29ItemsAcrossFourTypes() throws IOException {
+    @DisplayName("给定真实采集面，when启动对账，then覆盖 main 四类 30 项且 hash 均为 64 位十六进制")
+    void givenRealMainAssets_whenRegisterAll_thenCovers30ItemsAcrossFourTypes() throws IOException {
         try (ClasspathSkillRepository skills = new ClasspathSkillRepository("skills")) {
             AgentPromptAssetPort collector = new ToolkitPromptAssetCollector(
                     new InvestTools(null, null, null, null, null, null, null, null),
-                    null, null, null, null);
+                    null, null, null, null, null);
             new PromptVersionRegistrar(repository, collector, skills).registerAll();
         }
 
         ArgumentCaptor<String> hashes = ArgumentCaptor.forClass(String.class);
-        verify(repository, times(29)).findVersionByHash(anyString(), anyString(), hashes.capture());
+        verify(repository, times(30)).findVersionByHash(anyString(), anyString(), hashes.capture());
         assertThat(hashes.getAllValues()).allMatch(h -> h.matches("[0-9a-f]{64}"));
         verify(repository, times(1)).findVersionByHash(
                 eq(PromptAssetVersion.TYPE_SYSTEM_PROMPT), eq("system.invest"), anyString());
@@ -95,7 +95,7 @@ class PromptVersionRegistrarTest {
                 eq(PromptAssetVersion.TYPE_SYSTEM_PROMPT), eq("system.invest.profile"), anyString());
         verify(repository, times(1)).findVersionByHash(
                 eq(PromptAssetVersion.TYPE_SYSTEM_PROMPT), eq("digest.memory"), anyString());
-        verify(repository, times(16)).findVersionByHash(
+        verify(repository, times(17)).findVersionByHash(
                 eq(PromptAssetVersion.TYPE_TOOL_DESC), startsWith("tool."), anyString());
         verify(repository, times(6)).findVersionByHash(
                 eq(PromptAssetVersion.TYPE_SKILL), startsWith("skill."), anyString());

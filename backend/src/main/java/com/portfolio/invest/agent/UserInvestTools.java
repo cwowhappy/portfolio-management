@@ -7,7 +7,10 @@ import com.portfolio.invest.application.intelligence.AnnouncementScope;
 import com.portfolio.invest.application.intelligence.AnnouncementSearchFilter;
 import com.portfolio.invest.application.intelligence.IntelligenceQueryService;
 import com.portfolio.invest.application.portfolio.PortfolioApplicationService;
+import com.portfolio.invest.application.wiki.WikiApplicationService;
+import com.portfolio.invest.application.wiki.WikiEntryView;
 import com.portfolio.invest.domain.intelligence.AnnouncementType;
+import com.portfolio.invest.domain.wiki.WikiEntryType;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.Tool;
@@ -17,6 +20,8 @@ import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,19 +39,27 @@ public class UserInvestTools {
     static final String STOCK_EMPTY_MESSAGE = "该标的无公告（可放宽日期区间、类型或关键词后重试）";
     static final String NO_RESULT_MESSAGE = "检索无结果（可调整关键词、类型或日期区间后重试）";
 
+    /** search_wiki 空结果话术（MS-32 B5 定稿：知识库无笔记时引导直接基于工具数据分析，不阻塞研究流）。 */
+    static final String WIKI_EMPTY_MESSAGE = "知识库中无相关笔记（可直接基于工具数据分析）";
+    private static final int WIKI_MAX_HITS = 20;
+    private static final int WIKI_SUMMARY_LIMIT = 200;
+
     private final Long userId;
     private final PortfolioApplicationService portfolio;
     private final AllocationApplicationService allocation;
     private final IntelligenceQueryService intelligenceQuery;
+    private final WikiApplicationService wiki;
     private final ObjectMapper mapper;
 
     public UserInvestTools(Long userId, PortfolioApplicationService portfolio,
                            AllocationApplicationService allocation,
-                           IntelligenceQueryService intelligenceQuery, ObjectMapper mapper) {
+                           IntelligenceQueryService intelligenceQuery,
+                           WikiApplicationService wiki, ObjectMapper mapper) {
         this.userId = userId;
         this.portfolio = portfolio;
         this.allocation = allocation;
         this.intelligenceQuery = intelligenceQuery;
+        this.wiki = wiki;
         this.mapper = mapper;
     }
 
@@ -161,6 +174,67 @@ public class UserInvestTools {
     /** 空白串归一 null；非法格式抛 DateTimeParseException 由调用方前置校验兜底。 */
     private static LocalDate parseDate(String s) {
         return s == null || s.isBlank() ? null : LocalDate.parse(s);
+    }
+
+    /**
+     * 检索用户的投资知识库（读书笔记/概念/研究笔记）：keyword 对 title/content 做
+     * 大小写不敏感 contains 过滤，上限 20 条、单条内容截 200 字符摘要，拼为可读文本行。
+     * 研究标的时先查既有笔记与既定原则（MS-32 研报五源之一）。
+     */
+    @Tool(
+            name = "search_wiki",
+            description = "检索用户的投资知识库（读书笔记/概念/研究笔记），返回标题与内容摘要。"
+                    + "研究标的时先查是否有既有笔记与既定原则。",
+            readOnly = true,
+            concurrencySafe = true)
+    public String searchWiki(
+            @ToolParam(name = "keyword", description = "关键词，如：安全边际、护城河、<股票名>") String keyword,
+            @ToolParam(name = "type", description = "类型过滤：BOOK_NOTE/CONCEPT/RESEARCH_NOTE，空=全部",
+                    required = false) String type) {
+        return run(() -> {
+            // 类型解析在 run() 兜底内：非法枚举不抛，返回友好错误文本列合法取值（LLM 自纠）
+            WikiEntryType parsed;
+            try {
+                parsed = type == null || type.isBlank() ? null : WikiEntryType.valueOf(type.trim());
+            } catch (IllegalArgumentException e) {
+                return ToolResultBlocks.toError(mapper,
+                        "未知知识库类型：" + type + "，合法取值：" + Arrays.toString(WikiEntryType.values()),
+                        "请修正 type 后重试");
+            }
+            String kw = keyword == null ? "" : keyword.trim().toLowerCase(Locale.ROOT);
+            List<WikiEntryView> hits = wiki.entries(userId, parsed).stream()
+                    .filter(e -> kw.isEmpty()
+                            || containsIgnoreCase(e.title(), kw) || containsIgnoreCase(e.content(), kw))
+                    .toList();
+            if (hits.isEmpty()) {
+                return WIKI_EMPTY_MESSAGE;
+            }
+            List<WikiEntryView> shown = hits.stream().limit(WIKI_MAX_HITS).toList();
+            StringBuilder text = new StringBuilder("知识库命中 ").append(hits.size()).append(" 条");
+            if (shown.size() < hits.size()) {
+                text.append("（显示前 ").append(WIKI_MAX_HITS).append(" 条）");
+            }
+            text.append("：");
+            for (WikiEntryView e : shown) {
+                text.append("\n【").append(e.type()).append("】").append(e.title())
+                        .append("：").append(summarize(e.content()));
+            }
+            return text.toString();
+        });
+    }
+
+    /** title/content 大小写不敏感 contains（关键词已归一小写；null 字段不命中）。 */
+    private static boolean containsIgnoreCase(String text, String lowerKeyword) {
+        return text != null && text.toLowerCase(Locale.ROOT).contains(lowerKeyword);
+    }
+
+    /** 内容摘要：超 200 字符截断加省略号（可读文本行，控制 LLM 上下文占用）。 */
+    private static String summarize(String content) {
+        if (content == null) {
+            return "";
+        }
+        return content.length() <= WIKI_SUMMARY_LIMIT
+                ? content : content.substring(0, WIKI_SUMMARY_LIMIT) + "…";
     }
 
     /** 空白串归一 null；未知枚举名抛 IllegalArgumentException 由调用方前置校验兜底。 */

@@ -134,9 +134,10 @@ class TrustHookIntegrationTest extends PostgresTestSupport {
                 com.portfolio.invest.application.portfolio.PortfolioApplicationService portfolioService,
                 com.portfolio.invest.application.allocation.AllocationApplicationService allocationService,
                 com.portfolio.invest.application.intelligence.IntelligenceQueryService intelligenceQueryService,
+                com.portfolio.invest.application.wiki.WikiApplicationService wikiService,
                 ObjectMapper objectMapper, InvestProperties investProperties) {
             return new UserToolkitFactory(investTools, mcpConfigRepository, mcpClientPool, secretCodec,
-                    portfolioService, allocationService, intelligenceQueryService, objectMapper,
+                    portfolioService, allocationService, intelligenceQueryService, wikiService, objectMapper,
                     investProperties.getMcp().getToolTimeout()) {
                 @Override
                 public Toolkit build(Long userId) {

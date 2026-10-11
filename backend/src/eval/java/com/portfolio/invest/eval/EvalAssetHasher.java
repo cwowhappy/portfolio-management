@@ -94,7 +94,7 @@ public final class EvalAssetHasher {
     private static List<ReportWriter.AssetHash> toolDescriptions() {
         Toolkit toolkit = new Toolkit();
         toolkit.registerTool(new InvestTools(null, null, null, null, null, null, null, null));
-        toolkit.registerTool(new UserInvestTools(0L, null, null, null, null));
+        toolkit.registerTool(new UserInvestTools(0L, null, null, null, null, null));
         return toolkit.getToolNames().stream().sorted()
                 .map(name -> new ReportWriter.AssetHash(TYPE_TOOL_DESC, "tool." + name,
                         sha256Hex(toolkit.getTool(name).getDescription())))
