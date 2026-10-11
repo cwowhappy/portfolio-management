@@ -2,7 +2,6 @@ package com.portfolio.invest.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
