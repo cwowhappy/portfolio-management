@@ -10,7 +10,7 @@
 
 - **本文管什么**：特性从立项到复盘的全流程标准形态（供下次特性开发照做）、流程机制的演进背景、跨特性教训（≥2 特性复发的才进「开发经验」章，单特性的留在该特性复盘）。
 - **不管什么**：代码审查方法论与审查发现问题模式（→ [code-review-lessons.md](code-review-lessons.md)）；单特性交付细节（→ 各特性复盘）；产品功能现状（→ [docs/function/](../function/)）。
-- **材料来源**：2026-09-03（MS-06）至 2026-10-11（MS-31）共 15 个特性目录 17 份复盘总结 + 4 份 P0 验证记录，以及用户工作偏好（严格 TDD + grilling + subagent-driven）。代号索引：
+- **材料来源**：2026-09-03（MS-06）至 2026-10-11（MS-31）共 17 个特性目录 19 份复盘总结（其中 feishu-messaging、account-email 两份为 2026-10-11 补建——交付当时未回填，依 git/PR 证据回溯整理，非交付时点一手记录）+ 4 份 P0 验证记录，以及用户工作偏好（严格 TDD + grilling + subagent-driven）。代号索引：
 
 | 代号 | 特性 | 复盘/验证记录 |
 |---|---|---|
@@ -30,11 +30,12 @@
 | MS-29 | trust-provenance | [features/trust-provenance/08-复盘总结/复盘总结.md](../../features/trust-provenance/08-复盘总结/复盘总结.md) |
 | MS-30 | eval-observability | [features/eval-observability/08-复盘总结/复盘总结.md](../../features/eval-observability/08-复盘总结/复盘总结.md) |
 | MS-31 | memory-personalization | [features/memory-personalization/08-复盘总结/复盘总结.md](../../features/memory-personalization/08-复盘总结/复盘总结.md) |
-| 飞书 | feishu-messaging（无独立复盘） | [P0 验证记录](../../features/feishu-messaging/03-实施计划/P0-验证记录.md) |
+| 跨 MS-15/M14/M03 | feishu-messaging | [复盘总结](../../features/feishu-messaging/08-复盘总结/复盘总结.md)（2026-10-11 补建）· [P0 验证记录](../../features/feishu-messaging/03-实施计划/P0-验证记录.md) |
+| MS-15 | account-email | [复盘总结](../../features/account-email/08-复盘总结/复盘总结.md)（2026-10-11 补建） |
 
 > 更早期（MS-03~MS-05、MS-19 等）的交付复盘以「轮」形式记在 [code-review-lessons.md](code-review-lessons.md)，本文按需引用。特性目录规范（01 需求 / 02 设计 / 03 计划 / 08 复盘 / 09 调研的固定编号与交付回填 checklist）见 [features/README.md](../../features/README.md)。
 
-**交付记录的形态变迁**：复盘机制建立前（2026-09 上旬，MS-16~18/飞书），P0 技术验证以 `03-实施计划/验证记录.md` 形态留档（源码核实结论表 + 真握手抓包 + 结论速览）；2026-09-17 固定编号后，「验证记录/调研报告」与「复盘总结」分层归位（09-调研报告 + 08-复盘总结），验证记录形态延续至今。两条脉络在本文中同等对待：验证记录承载「事前证实」，复盘承载「事后偏差」。
+**交付记录的形态变迁**：复盘机制建立前（2026-09 上旬，MS-16~18/飞书），P0 技术验证以 `03-实施计划/验证记录.md` 形态留档（源码核实结论表 + 真握手抓包 + 结论速览）；2026-09-17 固定编号后，「验证记录/调研报告」与「复盘总结」分层归位（09-调研报告 + 08-复盘总结），验证记录形态延续至今。两条脉络在本文中同等对待：验证记录承载「事前证实」，复盘承载「事后偏差」（feishu-messaging 与 account-email 的复盘为 2026-10-11 补建，交付当时欠账）。
 
 ---
 
@@ -172,7 +173,7 @@
 
 ### 4.2 测试与质量门
 
-9. **mock 单测对库内/框架行为全盲，关键改动必须真浏览器 e2e 或真实依赖测试兜底**（≥6 特性：MS-08/12/19、mcp-hitl、P1-10、MS-31）。五类实例：库内默认值解析（agentId）、`import type` 擦除副作用注册、useInterrupt 元素 memo、`.next` 陈旧构建、服务层数值刻度 fixture 失真——绿的只是自己的假设，错误全在 mock 边界之外。fixture 必须取服务层真实产出形态（MS-12 固化、MS-30 沿用：zod fixture 从集成测试真实响应抄录）。
+9. **mock 单测对库内/框架行为全盲，关键改动必须真浏览器 e2e 或真实依赖测试兜底**（≥7 特性：MS-08/12/19、mcp-hitl、P1-10、MS-31、account-email[补建回溯：e2e 404 逼出 catch-all 反代缺口]）。五类实例：库内默认值解析（agentId）、`import type` 擦除副作用注册、useInterrupt 元素 memo、`.next` 陈旧构建、服务层数值刻度 fixture 失真——绿的只是自己的假设，错误全在 mock 边界之外。fixture 必须取服务层真实产出形态（MS-12 固化、MS-30 沿用：zod fixture 从集成测试真实响应抄录）。
 10. **隔离跑单类 ≠ 全量套件，宣称完成前必须全量真跑**（5 次：MS-04/06、mcp-hitl、MS-14、MS-31）。共享 Testcontainers 容器的跨类种子冲突（userId 撞 AdminSeed/主键冲突/哨兵 id 碰撞——测试种子用高位哨兵 id 且须离散化）与格式门（collector 漏 ruff format）只在全量暴露；`make test 2>&1 | tail` 会吞 exit code（管道退出码 = tail 的 0）。
 11. **新增 Flyway 迁移 = 改多处，版本断言漏同步是最高频返工**（6 次：MS-04/06/09/11/16/17，见 [code-review-lessons.md](code-review-lessons.md)）。止住靠机制化：迁移文件数=断言数双向守卫 → MS-30/31 的 Flyway 计数守卫测试前置（4→5、6→7 先改守卫再落迁移）。
 12. **测试断言本身会固化 bug / 写错**（MS-08×2 + code-review-2026-10 B5 + MS-14）。CSV 断言没算固定列、表头漏 BOM、EmailCodeServiceTest 四分支断言固化枚举行为——先归因实现、看 diff 后确认测试自身错时，改测试口径而非迁就。
@@ -239,7 +240,7 @@
 | # | 模式 | 复发次数（特性） | 现行拦截机制 | 状态 |
 |---|---|---|---|---|
 | 1 | 计划凭记忆写、不对照真实代码/实测（签名/清单/先验/刻度/时点） | 7（MS-06/08/09/11/12/13 + invest-sop） | 计划核实清单（签名/类型/数值刻度/时点口径）+ 设计事实锚点 + 已知答案测试 | 仍在复发，维度逐轮扩出 |
-| 2 | mock/fixture 盲区：单测绿 ≠ 真行为 | ≥6（MS-08/12/19、mcp-hitl、P1-10、MS-31） | 真浏览器 e2e fresh build + 真实序列化 round-trip + fixture 取服务层真实产出 | 有兜底、无根治 |
+| 2 | mock/fixture 盲区：单测绿 ≠ 真行为 | ≥7（MS-08/12/19、mcp-hitl、P1-10、MS-31、account-email） | 真浏览器 e2e fresh build + 真实序列化 round-trip + fixture 取服务层真实产出 | 有兜底、无根治 |
 | 3 | Flyway 版本断言/迁移配套漏同步 | 6 次（MS-04/06/09/11/16/17） | Flyway 计数守卫测试前置（MS-30/31 起机制化） | 已机制化止住 |
 | 4 | 隔离跑 ≠ 全量跑（种子冲突/格式门） | 5（MS-04/06、mcp-hitl、MS-14、MS-31） | 收口门全量 make test；哨兵 id 约定 | 仍偶发（哨兵碰撞 MS-31） |
 | 5 | 文档/口径「两文件一致地错」与引用数字失实 | ≥4（PR #32、MS-11、MS-20~23、MS-31） | git 实证引用数字 + 终审跨文档对照 + 链接门禁 | 靠终审兜底 |
