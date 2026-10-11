@@ -60,9 +60,22 @@ public final class ConsistencyValidator {
     private final InvestProperties.Trust.ToleranceSettings tolerance;
     private final int maxRetries;
 
+    /** 报告模式（Ruling-12）：数字提取排除行首列表序号；默认构造 false = 对话档零变更。 */
+    private final boolean excludeListNumbering;
+
     public ConsistencyValidator(InvestProperties.Trust settings) {
+        this(settings, false);
+    }
+
+    /** 报告模式构造：excludeListNumbering=true 时 verify/correct 的全部数字提取走报告档 {@link NumberExtractor}。 */
+    public ConsistencyValidator(InvestProperties.Trust settings, boolean excludeListNumbering) {
         this.tolerance = settings.getTolerance();
         this.maxRetries = settings.getCorrection().maxRetries();
+        this.excludeListNumbering = excludeListNumbering;
+    }
+
+    private List<NumberToken> extract(String text) {
+        return NumberExtractor.extract(text, excludeListNumbering);
     }
 
     /** 三态判定：tokens × 真值池 → 锚定批次（不改写文本；豁免与统计只消费 dataLike token）。 */
@@ -129,7 +142,7 @@ public final class ConsistencyValidator {
                 List<String> failureNotes = rootNotes.stream()
                         .map(n -> "校验修正失败：" + n + "（重试上限已到，保留原文并转显式标注）")
                         .toList();
-                AnchorBatch batch = withNotes(verify(NumberExtractor.extract(original), pool), failureNotes);
+                AnchorBatch batch = withNotes(verify(extract(original), pool), failureNotes);
                 return new CorrectionResult(original, batch, degraded, degraded.size());
             }
             body = applyReplacements(body, offenders);
@@ -137,7 +150,7 @@ public final class ConsistencyValidator {
         }
 
         // 无偏差直通（原文无 dataLike 偏差）：corrections/notes 为空
-        AnchorBatch batch = withNotes(verify(NumberExtractor.extract(body), pool), rootNotes);
+        AnchorBatch batch = withNotes(verify(extract(body), pool), rootNotes);
         return new CorrectionResult(
                 appendNotes(body, rootCorrections), batch, List.copyOf(rootCorrections), 0);
     }
@@ -248,11 +261,11 @@ public final class ConsistencyValidator {
 
     // ---------- 真值池 ----------
 
-    private static List<Truth> comparableTruths(List<ToolInvocation> pool) {
+    private List<Truth> comparableTruths(List<ToolInvocation> pool) {
         return truths(pool, false);
     }
 
-    private static List<Truth> mcpTruths(List<ToolInvocation> pool) {
+    private List<Truth> mcpTruths(List<ToolInvocation> pool) {
         return truths(pool, true);
     }
 
@@ -261,7 +274,7 @@ public final class ConsistencyValidator {
      * 字面标志（终审 B3-① 行为等价迁移）——MCP 恒精确配源池（值相等只配源，决策 #5），
      * 内置无时点（CALL 兜底）真值进比对池（不再与 MCP 同桶）。
      */
-    private static List<Truth> truths(List<ToolInvocation> pool, boolean mcp) {
+    private List<Truth> truths(List<ToolInvocation> pool, boolean mcp) {
         List<Truth> out = new ArrayList<>();
         if (pool == null) {
             return out;
@@ -270,7 +283,7 @@ public final class ConsistencyValidator {
             if (invocation.failed() || invocation.mcp() != mcp) {
                 continue;
             }
-            for (NumberToken token : NumberExtractor.extract(invocation.resultText())) {
+            for (NumberToken token : extract(invocation.resultText())) {
                 if (token.dataLike()) {
                     out.add(new Truth(token.snippet(), token.value(), token.percent(), invocation));
                 }
@@ -287,7 +300,7 @@ public final class ConsistencyValidator {
     private List<Offender> findOffenders(String body, List<Truth> comparable) {
         List<Offender> offenders = new ArrayList<>();
         List<Truth> unusedMcp = List.of();
-        for (NumberToken token : NumberExtractor.extract(body)) {
+        for (NumberToken token : extract(body)) {
             if (!token.dataLike()) {
                 continue;
             }

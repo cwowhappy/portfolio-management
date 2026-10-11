@@ -18,6 +18,8 @@ import java.util.List;
  * <p>比对口径用 {@link BigDecimal} 精确十进制交叉相乘（{@code |Δ| ≤ relative×|锚定值|}），
  * 勿浮点直比；锚定数值取自 {@code anchor.snippet()} 再提取（snippet 为单数字 token 形态，
  * raw 可能含多数字）。unverified 锚无工具真值背书，不参与绑定（fail-closed 方向宁可少绑）。
+ * 提取恒走报告模式（排除行首列表序号，Ruling-12）——语句由切分法剥编号前缀后本无序号，
+ * 报告模式为与校验门同口径的一致性护栏。
  */
 public final class AssumptionBinder {
 
@@ -46,7 +48,7 @@ public final class AssumptionBinder {
     }
 
     private static int firstBoundAnchor(String statement, List<AnchorRecord> anchors, BigDecimal relative) {
-        for (NumberToken token : NumberExtractor.extract(statement)) {
+        for (NumberToken token : NumberExtractor.extract(statement, true)) {
             if (!token.dataLike()) {
                 continue;
             }
@@ -64,7 +66,7 @@ public final class AssumptionBinder {
         if (anchor.state() != TrustVerdict.VERIFIED && anchor.state() != TrustVerdict.SOURCED) {
             return false;
         }
-        for (NumberToken anchorToken : NumberExtractor.extract(anchor.snippet())) {
+        for (NumberToken anchorToken : NumberExtractor.extract(anchor.snippet(), true)) {
             if (!anchorToken.dataLike() || anchorToken.percent() != token.percent()) {
                 continue;
             }

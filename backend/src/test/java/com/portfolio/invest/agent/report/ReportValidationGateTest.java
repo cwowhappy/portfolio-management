@@ -246,6 +246,40 @@ class ReportValidationGateTest {
         assertThat(ReportValidationGate.extractAssumptionStatements(null)).isEmpty();
     }
 
+    // ———— Ruling-12：报告档行首列表序号排除（contentMd 与假设语句提取均走报告模式） ————
+
+    @DisplayName("Ruling-12：编号序号不入锚定统计——内嵌编号假设章节全文 verified、比例 0 过门（不误越 0.10）")
+    @Test
+    void givenNumberedAssumptionSection_whenEvaluate_thenMarkersNotCounted() {
+        String contentMd = "现价986.50元，总市值8500亿。\n\n## 关键假设\n1. 现价986.50元具备估值支撑\n2. 总市值8500亿的龙头地位稳固";
+
+        ReportValidationGate.GateResult result = gate.evaluate(contentMd,
+                ReportValidationGate.extractAssumptionStatements(contentMd),
+                pool(truth("get_quote", "现价986.50元，总市值8500亿")));
+
+        assertThat(result.anchors().stats()).isEqualTo(new AnchorBatch.Stats(4, 0, 0));
+        assertThat(result.passed()).isTrue();
+        assertThat(result.failReason()).isNull();
+        assertThat(result.correctedMd()).isEqualTo(contentMd);
+        assertThat(result.bindings()).hasSize(2);
+    }
+
+    @DisplayName("Ruling-12：序号不触发误替换——真值同首数字（1 vs 1520.33）场景「1. 」行保持原样、无 ⚠ 注记")
+    @Test
+    void givenMarkerCollidingWithTruth_whenEvaluate_thenNoMisReplacement() {
+        String contentMd = "## 关键假设\n1. 现价1520.33元具备估值支撑";
+
+        ReportValidationGate.GateResult result = gate.evaluate(contentMd,
+                ReportValidationGate.extractAssumptionStatements(contentMd),
+                pool(truth("get_quote", "{\"price\":1520.33}")));
+
+        assertThat(result.passed()).isTrue();
+        assertThat(result.correctedMd()).isEqualTo(contentMd);
+        assertThat(result.anchors().stats()).isEqualTo(new AnchorBatch.Stats(1, 0, 0));
+        assertThat(result.bindings()).hasSize(1);
+        assertThat(result.bindings().get(0).anchorIndex()).isZero();
+    }
+
     // ———— 脚手架 ————
 
     private static ToolInvocation truth(String tool, String resultText) {

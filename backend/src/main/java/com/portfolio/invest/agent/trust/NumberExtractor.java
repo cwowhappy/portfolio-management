@@ -24,6 +24,10 @@ import java.util.regex.Pattern;
  *       B4 fix：防真值池吸入日期/时间碎片造成「文本 30元 命中池内日值 30」类假 verified）；
  *       序号（「第」紧前缀）；A股代码形态（6 位纯数字且前后均非数字/小数点）。
  *       排除项 token 保留在结果中但 {@code dataLike=false}。</li>
+ *       <li><strong>报告模式追加排除（MS-32 Ruling-12）</strong>：行首列表序号
+ *       {@code ^\s*\d{1,2}\.＋空白}（半角点）或 {@code ^\s*\d{1,2}．}（全角点自带间隔）
+ *       ——研报「关键假设」编号行；仅 {@link #extract(String, boolean)} 显式开启，
+ *       默认 {@link #extract(String)} 逐字节零变更。</li>
  *   <li><strong>白名单语境（判定为数据性）</strong>：数字后紧跟金融量词（元/亿/万/万亿/%/％/倍/手/点/股）
  *       或前邻价格/估值动词（现价/最新价/涨/跌/涨幅/跌幅/收于/报/估值/市值/营收/净利/增速/回报）。
  *       白名单由排除项守卫条件结构性满足：年份排除要求「无单位后缀」（故"收于2026元"不被年份排除）、
@@ -66,8 +70,18 @@ public final class NumberExtractor {
     private NumberExtractor() {
     }
 
-    /** 提取文本中的全部数字 token，按原文出现顺序返回。 */
+    /** 提取文本中的全部数字 token，按原文出现顺序返回（对话档行为，Ruling-12 零变更）。 */
     public static List<NumberToken> extract(String text) {
+        return extract(text, false);
+    }
+
+    /**
+     * 报告模式提取（MS-32 Ruling-12）：{@code excludeListNumbering=true} 时行首列表序号
+     * （行内缩进空白 + 1~2 位纯数字 + {@code [.．]} + 空白——研报「关键假设」编号行形态）
+     * 按排除项处理：token 保留、dataLike=false、occ 计数不变（与年份/日期等既有排除项同构）；
+     * {@code false} 与 {@link #extract(String)} 完全等价（对话档逐字节零变更红线）。
+     */
+    public static List<NumberToken> extract(String text, boolean excludeListNumbering) {
         if (text == null || text.isEmpty()) {
             return List.of();
         }
@@ -84,14 +98,58 @@ public final class NumberExtractor {
             int occ = occurrenceBySnippet.merge(snippet, 1, Integer::sum);
             // ISO 日期/时钟时段成分：数字核完整落入任一时段即按日期/时间语境排除（B4 fix）
             boolean inDateTimeSpan = withinSpan(dateTimeSpans, matcher.start(1), matcher.end(1));
+            boolean listNumbering = excludeListNumbering
+                    && isListNumberingMarker(text, matcher.start(), matcher.end(), core, suffix);
             tokens.add(new NumberToken(
                     snippet,
                     normalize(core, suffix),
                     occ,
-                    !inDateTimeSpan && !isExcluded(core, suffix, before, afterCore),
+                    !inDateTimeSpan && !isExcluded(core, suffix, before, afterCore) && !listNumbering,
                     suffix != null && PERCENT_SUFFIXES.indexOf(suffix.charAt(0)) >= 0));
         }
         return List.copyOf(tokens);
+    }
+
+    /**
+     * 行首列表序号形态（报告模式排除项）：数字核为 1~2 位纯数字（无符号/千分位/小数/单位后缀）、
+     * 紧邻句点且数字前至行首仅空白（允许缩进）。句点口径（裁定「全角变体酌情」）：半角 {@code .}
+     * 后须空白（含换行，如「1. 假设」；「1.假设」保守不排除）；全角 {@code ．} 自带间隔、其后
+     * 不另要求空白（CJK 排版惯例，如「1．假设」）。
+     */
+    private static boolean isListNumberingMarker(String text, int start, int end, String core, String suffix) {
+        if (suffix != null || core.isEmpty() || core.length() > 2) {
+            return false;
+        }
+        for (int i = 0; i < core.length(); i++) {
+            char c = core.charAt(i);
+            if (c < '0' || c > '9') {
+                return false;
+            }
+        }
+        if (end >= text.length()) {
+            return false;
+        }
+        char dot = text.charAt(end);
+        if (dot == '．') {
+            // 全角点自带间隔：落位判定交由下方行首扫描
+        } else if (dot == '.') {
+            int afterDot = end + 1;
+            if (afterDot >= text.length() || !Character.isWhitespace(text.charAt(afterDot))) {
+                return false;
+            }
+        } else {
+            return false;
+        }
+        for (int i = start - 1; i >= 0; i--) {
+            char c = text.charAt(i);
+            if (c == '\n') {
+                return true;
+            }
+            if (c != ' ' && c != '\t') {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** ISO 日期段与时钟段的区间集合（含端点），供数字成分定位。 */

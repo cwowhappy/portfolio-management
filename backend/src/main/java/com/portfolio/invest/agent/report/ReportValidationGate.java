@@ -16,7 +16,9 @@ import java.util.regex.Pattern;
 /**
  * 研报校验门（MS-32 B7，设计规格 §3.5，F03 核心）：fail-closed——数字一致性不通过不出稿，
  * 与对话档 fail-open 刻意相反。内部持 <strong>strict 档</strong> {@link ConsistencyValidator}
- * （容差取 {@code invest.report.validation} 组、独立实例注入，对话档 {@code invest.trust.*} 零改动）。
+ * （容差取 {@code invest.report.validation} 组、独立实例注入，对话档 {@code invest.trust.*} 零改动；
+ * 报告模式构造——数字提取排除「关键假设」编号行序号，Ruling-12：序号既不入未溯源统计
+ * 也不触发误替换，{@link com.portfolio.invest.agent.trust.NumberExtractor} 默认路径零变更）。
  * 纯 POJO 零 Spring 注解（沿 ConsistencyValidator 风格，可直 new）。
  *
  * <p><strong>判定链（序即设计规格 §3.5，先命中先拦）：</strong></p>
@@ -70,7 +72,7 @@ public final class ReportValidationGate {
         InvestProperties.Trust strict = new InvestProperties.Trust();
         strict.setTolerance(tolerance);
         strict.setCorrection(new InvestProperties.Trust.CorrectionSettings(maxRetries));
-        this.validator = new ConsistencyValidator(strict);
+        this.validator = new ConsistencyValidator(strict, true);
         this.relative = strict.getTolerance().relative();
         this.unverifiedRatioMax = unverifiedRatioMax;
     }
