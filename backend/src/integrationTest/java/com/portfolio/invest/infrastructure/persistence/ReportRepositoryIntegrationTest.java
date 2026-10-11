@@ -1,4 +1,4 @@
-package com.portfolio.invest.persistence;
+package com.portfolio.invest.infrastructure.persistence;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

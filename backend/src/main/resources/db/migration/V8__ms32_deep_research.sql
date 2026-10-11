@@ -58,7 +58,7 @@ CREATE TABLE research_report_anchor (
 
 CREATE TABLE research_report_assumption (
     id          BIGSERIAL PRIMARY KEY,
-    report_id   BIGSERIAL NOT NULL REFERENCES research_report(id),
+    report_id   BIGINT NOT NULL REFERENCES research_report(id),
     seq         INT NOT NULL,
     statement   TEXT NOT NULL,
     anchor_id   BIGINT REFERENCES research_report_anchor(id),  -- NULL = 未绑定（门语义见 §3.5）
