@@ -30,7 +30,7 @@ class InvestPropertiesReportTest {
         assertThat(execution.poolSize()).isEqualTo(2);
         var quota = props.getReport().getQuota();
         assertThat(quota.dailyTokenBudget()).isEqualTo(500_000L);
-        assertThat(quota.perTaskTokenCap()).isEqualTo(150_000L);
+        assertThat(quota.perTaskTokenCap()).isEqualTo(400_000L);
         var validation = props.getReport().getValidation();
         assertThat(validation.relative()).isEqualByComparingTo("0.01");
         assertThat(validation.absolute()).isEqualByComparingTo("0.03");
@@ -52,7 +52,7 @@ class InvestPropertiesReportTest {
                 Map.entry("invest.report.execution.max-iters-per-round", "15"),
                 Map.entry("invest.report.execution.pool-size", "2"),
                 Map.entry("invest.report.quota.daily-token-budget", "500000"),
-                Map.entry("invest.report.quota.per-task-token-cap", "150000"),
+                Map.entry("invest.report.quota.per-task-token-cap", "400000"),
                 Map.entry("invest.report.validation.relative", "0.01"),
                 Map.entry("invest.report.validation.absolute", "0.03"),
                 Map.entry("invest.report.validation.price", "0.005"),
@@ -70,7 +70,7 @@ class InvestPropertiesReportTest {
         assertThat(execution.poolSize()).isEqualTo(2);
         var quota = props.getReport().getQuota();
         assertThat(quota.dailyTokenBudget()).isEqualTo(500_000L);
-        assertThat(quota.perTaskTokenCap()).isEqualTo(150_000L);
+        assertThat(quota.perTaskTokenCap()).isEqualTo(400_000L);
         var validation = props.getReport().getValidation();
         assertThat(validation.relative()).isEqualByComparingTo("0.01");
         assertThat(validation.absolute()).isEqualByComparingTo("0.03");

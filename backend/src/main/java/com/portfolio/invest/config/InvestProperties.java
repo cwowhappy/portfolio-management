@@ -629,10 +629,14 @@ public class InvestProperties {
     /**
      * 深度研究工作流（MS-32，设计规格 §八 / Global Constraints #1）：执行/配额/校验/陈旧度
      * 四组参数 + 研究草稿字节上限，代码默认值与 yml 键逐字钉死（B7~B12 编排器消费）。
+     * Ruling-21 修复①：per-task-token-cap 默认 150,000 → 400,000——S1 真 LLM 五跑实证
+     * （deepseek-flash 三轮工作流 168,758/172,434/257,144/267,743/284,621，中位 ~260k，峰值 285k；
+     * 控制器初裁 250k 复被 257k 跑例击穿），按「实测峰值 + ~40% 余量」校准；daily-token-budget
+     * 500,000 不动（单任务至多吞 80% 日预算——单日本就意在限制 1–2 次深研）。
      */
     public static class Report {
         private Execution execution = new Execution(Duration.ofSeconds(240), Duration.ofMinutes(15), 15, 2);
-        private Quota quota = new Quota(500_000L, 150_000L);
+        private Quota quota = new Quota(500_000L, 400_000L);
         private Validation validation = new Validation(new BigDecimal("0.01"), new BigDecimal("0.03"),
                 new BigDecimal("0.005"), 0.10, 1);
         private Staleness staleness = new Staleness(Duration.ofMinutes(5), new BigDecimal("0.02"));

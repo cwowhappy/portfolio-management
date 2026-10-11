@@ -116,9 +116,9 @@ invest:
       total-timeout: 15m
       max-iters-per-round: 15
       pool-size: 2
-    quota:                      # Token 配额：当日总预算 500000 / 单任务上限 150000
+    quota:                      # Token 配额：当日总预算 500000 / 单任务上限 400000（Ruling-21 修复①：真 LLM 五跑 168k~285k，150k/250k 先后撞线，峰值+40% 余量）
       daily-token-budget: 500000
-      per-task-token-cap: 150000
+      per-task-token-cap: 400000
     validation:                 # 数值校验：相对 0.01 / 绝对 0.03 / 价格 0.005 / 未溯源比例线 0.10 / 重生成 1 轮
       relative: 0.01
       absolute: 0.03
