@@ -61,7 +61,7 @@ ModelRegistry.resolve(
 
 ## 3. HarnessAgent 构建（HarnessAgentFactory）
 
-`HarnessAgentFactory.build(userId)`（对照 `HarnessAgentFactory.java:38-60`）——`HarnessAgent` 是 agentscope-harness（2.0.3）对 ReAct 循环的完整封装：工作区上下文、双层持久记忆、对话压缩、会话状态、技能加载内建，本项目不再手写这些机制：
+`HarnessAgentFactory.build(userId)`（对照 `HarnessAgentFactory.java:38-60`）——`HarnessAgent` 是 agentscope-harness（2.0.4）对 ReAct 循环的完整封装：工作区上下文、双层持久记忆、对话压缩、会话状态、技能加载内建，本项目不再手写这些机制：
 
 | 构建参数 | 取值 | 说明 |
 |---|---|---|
@@ -158,14 +158,14 @@ invest:
 
 ### 7.2 锚点机制与事件契约
 
-锚点取舍（B0/B5 双探针在 HarnessAgent 生产路径实证，字节级依据见 `TrustAgentHook` 类注释）：**POST_REASONING 末轮为主**——agentscope 2.0.3 的 `runPostReasoningPipeline` 在 hook 链之后才把 reasoningMessage 写入 stateStore（与返回值同源），`setReasoningMessage` 是唯一同时送达两半边的官方口；**POST_SUMMARY 为辅**（maxIters 耗尽收尾，同构）；**POST_CALL 兜底 + 恒定回合收尾**（`TrustContext.reset()`；正常路径 state 落盘早于 POST_CALL，兜底只达返回值半边并 INFO 留痕）。末轮判定 = 无 ToolUseBlock 且文本非空（工具轮不处理）；同回合三锚点幂等防重、PRE_CALL 重置。Hook 系 API 2.0.3 标记 forRemoval，仓库钉版使用，升级需随上游替代口迁移。
+锚点取舍（B0/B5 双探针在 HarnessAgent 生产路径实证，字节级依据见 `TrustAgentHook` 类注释）：**POST_REASONING 末轮为主**——agentscope 2.0.3 的 `runPostReasoningPipeline` 在 hook 链之后才把 reasoningMessage 写入 stateStore（与返回值同源），`setReasoningMessage` 是唯一同时送达两半边的官方口；**POST_SUMMARY 为辅**（maxIters 耗尽收尾，同构）；**POST_CALL 兜底 + 恒定回合收尾**（`TrustContext.reset()`；正常路径 state 落盘早于 POST_CALL，兜底只达返回值半边并 INFO 留痕）。末轮判定 = 无 ToolUseBlock 且文本非空（工具轮不处理）；同回合三锚点幂等防重、PRE_CALL 重置。Hook 系 API 上游标记 forRemoval（2.0.4 仍未移除），仓库 2.0.4 继续使用，后续升级需随上游替代口迁移。2.0.4 配套变化：上游已删 `RuntimeContextAware`，rc 改经 agent 包 `RuntimeContextBridgeMiddleware` 在 onAgent 入口桥接供给 Hook 消费者；AG-UI 线上 TEXT_MESSAGE messageId 改复合 id（#3010，`replyId + "-" + blockId`），`TrustWireMessageIdMiddleware` 已按同源配方适配。
 
 | Custom 事件 | value（Map，无 null） | 时机 |
 |---|---|---|
 | `trust.correction` | `{messageId, snippet, occ, replacement, note}` | 有大偏差修正时，每条替换一个事件，先发 |
 | `trust.anchors` | `{messageId, payload}`（payload 即 §7.3） | 每 assistant 末轮一次 |
 
-发射经 `deferContextual → AgentEventEmitter.fromContext`；emitter 不可得时静默跳过（飞书 call() 路无消费者）。链路：`CustomEvent` → 库内 `CustomAgentEventConverter`（2.0.3 为四参透传构造）→ `AguiEvent$Custom` → SSE（前端 `onCustomEvent` 消费）。
+发射经 `deferContextual → AgentEventEmitter.fromContext`；emitter 不可得时静默跳过（飞书 call() 路无消费者）。链路：`CustomEvent` → 库内 `CustomAgentEventConverter`（2.0.4 为四参透传构造）→ `AguiEvent$Custom` → SSE（前端 `onCustomEvent` 消费）。
 
 ### 7.3 payload v1（无 null 用缺键）
 

@@ -95,7 +95,7 @@ docs/technology/
 
 架构决策记录（ADR），见 [decisions/README.md](decisions/README.md) 索引。当前有效决策要点：
 
-- **ADR-0001** Agent 框架：AgentScope Java 2.0.3
+- **ADR-0001** Agent 框架：AgentScope Java 2.0.4
 - **ADR-0002** 交互协议：AG-UI 标准协议（SSE）
 - **ADR-0003** 行情源：腾讯主源 + 东财兜底（行情/指数末级再降新浪；2026-09-25 修订，原为东财主源 + 新浪/腾讯K线兜底）
 - **ADR-0006** 前端框架：CopilotKit（取代 0005 的 assistant-ui）
