@@ -80,6 +80,21 @@ export const ReportDetailViewSchema = z.object({
   assumptions: z.array(ReportAssumptionViewSchema),
 });
 
+/** 任务四阶段中文文案（RUNNING 进度展示，§4.1 TaskProgress）。 */
+export const REPORT_STAGE_LABELS: Record<ReportStage, string> = {
+  COLLECTING: "数据收集中",
+  ANALYZING: "分析中",
+  DRAFTING: "草稿撰写中",
+  VALIDATING: "校验中",
+};
+
+/** 研报三态中文 chip（列表/确认卡终态展示，§4.1）。 */
+export const REPORT_STATUS_LABELS: Record<ReportStatus, string> = {
+  PENDING_CONFIRM: "待确认",
+  CONFIRMED: "已定稿",
+  REJECTED: "已拒绝",
+};
+
 export type ReportTaskState = z.infer<typeof ReportTaskStateSchema>;
 export type ReportStage = z.infer<typeof ReportStageSchema>;
 export type ReportStatus = z.infer<typeof ReportStatusSchema>;
