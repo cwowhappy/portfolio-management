@@ -25,26 +25,26 @@ class EvalAssetHasherTest {
                 .isEqualTo("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
     }
 
-    @DisplayName("采集清单：28 main（1+17+6+4）+ 5 rubric + 1 题库聚合 = 34 项，类型计数符合设计规格 §4.1")
+    @DisplayName("采集清单：29 main（2+17+6+4）+ 5 rubric + 1 题库聚合 = 35 项，类型计数符合设计规格 §4.1")
     @Test
     void givenStandaloneCollection_whenGroupedByType_thenCountsMatchDesignSpec() {
         EvalAssetHasher.Collected collected = EvalAssetHasher.collectStandalone();
 
         Map<String, Long> byType = collected.assetHashes().stream()
                 .collect(Collectors.groupingBy(ReportWriter.AssetHash::assetType, Collectors.counting()));
-        assertThat(byType).containsEntry("SYSTEM_PROMPT", 1L)
+        assertThat(byType).containsEntry("SYSTEM_PROMPT", 2L)   // system.invest + system.invest.report（MS-32 B6）
                 .containsEntry("TOOL_DESC", 17L)
                 .containsEntry("SKILL", 6L)
                 .containsEntry("INTEL_PROMPT", 4L)
                 .containsEntry("EVAL_RUBRIC", 5L)
                 .containsEntry("QUESTION_BANK", 1L);
-        assertThat(collected.assetHashes()).hasSize(34);
+        assertThat(collected.assetHashes()).hasSize(35);
         assertThat(collected.assetHashes())
                 .allMatch(h -> h.contentHash().matches("[0-9a-f]{64}"));
         // (assetType, assetKey) 全清单唯一（收割端 upsert 主键语义）
         long distinctKeys = collected.assetHashes().stream()
                 .map(h -> h.assetType() + ":" + h.assetKey()).distinct().count();
-        assertThat(distinctKeys).isEqualTo(34);
+        assertThat(distinctKeys).isEqualTo(35);
         // 题库聚合项 hash 与顶层 questionBankHash 一致
         String aggregate = collected.assetHashes().stream()
                 .filter(h -> "QUESTION_BANK".equals(h.assetType()) && "question_bank".equals(h.assetKey()))
@@ -57,8 +57,8 @@ class EvalAssetHasherTest {
     void givenStandaloneCollection_whenKeyed_thenKeyConventionsHold() {
         List<String> keys = EvalAssetHasher.collectStandalone().assetHashes().stream()
                 .map(ReportWriter.AssetHash::assetKey).toList();
-        assertThat(keys).contains("system.invest", "tool.get_quote", "skill.tushare_data",
-                "question_bank");
+        assertThat(keys).contains("system.invest", "system.invest.report", "tool.get_quote",
+                "skill.tushare_data", "question_bank");
         // rubric 键 = 文件名剥 .md、剥 rubric- 前缀（rubric-answer-quality.md → rubric.answer-quality）
         assertThat(keys).contains("rubric.answer-quality", "rubric.extraction",
                 "rubric.judge-prompt-template", "rubric.hitl-interrupt", "rubric.refusal-naturalness");

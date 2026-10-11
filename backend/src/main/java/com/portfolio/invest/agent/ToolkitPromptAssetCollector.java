@@ -1,6 +1,7 @@
 package com.portfolio.invest.agent;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.portfolio.invest.agent.report.ReportWorkflowPrompt;
 import com.portfolio.invest.application.allocation.AllocationApplicationService;
 import com.portfolio.invest.application.eval.AgentPromptAssetPort;
 import com.portfolio.invest.application.intelligence.IntelligenceQueryService;
@@ -55,10 +56,11 @@ public class ToolkitPromptAssetCollector implements AgentPromptAssetPort {
         toolkit.registerTool(investTools);
         toolkit.registerTool(new UserInvestTools(0L, portfolioService, allocationService,
                 intelligenceQueryService, wikiService, mapper));
-        // 键升序：digest.memory → system.invest → system.invest.profile → tool.*
+        // 键升序：digest.memory → system.invest → system.invest.profile → system.invest.report → tool.*
         //（MS-31 B5 两新资产：画像注入模板骨架登记占位符形态——实际注入内容系 DB 派生不入
         // 版本链，需求决策 #5 附注；digest.memory 为 B6 每日摘要任务 prompt，键名逐字为
-        // eval 侧 hash 清单将来对账锚）
+        // eval 侧 hash 清单将来对账锚；MS-32 B6 增 system.invest.report 深研指引块——
+        // 研报 Agent 系统提示词的可观测指纹，沿 system.invest.profile 先例）
         List<PromptAsset> assets = new ArrayList<>();
         assets.add(new PromptAsset(PromptAssetVersion.TYPE_SYSTEM_PROMPT,
                 "digest.memory", DigestPrompts.SYSTEM));
@@ -66,6 +68,8 @@ public class ToolkitPromptAssetCollector implements AgentPromptAssetPort {
                 "system.invest", InvestSystemPrompt.TEXT));
         assets.add(new PromptAsset(PromptAssetVersion.TYPE_SYSTEM_PROMPT,
                 "system.invest.profile", ProfileContextTemplate.TEXT));
+        assets.add(new PromptAsset(PromptAssetVersion.TYPE_SYSTEM_PROMPT,
+                "system.invest.report", ReportWorkflowPrompt.BLOCK));
         for (String name : toolkit.getToolNames().stream().sorted().toList()) {
             assets.add(new PromptAsset(PromptAssetVersion.TYPE_TOOL_DESC,
                     "tool." + name, toolkit.getTool(name).getDescription()));

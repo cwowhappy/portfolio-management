@@ -3,6 +3,7 @@ package com.portfolio.invest.eval;
 import com.portfolio.invest.agent.InvestSystemPrompt;
 import com.portfolio.invest.agent.InvestTools;
 import com.portfolio.invest.agent.UserInvestTools;
+import com.portfolio.invest.agent.report.ReportWorkflowPrompt;
 import com.portfolio.invest.application.intelligence.AnnouncementExtractPrompt;
 import com.portfolio.invest.application.intelligence.BriefGenerationService;
 import com.portfolio.invest.application.intelligence.NewsExtractPrompt;
@@ -70,6 +71,10 @@ public final class EvalAssetHasher {
         List<ReportWriter.AssetHash> mainAssets = new ArrayList<>();
         mainAssets.add(new ReportWriter.AssetHash(TYPE_SYSTEM_PROMPT,
                 "system.invest", sha256Hex(InvestSystemPrompt.TEXT)));
+        // MS-32 B6：深研指引块（system.invest.report）——研报 Agent 系统提示词追加段，
+        // 影响研报任务产出，与 main 侧 registrar 同键同 hash 入清单对账
+        mainAssets.add(new ReportWriter.AssetHash(TYPE_SYSTEM_PROMPT,
+                "system.invest.report", sha256Hex(ReportWorkflowPrompt.BLOCK)));
         mainAssets.addAll(toolDescriptions());
         mainAssets.addAll(skillContents());
         mainAssets.addAll(intelligencePrompts());
