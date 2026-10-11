@@ -101,7 +101,7 @@ class PositionOptimisticLockingIntegrationTest extends ConcurrencyTestSupport {
                 tx.executeWithoutResult(status -> {
                     Position p = portfolioRepository
                             .findPositionByIdAndPortfolioId(POSITION_ID, PORTFOLIO_ID).orElseThrow();
-                    Position updated = p.applyBuy(new BigDecimal("10"), new BigDecimal("30"), new BigDecimal("0"));
+                    Position updated = p.applyBuy(new BigDecimal("10"), new BigDecimal("30"), new BigDecimal("0"), Instant.now());
                     loserRead.countDown();
                     try {
                         if (!winnerDone.await(30, TimeUnit.SECONDS)) {

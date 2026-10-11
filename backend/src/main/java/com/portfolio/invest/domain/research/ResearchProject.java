@@ -41,7 +41,7 @@ public final class ResearchProject {
     }
 
     public static ResearchProject create(Long userId, String stockCode, String stockName,
-                                         String industryCode, String title, ResearchStage initialStage) {
+                                         String industryCode, String title, ResearchStage initialStage, Instant now) {
         if (userId == null) {
             throw new ResearchException(ResearchErrorCode.USER_REQUIRED, "归属用户不能为空");
         }
@@ -57,7 +57,6 @@ public final class ResearchProject {
         if (initialStage == null) {
             throw new ResearchException(ResearchErrorCode.STAGE_REQUIRED, "初始阶段不能为空");
         }
-        Instant now = Instant.now();
         // 情报提醒开关默认开（决策 #26：项目级开关默认 TRUE，D13/M16-F11 回收）
         return new ResearchProject(null, userId, stockCode, stockName, industryCode, title,
                 initialStage, ProjectStatus.ACTIVE, true, null, now, now);
@@ -72,16 +71,16 @@ public final class ResearchProject {
     }
 
     /** 归档（S1）：幂等语义，ARCHIVED 再归档原样返回。 */
-    public ResearchProject archive() {
+    public ResearchProject archive(Instant now) {
         if (status == ProjectStatus.ARCHIVED) {
             return this;
         }
         return new ResearchProject(id, userId, stockCode, stockName, industryCode, title,
-                currentStage, ProjectStatus.ARCHIVED, intelligenceAlertEnabled, version, createdAt, Instant.now());
+                currentStage, ProjectStatus.ARCHIVED, intelligenceAlertEnabled, version, createdAt, now);
     }
 
     /** 切换当前阶段（D4 灵活流转：任意跳转/回退，不校验顺序）。 */
-    public ResearchProject changeStage(ResearchStage stage) {
+    public ResearchProject changeStage(ResearchStage stage, Instant now) {
         if (stage == null) {
             throw new ResearchException(ResearchErrorCode.STAGE_REQUIRED, "目标阶段不能为空");
         }
@@ -89,11 +88,11 @@ public final class ResearchProject {
             return this;
         }
         return new ResearchProject(id, userId, stockCode, stockName, industryCode, title,
-                stage, status, intelligenceAlertEnabled, version, createdAt, Instant.now());
+                stage, status, intelligenceAlertEnabled, version, createdAt, now);
     }
 
     /** 改标题。 */
-    public ResearchProject rename(String newTitle) {
+    public ResearchProject rename(String newTitle, Instant now) {
         if (newTitle == null || newTitle.isBlank()) {
             throw new ResearchException(ResearchErrorCode.TITLE_BLANK, "标题不能为空");
         }
@@ -101,7 +100,7 @@ public final class ResearchProject {
             return this;
         }
         return new ResearchProject(id, userId, stockCode, stockName, industryCode, newTitle,
-                currentStage, status, intelligenceAlertEnabled, version, createdAt, Instant.now());
+                currentStage, status, intelligenceAlertEnabled, version, createdAt, now);
     }
 
     /**
@@ -109,12 +108,12 @@ public final class ResearchProject {
      * （{@code ResearchIntelligenceSubscriptionHookImpl} 查 intelligence_alert_enabled）消失；
      * 同值幂等返回原实例（照 changeStage 同值语义）。
      */
-    public ResearchProject withIntelligenceAlert(boolean enabled) {
+    public ResearchProject withIntelligenceAlert(boolean enabled, Instant now) {
         if (enabled == intelligenceAlertEnabled) {
             return this;
         }
         return new ResearchProject(id, userId, stockCode, stockName, industryCode, title,
-                currentStage, status, enabled, version, createdAt, Instant.now());
+                currentStage, status, enabled, version, createdAt, now);
     }
 
     public Long id() { return id; }

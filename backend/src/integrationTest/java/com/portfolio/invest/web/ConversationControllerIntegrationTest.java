@@ -372,7 +372,7 @@ class ConversationControllerIntegrationTest extends PostgresTestSupport {
 
     private void approve(String username) {
         var user = userRepository.findByUsername(username).orElseThrow();
-        userRepository.save(user.approve());
+        userRepository.save(user.approve(java.time.Instant.now()));
     }
 
     private MockHttpSession login(String username, String password) throws Exception {

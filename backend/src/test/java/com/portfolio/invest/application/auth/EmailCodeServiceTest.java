@@ -164,7 +164,7 @@ class EmailCodeServiceTest {
         when(userRepository.findByUsername("old")).thenReturn(Optional.of(noEmail));
         assertThat(service.findResettableUser("old")).isEmpty();
 
-        User disabled = approvedUser("alice").disable();
+        User disabled = approvedUser("alice").disable(NOW);
         when(userRepository.findByUsername("alice")).thenReturn(Optional.of(disabled));
         assertThat(service.findResettableUser("alice")).isEmpty();
     }
@@ -183,7 +183,7 @@ class EmailCodeServiceTest {
                 "root@x.com", true, NOW, NOW);
         User noEmail = User.reconstitute(2L, "old", "hash", UserRole.USER, UserStatus.APPROVED, true,
                 null, false, NOW, NOW);
-        User disabled = approvedUser("alice").disable();
+        User disabled = approvedUser("alice").disable(NOW);
         when(userRepository.findByUsername("root")).thenReturn(Optional.of(admin));
         when(userRepository.findByUsername("old")).thenReturn(Optional.of(noEmail));
         when(userRepository.findByUsername("alice")).thenReturn(Optional.of(disabled));

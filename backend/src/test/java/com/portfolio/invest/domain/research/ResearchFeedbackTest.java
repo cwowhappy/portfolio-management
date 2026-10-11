@@ -13,7 +13,8 @@ class ResearchFeedbackTest {
     @DisplayName("create 新建：stage/content 必填落位，reviewId 可空，id 待库分配")
     @Test
     void givenValidArgs_whenCreate_thenFeedbackWithOptionalReview() {
-        ResearchFeedback withReview = ResearchFeedback.create(5L, 41L, ResearchStage.REVIEW, "月度模板建议增加仓位口径问题");
+        ResearchFeedback withReview = ResearchFeedback.create(5L, 41L, ResearchStage.REVIEW,
+                "月度模板建议增加仓位口径问题", Instant.now());
         assertThat(withReview.id()).isNull();
         assertThat(withReview.projectId()).isEqualTo(5L);
         assertThat(withReview.reviewId()).isEqualTo(41L);
@@ -21,14 +22,15 @@ class ResearchFeedbackTest {
         assertThat(withReview.content()).isEqualTo("月度模板建议增加仓位口径问题");
         assertThat(withReview.createdAt()).isNotNull();
 
-        ResearchFeedback withoutReview = ResearchFeedback.create(5L, null, ResearchStage.STRATEGY, "策略模板 checklist 太长");
+        ResearchFeedback withoutReview = ResearchFeedback.create(5L, null, ResearchStage.STRATEGY,
+                "策略模板 checklist 太长", Instant.now());
         assertThat(withoutReview.reviewId()).isNull();
     }
 
     @DisplayName("create 缺项目抛 PROJECT_REQUIRED")
     @Test
     void givenNullProject_whenCreate_thenThrowProjectRequired() {
-        assertThatThrownBy(() -> ResearchFeedback.create(null, null, ResearchStage.REVIEW, "建议"))
+        assertThatThrownBy(() -> ResearchFeedback.create(null, null, ResearchStage.REVIEW, "建议", Instant.now()))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.PROJECT_REQUIRED));
     }
@@ -36,7 +38,7 @@ class ResearchFeedbackTest {
     @DisplayName("create 缺阶段抛 STAGE_REQUIRED")
     @Test
     void givenNullStage_whenCreate_thenThrowStageRequired() {
-        assertThatThrownBy(() -> ResearchFeedback.create(5L, null, null, "建议"))
+        assertThatThrownBy(() -> ResearchFeedback.create(5L, null, null, "建议", Instant.now()))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.STAGE_REQUIRED));
     }
@@ -44,17 +46,19 @@ class ResearchFeedbackTest {
     @DisplayName("create 内容空白/超 1000 字抛 FEEDBACK_CONTENT_REQUIRED")
     @Test
     void givenBlankOrOverlongContent_whenCreate_thenThrowContentRequired() {
-        assertThatThrownBy(() -> ResearchFeedback.create(5L, null, ResearchStage.REVIEW, "  "))
+        assertThatThrownBy(() -> ResearchFeedback.create(5L, null, ResearchStage.REVIEW, "  ", Instant.now()))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.FEEDBACK_CONTENT_REQUIRED));
-        assertThatThrownBy(() -> ResearchFeedback.create(5L, null, ResearchStage.REVIEW, null))
+        assertThatThrownBy(() -> ResearchFeedback.create(5L, null, ResearchStage.REVIEW, null, Instant.now()))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.FEEDBACK_CONTENT_REQUIRED));
-        assertThatThrownBy(() -> ResearchFeedback.create(5L, null, ResearchStage.REVIEW, "建".repeat(1001)))
+        assertThatThrownBy(() -> ResearchFeedback.create(5L, null, ResearchStage.REVIEW, "建".repeat(1001),
+                Instant.now()))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.FEEDBACK_CONTENT_REQUIRED));
         // 恰 1000 字边界放行
-        assertThat(ResearchFeedback.create(5L, null, ResearchStage.REVIEW, "建".repeat(1000)).content())
+        assertThat(ResearchFeedback.create(5L, null, ResearchStage.REVIEW, "建".repeat(1000),
+                Instant.now()).content())
                 .hasSize(1000);
     }
 

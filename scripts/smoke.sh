@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 端到端冒烟：健康检查 → fixture 新鲜度（腾讯上游字段漂移探测）→ 行情接口 → （有 key 时）真实对话
-#            → 邮件 → research 复盘闭环 → 情报数据源网络探测（MS-20）
+#            → 邮件 → research 复盘闭环 → 情报数据源网络探测（MS-20）→ 深度研究研报（MS-32 真 LLM 全链）
 set -u
 BASE=${BACKEND_URL:-http://localhost:8080}
 FE=${FRONTEND_URL:-http://localhost:3000}
@@ -187,5 +187,149 @@ probe_intel_source() {
 probe_intel_source "东财 7×24 快讯（新闻主源）" "https://np-listapi.eastmoney.com/comm/web/getFastNewsList?client=web&biz=web_724&fastColumn=102&pageSize=1&req_trace=1"
 probe_intel_source "新浪 zhibo 快讯（新闻降级源）" "https://zhibo.sina.com.cn/api/zhibo/feed?page=1&page_size=1"
 probe_intel_source "巨潮公告（公告主源，P2 消费）" "https://www.cninfo.com.cn/new/hisAnnouncement/query"
+
+echo "== 9. 深度研究研报（MS-32，真 LLM 全链）=="
+# 真 LLM 端到端：立项（幂等复用固定「冒烟研报」项目）→ 节首 psql 清残留（防上次活跃任务撞
+# uq_report_task_active 部分唯一索引 409 卡死重复跑）→ 发起 202 → 轮询至终态（15s 间隔，
+# 上限 18m = execution total-timeout 15m + 3m 缓冲；RUNNING 打 stage 进度行）→
+# SUCCEEDED 断言研报 PENDING_CONFIRM / contentMd 含「关键假设」/ 假设条条有锚点 →
+# confirm 定稿 → journal「研报定稿」事件 psql 复核。
+# FAILED 终态如实红：输出 errorCode/errorMessage + 任务表行供归因——真 LLM 可能因行情源/
+# 模型抖动失败，不做重试宽容（假绿比红更危险）。
+if [ -z "${DEEPSEEK_API_KEY:-}" ]; then
+  echo "  - 未设置 DEEPSEEK_API_KEY，跳过研报冒烟（研报生成依赖后端 LLM，在 .env 配置后重跑）"
+elif [ -z "${ADMIN_USERNAME:-}" ] || [ -z "${ADMIN_PASSWORD:-}" ]; then
+  echo "  - 未设置 ADMIN_USERNAME/ADMIN_PASSWORD，跳过研报冒烟（在 .env 配置后重跑）"
+else
+  COOKIE_JAR=$(mktemp)
+  trap 'rm -f "$COOKIE_JAR"' EXIT
+  curl -s --max-time 15 -c "$COOKIE_JAR" -X POST "$BASE/api/auth/login" \
+    -H "Content-Type: application/json" \
+    -d "{\"username\":\"$ADMIN_USERNAME\",\"password\":\"$ADMIN_PASSWORD\"}" \
+    | grep -q '"username"' || { rm -f "$COOKIE_JAR"; fail "管理员登录失败"; }
+
+  # 幂等前置：固定标题「冒烟研报」项目存在则复用，否则立项（600519 数据面全，沿 §7 口径）
+  LIST=$(curl -s --max-time 15 -b "$COOKIE_JAR" "$BASE/api/research/projects") \
+    || { rm -f "$COOKIE_JAR"; fail "研究项目列表不可达"; }
+  PROJ_JSON=$(echo "$LIST" | grep -o '{[^{}]*"title":"冒烟研报"[^{}]*}' | head -1)
+  if [ -n "$PROJ_JSON" ]; then
+    PROJ_ID=$(echo "$PROJ_JSON" | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
+  else
+    PROJ=$(curl -s --max-time 15 -b "$COOKIE_JAR" -X POST "$BASE/api/research/projects" \
+      -H "Content-Type: application/json" \
+      -d '{"stockCode":"600519","stockName":"贵州茅台","title":"冒烟研报"}')
+    PROJ_ID=$(echo "$PROJ" | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
+    [ -n "$PROJ_ID" ] || { rm -f "$COOKIE_JAR"; fail "研报冒烟项目立项失败: $(echo "$PROJ" | head -c 200)"; }
+  fi
+
+  # 节首清理该项目历史任务/研报行（DELETE by project；连接口径沿 scripts/e2e-cleanup.sh）：
+  # FK 依赖序 assumption（引 anchor）→ anchor → report → task
+  export PGHOST="${PGHOST:-localhost}" PGPORT="${PGPORT:-5432}" \
+    PGUSER="${POSTGRES_USER:-invest}" PGDATABASE="${POSTGRES_DB:-invest}" \
+    PGPASSWORD="${POSTGRES_PASSWORD:-invest}"
+  psql -v ON_ERROR_STOP=1 -q -c "
+    DELETE FROM research_report_assumption WHERE report_id IN (SELECT id FROM research_report WHERE project_id = ${PROJ_ID});
+    DELETE FROM research_report_anchor    WHERE report_id IN (SELECT id FROM research_report WHERE project_id = ${PROJ_ID});
+    DELETE FROM research_report           WHERE project_id = ${PROJ_ID};
+    DELETE FROM research_report_task      WHERE project_id = ${PROJ_ID};" \
+    || { rm -f "$COOKIE_JAR"; fail "psql 研报残留清理失败（研报节幂等前置，检查本机 psql 与 DB 连接）"; }
+
+  # 发起（F01）：202 异步受理，body {taskId, quotaRemaining}
+  START_EPOCH=$(date +%s)
+  START_RESP=$(curl -s --max-time 15 -w '\n%{http_code}' -b "$COOKIE_JAR" \
+    -X POST "$BASE/api/research/projects/$PROJ_ID/report-tasks") \
+    || { rm -f "$COOKIE_JAR"; fail "研报任务发起请求失败"; }
+  START_CODE=$(echo "$START_RESP" | tail -n 1)
+  START_BODY=$(echo "$START_RESP" | sed '$d')
+  [ "$START_CODE" = "202" ] \
+    || { rm -f "$COOKIE_JAR"; fail "研报任务发起失败（HTTP ${START_CODE}，预期 202）: $(echo "$START_BODY" | head -c 200)"; }
+  TASK_ID=$(echo "$START_BODY" | grep -o '"taskId":[0-9]*' | head -1 | cut -d: -f2)
+  QUOTA_LEFT=$(echo "$START_BODY" | grep -o '"quotaRemaining":[0-9]*' | head -1 | cut -d: -f2)
+  [ -n "$TASK_ID" ] || { rm -f "$COOKIE_JAR"; fail "发起响应缺 taskId: $(echo "$START_BODY" | head -c 200)"; }
+  echo "  任务受理 taskId=${TASK_ID}（当日配额余量 ${QUOTA_LEFT:-?} tokens）——真 LLM 全链生成中"
+
+  # 轮询至终态：15s 间隔；超时上限 18m（1080s）= total-timeout(15m) + 3m 缓冲
+  POLL_DEADLINE=$(( START_EPOCH + 1080 ))
+  TASK_JSON=""
+  while :; do
+    TASK_JSON=$(curl -s --max-time 15 -b "$COOKIE_JAR" \
+      "$BASE/api/research/projects/$PROJ_ID/report-tasks/latest") \
+      || { rm -f "$COOKIE_JAR"; fail "研报任务轮询请求失败"; }
+    T_STATUS=$(echo "$TASK_JSON" | grep -o '"status":"[A-Z]*"' | head -1 | cut -d'"' -f4)
+    T_STAGE=$(echo "$TASK_JSON" | grep -o '"stage":"[A-Z]*"' | head -1 | cut -d'"' -f4)
+    T_TOKENS=$(echo "$TASK_JSON" | grep -o '"tokenUsage":[0-9]*' | head -1 | cut -d: -f2)
+    printf '    %4ss  status=%s stage=%s tokens=%s\n' \
+      "$(( $(date +%s) - START_EPOCH ))" "${T_STATUS:-?}" "${T_STAGE:-?}" "${T_TOKENS:-?}"
+    case "$T_STATUS" in
+      SUCCEEDED|FAILED) break ;;
+    esac
+    if [ "$(date +%s)" -ge "$POLL_DEADLINE" ]; then
+      echo "  任务表诊断（research_report_task id=${TASK_ID}）："
+      psql -v ON_ERROR_STOP=1 -c "SELECT id, status, stage, token_usage, error_code, error_message, created_at, started_at, finished_at FROM research_report_task WHERE id = ${TASK_ID};" \
+        || echo "  （任务表诊断查询失败）"
+      rm -f "$COOKIE_JAR"
+      fail "研报任务超时未达终态（status=${T_STATUS:-?}，上限 18m = total-timeout 15m + 3m 缓冲）——须归因"
+    fi
+    sleep 15
+  done
+
+  # FAILED 终态：如实红 + 任务表诊断行（归因入口）
+  if [ "$T_STATUS" = "FAILED" ]; then
+    echo "  任务表诊断（research_report_task id=${TASK_ID}）："
+    psql -v ON_ERROR_STOP=1 -c "SELECT id, status, stage, token_usage, error_code, error_message, created_at, started_at, finished_at FROM research_report_task WHERE id = ${TASK_ID};" \
+      || echo "  （任务表诊断查询失败）"
+    rm -f "$COOKIE_JAR"
+    fail "研报任务 FAILED——真 LLM 链路失败须归因（不重试宽容）: $(echo "$TASK_JSON" | head -c 400)"
+  fi
+
+  # SUCCEEDED 终态：断言 reportId 回连 → 详情（PENDING_CONFIRM / contentMd 含关键假设 / 假设有锚点）
+  ELAPSED=$(( $(date +%s) - START_EPOCH ))
+  REPORT_ID=$(echo "$TASK_JSON" | grep -o '"reportId":[0-9]*' | head -1 | cut -d: -f2)
+  [ -n "$REPORT_ID" ] || { rm -f "$COOKIE_JAR"; fail "任务 SUCCEEDED 但响应缺 reportId: $(echo "$TASK_JSON" | head -c 300)"; }
+  pass "研报生成 SUCCEEDED（耗时 ${ELAPSED}s，tokens=${T_TOKENS:-0}，reportId=${REPORT_ID}）"
+
+  DETAIL=$(curl -s --max-time 30 -b "$COOKIE_JAR" "$BASE/api/research/reports/$REPORT_ID") \
+    || { rm -f "$COOKIE_JAR"; fail "研报详情请求失败"; }
+  echo "$DETAIL" | grep -q '"status":"PENDING_CONFIRM"' \
+    || { rm -f "$COOKIE_JAR"; fail "研报初态非 PENDING_CONFIRM: $(echo "$DETAIL" | head -c 200)"; }
+  case "$DETAIL" in
+    *'"contentMd":""'*|*'"contentMd":null'*)
+      { rm -f "$COOKIE_JAR"; fail "研报 contentMd 为空"; } ;;
+  esac
+  echo "$DETAIL" | grep -q '关键假设' \
+    || { rm -f "$COOKIE_JAR"; fail "研报 contentMd 缺「关键假设」章节"; }
+  echo "$DETAIL" | grep -qF '"assumptions":[{' \
+    || { rm -f "$COOKIE_JAR"; fail "研报关键假设为空（assumptions=[]）"; }
+  if echo "$DETAIL" | grep -q '"anchor":null'; then
+    { rm -f "$COOKIE_JAR"; fail "存在未绑定锚点的假设条目（anchor=null）"; }
+  fi
+  R_TITLE=$(echo "$DETAIL" | grep -o '"title":"[^"]*"' | head -1 | cut -d'"' -f4)
+  ASSUMPTION_N=$(echo "$DETAIL" | grep -o '"seq":[0-9]*' | wc -l | tr -d ' ')
+  pass "研报内容契约成立（「${R_TITLE}」，关键假设 ${ASSUMPTION_N} 条且条条有锚点）"
+
+  # 确认定稿（§3.10）：PENDING_CONFIRM→CONFIRMED
+  CONFIRM_RESP=$(curl -s --max-time 15 -w '\n%{http_code}' -b "$COOKIE_JAR" \
+    -X POST "$BASE/api/research/reports/$REPORT_ID/confirm" \
+    -H "Content-Type: application/json" -d '{"action":"CONFIRM"}') \
+    || { rm -f "$COOKIE_JAR"; fail "研报确认请求失败"; }
+  CONFIRM_CODE=$(echo "$CONFIRM_RESP" | tail -n 1)
+  CONFIRM_BODY=$(echo "$CONFIRM_RESP" | sed '$d')
+  if [ "$CONFIRM_CODE" = "200" ] && echo "$CONFIRM_BODY" | grep -q '"status":"CONFIRMED"'; then
+    pass "研报确认定稿（PENDING_CONFIRM→CONFIRMED）"
+  else
+    { rm -f "$COOKIE_JAR"; fail "研报确认失败（HTTP ${CONFIRM_CODE}，预期 200）: $(echo "$CONFIRM_BODY" | head -c 200)"; }
+  fi
+
+  # journal「研报定稿」事件 psql 复核（同事务写入，confirm 后必在）
+  JOURNAL_N=$(psql -t -A -v ON_ERROR_STOP=1 -c \
+    "SELECT count(*) FROM journal_entry WHERE project_id = ${PROJ_ID} AND type = 'RESEARCH_EVENT' AND title = '研报定稿'") \
+    || { rm -f "$COOKIE_JAR"; fail "psql journal 复核查询失败"; }
+  if [ "${JOURNAL_N:-0}" -ge 1 ]; then
+    pass "journal「研报定稿」事件已落库（project_id=${PROJ_ID}，${JOURNAL_N} 行）"
+  else
+    { rm -f "$COOKIE_JAR"; fail "journal 未找到「研报定稿」事件行（project_id=${PROJ_ID}）"; }
+  fi
+  rm -f "$COOKIE_JAR"
+fi
 
 echo "全部通过"

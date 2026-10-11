@@ -13,6 +13,8 @@
   --color-ink-faint: #5d6b7f;
   --color-up: #e85b55;
   --color-down: #2fbe8f;
+  /* STALE 黄（MS-32 研报锚点四态徽标，设计规格 §4.1） */
+  --color-warn: #e3b341;
   --color-accent: #3fb8d8;
   --color-accent-strong: #63cbe8;
   --color-accent-deep: #2b8fb0;
@@ -55,6 +57,7 @@
   --color-ink-faint: #8fa0b3;
   --color-up: #d43a36;
   --color-down: #0d9c67;
+  --color-warn: #9a6700;
   --color-accent: #0e93b5;
   --color-accent-strong: #0a7f9c;
   --color-accent-deep: #086d86;

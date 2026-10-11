@@ -209,7 +209,7 @@ class PortfolioApplicationServiceTest {
     @Test
     void givenExistingPosition_whenSell_thenInvokeEngineAndSave() {
         Position pos = Position.create(10L, 1L, "600519", "贵州茅台", Instant.now())
-                .applyBuy(new BigDecimal("100"), new BigDecimal("100"), new BigDecimal("0"));
+                .applyBuy(new BigDecimal("100"), new BigDecimal("100"), new BigDecimal("0"), Instant.now());
         when(repo.findPositionByIdAndPortfolioId(5L, 10L)).thenReturn(Optional.of(pos));
         when(repo.savePosition(any())).thenAnswer(inv -> inv.getArgument(0));
         when(repo.saveTrade(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -312,7 +312,7 @@ class PortfolioApplicationServiceTest {
     @Test
     void givenPositionsAndQuote_whenOverview_thenCalculateTotalAssetsAndPnl() {
         Position pos = Position.create(10L, 1L, "600519", "贵州茅台", Instant.now())
-                .applyBuy(new BigDecimal("100"), new BigDecimal("100"), new BigDecimal("0"));
+                .applyBuy(new BigDecimal("100"), new BigDecimal("100"), new BigDecimal("0"), Instant.now());
         when(repo.findPositionsByPortfolioId(10L)).thenReturn(List.of(pos));
         when(repo.findGroupsByPortfolioId(10L)).thenReturn(List.of(
                 HoldingGroup.reconstitute(1L, 10L, "华泰", GroupType.ACCOUNT, Instant.now())));
@@ -422,7 +422,7 @@ class PortfolioApplicationServiceTest {
 
     private Position positionWithId(long id) {
         var base = Position.create(10L, 1L, "600519", "贵州茅台", Instant.now())
-                .applyBuy(new BigDecimal("100"), new BigDecimal("100"), new BigDecimal("0"));
+                .applyBuy(new BigDecimal("100"), new BigDecimal("100"), new BigDecimal("0"), Instant.now());
         return Position.reconstitute(id, base.portfolioId(), base.groupId(), base.stockCode(), base.stockName(),
                 base.quantity(), base.costBasis(), base.totalBuyCost(), base.cumulativeCashDividend(),
                 base.realizedPnl(), base.netCashFlow(), base.createdAt(), base.updatedAt());
@@ -431,8 +431,8 @@ class PortfolioApplicationServiceTest {
     /** 全卖出后仍留在仓库（交易历史需保留）的已清仓持仓：数量 0、成本 0、已实现 2000、净现金流 2000。 */
     private Position clearedPosition(long id) {
         var base = Position.create(10L, 1L, "600519", "贵州茅台", Instant.now())
-                .applyBuy(new BigDecimal("100"), new BigDecimal("100"), new BigDecimal("0"))
-                .applySell(new BigDecimal("120"), new BigDecimal("100"), new BigDecimal("0"));
+                .applyBuy(new BigDecimal("100"), new BigDecimal("100"), new BigDecimal("0"), Instant.now())
+                .applySell(new BigDecimal("120"), new BigDecimal("100"), new BigDecimal("0"), Instant.now());
         return Position.reconstitute(id, base.portfolioId(), base.groupId(), base.stockCode(), base.stockName(),
                 base.quantity(), base.costBasis(), base.totalBuyCost(), base.cumulativeCashDividend(),
                 base.realizedPnl(), base.netCashFlow(), base.createdAt(), base.updatedAt());

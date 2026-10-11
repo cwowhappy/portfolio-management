@@ -38,7 +38,7 @@ public class PrincipleRuleApplicationService {
     @Transactional
     public PrincipleRuleView updateRule(Long userId, Long ruleId, UpdatePrincipleRuleCommand cmd) {
         PrincipleRule existing = requireRule(userId, ruleId);
-        PrincipleRule updated = existing.update(cmd.threshold(), cmd.enabled(), cmd.description());
+        PrincipleRule updated = existing.update(cmd.threshold(), cmd.enabled(), cmd.description(), Instant.now());
         return PrincipleRuleView.from(repository.save(updated));
     }
 

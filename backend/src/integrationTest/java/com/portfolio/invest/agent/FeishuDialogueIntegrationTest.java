@@ -87,7 +87,7 @@ class FeishuDialogueIntegrationTest extends PostgresTestSupport {
     void seedOwnerAndClearRecording() {
         userRepository.findByUsername(OWNER_USERNAME)
                 .orElseGet(() -> userRepository.save(
-                        User.register(OWNER_USERNAME, "not-a-real-hash").approve()));
+                        User.register(OWNER_USERNAME, "not-a-real-hash", java.time.Instant.now()).approve(java.time.Instant.now())));
         REPLY_PORT.calls.clear();
     }
 

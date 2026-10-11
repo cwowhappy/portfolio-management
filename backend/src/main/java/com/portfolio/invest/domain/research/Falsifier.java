@@ -40,7 +40,7 @@ public final class Falsifier {
 
     /** 谓词类：predicate 必填，threshold 必填非空非负（零合法），note 可空。 */
     public static Falsifier ofPredicate(Long strategyId, FalsifierPredicate predicate,
-                                        BigDecimal threshold, String note) {
+                                        BigDecimal threshold, String note, Instant now) {
         if (strategyId == null) {
             throw new ResearchException(ResearchErrorCode.STRATEGY_REQUIRED, "归属策略文档不能为空");
         }
@@ -50,7 +50,6 @@ public final class Falsifier {
         if (threshold == null || threshold.signum() < 0) {
             throw new ResearchException(ResearchErrorCode.THRESHOLD_INVALID, "谓词阈值必须为非负数值");
         }
-        Instant now = Instant.now();
         return new Falsifier(null, strategyId, FalsifierKind.PREDICATE, predicate, threshold,
                 false, note, true, null, now, now);
     }
@@ -59,21 +58,20 @@ public final class Falsifier {
      * 事件类：note 必填（事件靠文字说明，不设谓词与阈值）；eventChecked 为人工勾选置位——
      * 唯一写路径是 PUT 整替项携带（无独立 update 用例，照 T2/回填先例整替重建传导）。
      */
-    public static Falsifier ofEvent(Long strategyId, String note, boolean eventChecked) {
+    public static Falsifier ofEvent(Long strategyId, String note, boolean eventChecked, Instant now) {
         if (strategyId == null) {
             throw new ResearchException(ResearchErrorCode.STRATEGY_REQUIRED, "归属策略文档不能为空");
         }
         if (note == null || note.isBlank()) {
             throw new ResearchException(ResearchErrorCode.NOTE_REQUIRED, "事件类证伪条件必须填写文字说明");
         }
-        Instant now = Instant.now();
         return new Falsifier(null, strategyId, FalsifierKind.EVENT, null, null,
                 eventChecked, note, true, null, now, now);
     }
 
-    /** 事件类（勾选缺省 false）：委托三参重载，兼容扫描/种子等不携带勾选的构造方。 */
-    public static Falsifier ofEvent(Long strategyId, String note) {
-        return ofEvent(strategyId, note, false);
+    /** 事件类（勾选缺省 false）：委托重载，兼容扫描/种子等不携带勾选的构造方。 */
+    public static Falsifier ofEvent(Long strategyId, String note, Instant now) {
+        return ofEvent(strategyId, note, false, now);
     }
 
     /** 持久化还原（JPA 转换器用，不做校验）。 */

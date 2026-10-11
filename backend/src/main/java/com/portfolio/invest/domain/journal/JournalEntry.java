@@ -104,11 +104,11 @@ public final class JournalEntry {
     public JournalEntry update(String stockCode, String stockName, Long tradeId, String title, String content,
                                BigDecimal targetPrice, BigDecimal stopLoss,
                                PeriodType periodType, LocalDate periodStart, LocalDate periodEnd,
-                               LocalDate eventDate) {
+                               LocalDate eventDate, Instant now) {
         validate(type, stockCode, tradeId, projectId, title, content, targetPrice, stopLoss,
                 periodType, periodStart, periodEnd, eventDate);
         return new JournalEntry(id, userId, type, stockCode, stockName, tradeId, title, content,
-                targetPrice, stopLoss, periodType, periodStart, periodEnd, eventDate, createdAt, Instant.now(), version,
+                targetPrice, stopLoss, periodType, periodStart, periodEnd, eventDate, createdAt, now, version,
                 projectId);
     }
 

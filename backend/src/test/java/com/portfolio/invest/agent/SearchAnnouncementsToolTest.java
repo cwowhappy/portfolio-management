@@ -44,7 +44,8 @@ class SearchAnnouncementsToolTest {
         mapper.registerModule(new JavaTimeModule());
         mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
         tools = new UserInvestTools(7L, mock(PortfolioApplicationService.class),
-                mock(AllocationApplicationService.class), intelligenceQuery, mapper);
+                mock(AllocationApplicationService.class), intelligenceQuery,
+                mock(com.portfolio.invest.application.wiki.WikiApplicationService.class), mapper);
     }
 
     private static IntelligenceQueryService.AnnouncementItemView item(String title, String stockCode,

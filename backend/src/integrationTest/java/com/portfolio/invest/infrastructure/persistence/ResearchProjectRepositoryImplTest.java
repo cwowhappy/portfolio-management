@@ -12,6 +12,7 @@ import com.portfolio.invest.domain.research.StrategyDoc;
 import com.portfolio.invest.domain.research.StrategyState;
 import com.portfolio.invest.support.PostgresTestSupport;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -57,7 +58,7 @@ class ResearchProjectRepositoryImplTest {
     void givenProject_whenSaveFind_thenRoundTrip() {
         Long user = seedUser();
         ResearchProject saved = repository.save(ResearchProject.create(
-                user, "600519", "贵州茅台", null, "茅台新分析", ResearchStage.NEW_ANALYSIS));
+                user, "600519", "贵州茅台", null, "茅台新分析", ResearchStage.NEW_ANALYSIS, Instant.now()));
 
         assertThat(saved.id()).isNotNull();
         assertThat(saved.version()).isEqualTo(0L);
@@ -78,7 +79,7 @@ class ResearchProjectRepositoryImplTest {
         assertThat(found.updatedAt()).isEqualTo(saved.updatedAt());
 
         // 域操作（阶段跳转 + 归档）回存：version 乐观锁递增
-        ResearchProject updated = repository.save(found.changeStage(ResearchStage.STRATEGY).archive());
+        ResearchProject updated = repository.save(found.changeStage(ResearchStage.STRATEGY, Instant.now()).archive(Instant.now()));
         assertThat(updated.version()).isEqualTo(1L);
         ResearchProject reloaded = repository.findById(saved.id()).orElseThrow();
         assertThat(reloaded.currentStage()).isEqualTo(ResearchStage.STRATEGY);
@@ -86,14 +87,14 @@ class ResearchProjectRepositoryImplTest {
         assertThat(reloaded.version()).isEqualTo(1L);
 
         // 情报提醒开关往返（M16-F11）：wither 关闭回存、重载为 FALSE、再开恢复
-        ResearchProject disabled = repository.save(reloaded.withIntelligenceAlert(false));
+        ResearchProject disabled = repository.save(reloaded.withIntelligenceAlert(false, Instant.now()));
         assertThat(disabled.intelligenceAlertEnabled()).isFalse();
         assertThat(repository.findById(saved.id()).orElseThrow().intelligenceAlertEnabled()).isFalse();
         Boolean columnValue = jdbcTemplate.queryForObject(
                 "SELECT intelligence_alert_enabled FROM research_project WHERE id = ?",
                 Boolean.class, saved.id());
         assertThat(columnValue).isFalse(); // 列级落库（持仓情报挂接 SQL 消费口径）
-        assertThat(repository.save(disabled.withIntelligenceAlert(true)).intelligenceAlertEnabled()).isTrue();
+        assertThat(repository.save(disabled.withIntelligenceAlert(true, Instant.now())).intelligenceAlertEnabled()).isTrue();
     }
 
     @DisplayName("按用户与状态查询：updatedAt 倒序、状态过滤、用户隔离")
@@ -102,10 +103,10 @@ class ResearchProjectRepositoryImplTest {
     void givenProjects_whenFindByUserId_thenFilteredOrderedAndIsolated() {
         Long user = seedUser();
         ResearchProject p1 = repository.save(ResearchProject.create(
-                user, "600519", "贵州茅台", "801150", "茅台", ResearchStage.NEW_ANALYSIS));
+                user, "600519", "贵州茅台", "801150", "茅台", ResearchStage.NEW_ANALYSIS, Instant.now()));
         ResearchProject p2 = repository.save(ResearchProject.create(
-                user, "000858", "五粮液", null, "五粮液", ResearchStage.STRATEGY));
-        repository.save(p2.rename("五粮液（修订）")); // 抬高 p2.updatedAt 保证倒序确定
+                user, "000858", "五粮液", null, "五粮液", ResearchStage.STRATEGY, Instant.now()));
+        repository.save(p2.rename("五粮液（修订）", Instant.now())); // 抬高 p2.updatedAt 保证倒序确定
 
         assertThat(repository.findByUserId(user, null))
                 .extracting(ResearchProject::title).containsExactly("五粮液（修订）", "茅台"); // updatedAt 倒序
@@ -113,7 +114,7 @@ class ResearchProjectRepositoryImplTest {
         assertThat(repository.findByUserId(user, ProjectStatus.ARCHIVED)).isEmpty();
         assertThat(repository.findByUserId(user + 1, null)).isEmpty(); // 用户隔离
 
-        repository.save(p1.archive());
+        repository.save(p1.archive(Instant.now()));
         assertThat(repository.findByUserId(user, ProjectStatus.ARCHIVED))
                 .extracting(ResearchProject::title).containsExactly("茅台");
         assertThat(repository.findByUserId(user, ProjectStatus.ACTIVE))
@@ -126,12 +127,12 @@ class ResearchProjectRepositoryImplTest {
     void givenMixedProjects_whenFindAllActiveByStage_thenOnlyActivePositionReturned() {
         Long user = seedUser();
         ResearchProject position = repository.save(ResearchProject.create(
-                user, "600519", "贵州茅台", null, "茅台持仓中", ResearchStage.POSITION));
+                user, "600519", "贵州茅台", null, "茅台持仓中", ResearchStage.POSITION, Instant.now()));
         repository.save(ResearchProject.create(
-                user, "000858", "五粮液", null, "五粮液策略期", ResearchStage.STRATEGY)); // 阶段不符
+                user, "000858", "五粮液", null, "五粮液策略期", ResearchStage.STRATEGY, Instant.now())); // 阶段不符
         ResearchProject archived = repository.save(ResearchProject.create(
-                user, "601318", "中国平安", null, "平安已归档", ResearchStage.POSITION));
-        repository.save(archived.archive()); // 状态不符
+                user, "601318", "中国平安", null, "平安已归档", ResearchStage.POSITION, Instant.now()));
+        repository.save(archived.archive(Instant.now())); // 状态不符
 
         assertThat(repository.findAllActiveByStage(ResearchStage.POSITION))
                 .extracting(ResearchProject::id)
@@ -146,7 +147,7 @@ class ResearchProjectRepositoryImplTest {
     void givenProject_whenSaveManualState_thenUpsertAndNullSemantics() {
         Long user = seedUser();
         ResearchProject project = repository.save(ResearchProject.create(
-                user, "600519", "贵州茅台", null, "茅台", ResearchStage.NEW_ANALYSIS));
+                user, "600519", "贵州茅台", null, "茅台", ResearchStage.NEW_ANALYSIS, Instant.now()));
 
         assertThat(repository.findManualStates(project.id())).isEmpty(); // 无任何覆盖
 
@@ -177,12 +178,12 @@ class ResearchProjectRepositoryImplTest {
     void givenProject_whenSaveStrategy_thenTwoStateRoundTrip() {
         Long user = seedUser();
         ResearchProject project = repository.save(ResearchProject.create(
-                user, "600519", "贵州茅台", null, "茅台", ResearchStage.STRATEGY));
+                user, "600519", "贵州茅台", null, "茅台", ResearchStage.STRATEGY, Instant.now()));
 
         assertThat(repository.findStrategy(project.id())).isEmpty();
 
         // 新建草稿：六字段全空可存（D13）
-        StrategyDoc saved = repository.saveStrategy(StrategyDoc.draftOf(project.id()));
+        StrategyDoc saved = repository.saveStrategy(StrategyDoc.draftOf(project.id(), Instant.now()));
         assertThat(saved.id()).isNotNull();
         StrategyDoc emptyDraft = repository.findStrategy(project.id()).orElseThrow();
         assertThat(emptyDraft.state()).isEqualTo(StrategyState.DRAFT);
@@ -192,7 +193,8 @@ class ResearchProjectRepositoryImplTest {
 
         // 暂存六字段回读：NUMERIC(12,4) 值保真（isEqualByComparingTo，不锁 scale）
         repository.saveStrategy(emptyDraft.saveDraft("高端白酒提价能力强", new BigDecimal("12.50"),
-                new BigDecimal("15.00"), "首仓 10%", "回踩 13 元附近分批", "政策风险"));
+                new BigDecimal("15.00"), "首仓 10%", "回踩 13 元附近分批", "政策风险",
+                Instant.now()));
         StrategyDoc draft = repository.findStrategy(project.id()).orElseThrow();
         assertThat(draft.state()).isEqualTo(StrategyState.DRAFT);
         assertThat(draft.thesis()).isEqualTo("高端白酒提价能力强");
@@ -204,13 +206,13 @@ class ResearchProjectRepositoryImplTest {
         assertThat(draft.finalizedAt()).isNull();
 
         // 定稿：FINALIZED + finalizedAt 落库
-        repository.saveStrategy(draft.finalizeDoc());
+        repository.saveStrategy(draft.finalizeDoc(Instant.now()));
         StrategyDoc finalized = repository.findStrategy(project.id()).orElseThrow();
         assertThat(finalized.state()).isEqualTo(StrategyState.FINALIZED);
         assertThat(finalized.finalizedAt()).isNotNull();
 
         // 修订：回 DRAFT、清 finalizedAt，内容字段保留待覆盖（D13 覆盖式）
-        repository.saveStrategy(finalized.revise());
+        repository.saveStrategy(finalized.revise(Instant.now()));
         StrategyDoc revised = repository.findStrategy(project.id()).orElseThrow();
         assertThat(revised.state()).isEqualTo(StrategyState.DRAFT);
         assertThat(revised.finalizedAt()).isNull();
@@ -223,11 +225,11 @@ class ResearchProjectRepositoryImplTest {
     void givenExistingStrategy_whenSaveAnotherDraft_thenUniqueViolation() {
         Long user = seedUser();
         ResearchProject project = repository.save(ResearchProject.create(
-                user, "600519", "贵州茅台", null, "茅台", ResearchStage.STRATEGY));
-        repository.saveStrategy(StrategyDoc.draftOf(project.id()));
+                user, "600519", "贵州茅台", null, "茅台", ResearchStage.STRATEGY, Instant.now()));
+        repository.saveStrategy(StrategyDoc.draftOf(project.id(), Instant.now()));
 
         // 同项目再 draftOf（id=null 视作 INSERT）→ 唯一约束违例在事务内尽早抛出
-        assertThatThrownBy(() -> repository.saveStrategy(StrategyDoc.draftOf(project.id())))
+        assertThatThrownBy(() -> repository.saveStrategy(StrategyDoc.draftOf(project.id(), Instant.now())))
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
@@ -237,15 +239,15 @@ class ResearchProjectRepositoryImplTest {
     void givenStrategy_whenSaveFalsifiers_thenReplaceAllRoundTrip() {
         Long user = seedUser();
         ResearchProject project = repository.save(ResearchProject.create(
-                user, "600519", "贵州茅台", null, "茅台", ResearchStage.STRATEGY));
-        StrategyDoc strategy = repository.saveStrategy(StrategyDoc.draftOf(project.id()));
+                user, "600519", "贵州茅台", null, "茅台", ResearchStage.STRATEGY, Instant.now()));
+        StrategyDoc strategy = repository.saveStrategy(StrategyDoc.draftOf(project.id(), Instant.now()));
 
         assertThat(repository.findFalsifiers(strategy.id())).isEmpty();
 
         repository.saveFalsifiers(strategy.id(), List.of(
                 Falsifier.ofPredicate(strategy.id(), FalsifierPredicate.PRICE_BELOW,
-                        new BigDecimal("13.0000"), "跌破估值下限"),
-                Falsifier.ofEvent(strategy.id(), "季度批价环比转负")));
+                        new BigDecimal("13.0000"), "跌破估值下限", Instant.now()),
+                Falsifier.ofEvent(strategy.id(), "季度批价环比转负", Instant.now())));
 
         List<Falsifier> found = repository.findFalsifiers(strategy.id());
         assertThat(found).hasSize(2);
@@ -265,7 +267,7 @@ class ResearchProjectRepositoryImplTest {
 
         // 整替：旧两条清空，只剩新一条
         repository.saveFalsifiers(strategy.id(), List.of(
-                Falsifier.ofEvent(strategy.id(), "茅台批价连续两周下行")));
+                Falsifier.ofEvent(strategy.id(), "茅台批价连续两周下行", Instant.now())));
         List<Falsifier> replaced = repository.findFalsifiers(strategy.id());
         assertThat(replaced).hasSize(1);
         assertThat(replaced.get(0).kind()).isEqualTo(FalsifierKind.EVENT);

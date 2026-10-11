@@ -58,9 +58,9 @@ class MemoryConfigRepositoriesIT extends PostgresTestSupport {
     void givenFreshUser_whenConfigUpsertRoundTrip_thenDefaultsAllOffAndTogglesRoundTrip() {
         Long uid = newUser();
         assertThat(profileConfigRepository.findByUserId(uid)).isEmpty();
-        UserProfileConfig saved = profileConfigRepository.save(UserProfileConfig.defaults(uid));
+        UserProfileConfig saved = profileConfigRepository.save(UserProfileConfig.defaults(uid, Instant.now()));
         assertThat(saved.styleEnabled()).isFalse();
-        UserProfileConfig on = saved.update(true, false, true, false);
+        UserProfileConfig on = saved.update(true, false, true, false, Instant.now());
         assertThat(profileConfigRepository.save(on).watchlistEnabled()).isTrue();
         assertThat(profileConfigRepository.findByUserId(uid).orElseThrow().styleEnabled()).isTrue();
     }

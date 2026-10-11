@@ -17,14 +17,14 @@ public record UserProfileConfig(
         Instant updatedAt) {
 
     /** 缺省实例：四开关全关（无行语义；读路径不 INSERT 占位行）。 */
-    public static UserProfileConfig defaults(Long userId) {
-        return new UserProfileConfig(null, userId, false, false, false, false, Instant.now());
+    public static UserProfileConfig defaults(Long userId, Instant now) {
+        return new UserProfileConfig(null, userId, false, false, false, false, now);
     }
 
     /** 全量替换四开关，保留 id/userId，updated_at 重打当前时刻。 */
     public UserProfileConfig update(boolean styleEnabled, boolean industryEnabled,
-                                    boolean watchlistEnabled, boolean holdingsEnabled) {
+                                    boolean watchlistEnabled, boolean holdingsEnabled, Instant now) {
         return new UserProfileConfig(id, userId, styleEnabled, industryEnabled,
-                watchlistEnabled, holdingsEnabled, Instant.now());
+                watchlistEnabled, holdingsEnabled, now);
     }
 }

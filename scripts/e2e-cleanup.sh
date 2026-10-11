@@ -36,6 +36,13 @@ DELETE FROM research_entry_batch      WHERE plan_id IN (SELECT id FROM research_
 DELETE FROM research_entry_plan       WHERE project_id IN (SELECT id FROM research_project WHERE user_id IN (SELECT id FROM app_user WHERE username LIKE 'e2e\_%'));
 DELETE FROM research_strategy_doc     WHERE project_id IN (SELECT id FROM research_project WHERE user_id IN (SELECT id FROM app_user WHERE username LIKE 'e2e\_%'));
 DELETE FROM research_stage_record     WHERE project_id IN (SELECT id FROM research_project WHERE user_id IN (SELECT id FROM app_user WHERE username LIKE 'e2e\_%'));
+-- MS-32 深度研究研报域（V8）：FK 依赖序 assumption（引 anchor）→ anchor → report → task，
+-- anchor/assumption 无 project 列经 report 两跳圈定；report_token_quota 按 user 直删（无 project 归属）
+DELETE FROM research_report_assumption WHERE report_id IN (SELECT id FROM research_report WHERE project_id IN (SELECT id FROM research_project WHERE user_id IN (SELECT id FROM app_user WHERE username LIKE 'e2e\_%')));
+DELETE FROM research_report_anchor    WHERE report_id IN (SELECT id FROM research_report WHERE project_id IN (SELECT id FROM research_project WHERE user_id IN (SELECT id FROM app_user WHERE username LIKE 'e2e\_%')));
+DELETE FROM research_report           WHERE project_id IN (SELECT id FROM research_project WHERE user_id IN (SELECT id FROM app_user WHERE username LIKE 'e2e\_%'));
+DELETE FROM research_report_task      WHERE project_id IN (SELECT id FROM research_project WHERE user_id IN (SELECT id FROM app_user WHERE username LIKE 'e2e\_%'));
+DELETE FROM report_token_quota        WHERE user_id IN (SELECT id FROM app_user WHERE username LIKE 'e2e\_%');
 DELETE FROM research_project          WHERE user_id IN (SELECT id FROM app_user WHERE username LIKE 'e2e\_%');
 -- intelligence 域（V3）顶层 user_id 外键表；subscription_stock 随 subscription ON DELETE CASCADE
 DELETE FROM intelligence_push_log      WHERE user_id IN (SELECT id FROM app_user WHERE username LIKE 'e2e\_%');

@@ -23,6 +23,7 @@ import com.portfolio.invest.domain.research.ReviewConclusion;
 import com.portfolio.invest.domain.research.StrategyDoc;
 import com.portfolio.invest.support.PostgresTestSupport;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -69,7 +70,7 @@ class ResearchEntryPlanCheckRepositoryImplTest {
                 "INSERT INTO app_user(username, password_hash, role, status) VALUES (?, 'x', 'USER', 'APPROVED') RETURNING id",
                 Long.class, "plan_" + System.nanoTime());
         ResearchProject project = projectRepository.save(ResearchProject.create(
-                user, "600519", "贵州茅台", "801120", "茅台建仓", ResearchStage.POSITION));
+                user, "600519", "贵州茅台", "801120", "茅台建仓", ResearchStage.POSITION, Instant.now()));
         return project.id();
     }
 
@@ -86,7 +87,7 @@ class ResearchEntryPlanCheckRepositoryImplTest {
                 new EntryBatch(1, new BigDecimal("12.0000"), new BigDecimal("13.0000"), 100L,
                         null, new BigDecimal("0.6000")),
                 new EntryBatch(2, new BigDecimal("10.0000"), new BigDecimal("11.0000"), 100L,
-                        new BigDecimal("1200.00"), new BigDecimal("0.4000")))));
+                        new BigDecimal("1200.00"), new BigDecimal("0.4000"))), Instant.now()));
 
         assertThat(saved.id()).isNotNull();
         assertThat(saved.version()).isEqualTo(0L);
@@ -110,7 +111,7 @@ class ResearchEntryPlanCheckRepositoryImplTest {
         // 整替：两批换一批，旧 plan 行删除（每项目至多一行；V2 uk_entry_plan_project 约束下同事务删后插不撞）
         entryPlanRepository.save(EntryPlan.of(projectId, null, null, List.of(
                 new EntryBatch(1, new BigDecimal("11"), new BigDecimal("12"), 200L,
-                        null, new BigDecimal("1.0")))));
+                        null, new BigDecimal("1.0"))), Instant.now()));
         EntryPlan replaced = entryPlanRepository.findByProjectId(projectId).orElseThrow();
         assertThat(replaced.winRate()).isNull(); // 凯利参数未填（D23 手动可选）
         assertThat(replaced.batches()).hasSize(1);
@@ -136,7 +137,7 @@ class ResearchEntryPlanCheckRepositoryImplTest {
                 new CheckItemResult("能力圈", null, null, CheckOutcome.PASS));
 
         CheckRecord inserted = checkRepository.insert(CheckRecord.create(projectId, CheckType.SELL,
-                items, CheckResult.OVERRIDDEN, "计划外机会，仓位已复核"));
+                items, CheckResult.OVERRIDDEN, "计划外机会，仓位已复核", Instant.now()));
 
         assertThat(inserted.id()).isNotNull();
         String stored = jdbcTemplate.queryForObject(
@@ -164,10 +165,10 @@ class ResearchEntryPlanCheckRepositoryImplTest {
     void givenHits_whenInsertAndFind_thenOrderedDesc() {
         Long projectId = seedProject();
         // hit.falsifier_id 为 FK：先经策略落一条真实证伪条件
-        StrategyDoc strategy = projectRepository.saveStrategy(StrategyDoc.draftOf(projectId));
+        StrategyDoc strategy = projectRepository.saveStrategy(StrategyDoc.draftOf(projectId, Instant.now()));
         projectRepository.saveFalsifiers(strategy.id(), List.of(
                 Falsifier.ofPredicate(strategy.id(), FalsifierPredicate.PRICE_BELOW,
-                        new BigDecimal("13.5"), "跌破下限")));
+                        new BigDecimal("13.5"), "跌破下限", Instant.now())));
         Long falsifierId = projectRepository.findFalsifiers(strategy.id()).get(0).id();
 
         checkRepository.insertHit(new FalsifierHit(null, projectId, falsifierId,
@@ -190,12 +191,12 @@ class ResearchEntryPlanCheckRepositoryImplTest {
     @Transactional
     void givenHits_whenFindUnreviewedHitFalsifierIds_thenOnlyNullReviewRows() {
         Long projectId = seedProject();
-        StrategyDoc strategy = projectRepository.saveStrategy(StrategyDoc.draftOf(projectId));
+        StrategyDoc strategy = projectRepository.saveStrategy(StrategyDoc.draftOf(projectId, Instant.now()));
         projectRepository.saveFalsifiers(strategy.id(), List.of(
                 Falsifier.ofPredicate(strategy.id(), FalsifierPredicate.PRICE_BELOW,
-                        new BigDecimal("13.5"), "跌破下限"),
+                        new BigDecimal("13.5"), "跌破下限", Instant.now()),
                 Falsifier.ofPredicate(strategy.id(), FalsifierPredicate.PE_ABOVE,
-                        new BigDecimal("30"), "PE 过热")));
+                        new BigDecimal("30"), "PE 过热", Instant.now())));
         List<Falsifier> falsifiers = projectRepository.findFalsifiers(strategy.id());
         Long f1 = falsifiers.get(0).id();
         Long f2 = falsifiers.get(1).id();
@@ -219,10 +220,10 @@ class ResearchEntryPlanCheckRepositoryImplTest {
     @Transactional
     void givenHits_whenFindHit_thenScopedByProject() {
         Long projectId = seedProject();
-        StrategyDoc strategy = projectRepository.saveStrategy(StrategyDoc.draftOf(projectId));
+        StrategyDoc strategy = projectRepository.saveStrategy(StrategyDoc.draftOf(projectId, Instant.now()));
         projectRepository.saveFalsifiers(strategy.id(), List.of(
                 Falsifier.ofPredicate(strategy.id(), FalsifierPredicate.PRICE_BELOW,
-                        new BigDecimal("13.5"), "跌破下限")));
+                        new BigDecimal("13.5"), "跌破下限", Instant.now())));
         Long falsifierId = projectRepository.findFalsifiers(strategy.id()).get(0).id();
         FalsifierHit hit = checkRepository.insertHit(new FalsifierHit(null, projectId, falsifierId,
                 "收盘价 12.10 < 下限 13.5", java.time.Instant.parse("2026-09-25T10:00:00Z")));
@@ -241,9 +242,9 @@ class ResearchEntryPlanCheckRepositoryImplTest {
         Long projectId = seedProject();
         List<CheckItemResult> items = List.of(new CheckItemResult("能力圈", null, null, CheckOutcome.PASS));
         CheckRecord first = checkRepository.insert(CheckRecord.create(projectId, CheckType.BUY,
-                items, CheckResult.CONFIRMED, null));
+                items, CheckResult.CONFIRMED, null, Instant.now()));
         CheckRecord second = checkRepository.insert(CheckRecord.create(projectId, CheckType.SELL,
-                items, CheckResult.OVERRIDDEN, "计划外机会"));
+                items, CheckResult.OVERRIDDEN, "计划外机会", Instant.now()));
 
         List<CheckRecord> checks = checkRepository.findChecks(projectId);
         assertThat(checks).extracting(CheckRecord::id).containsExactly(second.id(), first.id()); // 倒序
@@ -258,10 +259,10 @@ class ResearchEntryPlanCheckRepositoryImplTest {
     @Transactional
     void givenReviewAndHit_whenInsertAttach_thenReviewIdBackfilledAndNeverOverwritten() {
         Long projectId = seedProject();
-        StrategyDoc strategy = projectRepository.saveStrategy(StrategyDoc.draftOf(projectId));
+        StrategyDoc strategy = projectRepository.saveStrategy(StrategyDoc.draftOf(projectId, Instant.now()));
         projectRepository.saveFalsifiers(strategy.id(), List.of(
                 Falsifier.ofPredicate(strategy.id(), FalsifierPredicate.PRICE_BELOW,
-                        new BigDecimal("13.5"), "跌破下限")));
+                        new BigDecimal("13.5"), "跌破下限", Instant.now())));
         Long falsifierId = projectRepository.findFalsifiers(strategy.id()).get(0).id();
         FalsifierHit hit = checkRepository.insertHit(new FalsifierHit(null, projectId, falsifierId,
                 "收盘价 12.10 < 下限 13.5（东财收盘 2026-09-25）",
@@ -269,7 +270,7 @@ class ResearchEntryPlanCheckRepositoryImplTest {
         assertThat(checkRepository.findUnreviewedHitFalsifierIds(projectId)).containsExactly(falsifierId);
 
         FalsifierReview review = falsifierReviewRepository.insert(
-                FalsifierReview.create(projectId, ReviewConclusion.REDUCE, "跌破下限，先减半仓"));
+                FalsifierReview.create(projectId, ReviewConclusion.REDUCE, "跌破下限，先减半仓", Instant.now()));
         assertThat(review.id()).isNotNull();
         falsifierReviewRepository.attachReview(hit.id(), review.id());
 
@@ -281,7 +282,7 @@ class ResearchEntryPlanCheckRepositoryImplTest {
 
         // 二次评审：留痕照常追加（append-only），但软引用不覆盖（首评占据）
         FalsifierReview second = falsifierReviewRepository.insert(
-                FalsifierReview.create(projectId, ReviewConclusion.REVISE, "证伪成立，逻辑需修订"));
+                FalsifierReview.create(projectId, ReviewConclusion.REVISE, "证伪成立，逻辑需修订", Instant.now()));
         falsifierReviewRepository.attachReview(hit.id(), second.id());
         Long afterReattach = jdbcTemplate.queryForObject(
                 "SELECT review_id FROM research_falsifier_hit WHERE id = ?", Long.class, hit.id());

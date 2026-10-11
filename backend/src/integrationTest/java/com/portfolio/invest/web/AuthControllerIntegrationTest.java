@@ -329,7 +329,7 @@ class AuthControllerIntegrationTest extends PostgresTestSupport {
         register("reset_disabled", "abc12345");
         approve("reset_disabled");
         var disabled = userRepository.findByUsername("reset_disabled").orElseThrow();
-        userRepository.save(disabled.disable());
+        userRepository.save(disabled.disable(Instant.now()));
         mailStub.sent.clear();
 
         String neutral = com.portfolio.invest.application.auth.EmailCodeService.RESET_NEUTRAL_MESSAGE;
@@ -424,7 +424,7 @@ class AuthControllerIntegrationTest extends PostgresTestSupport {
 
     private void approve(String username) {
         var user = userRepository.findByUsername(username).orElseThrow();
-        userRepository.save(user.approve());
+        userRepository.save(user.approve(Instant.now()));
     }
 
     /** 直存 APPROVED 管理员（参照 UserAdminControllerIntegrationTest.seedAdmin，附带已验证邮箱）。 */

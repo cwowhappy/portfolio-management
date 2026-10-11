@@ -69,7 +69,7 @@ public class JournalApplicationService {
         ResolvedStock resolved = resolveTrade(userId, cmd.tradeId(), cmd.stockCode(), cmd.stockName());
         JournalEntry updated = existing.update(resolved.stockCode(), resolved.stockName(),
                 cmd.tradeId(), cmd.title().trim(), cmd.content(), cmd.targetPrice(), cmd.stopLoss(),
-                cmd.periodType(), cmd.periodStart(), cmd.periodEnd(), cmd.eventDate());
+                cmd.periodType(), cmd.periodStart(), cmd.periodEnd(), cmd.eventDate(), Instant.now());
         return JournalEntryView.from(repository.save(updated));
     }
 

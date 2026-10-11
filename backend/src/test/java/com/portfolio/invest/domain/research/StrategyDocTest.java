@@ -17,7 +17,7 @@ class StrategyDocTest {
     @DisplayName("draftOf 新建 DRAFT 且内容字段全空")
     @Test
     void givenProjectId_whenDraftOf_thenNewDraft() {
-        var doc = StrategyDoc.draftOf(1L);
+        var doc = StrategyDoc.draftOf(1L, CREATED);
         assertThat(doc.id()).isNull();
         assertThat(doc.projectId()).isEqualTo(1L);
         assertThat(doc.state()).isEqualTo(StrategyState.DRAFT);
@@ -36,7 +36,7 @@ class StrategyDocTest {
     @DisplayName("draftOf 缺项目抛PROJECT_REQUIRED")
     @Test
     void givenNullProjectId_whenDraftOf_thenThrowProjectRequired() {
-        assertThatThrownBy(() -> StrategyDoc.draftOf(null))
+        assertThatThrownBy(() -> StrategyDoc.draftOf(null, CREATED))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.PROJECT_REQUIRED));
     }
@@ -44,9 +44,10 @@ class StrategyDocTest {
     @DisplayName("saveDraft 暂存六字段且保持 DRAFT")
     @Test
     void givenDraft_whenSaveDraft_thenFieldsStored() {
-        var doc = StrategyDoc.draftOf(1L)
+        var doc = StrategyDoc.draftOf(1L, CREATED)
                 .saveDraft("消费降级下茅台量价背离", new BigDecimal("1200.00"), new BigDecimal("1500.00"),
-                        "首仓 10%，回撤 8% 加至 20%", "日线缩量企稳 + 估值低于 1300", "政策风险、批价下行");
+                        "首仓 10%，回撤 8% 加至 20%", "日线缩量企稳 + 估值低于 1300", "政策风险、批价下行",
+                        CREATED);
         assertThat(doc.state()).isEqualTo(StrategyState.DRAFT);
         assertThat(doc.thesis()).isEqualTo("消费降级下茅台量价背离");
         assertThat(doc.valuationLow()).isEqualByComparingTo("1200");
@@ -60,7 +61,7 @@ class StrategyDocTest {
     @DisplayName("saveDraft 全空字段可存（DRAFT 态字段可空）")
     @Test
     void givenAllNullFields_whenSaveDraft_thenSucceed() {
-        var doc = StrategyDoc.draftOf(1L).saveDraft(null, null, null, null, null, null);
+        var doc = StrategyDoc.draftOf(1L, CREATED).saveDraft(null, null, null, null, null, null, CREATED);
         assertThat(doc.state()).isEqualTo(StrategyState.DRAFT);
         assertThat(doc.thesis()).isNull();
         assertThat(doc.valuationLow()).isNull();
@@ -72,7 +73,7 @@ class StrategyDocTest {
     void givenFinalized_whenSaveDraft_thenThrowStrategyFinalized() {
         var finalized = finalizedDoc();
         assertThatThrownBy(() -> finalized.saveDraft("改逻辑", new BigDecimal("10"), new BigDecimal("20"),
-                null, null, null))
+                null, null, null, CREATED))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.STRATEGY_FINALIZED));
     }
@@ -82,10 +83,10 @@ class StrategyDocTest {
     @DisplayName("下限小于上限 finalizeDoc 置FINALIZED 并盖 finalizedAt")
     @Test
     void givenValidRange_whenFinalizeDoc_thenFinalizedWithTimestamp() {
-        var doc = StrategyDoc.draftOf(1L)
+        var doc = StrategyDoc.draftOf(1L, CREATED)
                 .saveDraft("逻辑", new BigDecimal("1200.0"), new BigDecimal("1500.000"),
-                        "仓位", "条件", "风险");
-        var finalized = doc.finalizeDoc();
+                        "仓位", "条件", "风险", CREATED);
+        var finalized = doc.finalizeDoc(CREATED);
         assertThat(finalized.state()).isEqualTo(StrategyState.FINALIZED);
         assertThat(finalized.finalizedAt()).isNotNull();
         // 不可变聚合：原 DRAFT 实例不被改动
@@ -98,9 +99,9 @@ class StrategyDocTest {
     @DisplayName("下限缺失 finalizeDoc 抛VALUATION_RANGE_INVALID")
     @Test
     void givenNullLow_whenFinalizeDoc_thenThrowValuationRangeInvalid() {
-        var doc = StrategyDoc.draftOf(1L)
-                .saveDraft("逻辑", null, new BigDecimal("1500"), null, null, null);
-        assertThatThrownBy(doc::finalizeDoc)
+        var doc = StrategyDoc.draftOf(1L, CREATED)
+                .saveDraft("逻辑", null, new BigDecimal("1500"), null, null, null, CREATED);
+        assertThatThrownBy(() -> doc.finalizeDoc(CREATED))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.VALUATION_RANGE_INVALID));
     }
@@ -108,9 +109,9 @@ class StrategyDocTest {
     @DisplayName("上限缺失 finalizeDoc 抛VALUATION_RANGE_INVALID")
     @Test
     void givenNullHigh_whenFinalizeDoc_thenThrowValuationRangeInvalid() {
-        var doc = StrategyDoc.draftOf(1L)
-                .saveDraft("逻辑", new BigDecimal("1200"), null, null, null, null);
-        assertThatThrownBy(doc::finalizeDoc)
+        var doc = StrategyDoc.draftOf(1L, CREATED)
+                .saveDraft("逻辑", new BigDecimal("1200"), null, null, null, null, CREATED);
+        assertThatThrownBy(() -> doc.finalizeDoc(CREATED))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.VALUATION_RANGE_INVALID));
     }
@@ -118,9 +119,10 @@ class StrategyDocTest {
     @DisplayName("下限等于上限 finalizeDoc 抛VALUATION_RANGE_INVALID（compareTo 判等，不看 scale）")
     @Test
     void givenLowEqualsHigh_whenFinalizeDoc_thenThrowValuationRangeInvalid() {
-        var doc = StrategyDoc.draftOf(1L)
-                .saveDraft("逻辑", new BigDecimal("1300.5"), new BigDecimal("1300.50"), null, null, null);
-        assertThatThrownBy(doc::finalizeDoc)
+        var doc = StrategyDoc.draftOf(1L, CREATED)
+                .saveDraft("逻辑", new BigDecimal("1300.5"), new BigDecimal("1300.50"), null, null, null,
+                        CREATED);
+        assertThatThrownBy(() -> doc.finalizeDoc(CREATED))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.VALUATION_RANGE_INVALID));
     }
@@ -128,9 +130,9 @@ class StrategyDocTest {
     @DisplayName("下限大于上限 finalizeDoc 抛VALUATION_RANGE_INVALID")
     @Test
     void givenLowAboveHigh_whenFinalizeDoc_thenThrowValuationRangeInvalid() {
-        var doc = StrategyDoc.draftOf(1L)
-                .saveDraft("逻辑", new BigDecimal("1500"), new BigDecimal("1200"), null, null, null);
-        assertThatThrownBy(doc::finalizeDoc)
+        var doc = StrategyDoc.draftOf(1L, CREATED)
+                .saveDraft("逻辑", new BigDecimal("1500"), new BigDecimal("1200"), null, null, null, CREATED);
+        assertThatThrownBy(() -> doc.finalizeDoc(CREATED))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.VALUATION_RANGE_INVALID));
     }
@@ -139,7 +141,7 @@ class StrategyDocTest {
     @Test
     void givenFinalized_whenFinalizeDocAgain_thenIdempotent() {
         var finalized = finalizedDoc();
-        assertThat(finalized.finalizeDoc()).isSameAs(finalized);
+        assertThat(finalized.finalizeDoc(CREATED)).isSameAs(finalized);
     }
 
     // ---- StrategyDoc：修订（D13 覆盖式） ----
@@ -147,7 +149,7 @@ class StrategyDocTest {
     @DisplayName("revise 回 DRAFT：清 finalizedAt、内容字段保留待覆盖")
     @Test
     void givenFinalized_whenRevise_thenBackToDraftKeepFields() {
-        var revised = finalizedDoc().revise();
+        var revised = finalizedDoc().revise(CREATED);
         assertThat(revised.state()).isEqualTo(StrategyState.DRAFT);
         assertThat(revised.finalizedAt()).isNull();
         assertThat(revised.thesis()).isEqualTo("旧定稿逻辑");
@@ -159,9 +161,9 @@ class StrategyDocTest {
     @Test
     void givenRevise_whenSaveDraft_thenOldFinalizedFieldsOverwritten() {
         var finalized = finalizedDoc();
-        var newDraft = finalized.revise()
+        var newDraft = finalized.revise(CREATED)
                 .saveDraft("新逻辑", new BigDecimal("1000"), new BigDecimal("1100"),
-                        "新仓位", null, null);
+                        "新仓位", null, null, CREATED);
         assertThat(newDraft.state()).isEqualTo(StrategyState.DRAFT);
         assertThat(newDraft.thesis()).isEqualTo("新逻辑");
         assertThat(newDraft.valuationLow()).isEqualByComparingTo("1000");
@@ -178,16 +180,16 @@ class StrategyDocTest {
     @DisplayName("DRAFT 态 revise 幂等返回原实例")
     @Test
     void givenDraft_whenRevise_thenIdempotent() {
-        var draft = StrategyDoc.draftOf(1L);
-        assertThat(draft.revise()).isSameAs(draft);
+        var draft = StrategyDoc.draftOf(1L, CREATED);
+        assertThat(draft.revise(CREATED)).isSameAs(draft);
     }
 
     @DisplayName("revise 后可重新定稿")
     @Test
     void givenReviseAndSave_whenFinalizeDoc_thenFinalizedAgain() {
-        var doc = finalizedDoc().revise()
-                .saveDraft("新逻辑", new BigDecimal("900"), new BigDecimal("1000"), null, null, null)
-                .finalizeDoc();
+        var doc = finalizedDoc().revise(CREATED)
+                .saveDraft("新逻辑", new BigDecimal("900"), new BigDecimal("1000"), null, null, null, CREATED)
+                .finalizeDoc(CREATED);
         assertThat(doc.state()).isEqualTo(StrategyState.FINALIZED);
         assertThat(doc.finalizedAt()).isNotNull();
         assertThat(doc.valuationLow()).isEqualByComparingTo("900");
@@ -219,7 +221,8 @@ class StrategyDocTest {
     @DisplayName("ofPredicate 构造谓词类：kind=PREDICATE、阈值非负可零、默认启用")
     @Test
     void givenPredicateInput_whenOfPredicate_thenPredicateFalsifier() {
-        var f = Falsifier.ofPredicate(7L, FalsifierPredicate.PRICE_BELOW, new BigDecimal("12.34"), "跌破定稿下限");
+        var f = Falsifier.ofPredicate(7L, FalsifierPredicate.PRICE_BELOW, new BigDecimal("12.34"), "跌破定稿下限",
+                CREATED);
         assertThat(f.id()).isNull();
         assertThat(f.strategyId()).isEqualTo(7L);
         assertThat(f.kind()).isEqualTo(FalsifierKind.PREDICATE);
@@ -235,7 +238,7 @@ class StrategyDocTest {
     @DisplayName("ofPredicate 零阈值合法（非负）")
     @Test
     void givenZeroThreshold_whenOfPredicate_thenSucceed() {
-        var f = Falsifier.ofPredicate(7L, FalsifierPredicate.PB_ABOVE, BigDecimal.ZERO, null);
+        var f = Falsifier.ofPredicate(7L, FalsifierPredicate.PB_ABOVE, BigDecimal.ZERO, null, CREATED);
         assertThat(f.threshold()).isEqualByComparingTo("0");
         // note 对谓词类可空
         assertThat(f.note()).isNull();
@@ -245,7 +248,7 @@ class StrategyDocTest {
     @Test
     void givenNullStrategyId_whenOfPredicate_thenThrowStrategyRequired() {
         assertThatThrownBy(() -> Falsifier.ofPredicate(null, FalsifierPredicate.PE_ABOVE,
-                new BigDecimal("30"), "note"))
+                new BigDecimal("30"), "note", CREATED))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.STRATEGY_REQUIRED));
     }
@@ -253,7 +256,7 @@ class StrategyDocTest {
     @DisplayName("ofPredicate 缺谓词抛PREDICATE_REQUIRED")
     @Test
     void givenNullPredicate_whenOfPredicate_thenThrowPredicateRequired() {
-        assertThatThrownBy(() -> Falsifier.ofPredicate(7L, null, new BigDecimal("30"), "note"))
+        assertThatThrownBy(() -> Falsifier.ofPredicate(7L, null, new BigDecimal("30"), "note", CREATED))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.PREDICATE_REQUIRED));
     }
@@ -261,7 +264,7 @@ class StrategyDocTest {
     @DisplayName("ofPredicate 阈值缺失抛THRESHOLD_INVALID")
     @Test
     void givenNullThreshold_whenOfPredicate_thenThrowThresholdInvalid() {
-        assertThatThrownBy(() -> Falsifier.ofPredicate(7L, FalsifierPredicate.PRICE_BELOW, null, "note"))
+        assertThatThrownBy(() -> Falsifier.ofPredicate(7L, FalsifierPredicate.PRICE_BELOW, null, "note", CREATED))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.THRESHOLD_INVALID));
     }
@@ -270,7 +273,7 @@ class StrategyDocTest {
     @Test
     void givenNegativeThreshold_whenOfPredicate_thenThrowThresholdInvalid() {
         assertThatThrownBy(() -> Falsifier.ofPredicate(7L, FalsifierPredicate.PRICE_BELOW,
-                new BigDecimal("-0.01"), "note"))
+                new BigDecimal("-0.01"), "note", CREATED))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.THRESHOLD_INVALID));
     }
@@ -278,7 +281,7 @@ class StrategyDocTest {
     @DisplayName("ofEvent 构造事件类：kind=EVENT、谓词与阈值空、靠文字说明")
     @Test
     void givenEventNote_whenOfEvent_thenEventFalsifier() {
-        var f = Falsifier.ofEvent(7L, "年报审计意见非标");
+        var f = Falsifier.ofEvent(7L, "年报审计意见非标", CREATED);
         assertThat(f.kind()).isEqualTo(FalsifierKind.EVENT);
         assertThat(f.predicate()).isNull();
         assertThat(f.threshold()).isNull();
@@ -290,7 +293,7 @@ class StrategyDocTest {
     @DisplayName("ofEvent 缺策略文档抛STRATEGY_REQUIRED")
     @Test
     void givenNullStrategyId_whenOfEvent_thenThrowStrategyRequired() {
-        assertThatThrownBy(() -> Falsifier.ofEvent(null, "年报审计意见非标"))
+        assertThatThrownBy(() -> Falsifier.ofEvent(null, "年报审计意见非标", CREATED))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.STRATEGY_REQUIRED));
     }
@@ -298,10 +301,10 @@ class StrategyDocTest {
     @DisplayName("ofEvent 说明缺失或空白抛NOTE_REQUIRED（事件类靠文本说明）")
     @Test
     void givenBlankNote_whenOfEvent_thenThrowNoteRequired() {
-        assertThatThrownBy(() -> Falsifier.ofEvent(7L, null))
+        assertThatThrownBy(() -> Falsifier.ofEvent(7L, null, CREATED))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.NOTE_REQUIRED));
-        assertThatThrownBy(() -> Falsifier.ofEvent(7L, "   "))
+        assertThatThrownBy(() -> Falsifier.ofEvent(7L, "   ", CREATED))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.NOTE_REQUIRED));
     }
@@ -325,9 +328,9 @@ class StrategyDocTest {
     }
 
     private static StrategyDoc finalizedDoc() {
-        return StrategyDoc.draftOf(1L)
+        return StrategyDoc.draftOf(1L, CREATED)
                 .saveDraft("旧定稿逻辑", new BigDecimal("1200"), new BigDecimal("1500"),
-                        "旧仓位", "旧买入条件", "旧风险")
-                .finalizeDoc();
+                        "旧仓位", "旧买入条件", "旧风险", CREATED)
+                .finalizeDoc(CREATED);
     }
 }

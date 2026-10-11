@@ -148,7 +148,7 @@ class JournalEntryTest {
                 null, "立项茅台研究", "触发条件：跌破估值区间下沿", null, null, null, null, null,
                 LocalDate.of(2026, 9, 2), NOW, 77L);
         var updated = e.update("600519", "贵州茅台", null, "新标题", "新内容",
-                null, null, null, null, null, LocalDate.of(2026, 9, 3));
+                null, null, null, null, null, LocalDate.of(2026, 9, 3), NOW);
         assertThat(updated.projectId()).isEqualTo(77L);
         assertThat(updated.title()).isEqualTo("新标题");
     }
@@ -159,7 +159,7 @@ class JournalEntryTest {
         var e = buyMemo();
         var updated = e.update("600519", "贵州茅台", 11L, "新标题", "新内容",
                 new BigDecimal("2000"), new BigDecimal("1600"), null, null, null,
-                LocalDate.of(2026, 9, 3));
+                LocalDate.of(2026, 9, 3), NOW);
         assertThat(updated.title()).isEqualTo("新标题");
         assertThat(updated.tradeId()).isEqualTo(11L);
         assertThat(e.title()).isEqualTo("买入茅台"); // 原实例不变

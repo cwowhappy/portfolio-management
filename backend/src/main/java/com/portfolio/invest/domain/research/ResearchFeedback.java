@@ -31,7 +31,8 @@ public final class ResearchFeedback {
     }
 
     /** 新建建议：阶段必选（建议针对哪一档模板）、内容非空白且 ≤ 1000 字；来源复盘可空。 */
-    public static ResearchFeedback create(Long projectId, Long reviewId, ResearchStage stage, String content) {
+    public static ResearchFeedback create(Long projectId, Long reviewId, ResearchStage stage, String content,
+                                           Instant now) {
         if (projectId == null) {
             throw new ResearchException(ResearchErrorCode.PROJECT_REQUIRED, "归属项目不能为空");
         }
@@ -42,7 +43,7 @@ public final class ResearchFeedback {
             throw new ResearchException(ResearchErrorCode.FEEDBACK_CONTENT_REQUIRED,
                     "建议内容不能为空且长度不能超过" + CONTENT_MAX_LENGTH + "字");
         }
-        return new ResearchFeedback(null, projectId, reviewId, stage, content, Instant.now());
+        return new ResearchFeedback(null, projectId, reviewId, stage, content, now);
     }
 
     /** 持久化还原（JPA 转换器用，不做校验）。 */

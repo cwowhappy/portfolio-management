@@ -1,12 +1,20 @@
 package com.portfolio.invest.bdd;
 
+import com.portfolio.invest.agent.report.ReportAgentRunner;
+import com.portfolio.invest.agent.report.ReportAgentRunnerFactory;
+import com.portfolio.invest.agent.report.ReportUsageHook;
 import com.portfolio.invest.application.intelligence.IntelligencePushPort;
+import com.portfolio.invest.application.research.ReportAnchorRecheckPort;
 import com.portfolio.invest.infrastructure.market.EastmoneyClient;
 import com.portfolio.invest.infrastructure.market.SinaClient;
 import com.portfolio.invest.infrastructure.market.TencentClient;
 import com.portfolio.invest.support.PostgresTestSupport;
 import com.portfolio.invest.support.RecordingMailSender;
+import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.hook.PostCallEvent;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
@@ -16,6 +24,8 @@ import io.agentscope.core.model.ToolSchema;
 import io.cucumber.spring.CucumberContextConfiguration;
 import java.util.List;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.function.Function;
+import org.mockito.Mockito;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -88,6 +98,16 @@ public class CucumberSpringConfig extends PostgresTestSupport {
     IntelligencePushPort intelligencePushPort;
 
     /**
+     * 研报锚点重查口打桩（MS-32 B14 假设过期场景，任务书简化裁定）：staleness 编排全链真实
+     * （锚点读取 + TTL 缓存 + detail 组装），仅重查口 stub——场景 3 回放 CHANGED（现值漂移）。
+     * {@code ReportSteps} 的 @Before 统一 reset 并兜底 UNVERIFIABLE（未 stub 场景的 detail
+     * 调用不因 mock 缺省 null 炸链）；重查机制本身（白名单派发/容差判定/四态序）由 B12
+     * 单测钉死，BDD 只验 detail 组装与状态透出。
+     */
+    @MockitoBean
+    ReportAnchorRecheckPort reportAnchorRecheckPort;
+
+    /**
      * 发信桩：@Primary 覆盖未配置 SMTP 的 SmtpMailSender。T5 起注册为三段式（发码→携码注册），
      * 旅程步骤需要从桩记录的邮件中取码。
      */
@@ -97,6 +117,74 @@ public class CucumberSpringConfig extends PostgresTestSupport {
         @Primary
         RecordingMailSender recordingMailSender() {
             return new RecordingMailSender();
+        }
+    }
+
+    /**
+     * 研报 runner 脚本桩（MS-32 B14）：@Primary 覆盖真 {@code ReportAgentRunnerFactory}——
+     * {@code ReportSteps} 按场景 arm 剧本（按调用计数回放：第 1~3 调阶段应答、第 4 调起
+     * 草稿/回炉稿），全程不打真实 LLM；落库链（编排器状态机/校验门/sink/配额）全真。
+     */
+    @TestConfiguration
+    static class ReportRunnerStub {
+        @Bean
+        @Primary
+        ScriptedReportRunnerFactory scriptedReportRunnerFactory() {
+            return new ScriptedReportRunnerFactory();
+        }
+    }
+
+    /**
+     * 脚本化研报 runner 工厂：剧本队列按调用序逐条消费（并发安全），耗尽即抛——
+     * 未预期的额外轮快速失败（编排器收敛 FAILED(AGENT_ERROR) 而非静默错剧本）。
+     *
+     * <p><b>Ruling-21 修复③拓扑拟真（终审 C-1，照 {@code ReportWorkflowOrchestratorTest}
+     * 的 ScriptedRunner / 集成测试 fakeRunnerFactory 同款）</b>：每轮对编排器裸 rc 派生新实例
+     * （模拟 {@code HarnessAgent.ensureSessionDefaults} 字节码行为——工具装饰器与 hook 只见
+     * 派生 rc），剧本步在<b>派生 rc</b> 上注真值；轮末代拟 harness 接线
+     * （{@code setRuntimeContext(派生 rc)} + POST_CALL）——编排器在自有 rc 上直读恒空，
+     * 只能经 {@link ReportUsageHook#drainTruthInvocations()} 真值通道拿到，回归旧读法场景即红。</p>
+     */
+    public static final class ScriptedReportRunnerFactory implements ReportAgentRunnerFactory {
+
+        /** 事件构造要求的非空 Agent 替身（OrchestratorTest/UsageHookTest 同款：hook 不解引用其行为面）。 */
+        private static final Agent STUB_AGENT = Mockito.mock(Agent.class);
+
+        private final ConcurrentLinkedQueue<Function<RuntimeContext, String>> script =
+                new ConcurrentLinkedQueue<>();
+
+        /** 装载剧本（清空旧队列后整体替换）。 */
+        public void arm(List<Function<RuntimeContext, String>> steps) {
+            script.clear();
+            script.addAll(steps);
+        }
+
+        /** 清空剧本（场景开始前防跨场景残留）。 */
+        public void clear() {
+            script.clear();
+        }
+
+        /** 剩余未消费步数（步骤断言用）。 */
+        public int remaining() {
+            return script.size();
+        }
+
+        @Override
+        public ReportAgentRunner create(Long userId, ReportUsageHook usageHook) {
+            return (rc, userPrompt) -> {
+                Function<RuntimeContext, String> step = script.poll();
+                if (step == null) {
+                    throw new IllegalStateException("研报剧本耗尽：出现未预期的额外调用轮");
+                }
+                // 拓扑拟真：派生 rc 上跑剧本（真值注进派生池），轮末 POST_CALL 快照进 hook
+                RuntimeContext derived = RuntimeContext.builder(rc).build();
+                String result = step.apply(derived);
+                usageHook.setRuntimeContext(derived);
+                usageHook.onEvent(new PostCallEvent(STUB_AGENT, Msg.builder()
+                        .id("round-" + System.nanoTime()).role(MsgRole.ASSISTANT)
+                        .textContent("轮收尾").build())).block();
+                return result;
+            };
         }
     }
 

@@ -5,6 +5,7 @@ import com.portfolio.invest.agent.trust.RecordingAgentToolDecorator;
 import com.portfolio.invest.application.allocation.AllocationApplicationService;
 import com.portfolio.invest.application.intelligence.IntelligenceQueryService;
 import com.portfolio.invest.application.portfolio.PortfolioApplicationService;
+import com.portfolio.invest.application.wiki.WikiApplicationService;
 import com.portfolio.invest.domain.mcp.*;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
@@ -29,6 +30,7 @@ public class UserToolkitFactory {
     private final PortfolioApplicationService portfolioService;
     private final AllocationApplicationService allocationService;
     private final IntelligenceQueryService intelligenceQueryService;
+    private final WikiApplicationService wikiService;
     private final ObjectMapper mapper;
     /** listTools 阻塞超时上限（invest.mcp.toolTimeout，B3 接线：挂死端点在限期内抛超时而非永久阻塞）。 */
     private final Duration toolTimeout;
@@ -37,7 +39,8 @@ public class UserToolkitFactory {
                               McpSecretCodec secretCodec,
                               PortfolioApplicationService portfolioService,
                               AllocationApplicationService allocationService,
-                              IntelligenceQueryService intelligenceQueryService, ObjectMapper mapper,
+                              IntelligenceQueryService intelligenceQueryService,
+                              WikiApplicationService wikiService, ObjectMapper mapper,
                               Duration toolTimeout) {
         this.investTools = investTools;
         this.repository = repository;
@@ -46,16 +49,13 @@ public class UserToolkitFactory {
         this.portfolioService = portfolioService;
         this.allocationService = allocationService;
         this.intelligenceQueryService = intelligenceQueryService;
+        this.wikiService = wikiService;
         this.mapper = mapper;
         this.toolTimeout = toolTimeout;
     }
 
     public Toolkit build(Long userId) {
-        Toolkit toolkit = new Toolkit();
-        toolkit.registerTool(investTools);
-        // 用户态工具（F09/F10 + 公告检索）：userId 经构造注入，不进 LLM 上下文
-        toolkit.registerTool(new UserInvestTools(userId, portfolioService, allocationService,
-                intelligenceQueryService, mapper));
+        Toolkit toolkit = buildCore(userId);
         // 预填内置工具名，防 MCP 同名工具静默覆盖内置（ToolRegistry.register 为 Map.put 后写覆盖）
         Set<String> names = new HashSet<>(toolkit.getToolNames());
         Set<String> mcpNames = new HashSet<>();
@@ -86,6 +86,25 @@ public class UserToolkitFactory {
             }
         }
         return decorateWithRecording(toolkit, mcpNames);
+    }
+
+    /**
+     * 研报任务工具集（MS-32 B8，buildReportAgent 消费）：仅内置 + 用户态 + 真值装饰
+     * （mcpNames 空集 → 全部内置语义分桶）——MCP 循环整体不走，repository/clientPool 零咨询，
+     * 天然无 MCP 写工具（研报链路不出现 HITL 审批卡）。
+     */
+    public Toolkit buildWithoutMcp(Long userId) {
+        return decorateWithRecording(buildCore(userId), Set.of());
+    }
+
+    /** 核心装配：内置 InvestTools + 用户态工具（userId 经构造注入，不进 LLM 上下文）。 */
+    private Toolkit buildCore(Long userId) {
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(investTools);
+        // 用户态工具（F09/F10 + 公告检索 + 知识库检索）：userId 经构造注入，不进 LLM 上下文
+        toolkit.registerTool(new UserInvestTools(userId, portfolioService, allocationService,
+                intelligenceQueryService, wikiService, mapper));
+        return toolkit;
     }
 
     /**

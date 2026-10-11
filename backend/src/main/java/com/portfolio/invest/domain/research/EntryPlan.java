@@ -38,7 +38,7 @@ public final class EntryPlan {
 
     /** 新建计划：winRate/payoffRatio 可空（D23 手动可选）；batches 至少一批且 Σratio ≤ 1。 */
     public static EntryPlan of(Long projectId, BigDecimal winRate, BigDecimal payoffRatio,
-                               List<EntryBatch> batches) {
+                               List<EntryBatch> batches, Instant now) {
         if (projectId == null) {
             throw new ResearchException(ResearchErrorCode.PROJECT_REQUIRED, "归属项目不能为空");
         }
@@ -52,7 +52,6 @@ public final class EntryPlan {
             throw new ResearchException(ResearchErrorCode.BATCH_REQUIRED, "建仓计划至少需要一批");
         }
         validateBatches(batches);
-        Instant now = Instant.now();
         return new EntryPlan(null, projectId, winRate, payoffRatio, List.copyOf(batches), null, now, now);
     }
 

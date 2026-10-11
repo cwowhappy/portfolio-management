@@ -11,6 +11,7 @@ import com.portfolio.invest.application.intelligence.AnnouncementPushService;
 import com.portfolio.invest.application.intelligence.IntelligencePushPort;
 import com.portfolio.invest.application.intelligence.IntelligenceQueryService;
 import com.portfolio.invest.application.portfolio.PortfolioApplicationService;
+import com.portfolio.invest.application.wiki.WikiApplicationService;
 import com.portfolio.invest.config.InvestProperties;
 import io.cucumber.java.After;
 import io.cucumber.java.zh_cn.假如;
@@ -67,6 +68,9 @@ public class AnnouncementSearchSteps {
 
     @Autowired
     IntelligenceQueryService intelligenceQueryService;
+
+    @Autowired
+    WikiApplicationService wikiService;
 
     @Autowired
     ObjectMapper mapper;
@@ -267,7 +271,7 @@ public class AnnouncementSearchSteps {
     /** UserInvestTools 同款构造（UserToolkitFactory 装配形状）；scope=all 路径不消费 userId。 */
     private UserInvestTools userInvestTools(Long userId) {
         return new UserInvestTools(userId, portfolioService, allocationService,
-                intelligenceQueryService, mapper);
+                intelligenceQueryService, wikiService, mapper);
     }
 
     /** 持仓 fixture 用户 id（场景二直插的 app_user；场景一无用户行，任意占位 id）。 */

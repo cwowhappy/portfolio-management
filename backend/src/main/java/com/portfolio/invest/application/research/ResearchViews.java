@@ -13,7 +13,9 @@ import com.portfolio.invest.domain.research.FalsifierPredicate;
 import com.portfolio.invest.domain.research.FalsifierReview;
 import com.portfolio.invest.domain.research.ProjectStatus;
 import com.portfolio.invest.domain.research.RefluxState;
+import com.portfolio.invest.domain.research.ReportTask;
 import com.portfolio.invest.domain.research.ResearchFeedback;
+import com.portfolio.invest.domain.research.ResearchReport;
 import com.portfolio.invest.domain.research.ResearchProject;
 import com.portfolio.invest.domain.research.ResearchStage;
 import com.portfolio.invest.domain.research.Review;
@@ -173,5 +175,45 @@ public final class ResearchViews {
             return new FeedbackView(feedback.id(), feedback.projectId(), feedback.reviewId(),
                     feedback.stage(), feedback.content(), feedback.createdAt());
         }
+    }
+
+    /**
+     * 研报任务轮询视图（MS-32 §3.12 GET report-tasks/latest）：终态 FAILED 透出
+     * errorCode/errorMessage 诊断；SUCCEEDED 透出 reportId 供前端跳转详情，其余态 null。
+     */
+    public record TaskStatusView(String status, String stage, long tokenUsage, String errorCode,
+                                 String errorMessage, Long reportId) {
+
+        public static TaskStatusView from(ReportTask task, Long reportId) {
+            return new TaskStatusView(task.status().name(), task.stage().name(), task.tokenUsage(),
+                    task.errorCode(), task.errorMessage(), reportId);
+        }
+    }
+
+    /** 研报摘要视图（MS-32 §3.12 项目研报列表，createdAt 倒序）。 */
+    public record ReportSummaryView(Long id, String title, String status, Instant createdAt) {
+
+        public static ReportSummaryView from(ResearchReport report) {
+            return new ReportSummaryView(report.id(), report.title(), report.status().name(),
+                    report.createdAt());
+        }
+    }
+
+    /**
+     * 研报详情视图（MS-32 F02，§3.8 staleness 注入）：假设条目携带锚点视图（tool/args/asOf
+     * 为锚定真相，state/currentValue 为打开时重查的瞬态四态——不落库）；anchor 为 null 表示
+     * 门未绑定假设（已出稿研报不可能，防御性兜底）。stalenessCheckedAt 为本次取数时刻
+     * （TTL 缓存命中时实际重查最早可追溯至 recheck-ttl 前——缓存值即该最大陈旧窗内的重查结果）。
+     */
+    public record ReportDetailView(Long id, Long projectId, String title, String status,
+                                   String contentMd, String limitations, Instant createdAt,
+                                   Instant stalenessCheckedAt, List<AssumptionView> assumptions) {
+
+        /** 假设条目：statement 为定稿文本，anchor 携带锚定真相与重查状态。 */
+        public record AssumptionView(int seq, String statement, AnchorView anchor) {}
+
+        /** 锚点视图：state 为 FRESH/STALE/CHANGED/UNVERIFIABLE 四态名，currentValue 不可得为 null。 */
+        public record AnchorView(String tool, Map<String, Object> args, Instant asOf,
+                                 String state, String currentValue) {}
     }
 }

@@ -42,10 +42,10 @@ public final class PrincipleRule {
     }
 
     /** 更新可变字段（metric/userId 不可变——指标换设走删旧建新），返回新实例。 */
-    public PrincipleRule update(BigDecimal threshold, boolean enabled, String description) {
+    public PrincipleRule update(BigDecimal threshold, boolean enabled, String description, Instant now) {
         validate(metric, threshold, description);
         return new PrincipleRule(id, userId, metric, threshold, enabled, description,
-                createdAt, Instant.now(), version);
+                createdAt, now, version);
     }
 
     private static void validate(PrincipleMetric metric, BigDecimal threshold, String description) {

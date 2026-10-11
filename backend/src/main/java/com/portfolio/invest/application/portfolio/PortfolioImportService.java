@@ -156,8 +156,8 @@ public class PortfolioImportService {
                 case BUY, SELL -> {
                     Position current = workingPosition(portfolio, r, working);
                     Position updated = r.type() == ImportRowType.BUY
-                            ? current.applyBuy(r.price(), r.quantity(), r.fee())
-                            : current.applySell(r.price(), r.quantity(), r.fee());
+                            ? current.applyBuy(r.price(), r.quantity(), r.fee(), Instant.now())
+                            : current.applySell(r.price(), r.quantity(), r.fee(), Instant.now());
                     Position saved = repository.savePosition(updated);
                     working.put(positionKey(r), saved);
                     repository.saveTrade(new Trade(null, saved.id(),
@@ -168,8 +168,8 @@ public class PortfolioImportService {
                     Position current = workingPosition(portfolio, r, working);
                     // 现金分红总额 = 每股现金 × 当时数量（与模拟器同口径；执行序=模拟序，数量一致）
                     Position updated = r.type() == ImportRowType.CASH_DIVIDEND
-                            ? current.applyCashDividend(r.price().multiply(current.quantity()))
-                            : current.applyStockDividend(r.price());
+                            ? current.applyCashDividend(r.price().multiply(current.quantity()), Instant.now())
+                            : current.applyStockDividend(r.price(), Instant.now());
                     Position saved = repository.savePosition(updated);
                     working.put(positionKey(r), saved);
                     repository.saveDividend(r.type() == ImportRowType.CASH_DIVIDEND

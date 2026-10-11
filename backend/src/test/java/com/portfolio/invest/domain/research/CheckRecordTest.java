@@ -30,7 +30,7 @@ class CheckRecordTest {
     void givenOverriddenWithoutReason_whenCreate_thenThrowOverrideReasonRequired() {
         for (String blank : Arrays.asList(null, "", "   ")) {
             assertThatThrownBy(() -> CheckRecord.create(1L, CheckType.BUY, sampleItems(),
-                    CheckResult.OVERRIDDEN, blank))
+                    CheckResult.OVERRIDDEN, blank, Instant.now()))
                     .as("理由=%s", blank)
                     .isInstanceOfSatisfying(ResearchException.class,
                             e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.OVERRIDE_REASON_REQUIRED));
@@ -41,7 +41,7 @@ class CheckRecordTest {
     @Test
     void givenOverriddenWithReason_whenCreate_thenReasonKept() {
         var record = CheckRecord.create(1L, CheckType.SELL, sampleItems(),
-                CheckResult.OVERRIDDEN, "板块逻辑变化，减仓观察");
+                CheckResult.OVERRIDDEN, "板块逻辑变化，减仓观察", Instant.now());
         assertThat(record.id()).isNull();
         assertThat(record.projectId()).isEqualTo(1L);
         assertThat(record.checkType()).isEqualTo(CheckType.SELL);
@@ -55,7 +55,7 @@ class CheckRecordTest {
     @Test
     void givenConfirmedWithReason_whenCreate_thenReasonNulled() {
         var record = CheckRecord.create(1L, CheckType.BUY, sampleItems(),
-                CheckResult.CONFIRMED, "多余的理由");
+                CheckResult.CONFIRMED, "多余的理由", Instant.now());
         assertThat(record.result()).isEqualTo(CheckResult.CONFIRMED);
         assertThat(record.overrideReason()).isNull();
     }
@@ -64,7 +64,7 @@ class CheckRecordTest {
     @Test
     void givenOverriddenReasonTooLong_whenCreate_thenThrow() {
         assertThatThrownBy(() -> CheckRecord.create(1L, CheckType.BUY, sampleItems(),
-                CheckResult.OVERRIDDEN, "长".repeat(501)))
+                CheckResult.OVERRIDDEN, "长".repeat(501), Instant.now()))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.OVERRIDE_REASON_REQUIRED));
     }
@@ -72,19 +72,24 @@ class CheckRecordTest {
     @DisplayName("必填缺失：项目/类型/结论/检查项 → 对应错误码")
     @Test
     void givenMissingRequiredParts_whenCreate_thenThrow() {
-        assertThatThrownBy(() -> CheckRecord.create(null, CheckType.BUY, sampleItems(), CheckResult.CONFIRMED, null))
+        assertThatThrownBy(() -> CheckRecord.create(null, CheckType.BUY, sampleItems(), CheckResult.CONFIRMED,
+                null, Instant.now()))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.PROJECT_REQUIRED));
-        assertThatThrownBy(() -> CheckRecord.create(1L, null, sampleItems(), CheckResult.CONFIRMED, null))
+        assertThatThrownBy(() -> CheckRecord.create(1L, null, sampleItems(), CheckResult.CONFIRMED,
+                null, Instant.now()))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.CHECK_TYPE_REQUIRED));
-        assertThatThrownBy(() -> CheckRecord.create(1L, CheckType.BUY, null, CheckResult.CONFIRMED, null))
+        assertThatThrownBy(() -> CheckRecord.create(1L, CheckType.BUY, null, CheckResult.CONFIRMED,
+                null, Instant.now()))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.CHECK_ITEMS_REQUIRED));
-        assertThatThrownBy(() -> CheckRecord.create(1L, CheckType.BUY, List.of(), CheckResult.CONFIRMED, null))
+        assertThatThrownBy(() -> CheckRecord.create(1L, CheckType.BUY, List.of(), CheckResult.CONFIRMED,
+                null, Instant.now()))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.CHECK_ITEMS_REQUIRED));
-        assertThatThrownBy(() -> CheckRecord.create(1L, CheckType.BUY, sampleItems(), null, null))
+        assertThatThrownBy(() -> CheckRecord.create(1L, CheckType.BUY, sampleItems(), null,
+                null, Instant.now()))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.CHECK_RESULT_REQUIRED));
     }
@@ -98,7 +103,8 @@ class CheckRecordTest {
                 .toList();
         assertThat(mutators).isEmpty();
 
-        var record = CheckRecord.create(1L, CheckType.BUY, sampleItems(), CheckResult.CONFIRMED, null);
+        var record = CheckRecord.create(1L, CheckType.BUY, sampleItems(), CheckResult.CONFIRMED, null,
+                Instant.now());
         assertThatThrownBy(() -> record.items().add(new CheckItemResult("x", null, null, CheckOutcome.UNSET)))
                 .isInstanceOf(UnsupportedOperationException.class);
     }

@@ -10,9 +10,12 @@ import com.portfolio.invest.domain.user.UserSessionRegistry;
 import com.portfolio.invest.domain.user.UserStatus;
 import com.portfolio.invest.domain.user.UsernamePolicy;
 import com.portfolio.invest.domain.user.VerificationPurpose;
+import java.time.Clock;
+import java.time.ZoneId;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,20 +23,34 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class AuthApplicationService {
 
+    private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
+
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final EmailCodeService emailCodeService;
     private final RememberMeTokenStore rememberMeTokenStore;
     private final UserSessionRegistry userSessionRegistry;
+    private final Clock clock;
 
+    /** 主构造器（@Autowired：存在测试专用重载构造器时需显式指定注入入口）。 */
+    @Autowired
     public AuthApplicationService(UserRepository userRepository, PasswordEncoder passwordEncoder,
                                   EmailCodeService emailCodeService, RememberMeTokenStore rememberMeTokenStore,
                                   UserSessionRegistry userSessionRegistry) {
+        this(userRepository, passwordEncoder, emailCodeService, rememberMeTokenStore,
+                userSessionRegistry, Clock.system(ZONE));
+    }
+
+    /** 测试构造器：注入时钟（账号时间戳确定性断言）。 */
+    AuthApplicationService(UserRepository userRepository, PasswordEncoder passwordEncoder,
+                           EmailCodeService emailCodeService, RememberMeTokenStore rememberMeTokenStore,
+                           UserSessionRegistry userSessionRegistry, Clock clock) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.emailCodeService = emailCodeService;
         this.rememberMeTokenStore = rememberMeTokenStore;
         this.userSessionRegistry = userSessionRegistry;
+        this.clock = clock;
     }
 
     @Transactional
@@ -56,8 +73,8 @@ public class AuthApplicationService {
         String hash = passwordEncoder.encode(cmd.password());
         try {
             User saved = existing
-                    .map(u -> userRepository.save(u.reRegister(hash, email)))
-                    .orElseGet(() -> userRepository.save(User.register(username, hash, email)));
+                    .map(u -> userRepository.save(u.reRegister(hash, email, clock.instant())))
+                    .orElseGet(() -> userRepository.save(User.register(username, hash, email, clock.instant())));
             return UserView.from(saved);
         } catch (org.springframework.dao.DataIntegrityViolationException e) {
             // 并发窗口唯一索引兜底：按约束名区分用户名/邮箱冲突（V21 uk_app_user_email）
@@ -77,7 +94,7 @@ public class AuthApplicationService {
         User user = emailCodeService.findResettableUser(identifier)
                 .orElseThrow(() -> new UserException(UserErrorCode.CODE_INVALID, "验证码错误或已失效"));
         emailCodeService.verify(user.email(), VerificationPurpose.RESET, code);
-        userRepository.save(user.withPassword(passwordEncoder.encode(newPassword)));
+        userRepository.save(user.withPassword(passwordEncoder.encode(newPassword), clock.instant()));
         // 密码已换：旧「记住我」令牌立即失效（同 UserAdminApplicationService.resetPassword 口径）
         rememberMeTokenStore.removeUserTokens(user.username());
         // B14：同时吊销该用户全部 HTTP 会话，旧 JSESSIONID 再请求即 401

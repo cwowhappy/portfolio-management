@@ -12,6 +12,7 @@ import com.portfolio.invest.domain.research.Review;
 import com.portfolio.invest.domain.research.ReviewRepository;
 import com.portfolio.invest.domain.research.ReviewTier;
 import com.portfolio.invest.support.PostgresTestSupport;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
@@ -60,7 +61,7 @@ class ReviewFeedbackRepositoryImplTest {
                 "INSERT INTO app_user(username, password_hash, role, status) VALUES (?, 'x', 'USER', 'APPROVED') RETURNING id",
                 Long.class, "review_" + System.nanoTime());
         ResearchProject project = projectRepository.save(ResearchProject.create(
-                user, "600519", "贵州茅台", "801120", "茅台复盘", ResearchStage.REVIEW));
+                user, "600519", "贵州茅台", "801120", "茅台复盘", ResearchStage.REVIEW, Instant.now()));
         return project.id();
     }
 
@@ -71,7 +72,7 @@ class ReviewFeedbackRepositoryImplTest {
         Long projectId = seedProject();
 
         Review inserted = reviewRepository.save(Review.create(projectId, ReviewTier.MONTHLY,
-                START, END, SNAPSHOT, List.of(205L, 103L, 205L)));
+                START, END, SNAPSHOT, List.of(205L, 103L, 205L), Instant.now()));
 
         assertThat(inserted.id()).isNotNull();
         assertThat(inserted.version()).isEqualTo(0L);
@@ -102,12 +103,12 @@ class ReviewFeedbackRepositoryImplTest {
     void givenCorrections_whenSave_thenUpdatedWithFrozenSnapshot() {
         Long projectId = seedProject();
         Review inserted = reviewRepository.save(Review.create(projectId, ReviewTier.MONTHLY,
-                START, END, SNAPSHOT, List.of(103L, 205L)));
+                START, END, SNAPSHOT, List.of(103L, 205L), Instant.now()));
         String frozen = jdbcTemplate.queryForObject(
                 "SELECT auto_snapshot::text FROM research_review WHERE id = ?", String.class, inserted.id());
 
         Review corrected = reviewRepository.save(inserted.correct("{\"q1\":\"追高\"}",
-                "{\"periodReturn\":\"0.06\"}", "事后看止损执行晚了", List.of(7L, 3L, 7L)));
+                "{\"periodReturn\":\"0.06\"}", "事后看止损执行晚了", List.of(7L, 3L, 7L), Instant.now()));
 
         assertThat(corrected.tradeIds()).containsExactly(3L, 7L);
         assertThat(corrected.version()).isEqualTo(1L); // 乐观锁版本递增
@@ -135,11 +136,11 @@ class ReviewFeedbackRepositoryImplTest {
     void givenReviews_whenRefluxAndList_thenStatePersistedAndOrdered() {
         Long projectId = seedProject();
         Review february = reviewRepository.save(Review.create(projectId, ReviewTier.MONTHLY,
-                START, END, SNAPSHOT, List.of()));
+                START, END, SNAPSHOT, List.of(), Instant.now()));
         Review march = reviewRepository.save(Review.create(projectId, ReviewTier.MONTHLY,
-                LocalDate.of(2026, 3, 1), LocalDate.of(2026, 3, 31), SNAPSHOT, List.of()));
+                LocalDate.of(2026, 3, 1), LocalDate.of(2026, 3, 31), SNAPSHOT, List.of(), Instant.now()));
 
-        reviewRepository.save(february.refluxConfirm(501L));
+        reviewRepository.save(february.refluxConfirm(501L, Instant.now()));
 
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT reflux_state FROM research_review WHERE id = ?", String.class, february.id()))
@@ -160,10 +161,10 @@ class ReviewFeedbackRepositoryImplTest {
     void givenFeedback_whenInsert_thenRowRoundTrip() {
         Long projectId = seedProject();
         Review review = reviewRepository.save(Review.create(projectId, ReviewTier.QUARTERLY,
-                LocalDate.of(2026, 1, 1), LocalDate.of(2026, 3, 31), SNAPSHOT, List.of()));
+                LocalDate.of(2026, 1, 1), LocalDate.of(2026, 3, 31), SNAPSHOT, List.of(), Instant.now()));
 
         ResearchFeedback inserted = feedbackRepository.insert(ResearchFeedback.create(
-                projectId, review.id(), ResearchStage.REVIEW, "月度模板建议增加仓位口径维度"));
+                projectId, review.id(), ResearchStage.REVIEW, "月度模板建议增加仓位口径维度", Instant.now()));
 
         assertThat(inserted.id()).isNotNull();
         assertThat(jdbcTemplate.queryForObject(
@@ -173,7 +174,7 @@ class ReviewFeedbackRepositoryImplTest {
         // review_id FK：无关联复盘行时拒插（约束兜底，用例层前置校验不至此）
         org.assertj.core.api.Assertions.assertThatThrownBy(() ->
                         feedbackRepository.insert(ResearchFeedback.create(projectId, 99999999L,
-                                ResearchStage.STRATEGY, "孤儿建议")))
+                                ResearchStage.STRATEGY, "孤儿建议", Instant.now())))
                 .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
     }
 }

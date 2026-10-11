@@ -58,4 +58,22 @@ public final class ResearchErrorCode {
     public static final String REFLUX_WIKI_UNAVAILABLE = "REFLUX_WIKI_UNAVAILABLE";
     /** 模板改进建议内容必填（空白或超 1000 字，F16「只收集」留痕最低要求）。 */
     public static final String FEEDBACK_CONTENT_REQUIRED = "FEEDBACK_CONTENT_REQUIRED";
+    /** 研报任务状态迁移非法（MS-32 §3.2：markRunning 非 PENDING / markStage·succeed 非 RUNNING）。 */
+    public static final String TASK_INVALID_STATE = "TASK_INVALID_STATE";
+    /** 研报归属任务缺失（research_report.task_id NOT NULL，domain 先拦）。 */
+    public static final String TASK_REQUIRED = "TASK_REQUIRED";
+    /** 锚点/假设归属研报缺失（report_id NOT NULL，domain 先拦）。 */
+    public static final String REPORT_REQUIRED = "REPORT_REQUIRED";
+    /** 研报正文空白（research_report.content_md NOT NULL，校验门产物必有正文）。 */
+    public static final String REPORT_CONTENT_REQUIRED = "REPORT_CONTENT_REQUIRED";
+    /** 研报拒绝理由必填（MS-32 §3.10：REJECT 必填留痕）。 */
+    public static final String REJECT_REASON_REQUIRED = "REJECT_REASON_REQUIRED";
+    /** 锚点字段非法：snippet 空白 / occ &lt; 1 / state 非 VERIFIED·SOURCED·UNVERIFIED（DB CHECK 兜底，domain 先拦）。 */
+    public static final String ANCHOR_INVALID = "ANCHOR_INVALID";
+    /** 假设字段非法：seq &lt; 1 或 statement 空白（UNIQUE(report_id, seq) 语义 1-based）。 */
+    public static final String ASSUMPTION_INVALID = "ASSUMPTION_INVALID";
+    /** 同项目已有活跃任务（MS-32 §3.2：并发双发起第二个 save 撞 uq_report_task_active 部分唯一索引，HTTP 映射 409）。 */
+    public static final String TASK_ACTIVE_EXISTS = "TASK_ACTIVE_EXISTS";
+    /** 研报确认状态机非法（MS-32 §3.10：非 PENDING_CONFIRM 态 confirm/reject，或并发对手已迁移——CAS 返 0，HTTP 映射 409）。 */
+    public static final String REPORT_INVALID_STATE = "REPORT_INVALID_STATE";
 }

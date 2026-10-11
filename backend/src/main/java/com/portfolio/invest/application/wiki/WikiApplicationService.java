@@ -129,7 +129,8 @@ public class WikiApplicationService {
     @Transactional
     public WikiEntryView updateEntry(Long userId, Long entryId, UpdateWikiEntryCommand cmd) {
         WikiEntry existing = requireEntry(userId, entryId);
-        WikiEntry updated = existing.update(cmd.title().trim(), cmd.content(), cmd.category(), cmd.industryCode());
+        WikiEntry updated = existing.update(cmd.title().trim(), cmd.content(), cmd.category(),
+                cmd.industryCode(), Instant.now());
         return WikiEntryView.from(repository.save(updated));
     }
 

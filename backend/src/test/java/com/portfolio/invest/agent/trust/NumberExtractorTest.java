@@ -1,6 +1,7 @@
 package com.portfolio.invest.agent.trust;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -206,6 +207,65 @@ class NumberExtractorTest {
         assertThat(NumberExtractor.extract(null)).isEmpty();
         assertThat(NumberExtractor.extract("")).isEmpty();
         assertThat(NumberExtractor.extract("纯文字无数字")).isEmpty();
+    }
+
+    // ———— Ruling-12：报告模式（行首列表序号排除）与对话红线对照 ————
+
+    @DisplayName("报告模式：行首 1~2 位序号 + [.．] + 空白（含缩进）→ 保留 token 但非数据性")
+    @Test
+    void givenListNumbering_whenReportExtract_thenMarkerNonData() {
+        List<NumberToken> tokens = NumberExtractor.extract(
+                "## 关键假设\n1. 现价1520.33元具备支撑\n  2．总市值19000亿稳固\n10. 增速25%可持续", true);
+
+        assertThat(tokens).extracting(NumberToken::snippet)
+                .containsExactly("1", "1520.33元", "2", "19000亿", "10", "25%");
+        assertThat(bySnippet(tokens, "1").dataLike()).isFalse();
+        assertThat(bySnippet(tokens, "2").dataLike()).isFalse();
+        assertThat(bySnippet(tokens, "10").dataLike()).isFalse();
+        assertThat(bySnippet(tokens, "1520.33元").dataLike()).isTrue();
+        assertThat(bySnippet(tokens, "19000亿").dataLike()).isTrue();
+        assertThat(bySnippet(tokens, "25%").dataLike()).isTrue();
+    }
+
+    @DisplayName("报告模式守卫：行首小数（1.5元）、行中数字、点后无空白（1.假设）不属序号，保持数据性")
+    @Test
+    void givenNonMarkerShapes_whenReportExtract_thenStillDataLike() {
+        List<NumberToken> tokens = NumberExtractor.extract(
+                "1.5元的差价，现价15.20元\n现价1.假设形态", true);
+
+        assertThat(bySnippet(tokens, "1.5元").dataLike()).isTrue();
+        assertThat(bySnippet(tokens, "15.20元").dataLike()).isTrue();
+        assertThat(bySnippet(tokens, "1").dataLike())
+                .as("点号后无空白：裁定口径要求 \\s，保守不排除")
+                .isTrue();
+    }
+
+    @DisplayName("报告模式 occ：序号 token 保留且计数不变——同 snippet 后续行中出现仍数据性、occ 连续")
+    @Test
+    void givenMarkerAndRepeatOcc_whenReportExtract_thenOccCountingUnchanged() {
+        List<NumberToken> tokens = NumberExtractor.extract("1. 假设回调1次可承受", true);
+
+        assertThat(tokens).extracting(NumberToken::snippet).containsExactly("1", "1");
+        assertThat(tokens.get(0).dataLike()).isFalse();
+        assertThat(tokens.get(1).dataLike()).isTrue();
+        assertThat(tokens.get(0).occ()).isEqualTo(1);
+        assertThat(tokens.get(1).occ()).isEqualTo(2);
+    }
+
+    @DisplayName("对话红线：默认模式与现行为逐字段一致——行首序号仍为数据性 token（Ruling-12 零变更要求）")
+    @Test
+    void givenListNumbering_whenDefaultExtract_thenBehaviorUnchanged() {
+        String text = "1. 现价1520.33元具备支撑\n  2．总市值19000亿稳固\n10. 增速25%可持续";
+
+        assertThat(NumberExtractor.extract(text))
+                .extracting(NumberToken::snippet, NumberToken::dataLike, NumberToken::occ)
+                .containsExactly(
+                        tuple("1", true, 1),
+                        tuple("1520.33元", true, 1),
+                        tuple("2", true, 1),
+                        tuple("19000亿", true, 1),
+                        tuple("10", true, 1),
+                        tuple("25%", true, 1));
     }
 
     private static NumberToken bySnippet(List<NumberToken> tokens, String snippet) {

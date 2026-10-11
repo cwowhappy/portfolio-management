@@ -33,7 +33,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
  *
  * <p>子进程库经调度器 EVAL_DATASOURCE_* 注入指向本测试的共享容器（独立 schema 每轮重置，
  * 不碰 public 业务 schema）；@AfterAll 自清 eval_schema 与回流行（Task 3 共享容器教训：
- * 残留会让无 schema 限定的表计数测试双份失败、29 项快照断言被 EVAL_RUBRIC 行撑破）。
+ * 残留会让无 schema 限定的表计数测试双份失败、31 项快照断言被 EVAL_RUBRIC 行撑破）。
  */
 @SpringBootTest
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)

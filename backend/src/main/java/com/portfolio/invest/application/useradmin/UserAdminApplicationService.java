@@ -10,11 +10,14 @@ import com.portfolio.invest.domain.user.UserException;
 import com.portfolio.invest.domain.user.UserRepository;
 import com.portfolio.invest.domain.user.UserRole;
 import com.portfolio.invest.domain.user.UserSessionRegistry;
+import java.time.Clock;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -24,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class UserAdminApplicationService {
 
     private static final Logger log = LoggerFactory.getLogger(UserAdminApplicationService.class);
+    private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
@@ -32,12 +36,25 @@ public class UserAdminApplicationService {
     private final EmailCodeService emailCodeService;
     private final MailSender mailSender;
     private final ApplicationEventPublisher publisher;
+    private final Clock clock;
 
+    /** 主构造器（@Autowired：存在测试专用重载构造器时需显式指定注入入口）。 */
+    @Autowired
     public UserAdminApplicationService(UserRepository userRepository, PasswordEncoder passwordEncoder,
                                        RememberMeTokenStore rememberMeTokenStore,
                                        UserSessionRegistry userSessionRegistry,
                                        EmailCodeService emailCodeService, MailSender mailSender,
                                        ApplicationEventPublisher publisher) {
+        this(userRepository, passwordEncoder, rememberMeTokenStore, userSessionRegistry,
+                emailCodeService, mailSender, publisher, Clock.system(ZONE));
+    }
+
+    /** 测试构造器：注入时钟（账号时间戳确定性断言）。 */
+    UserAdminApplicationService(UserRepository userRepository, PasswordEncoder passwordEncoder,
+                                RememberMeTokenStore rememberMeTokenStore,
+                                UserSessionRegistry userSessionRegistry,
+                                EmailCodeService emailCodeService, MailSender mailSender,
+                                ApplicationEventPublisher publisher, Clock clock) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.rememberMeTokenStore = rememberMeTokenStore;
@@ -45,6 +62,7 @@ public class UserAdminApplicationService {
         this.emailCodeService = emailCodeService;
         this.mailSender = mailSender;
         this.publisher = publisher;
+        this.clock = clock;
     }
 
     public List<UserAdminView> list() {
@@ -53,28 +71,28 @@ public class UserAdminApplicationService {
 
     @Transactional
     public UserAdminView approve(Long id) {
-        return mutate(id, User::approve);
+        return mutate(id, u -> u.approve(clock.instant()));
     }
 
     @Transactional
     public UserAdminView reject(Long id) {
-        return mutate(id, User::reject);
+        return mutate(id, u -> u.reject(clock.instant()));
     }
 
     @Transactional
     public UserAdminView enable(Long id) {
-        return mutate(id, User::enable);
+        return mutate(id, u -> u.enable(clock.instant()));
     }
 
     @Transactional
     public UserAdminView disable(Long id) {
-        return mutate(id, User::disable);
+        return mutate(id, u -> u.disable(clock.instant()));
     }
 
     @Transactional
     public UserAdminView resetPassword(Long id, String newPassword) {
         PasswordPolicy.validate(newPassword);
-        UserAdminView view = mutate(id, u -> u.withPassword(passwordEncoder.encode(newPassword)));
+        UserAdminView view = mutate(id, u -> u.withPassword(passwordEncoder.encode(newPassword), clock.instant()));
         // 密码已换，该用户所有 remember-me 令牌必须失效，否则旧令牌仍可免密登录
         rememberMeTokenStore.removeUserTokens(view.username());
         // B14：同时吊销该用户全部 HTTP 会话，旧 JSESSIONID 再请求即 401
@@ -96,7 +114,7 @@ public class UserAdminApplicationService {
             return UserAdminView.from(target);
         }
         emailCodeService.assertEmailAvailable(normalized);
-        UserAdminView view = mutate(id, u -> u.bindEmail(normalized));
+        UserAdminView view = mutate(id, u -> u.bindEmail(normalized, clock.instant()));
         try {
             mailSender.send(view.email(), "九和投资邮箱绑定通知",
                     "管理员已将本邮箱绑定至九和投资账号 " + view.username() + "。此后可通过本邮箱自助重置密码。若非本人知晓，请联系管理员。");

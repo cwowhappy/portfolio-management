@@ -65,11 +65,11 @@ class AllocationPlanTest {
     @Test
     void whenRenameAndUpdateWeights_thenReturnNewInstance() {
         var p = AllocationPlan.create(1L, "平衡", PlanSource.TEMPLATE, weights60_40(), Instant.now());
-        var renamed = p.rename("稳健");
+        var renamed = p.rename("稳健", Instant.now());
         assertThat(renamed.name()).isEqualTo("稳健");
         assertThat(p.name()).isEqualTo("平衡"); // 原实例不变
         var updated = renamed.updateWeights(Map.of(AssetClass.STOCK, new BigDecimal("40"),
-                AssetClass.BOND, new BigDecimal("60")));
+                AssetClass.BOND, new BigDecimal("60")), Instant.now());
         assertThat(updated.weights().get(AssetClass.BOND)).isEqualByComparingTo("60");
     }
 
@@ -77,8 +77,8 @@ class AllocationPlanTest {
     @Test
     void whenActivateAndDeactivate_thenToggleActiveState() {
         var p = AllocationPlan.create(1L, "平衡", PlanSource.CUSTOM, weights60_40(), Instant.now());
-        assertThat(p.activate().active()).isTrue();
-        assertThat(p.activate().deactivate().active()).isFalse();
+        assertThat(p.activate(Instant.now()).active()).isTrue();
+        assertThat(p.activate(Instant.now()).deactivate(Instant.now()).active()).isFalse();
     }
 
     @DisplayName("创建方案默认频率 OFF，显式频率可指定")
@@ -99,8 +99,8 @@ class AllocationPlanTest {
         Instant t0 = Instant.parse("2026-06-01T00:00:00Z");
         var p = AllocationPlan.reconstitute(10L, 1L, "平衡", PlanSource.CUSTOM, weights60_40(),
                 true, t0, t0, null, RebalanceFrequency.QUARTERLY, t0);
-        // activate() 内部取 now()，断言锚点被重置为非 t0 的更晚时间
-        var activated = p.activate();
+        // activate 以调用方传入的 now 重置锚点，断言锚点被重置为非 t0 的更晚时间
+        var activated = p.activate(Instant.now());
         assertThat(activated.lastRebalancedAt()).isAfter(t0);
     }
 
@@ -123,7 +123,7 @@ class AllocationPlanTest {
         var p = AllocationPlan.reconstitute(10L, 1L, "平衡", PlanSource.CUSTOM, weights60_40(),
                 true, anchor, anchor, null, RebalanceFrequency.OFF, anchor);
         var edited = p.updateWeights(Map.of(AssetClass.STOCK, new BigDecimal("40"),
-                AssetClass.BOND, new BigDecimal("60")));
+                AssetClass.BOND, new BigDecimal("60")), Instant.now());
         assertThat(edited.lastRebalancedAt()).isEqualTo(anchor);
     }
 
@@ -133,7 +133,7 @@ class AllocationPlanTest {
         Instant anchor = Instant.parse("2026-06-01T00:00:00Z");
         var p = AllocationPlan.reconstitute(10L, 1L, "平衡", PlanSource.CUSTOM, weights60_40(),
                 true, anchor, anchor, null, RebalanceFrequency.OFF, anchor);
-        var updated = p.withFrequency(RebalanceFrequency.QUARTERLY);
+        var updated = p.withFrequency(RebalanceFrequency.QUARTERLY, Instant.now());
         assertThat(updated.rebalanceFrequency()).isEqualTo(RebalanceFrequency.QUARTERLY);
         assertThat(updated.lastRebalancedAt()).isEqualTo(anchor);
         assertThat(updated.weights()).isEqualTo(p.weights());

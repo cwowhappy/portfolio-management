@@ -97,7 +97,7 @@ class JournalEntryRepositoryImplTest extends PostgresTestSupport {
         JournalEntry saved = repository.save(buyMemo(51L));
         repository.save(saved.update("600519", "贵州茅台", 99L, "新标题", "新内容",
                 new BigDecimal("2000"), new BigDecimal("1600"), null, null, null,
-                LocalDate.of(2026, 9, 3)));
+                LocalDate.of(2026, 9, 3), Instant.now()));
 
         var found = repository.findByIdAndUserId(saved.id(), 51L).orElseThrow();
         assertThat(found.title()).isEqualTo("新标题");

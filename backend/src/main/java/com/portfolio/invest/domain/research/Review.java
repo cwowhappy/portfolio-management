@@ -56,7 +56,7 @@ public final class Review {
 
     /** 新建复盘：快照定格 + trade_ids 去重排序；answers/overrides 空、回流 PENDING。 */
     public static Review create(Long projectId, ReviewTier tier, LocalDate periodStart, LocalDate periodEnd,
-                                String snapshotJson, List<Long> tradeIds) {
+                                String snapshotJson, List<Long> tradeIds, Instant now) {
         if (projectId == null) {
             throw new ResearchException(ResearchErrorCode.PROJECT_REQUIRED, "归属项目不能为空");
         }
@@ -70,7 +70,6 @@ public final class Review {
         if (snapshotJson == null || snapshotJson.isBlank()) {
             throw new ResearchException(ResearchErrorCode.SNAPSHOT_REQUIRED, "复盘快照不能为空");
         }
-        Instant now = Instant.now();
         return new Review(null, projectId, tier, periodStart, periodEnd, snapshotJson,
                 null, null, null, normalize(tradeIds), RefluxState.PENDING, null, null, now, now);
     }
@@ -88,13 +87,13 @@ public final class Review {
     }
 
     /** 作答与覆盖整组落（MS-24 弹性字段集 JSON 直存）：变更返新，快照与圈选不动。 */
-    public Review applyAnswers(String answersJson, String overridesJson) {
+    public Review applyAnswers(String answersJson, String overridesJson, Instant now) {
         if (answersJson == null || answersJson.isBlank()) {
             throw new ResearchException(ResearchErrorCode.ANSWERS_REQUIRED, "复盘作答不能为空");
         }
         return new Review(id, projectId, tier, periodStart, periodEnd, snapshotJson,
                 answersJson, narrative, overridesJson, tradeIds, refluxState, wikiEntryId,
-                version, createdAt, Instant.now());
+                version, createdAt, now);
     }
 
     /**
@@ -103,20 +102,21 @@ public final class Review {
      * REFLOWN 后修正叙述不回写已建 wiki 条目，宽容放行由调用方口径决定）；
      * trade_ids 与 {@link #create} 共用 {@link #normalize} 收敛点（Review Focus 5）。
      */
-    public Review correct(String answersJson, String overridesJson, String narrative, List<Long> tradeIds) {
+    public Review correct(String answersJson, String overridesJson, String narrative, List<Long> tradeIds,
+                          Instant now) {
         if (answersJson == null || answersJson.isBlank()) {
             throw new ResearchException(ResearchErrorCode.ANSWERS_REQUIRED, "复盘作答不能为空");
         }
         return new Review(id, projectId, tier, periodStart, periodEnd, snapshotJson,
                 answersJson, narrative, overridesJson, normalize(tradeIds), refluxState, wikiEntryId,
-                version, createdAt, Instant.now());
+                version, createdAt, now);
     }
 
     /**
      * 确认回流（F16 用户确认后入库）：置 REFLOWN 并记 wiki 条目；REFLOWN 态幂等返回
      * 原实例——既有 entryId 优先，重复确认（即使携带不同条目 id）不重复建条目（Review Focus 4）。
      */
-    public Review refluxConfirm(Long wikiEntryId) {
+    public Review refluxConfirm(Long wikiEntryId, Instant now) {
         if (refluxState == RefluxState.REFLOWN) {
             return this;
         }
@@ -125,7 +125,7 @@ public final class Review {
         }
         return new Review(id, projectId, tier, periodStart, periodEnd, snapshotJson,
                 answersJson, narrative, overridesJson, tradeIds, RefluxState.REFLOWN, wikiEntryId,
-                version, createdAt, Instant.now());
+                version, createdAt, now);
     }
 
     /** trade_ids 收敛：null 容忍为空、去重升序（Review Focus 5）。 */

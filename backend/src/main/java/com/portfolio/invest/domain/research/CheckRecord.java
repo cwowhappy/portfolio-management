@@ -36,7 +36,7 @@ public final class CheckRecord {
 
     /** 新建留痕：检查项快照至少一条；OVERRIDDEN 必填理由，CONFIRMED 理由置 null。 */
     public static CheckRecord create(Long projectId, CheckType checkType, List<CheckItemResult> items,
-                                     CheckResult result, String overrideReason) {
+                                     CheckResult result, String overrideReason, Instant now) {
         if (projectId == null) {
             throw new ResearchException(ResearchErrorCode.PROJECT_REQUIRED, "归属项目不能为空");
         }
@@ -59,7 +59,7 @@ public final class CheckRecord {
             }
             reason = overrideReason;
         }
-        return new CheckRecord(null, projectId, checkType, List.copyOf(items), result, reason, Instant.now());
+        return new CheckRecord(null, projectId, checkType, List.copyOf(items), result, reason, now);
     }
 
     /** 持久化还原（JPA 转换器用，不做校验）。 */

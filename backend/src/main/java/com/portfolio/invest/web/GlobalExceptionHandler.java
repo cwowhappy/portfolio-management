@@ -173,9 +173,24 @@ public class GlobalExceptionHandler {
                     -> HttpStatus.UNPROCESSABLE_CONTENT;
             // F16 回流降级：wiki 写异常不阻断复盘（reflux_state 回 PENDING），502 提示可重试
             case ResearchErrorCode.REFLUX_WIKI_UNAVAILABLE -> HttpStatus.BAD_GATEWAY;
+            // MS-32 B13：并发双发起撞 uq_report_task_active / 确认状态机非 PENDING_CONFIRM
+            //（含 CAS 并发对手）→ 409；REJECT_REASON_REQUIRED 等走 default 400（B2 Minor-4 优先序）
+            case ResearchErrorCode.TASK_ACTIVE_EXISTS, ResearchErrorCode.REPORT_INVALID_STATE
+                    -> HttpStatus.CONFLICT;
             default -> HttpStatus.BAD_REQUEST;
         };
         return ResponseEntity.status(status).body(new ApiError(e.code(), e.getMessage()));
+    }
+
+    /**
+     * 当日研报 token 配额耗尽（MS-32 B13，设计规格 §3.9/§3.12）→ 402，remaining（钳 0 后
+     * 当日余量）随体透出供发起响应/前端提示条展示（B10 异常、B11 移交登记）。
+     */
+    @ExceptionHandler(com.portfolio.invest.application.research.ReportQuotaExceededException.class)
+    public ResponseEntity<ReportQuotaError> reportQuotaExceeded(
+            com.portfolio.invest.application.research.ReportQuotaExceededException e) {
+        return ResponseEntity.status(HttpStatus.PAYMENT_REQUIRED)
+                .body(new ReportQuotaError("REPORT_QUOTA_EXCEEDED", e.getMessage(), e.getRemaining()));
     }
 
     /**

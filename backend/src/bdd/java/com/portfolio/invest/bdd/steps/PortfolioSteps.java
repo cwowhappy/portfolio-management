@@ -76,7 +76,7 @@ public class PortfolioSteps {
         String code = TestCodes.extractSixDigits(mailStub.sent.get(mailStub.sent.size() - 1).text());
         authService.register(new RegisterCommand(username, "abc12345", email, code));
         var user = userRepository.findByUsername(username).orElseThrow();
-        var approved = userRepository.save(user.approve());
+        var approved = userRepository.save(user.approve(java.time.Instant.now()));
         ctx.setUsername(username);
         ctx.setUserId(approved.id());
     }

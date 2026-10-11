@@ -58,9 +58,9 @@ public class AllocationApplicationService {
     @Transactional
     public PlanView updatePlan(Long userId, Long planId, UpdatePlanCommand cmd) {
         AllocationPlan plan = requirePlan(userId, planId)
-                .rename(cmd.name().trim())
-                .updateWeights(toWeights(cmd.weights()))
-                .withFrequency(normalizeFrequency(cmd.rebalanceFrequency()));
+                .rename(cmd.name().trim(), Instant.now())
+                .updateWeights(toWeights(cmd.weights()), Instant.now())
+                .withFrequency(normalizeFrequency(cmd.rebalanceFrequency()), Instant.now());
         return PlanView.from(repository.save(plan));
     }
 
@@ -69,7 +69,7 @@ public class AllocationApplicationService {
         AllocationPlan plan = requirePlan(userId, planId);
         repository.deactivateAllByUserId(userId);
         try {
-            return PlanView.from(repository.save(plan.activate()));
+            return PlanView.from(repository.save(plan.activate(Instant.now())));
         } catch (org.springframework.dao.DataIntegrityViolationException e) {
             // B6：并发激活撞每用户唯一生效索引（deactivate→activate 竞态窗口），DB 兜底转译 409（照 PrincipleRule 先例）
             throw new AllocationException(AllocationErrorCode.CONFLICT, "方案已在别处激活，请刷新");

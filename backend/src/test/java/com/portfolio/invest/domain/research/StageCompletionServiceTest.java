@@ -11,7 +11,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class StageCompletionServiceTest {
 
     private static ResearchProject projectAt(ResearchStage stage) {
-        return ResearchProject.create(1L, "600519", "贵州茅台", null, "茅台研究", stage);
+        return ResearchProject.create(1L, "600519", "贵州茅台", null, "茅台研究", stage,
+                java.time.Instant.now());
     }
 
     /** 四阶段产物齐套（POSITION 需 2 件，其余各 1 件）。 */

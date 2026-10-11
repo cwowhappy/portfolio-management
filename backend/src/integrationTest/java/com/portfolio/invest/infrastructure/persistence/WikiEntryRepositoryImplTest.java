@@ -71,7 +71,7 @@ class WikiEntryRepositoryImplTest {
         assertThat(repository.findByIdAndUserId(saved1.id(), user + 1)).isEmpty();
 
         // update 语义：改标题重新 save，updatedAt 变化（version 乐观锁由 JPA @Version 维护）
-        WikiEntry updated = repository.save(saved1.update("护城河（修订）", "解释2", "质量", null));
+        WikiEntry updated = repository.save(saved1.update("护城河（修订）", "解释2", "质量", null, Instant.now()));
         assertThat(updated.title()).isEqualTo("护城河（修订）");
 
         repository.deleteById(saved2.id());

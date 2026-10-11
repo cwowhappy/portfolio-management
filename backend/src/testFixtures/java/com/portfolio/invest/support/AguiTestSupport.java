@@ -11,6 +11,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.portfolio.invest.domain.user.User;
 import com.portfolio.invest.domain.user.UserRepository;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -116,7 +117,7 @@ public final class AguiTestSupport {
             MockMvc mockMvc, UserRepository userRepository, String username) throws Exception {
         String password = "abc12345";
         String hash = new BCryptPasswordEncoder().encode(password);
-        userRepository.save(User.register(username, hash).approve());
+        userRepository.save(User.register(username, hash, Instant.now()).approve(Instant.now()));
 
         var login = mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)

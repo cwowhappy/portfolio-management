@@ -3,13 +3,16 @@ package com.portfolio.invest.domain.user;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.time.Instant;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 class UserTest {
 
+    private static final Instant NOW = Instant.parse("2026-09-28T08:00:00Z");
+
     private static User newUser() {
-        return User.register("alice", "hash");
+        return User.register("alice", "hash", NOW);
     }
 
     @DisplayName("注册初始为PENDING_USER")
@@ -25,15 +28,15 @@ class UserTest {
     @DisplayName("审核通过后可登录")
     @Test
     void givenApprovedUser_whenCanLogin_thenTrue() {
-        assertThat(newUser().approve().canLogin()).isTrue();
+        assertThat(newUser().approve(NOW).canLogin()).isTrue();
     }
 
     @DisplayName("被拒后重新注册恢复PENDING")
     @Test
     void givenRejectedUser_whenReRegister_thenResetToPending() {
-        User rejected = newUser().reject();
+        User rejected = newUser().reject(NOW);
         assertThat(rejected.status()).isEqualTo(UserStatus.REJECTED);
-        User re = rejected.reRegister("newhash");
+        User re = rejected.reRegister("newhash", NOW);
         assertThat(re.status()).isEqualTo(UserStatus.PENDING);
         assertThat(re.passwordHash()).isEqualTo("newhash");
     }
@@ -41,21 +44,21 @@ class UserTest {
     @DisplayName("停用后不可登录且再启用可恢复")
     @Test
     void givenApprovedUser_whenDisableThenEnable_thenLoginAbilityRecovers() {
-        assertThat(newUser().approve().disable().canLogin()).isFalse();
-        assertThat(newUser().approve().disable().enable().canLogin()).isTrue();
+        assertThat(newUser().approve(NOW).disable(NOW).canLogin()).isFalse();
+        assertThat(newUser().approve(NOW).disable(NOW).enable(NOW).canLogin()).isTrue();
     }
 
     @DisplayName("对非PENDING用户审核抛异常")
     @Test
     void givenNonPendingUser_whenApprove_thenThrow() {
-        assertThatThrownBy(() -> newUser().approve().approve())
+        assertThatThrownBy(() -> newUser().approve(NOW).approve(NOW))
                 .isInstanceOf(UserException.class).hasMessageContaining("状态");
     }
 
     @DisplayName("注册携带邮箱则邮箱已验证")
     @Test
     void givenEmail_whenRegister_thenEmailVerified() {
-        User u = User.register("alice", "hash", "alice@example.com");
+        User u = User.register("alice", "hash", "alice@example.com", NOW);
         assertThat(u.email()).isEqualTo("alice@example.com");
         assertThat(u.emailVerified()).isTrue();
         assertThat(u.status()).isEqualTo(UserStatus.PENDING);
@@ -64,7 +67,7 @@ class UserTest {
     @DisplayName("旧签名注册无邮箱未验证")
     @Test
     void givenNoEmail_whenRegisterTwoArg_thenEmailNullUnverified() {
-        User u = User.register("alice", "hash");
+        User u = User.register("alice", "hash", NOW);
         assertThat(u.email()).isNull();
         assertThat(u.emailVerified()).isFalse();
     }
@@ -72,7 +75,7 @@ class UserTest {
     @DisplayName("绑定邮箱即已验证")
     @Test
     void givenAnyUser_whenBindEmail_thenVerified() {
-        User u = User.register("alice", "hash").approve().bindEmail("a@x.com");
+        User u = User.register("alice", "hash", NOW).approve(NOW).bindEmail("a@x.com", NOW);
         assertThat(u.email()).isEqualTo("a@x.com");
         assertThat(u.emailVerified()).isTrue();
     }
@@ -80,7 +83,8 @@ class UserTest {
     @DisplayName("被拒用户重注册可携带新邮箱")
     @Test
     void givenRejectedUser_whenReRegisterWithEmail_thenPendingAndVerified() {
-        User u = User.register("alice", "hash", "old@x.com").reject().reRegister("hash2", "new@x.com");
+        User u = User.register("alice", "hash", "old@x.com", NOW).reject(NOW)
+                .reRegister("hash2", "new@x.com", NOW);
         assertThat(u.status()).isEqualTo(UserStatus.PENDING);
         assertThat(u.email()).isEqualTo("new@x.com");
         assertThat(u.emailVerified()).isTrue();

@@ -17,7 +17,7 @@ class ReviewTest {
 
     private static Review created() {
         return Review.create(1L, ReviewTier.MONTHLY, START, END,
-                "{\"periodReturn\":0.05}", List.of(3L, 5L));
+                "{\"periodReturn\":0.05}", List.of(3L, 5L), Instant.now());
     }
 
     // ---- create：创建即定格 ----
@@ -46,7 +46,8 @@ class ReviewTest {
     @DisplayName("create 缺项目抛 PROJECT_REQUIRED")
     @Test
     void givenNullProject_whenCreate_thenThrowProjectRequired() {
-        assertThatThrownBy(() -> Review.create(null, ReviewTier.MONTHLY, START, END, "{}", List.of()))
+        assertThatThrownBy(() -> Review.create(null, ReviewTier.MONTHLY, START, END, "{}", List.of(),
+                Instant.now()))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.PROJECT_REQUIRED));
     }
@@ -54,7 +55,7 @@ class ReviewTest {
     @DisplayName("create 缺档位抛 TIER_REQUIRED")
     @Test
     void givenNullTier_whenCreate_thenThrowTierRequired() {
-        assertThatThrownBy(() -> Review.create(1L, null, START, END, "{}", List.of()))
+        assertThatThrownBy(() -> Review.create(1L, null, START, END, "{}", List.of(), Instant.now()))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.TIER_REQUIRED));
     }
@@ -62,7 +63,8 @@ class ReviewTest {
     @DisplayName("create 区间倒置抛 REVIEW_PERIOD_INVALID")
     @Test
     void givenReversedPeriod_whenCreate_thenThrowPeriodInvalid() {
-        assertThatThrownBy(() -> Review.create(1L, ReviewTier.QUARTERLY, END, START, "{}", List.of()))
+        assertThatThrownBy(() -> Review.create(1L, ReviewTier.QUARTERLY, END, START, "{}", List.of(),
+                Instant.now()))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.REVIEW_PERIOD_INVALID));
     }
@@ -70,7 +72,8 @@ class ReviewTest {
     @DisplayName("create 区间缺起止抛 REVIEW_PERIOD_INVALID")
     @Test
     void givenNullPeriod_whenCreate_thenThrowPeriodInvalid() {
-        assertThatThrownBy(() -> Review.create(1L, ReviewTier.WEEKLY, null, END, "{}", List.of()))
+        assertThatThrownBy(() -> Review.create(1L, ReviewTier.WEEKLY, null, END, "{}", List.of(),
+                Instant.now()))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.REVIEW_PERIOD_INVALID));
     }
@@ -78,7 +81,8 @@ class ReviewTest {
     @DisplayName("create 快照空白抛 SNAPSHOT_REQUIRED（创建即定格，不允许无快照复盘）")
     @Test
     void givenBlankSnapshot_whenCreate_thenThrowSnapshotRequired() {
-        assertThatThrownBy(() -> Review.create(1L, ReviewTier.MONTHLY, START, END, "  ", List.of()))
+        assertThatThrownBy(() -> Review.create(1L, ReviewTier.MONTHLY, START, END, "  ", List.of(),
+                Instant.now()))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.SNAPSHOT_REQUIRED));
     }
@@ -87,7 +91,7 @@ class ReviewTest {
     @Test
     void givenDuplicatedUnsortedTradeIds_whenCreate_thenDedupSorted() {
         Review review = Review.create(1L, ReviewTier.MONTHLY, START, END, "{}",
-                List.of(7L, 3L, 7L, 5L, 3L));
+                List.of(7L, 3L, 7L, 5L, 3L), Instant.now());
 
         assertThat(review.tradeIds()).containsExactly(3L, 5L, 7L);
     }
@@ -95,7 +99,7 @@ class ReviewTest {
     @DisplayName("create trade_ids 缺省容忍为空列表")
     @Test
     void givenNullTradeIds_whenCreate_thenEmptyList() {
-        Review review = Review.create(1L, ReviewTier.MONTHLY, START, END, "{}", null);
+        Review review = Review.create(1L, ReviewTier.MONTHLY, START, END, "{}", null, Instant.now());
 
         assertThat(review.tradeIds()).isEmpty();
     }
@@ -107,7 +111,8 @@ class ReviewTest {
     void givenAnswers_whenApplyAnswers_thenNewInstanceAndSnapshotUntouched() {
         Review origin = created();
 
-        Review answered = origin.applyAnswers("{\"q1\":\"追高\"}", "{\"periodReturn\":\"0.06\"}");
+        Review answered = origin.applyAnswers("{\"q1\":\"追高\"}", "{\"periodReturn\":\"0.06\"}",
+                Instant.now());
 
         assertThat(answered).isNotSameAs(origin);
         assertThat(answered.answersJson()).isEqualTo("{\"q1\":\"追高\"}");
@@ -126,7 +131,7 @@ class ReviewTest {
     void givenBlankAnswers_whenApplyAnswers_thenThrowAnswersRequired() {
         Review review = created();
 
-        assertThatThrownBy(() -> review.applyAnswers(" ", null))
+        assertThatThrownBy(() -> review.applyAnswers(" ", null, Instant.now()))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.ANSWERS_REQUIRED));
     }
@@ -139,7 +144,7 @@ class ReviewTest {
         Review origin = created();
 
         Review corrected = origin.correct("{\"q1\":\"追高\"}", "{\"periodReturn\":\"0.06\"}",
-                "事后看止损执行晚了", List.of(7L, 3L, 7L, 5L, 3L));
+                "事后看止损执行晚了", List.of(7L, 3L, 7L, 5L, 3L), Instant.now());
 
         assertThat(corrected).isNotSameAs(origin);
         assertThat(corrected.answersJson()).isEqualTo("{\"q1\":\"追高\"}");
@@ -157,7 +162,7 @@ class ReviewTest {
     @DisplayName("correct trade_ids 缺省容忍为空列表（清空圈选）")
     @Test
     void givenNullTradeIds_whenCorrect_thenEmptyList() {
-        Review corrected = created().correct("{\"q1\":\"追高\"}", null, null, null);
+        Review corrected = created().correct("{\"q1\":\"追高\"}", null, null, null, Instant.now());
 
         assertThat(corrected.tradeIds()).isEmpty();
         assertThat(corrected.overridesJson()).isNull();
@@ -167,7 +172,7 @@ class ReviewTest {
     @DisplayName("correct 作答空白抛 ANSWERS_REQUIRED")
     @Test
     void givenBlankAnswers_whenCorrect_thenThrowAnswersRequired() {
-        assertThatThrownBy(() -> created().correct("  ", null, null, List.of()))
+        assertThatThrownBy(() -> created().correct("  ", null, null, List.of(), Instant.now()))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.ANSWERS_REQUIRED));
     }
@@ -175,9 +180,9 @@ class ReviewTest {
     @DisplayName("correct REFLOWN 态仍可修正叙述（宽容，快照/回流状态/条目不动）")
     @Test
     void givenRefowned_whenCorrect_thenNarrativeReplacedButRefluxUntouched() {
-        Review refowned = created().refluxConfirm(100L);
+        Review refowned = created().refluxConfirm(100L, Instant.now());
 
-        Review corrected = refowned.correct("{\"q1\":\"ok\"}", null, "补充叙述", null);
+        Review corrected = refowned.correct("{\"q1\":\"ok\"}", null, "补充叙述", null, Instant.now());
 
         assertThat(corrected.refluxState()).isEqualTo(RefluxState.REFLOWN);
         assertThat(corrected.wikiEntryId()).isEqualTo(100L);
@@ -191,7 +196,7 @@ class ReviewTest {
     void givenPending_whenRefluxConfirm_thenRefownWithEntryId() {
         Review review = created();
 
-        Review refowned = review.refluxConfirm(100L);
+        Review refowned = review.refluxConfirm(100L, Instant.now());
 
         assertThat(refowned.refluxState()).isEqualTo(RefluxState.REFLOWN);
         assertThat(refowned.wikiEntryId()).isEqualTo(100L);
@@ -203,9 +208,9 @@ class ReviewTest {
     @DisplayName("refluxConfirm 二次调用幂等返回既有 entryId（传入不同 id 也不覆盖，Focus 4）")
     @Test
     void givenRefowned_whenRefluxConfirmAgain_thenIdempotentKeepsExistingEntry() {
-        Review refowned = created().refluxConfirm(100L);
+        Review refowned = created().refluxConfirm(100L, Instant.now());
 
-        Review again = refowned.refluxConfirm(999L);
+        Review again = refowned.refluxConfirm(999L, Instant.now());
 
         assertThat(again).isSameAs(refowned);
         assertThat(again.refluxState()).isEqualTo(RefluxState.REFLOWN);
@@ -217,7 +222,7 @@ class ReviewTest {
     void givenNullWikiEntry_whenRefluxConfirm_thenThrowWikiEntryRequired() {
         Review review = created();
 
-        assertThatThrownBy(() -> review.refluxConfirm(null))
+        assertThatThrownBy(() -> review.refluxConfirm(null, Instant.now()))
                 .isInstanceOfSatisfying(ResearchException.class,
                         e -> assertThat(e.code()).isEqualTo(ResearchErrorCode.WIKI_ENTRY_REQUIRED));
     }
@@ -259,7 +264,7 @@ class ReviewTest {
                 null, null, "{}", null, List.of(), RefluxState.CONFIRMED, null, 0L,
                 Instant.parse("2026-03-01T00:00:00Z"), Instant.parse("2026-03-01T00:00:00Z"));
 
-        Review refowned = confirmed.refluxConfirm(55L);
+        Review refowned = confirmed.refluxConfirm(55L, Instant.now());
 
         assertThat(refowned.refluxState()).isEqualTo(RefluxState.REFLOWN);
         assertThat(refowned.wikiEntryId()).isEqualTo(55L);

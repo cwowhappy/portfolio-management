@@ -75,26 +75,25 @@ public final class AllocationPlan {
                 rebalanceFrequency, lastRebalancedAt, version);
     }
 
-    public AllocationPlan rename(String newName) {
-        return new AllocationPlan(id, userId, newName, source, weights, active, createdAt, Instant.now(),
+    public AllocationPlan rename(String newName, Instant now) {
+        return new AllocationPlan(id, userId, newName, source, weights, active, createdAt, now,
                 rebalanceFrequency, lastRebalancedAt, version);
     }
 
-    public AllocationPlan updateWeights(Map<AssetClass, BigDecimal> newWeights) {
+    public AllocationPlan updateWeights(Map<AssetClass, BigDecimal> newWeights, Instant now) {
         validateWeights(newWeights);
-        return new AllocationPlan(id, userId, name, source, newWeights, active, createdAt, Instant.now(),
+        return new AllocationPlan(id, userId, name, source, newWeights, active, createdAt, now,
                 rebalanceFrequency, lastRebalancedAt, version);
     }
 
     /** 激活即视为一次配置确认：锚点随之重置（时间提醒不从旧锚点起算）。 */
-    public AllocationPlan activate() {
-        Instant now = Instant.now();
+    public AllocationPlan activate(Instant now) {
         return new AllocationPlan(id, userId, name, source, weights, true, createdAt, now,
                 rebalanceFrequency, now, version);
     }
 
-    public AllocationPlan deactivate() {
-        return new AllocationPlan(id, userId, name, source, weights, false, createdAt, Instant.now(),
+    public AllocationPlan deactivate(Instant now) {
+        return new AllocationPlan(id, userId, name, source, weights, false, createdAt, now,
                 rebalanceFrequency, lastRebalancedAt, version);
     }
 
@@ -104,8 +103,8 @@ public final class AllocationPlan {
                 rebalanceFrequency, now, version);
     }
 
-    public AllocationPlan withFrequency(RebalanceFrequency newFrequency) {
-        return new AllocationPlan(id, userId, name, source, weights, active, createdAt, Instant.now(),
+    public AllocationPlan withFrequency(RebalanceFrequency newFrequency, Instant now) {
+        return new AllocationPlan(id, userId, name, source, weights, active, createdAt, now,
                 newFrequency, lastRebalancedAt, version);
     }
 

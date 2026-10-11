@@ -10,11 +10,14 @@ import com.portfolio.invest.config.InvestProperties;
 import com.portfolio.invest.domain.memory.ProfileSectionRenderer;
 import com.portfolio.invest.domain.memory.UserProfileConfig;
 import com.portfolio.invest.domain.memory.UserProfileConfigRepository;
+import java.time.Clock;
+import java.time.ZoneId;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
@@ -40,6 +43,7 @@ public class ProfileConfigApplicationService {
     public static final String KEY_HOLDINGS = "holdings";
 
     private static final Logger log = LoggerFactory.getLogger(ProfileConfigApplicationService.class);
+    private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
 
     private final UserProfileConfigRepository repository;
     private final AllocationApplicationService allocationService;
@@ -47,7 +51,10 @@ public class ProfileConfigApplicationService {
     private final WatchlistApplicationService watchlistService;
     private final PortfolioApplicationService portfolioService;
     private final int watchlistLimit;
+    private final Clock clock;
 
+    /** 主构造器（@Autowired：存在测试专用重载构造器时需显式指定注入入口）。 */
+    @Autowired
     public ProfileConfigApplicationService(
             UserProfileConfigRepository repository,
             AllocationApplicationService allocationService,
@@ -55,6 +62,18 @@ public class ProfileConfigApplicationService {
             WatchlistApplicationService watchlistService,
             PortfolioApplicationService portfolioService,
             InvestProperties props) {
+        this(repository, allocationService, industryWatchService, watchlistService,
+                portfolioService, props, Clock.system(ZONE));
+    }
+
+    /** 测试构造器：注入时钟（updated_at 确定性断言）。 */
+    ProfileConfigApplicationService(
+            UserProfileConfigRepository repository,
+            AllocationApplicationService allocationService,
+            IndustryWatchApplicationService industryWatchService,
+            WatchlistApplicationService watchlistService,
+            PortfolioApplicationService portfolioService,
+            InvestProperties props, Clock clock) {
         this.repository = repository;
         this.allocationService = allocationService;
         this.industryWatchService = industryWatchService;
@@ -63,6 +82,7 @@ public class ProfileConfigApplicationService {
         // MS-31 B5：换注入 InvestProperties（getProfile().getWatchlistLimit()，缺省 30 同前）
         //——消除与 B5 注入侧 builder 的双机制同键漂移面（预览/注入同一配置源）
         this.watchlistLimit = props.getProfile().getWatchlistLimit();
+        this.clock = clock;
     }
 
     /** 四开关；无配置行 = 全关。 */
@@ -76,8 +96,8 @@ public class ProfileConfigApplicationService {
     /** 全量保存四开关（upsert）：无行以 {@link UserProfileConfig#defaults} 起步。 */
     public void save(Long userId, boolean style, boolean industry, boolean watchlist, boolean holdings) {
         UserProfileConfig current = repository.findByUserId(userId)
-                .orElseGet(() -> UserProfileConfig.defaults(userId));
-        repository.save(current.update(style, industry, watchlist, holdings));
+                .orElseGet(() -> UserProfileConfig.defaults(userId, clock.instant()));
+        repository.save(current.update(style, industry, watchlist, holdings, clock.instant()));
     }
 
     /** 四段预览（段值 = {@link ProfileSectionRenderer} 直出；失败/为空段 null）。 */

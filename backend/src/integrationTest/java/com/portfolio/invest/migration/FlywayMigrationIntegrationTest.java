@@ -33,7 +33,8 @@ class FlywayMigrationIntegrationTest extends PostgresTestSupport {
         // V5：MS-30 评测/观测四表（eval_run / prompt_asset_version / tool_invocation_obs / turn_observation）
         // V6：MS-30 跟进② eval_run 增 track 列（对话/抽取两轨区分，存量回填 AGENT）
         // V7：MS-31 记忆与画像两表（user_profile_config / memory_digest_cursor）
-        assertThat(versions).containsExactly("1", "2", "3", "4", "5", "6", "7");
+        // V8：MS-32 深度研究工作流（research_report_task 等研报四表 + report_token_quota）
+        assertThat(versions).containsExactly("1", "2", "3", "4", "5", "6", "7", "8");
 
         Integer failed = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM flyway_schema_history WHERE success = false", Integer.class);
