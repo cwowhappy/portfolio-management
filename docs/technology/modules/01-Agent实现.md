@@ -213,3 +213,27 @@ invest:
 | 回灌重建 | `RuntimeProvider.tsx:89` `rebuildTrustFromHistory` | F5：回灌成功同点位把 GET 侧 assistant payload 经 `parseTrustPayload` 入 `store.rebuild`（整表替换 + 修正台账随清——回灌 content 已含后端改写，occ 基线须重开）；user / 非法 JSON / schema 不符 / v≠1 行级跳过不炸整批；空历史全清（切会话语义，store 不残留上一会话）；回灌失败不 rebuild；旧消息无 payload → 角标自然降级不报错 |
 
 真浏览器验收：`e2e/trust-provenance.spec.ts`（F6）。
+
+## 8. 记忆管理与画像注入（memory-personalization，MS-31）
+
+长期记忆此前由 harness 库单向落盘（§3 的 `memory` 行：FlushTrigger 节流写工作区文件），对用户不可见不可管；MS-31 补上**管理链**（可见/可编/可删）与**授权注入链**（画像进系统提示），机制全貌见 [特性设计规格](../../../features/memory-personalization/02-设计规格/设计规格说明.md)，功能口径见 [18-记忆与用户个性化](../../function/modules/18-记忆与用户个性化.md)。
+
+### 8.1 记忆文件模型与管理链
+
+- **文件模型**：`<workspace>/<userId>/MEMORY.md`（策展层，harness consolidation 的沉淀层）+ `memory/yyyy-MM-dd.md`（当期日账本，flush 节 `## Memory Flush — <ts>` 与外部事件节 `## 外部事件摘要 — …`）；archive/ 与 `.consolidation_state` 不碰（单一写入者契约不破）。
+- **端口与适配器**：`application/memory/WorkspaceMemoryPort`（技术 IO 端口，沿 IntelligenceChatPort 先例）→ `infrastructure/workspace/WorkspaceMemoryFileAdapter`。适配器三要点：**单次读快照**（hash 与行同源）+ **三层乐观并发校验**（整文件 sha-256 → 409；lineIndex/行内容漂移 → 410；`# ` 标题行只读 → 400，`GlobalExceptionHandler` 映射）+ **原子写**（同目录 temp + `ATOMIC_MOVE`，防与库 consolidation 读交错产出半文件）。
+- **删除两层同步**（决议 #2）：删策展层行后跨全部日账本清除归一化同源 bullet 行（strip + 全角→半角 + 连续空白折叠后互为子串、行体 ≥12 字符），如实计数回传 `purgedLedgerLines`——「策展层不复活」硬保证 /「日账本尽力清除」软保证（残余由用户节级手删兜底）。
+- **REST**：`/api/memory/**` 六端点（全视图/删·编策展行/删日账本节/画像配置读写），本人隔离按认证 userId 寻址（见 [03-接口设计.md](03-接口设计.md)）。
+
+### 8.2 画像注入链（F02）
+
+- **授权配置**：`user_profile_config` 单行四列（style/industry/watchlist/holdings），无行 = 全关（opt-in）；预览与开关同刻一次拉取（`GET /api/memory/profile-config`）。
+- **渲染单源**：`domain/memory/ProfileSectionRenderer` 纯函数——预览（`ProfileConfigApplicationService`）与注入（`agent/ProfileContextBuilder`）双方消费同一函数，「所见即所注入」由同代码路径保证；数字从 `PortfolioOverviewView` 字段 `toPlainString()` 直出不二次计算。
+- **注入点**：`HarnessAgentFactory.build` 的 sysPrompt 拼接——`InvestSystemPrompt.TEXT + "\n\n" + <user_profile> 画像块`（AG-UI 与飞书 `HarnessAgentInvoker` 两调用方同走 build，飞书同权自动成立）；**授权全关/全无数据/渲染整体失败 → 画像块缺位，sysPrompt 与现状逐字节一致**（回归红线，`HarnessAgentFactoryTest` 字节比对焊死）。逐段独立 try/catch：单段失败省略该段不拖垮整块；自选段截断 `invest.profile.watchlist-limit`（30）、整块限长 `invest.profile.block-max-chars`（800）。
+- **护栏**：`InvestSystemPrompt` 条款 11 扩展——工具返回的用户私有数据 + 注入画像禁止作为参数传给任何 MCP 工具（验收抽检通道：`tool_invocation_obs` args JSONB）；模板骨架登记版本资产 `system.invest.profile`（`ToolkitPromptAssetCollector`，实际注入内容 DB 派生不入版本链）。
+
+### 8.3 事件驱动记忆（F03）
+
+`MemoryDigestScheduler`（cron `0 7 21 * * *` Asia/Shanghai 字面量；`invest.profile.digest-enabled` 开关；无 `DEEPSEEK_API_KEY` 静默跳过）逐 enabled 用户：journal timeline 窗口事件 → 复用 `IntelligenceChatPort`（系统 key，失败/无 key 返回 empty 跳批）摘要 ≤5 条 bullet → `appendExternalEvent` 写当日账本「外部事件摘要」节（文件不存在则创建）。全局单行游标 `memory_digest_cursor`（V7 seed id=1）：**批执行完成即推进**（批首 now 一次取定贯穿窗口止/节头/游标）。单用户失败 WARN 跳过**不重试该窗口**——游标已推进到批时刻，次日窗口自批时刻起，其当日事件不再覆盖（损失该用户当日摘要）；at-least-once 仅对批级失败成立（全批顶层异常/环境前置门不推进游标，次日窗口扩大自动覆盖）。
+
+测试锚：BDD 中文两场景（`features/memory/memory.feature`：删除不复活 / 授权后模型上下文含画像段——BDD 假 Model 录制判读）；e2e `e2e/memory.spec.ts`（fs 直种工作区真浏览器）。

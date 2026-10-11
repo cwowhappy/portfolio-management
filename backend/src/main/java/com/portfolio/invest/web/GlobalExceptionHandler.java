@@ -236,6 +236,45 @@ public class GlobalExceptionHandler {
                 .body(new ApiError("EVAL_TRIGGER_UNAVAILABLE", e.getMessage()));
     }
 
+    /**
+     * 记忆管理链乐观并发三层校验（MS-31 B3，设计规格 §2.3）：hash 冲突 409（提示刷新重试）/
+     * 行·节漂移 410 / 命中只读标题行 400。
+     */
+    @ExceptionHandler(com.portfolio.invest.application.memory.MemoryConflictException.class)
+    public ResponseEntity<ApiError> memoryConflict(
+            com.portfolio.invest.application.memory.MemoryConflictException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ApiError("MEMORY_CONFLICT", e.getMessage()));
+    }
+
+    @ExceptionHandler(com.portfolio.invest.application.memory.MemoryStaleException.class)
+    public ResponseEntity<ApiError> memoryStale(
+            com.portfolio.invest.application.memory.MemoryStaleException e) {
+        return ResponseEntity.status(HttpStatus.GONE)
+                .body(new ApiError("MEMORY_STALE", e.getMessage()));
+    }
+
+    @ExceptionHandler(com.portfolio.invest.application.memory.MemoryReadOnlyException.class)
+    public ResponseEntity<ApiError> memoryReadOnly(
+            com.portfolio.invest.application.memory.MemoryReadOnlyException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(new ApiError("MEMORY_READ_ONLY", e.getMessage()));
+    }
+
+    /**
+     * 文件 IO 失败 → 503（MS-31 终审 F-1）：{@code WorkspaceMemoryFileAdapter} 以
+     * {@link java.io.UncheckedIOException} 抛出记忆文件读/写/删失败，而
+     * {@code WorkspaceMemoryPort} javadoc 与设计规格 §2.2 均承诺「IO 异常 → 503 语义」
+     * ——缺此 handler 会落 500 兜底，违背契约。wiki 预置资源解析失败同落此兜底
+     * （同为服务端文件层暂不可用，可重试语义）。
+     */
+    @ExceptionHandler(java.io.UncheckedIOException.class)
+    public ResponseEntity<ApiError> uncheckedIo(java.io.UncheckedIOException e) {
+        log.warn("文件 IO 失败: {}", e.getMessage());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(new ApiError("SERVICE_UNAVAILABLE", "存储服务暂不可用，请稍后重试"));
+    }
+
     @ExceptionHandler(com.portfolio.invest.domain.valuation.ValuationException.class)
     public ResponseEntity<ApiError> valuation(com.portfolio.invest.domain.valuation.ValuationException e) {
         HttpStatus status = switch (e.code()) {

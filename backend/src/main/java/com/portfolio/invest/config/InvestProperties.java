@@ -21,6 +21,7 @@ public class InvestProperties {
     private Intelligence intelligence = new Intelligence();
     private Trust trust = new Trust();
     private Eval eval = new Eval();
+    private Profile profile = new Profile();
 
     public Llm getLlm() {
         return llm;
@@ -108,6 +109,14 @@ public class InvestProperties {
 
     public void setEval(Eval eval) {
         this.eval = eval;
+    }
+
+    public Profile getProfile() {
+        return profile;
+    }
+
+    public void setProfile(Profile profile) {
+        this.profile = profile;
     }
 
     public static class Llm {
@@ -589,6 +598,23 @@ public class InvestProperties {
             public double getUnitPriceCnyPerMtok() { return unitPriceCnyPerMtok; }
             public void setUnitPriceCnyPerMtok(double unitPriceCnyPerMtok) { this.unitPriceCnyPerMtok = unitPriceCnyPerMtok; }
         }
+    }
+
+    /** 记忆与画像（MS-31，设计规格 §3.6）：画像注入限长两参数 + F03 每日摘要开关。 */
+    public static class Profile {
+        /** 注入的自选股条目上限（预览与注入同一上限，超限 renderer 截断附「共 N 只，前 M」）。 */
+        private int watchlistLimit = 30;
+        /** 画像块整块截断阈值（字符），渲染后超限截断并附「（已截断）」。 */
+        private int blockMaxChars = 800;
+        /** F03 每日摘要总开关（false = 调度器静默跳过）。 */
+        private boolean digestEnabled = true;
+
+        public int getWatchlistLimit() { return watchlistLimit; }
+        public void setWatchlistLimit(int watchlistLimit) { this.watchlistLimit = watchlistLimit; }
+        public int getBlockMaxChars() { return blockMaxChars; }
+        public void setBlockMaxChars(int blockMaxChars) { this.blockMaxChars = blockMaxChars; }
+        public boolean isDigestEnabled() { return digestEnabled; }
+        public void setDigestEnabled(boolean digestEnabled) { this.digestEnabled = digestEnabled; }
     }
 
     /** SMTP 发信（M01-F06，阿里云企业邮箱）。空值 = 未启用，发信入口返回「系统未配置邮件服务」。 */

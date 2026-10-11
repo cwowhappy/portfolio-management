@@ -17,6 +17,8 @@ DELETE FROM journal_entry    WHERE user_id IN (SELECT id FROM app_user WHERE use
 DELETE FROM portfolio        WHERE user_id IN (SELECT id FROM app_user WHERE username LIKE 'e2e\_%');
 DELETE FROM mcp_user_config  WHERE user_id IN (SELECT id FROM app_user WHERE username LIKE 'e2e\_%');
 DELETE FROM skill_user_config WHERE user_id IN (SELECT id FROM app_user WHERE username LIKE 'e2e\_%');
+-- MS-31 记忆与画像：user_profile_config 按 user 归属；memory_digest_cursor 全局单行无 user 归属不登记
+DELETE FROM user_profile_config WHERE user_id IN (SELECT id FROM app_user WHERE username LIKE 'e2e\_%');
 DELETE FROM watchlist_item   WHERE user_id IN (SELECT id FROM app_user WHERE username LIKE 'e2e\_%');
 DELETE FROM industry_watch   WHERE user_id IN (SELECT id FROM app_user WHERE username LIKE 'e2e\_%');
 DELETE FROM wiki_entry       WHERE user_id IN (SELECT id FROM app_user WHERE username LIKE 'e2e\_%');

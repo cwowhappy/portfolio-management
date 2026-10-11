@@ -15,6 +15,7 @@ import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
 import io.cucumber.spring.CucumberContextConfiguration;
 import java.util.List;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -104,8 +105,20 @@ public class CucumberSpringConfig extends PostgresTestSupport {
 
         public static final String REPLY = "这是测试环境的固定投研回复。";
 
+        /**
+         * 单次 stream() 调用快照（messages 与 tools 成对留存，只录不改，回复语义不变），
+         * 供画像注入场景（MS-31）判读模型实际收到的系统提示——与 integrationTest 的
+         * {@code AguiStreamIntegrationTest.FixedReplyModel} 同方案；场景开始前由
+         * {@code MemorySteps} 的 Before 钩子清零。
+         */
+        public record ModelCall(List<Msg> messages, List<ToolSchema> tools) {}
+
+        /** 跨场景累积的调用录制（场景开始前 clear）；并发结构，agent 异步线程写、步骤线程读。 */
+        public static final ConcurrentLinkedQueue<ModelCall> RECORDED_CALLS = new ConcurrentLinkedQueue<>();
+
         @Override
         public Flux<ChatResponse> stream(List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            RECORDED_CALLS.add(new ModelCall(List.copyOf(messages), tools));
             return Flux.just(ChatResponse.builder()
                     .id("fake-completion-1")
                     .content(List.of(TextBlock.builder().text(REPLY).build()))

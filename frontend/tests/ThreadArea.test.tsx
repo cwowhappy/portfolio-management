@@ -456,6 +456,37 @@ describe("ThreadArea", () => {
     expect(putCalls).toHaveLength(2);
   });
 
+  // P3-⑦：保存失败不再静默（console 吞）——非 409 的 PUT 失败在会话区渲染可见错误条，可手动关闭
+  it("PUT 非冲突失败（413）：渲染「会话保存失败」错误条且可关闭", async () => {
+    const base = installConversationsApi({
+      list: [{ id: "t1", title: "会话", updatedAt: 2 }],
+      messages: { t1: [] },
+    });
+    const inner = base.fetchMock;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        if (/\/messages$/.test(String(input)) && init?.method === "PUT") {
+          return new Response(JSON.stringify({ message: "payload too large" }), {
+            status: 413,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return inner(input, init);
+      }),
+    );
+    mocks.agent.messages = [agentMessage({ id: "u1", role: "user", content: "超长消息" })];
+    renderThread();
+    const bar = await screen.findByTestId("persist-error");
+    expect(bar.textContent).toContain("会话保存失败");
+    expect(bar.textContent).toContain("内容过长");
+    // 可消失：关闭按钮
+    fireEvent.click(screen.getByRole("button", { name: "关闭保存失败提示" }));
+    await waitFor(() => expect(screen.queryByTestId("persist-error")).toBeNull());
+    // 本地消息不丢（仅提示失败，不清消息流）
+    expect(screen.getByText("超长消息")).toBeTruthy();
+  });
+
   it("持久化前先快照消息，避免 await 期间切线程串写", async () => {
     // 自定义 mock：第一次 GET /messages（历史回灌）立即返回空；第二次（持久化的 loadMessages）挂起，
     // 以此模拟 await 窗口内 agent.messages 被切线程替换的竞态。

@@ -42,12 +42,12 @@ class AllocationPlanRepositoryImplTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
-    /** allocation_plan.user_id 外键引用 app_user(id)，需先植入 id=42 的用户行以匹配测试内的 create(42L, ...)。 */
+    /** allocation_plan.user_id 外键引用 app_user(id)，需先植入 id=94043 的用户行以匹配测试内的 create(94043L, ...)。 */
     @BeforeEach
     void seedUsers() {
         jdbcTemplate.update(
                 "INSERT INTO app_user(id, username, password_hash, role, status) VALUES (?, ?, ?, ?, ?)",
-                42L, "alloc-t6-42", "h", "USER", "PENDING");
+                94043L, "alloc-t6-94043", "h", "USER", "PENDING");
     }
 
     private static Map<AssetClass, BigDecimal> w60_40() {
@@ -58,10 +58,10 @@ class AllocationPlanRepositoryImplTest {
     @Test
     void whenSaveAndReadBack_thenWeightsPreserved() {
         AllocationPlan saved = repository.save(
-                AllocationPlan.create(42L, "平衡", PlanSource.CUSTOM, w60_40(), Instant.now()));
+                AllocationPlan.create(94043L, "平衡", PlanSource.CUSTOM, w60_40(), Instant.now()));
 
         assertThat(saved.id()).isNotNull();
-        var found = repository.findByIdAndUserId(saved.id(), 42L).orElseThrow();
+        var found = repository.findByIdAndUserId(saved.id(), 94043L).orElseThrow();
         assertThat(found.name()).isEqualTo("平衡");
         assertThat(found.weights().get(AssetClass.STOCK)).isEqualByComparingTo("60");
         assertThat(found.weights().get(AssetClass.BOND)).isEqualByComparingTo("40");
@@ -71,11 +71,11 @@ class AllocationPlanRepositoryImplTest {
     @Test
     void givenSavedPlan_whenUpdateWeights_thenOldWeightsReplaced() {
         AllocationPlan saved = repository.save(
-                AllocationPlan.create(42L, "平衡", PlanSource.CUSTOM, w60_40(), Instant.now()));
+                AllocationPlan.create(94043L, "平衡", PlanSource.CUSTOM, w60_40(), Instant.now()));
         repository.save(saved.updateWeights(Map.of(
                 AssetClass.STOCK, new BigDecimal("40"), AssetClass.BOND, new BigDecimal("60"))));
 
-        var found = repository.findByIdAndUserId(saved.id(), 42L).orElseThrow();
+        var found = repository.findByIdAndUserId(saved.id(), 94043L).orElseThrow();
         assertThat(found.weights().get(AssetClass.STOCK)).isEqualByComparingTo("40");
         assertThat(found.weights().get(AssetClass.BOND)).isEqualByComparingTo("60");
         assertThat(found.weights()).hasSize(2);
@@ -84,19 +84,19 @@ class AllocationPlanRepositoryImplTest {
     @DisplayName("激活唯一性由用例层维护本层仅查询")
     @Test
     void givenTwoSavedPlans_whenFindByUserId_thenBothReturned() {
-        repository.save(AllocationPlan.create(42L, "A", PlanSource.CUSTOM, w60_40(), Instant.now()));
-        repository.save(AllocationPlan.create(42L, "B", PlanSource.CUSTOM, w60_40(), Instant.now()));
+        repository.save(AllocationPlan.create(94043L, "A", PlanSource.CUSTOM, w60_40(), Instant.now()));
+        repository.save(AllocationPlan.create(94043L, "B", PlanSource.CUSTOM, w60_40(), Instant.now()));
         // 本层不做唯一性约束；deactivateAllByUserId + 再 save(activate) 的编排在应用层（P2）验证。
-        assertThat(repository.findByUserId(42L)).hasSize(2);
+        assertThat(repository.findByUserId(94043L)).hasSize(2);
     }
 
     @DisplayName("删除方案级联删除权重")
     @Test
     void givenSavedPlan_whenDeleteById_thenCascadesWeights() {
         AllocationPlan saved = repository.save(
-                AllocationPlan.create(42L, "平衡", PlanSource.CUSTOM, w60_40(), Instant.now()));
+                AllocationPlan.create(94043L, "平衡", PlanSource.CUSTOM, w60_40(), Instant.now()));
         repository.deleteById(saved.id());
-        assertThat(repository.findByIdAndUserId(saved.id(), 42L)).isEmpty();
+        assertThat(repository.findByIdAndUserId(saved.id(), 94043L)).isEmpty();
     }
 
     /**
@@ -112,19 +112,19 @@ class AllocationPlanRepositoryImplTest {
     @Test
     void givenPlanAlreadyActive_whenActivateAgain_thenDbKeepsSingleActive() {
         AllocationPlan saved = repository.save(
-                AllocationPlan.create(42L, "A", PlanSource.CUSTOM, w60_40(), Instant.now()));
+                AllocationPlan.create(94043L, "A", PlanSource.CUSTOM, w60_40(), Instant.now()));
         repository.save(saved.activate());
         AllocationPlan other = repository.save(
-                AllocationPlan.create(42L, "B", PlanSource.CUSTOM, w60_40(), Instant.now()));
+                AllocationPlan.create(94043L, "B", PlanSource.CUSTOM, w60_40(), Instant.now()));
         assertThat(other.active()).isFalse();
 
-        // 复现 service.activatePlan(42L, saved.id()) 的调用序列
-        AllocationPlan loaded = repository.findByIdAndUserId(saved.id(), 42L).orElseThrow();
+        // 复现 service.activatePlan(94043L, saved.id()) 的调用序列
+        AllocationPlan loaded = repository.findByIdAndUserId(saved.id(), 94043L).orElseThrow();
         assertThat(loaded.active()).isTrue();
-        repository.deactivateAllByUserId(42L);
+        repository.deactivateAllByUserId(94043L);
         repository.save(loaded);
 
-        AllocationPlan active = repository.findActiveByUserId(42L).orElseThrow();
+        AllocationPlan active = repository.findActiveByUserId(94043L).orElseThrow();
         assertThat(active.id()).isEqualTo(saved.id());
     }
 }

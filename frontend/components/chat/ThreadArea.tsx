@@ -395,7 +395,8 @@ function isUnauthorizedError(e: unknown): boolean {
 export default function ThreadArea({ llmReady, onUnauthorized }: {
   llmReady: boolean | null; onUnauthorized?: () => void;
 }) {
-  const { currentThreadId, persistMessages, setRunning, newThread } = useChatRuntime();
+  const { currentThreadId, persistMessages, persistError, dismissPersistError, setRunning, newThread } =
+    useChatRuntime();
   const { agent, isReady } = useAgent({
     agentId: AGENT_ID,
     updates: AGENT_UPDATES,
@@ -727,6 +728,21 @@ export default function ThreadArea({ llmReady, onUnauthorized }: {
             <button
               onClick={() => setSendError(null)}
               aria-label="关闭错误提示"
+              className="ml-3 text-[color:var(--color-ink-faint)] hover:text-[color:var(--color-ink)]"
+            >
+              ✕
+            </button>
+          </p>
+        </div>
+      )}
+      {/* 保存失败错误条（P3-⑦）：非 409 的持久化失败不再静默；可手动关闭，下次保存成功自动清除 */}
+      {persistError && (
+        <div className="mx-auto w-full max-w-[860px] px-5 pb-2" data-testid="persist-error">
+          <p className="flex items-center justify-between rounded-lg border border-[color:var(--color-accent)]/40 bg-[color:var(--color-panel)] px-4 py-2.5 text-[13px] text-[color:var(--color-accent)]">
+            <span>{persistError}</span>
+            <button
+              onClick={dismissPersistError}
+              aria-label="关闭保存失败提示"
               className="ml-3 text-[color:var(--color-ink-faint)] hover:text-[color:var(--color-ink)]"
             >
               ✕

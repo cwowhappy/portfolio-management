@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { importCsv, templateHref } from "@/lib/portfolioImportApi";
 import type { ImportResult } from "@/lib/types";
 import { useSaveAction } from "@/lib/useSaveAction";
+import { useDialogA11y } from "@/lib/useDialogA11y";
 
 /**
  * CSV 批量导入对话框：选文件 → multipart 上传，结果三态——
@@ -15,6 +16,16 @@ export default function ImportDialog({ onImported }: { onImported: () => void })
   const [file, setFile] = useState<File | null>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
   const { saving, error, setError, run, reset } = useSaveAction("导入失败");
+  // 终审 F-2：Escape 关闭（saving 在途不关，与取消按钮同口径）+ 初始焦点 + 焦点返还 + Tab 圈定。
+  // 本组件常驻、浮层条件渲染（{open && …}）——传 open 作为 active
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const onOverlayKeyDown = useDialogA11y(
+    overlayRef,
+    () => {
+      if (!saving) setOpen(false);
+    },
+    open,
+  );
 
   const openDialog = () => {
     setFile(null);
@@ -47,6 +58,12 @@ export default function ImportDialog({ onImported }: { onImported: () => void })
       </button>
       {open && (
         <div data-testid="import-dialog"
+          ref={overlayRef}
+          tabIndex={-1}
+          role="dialog"
+          aria-modal="true"
+          aria-label="批量导入持仓"
+          onKeyDown={onOverlayKeyDown}
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
           onClick={(e) => { if (e.target === e.currentTarget && !saving) setOpen(false); }}>
           <div className="w-full max-w-xl rounded-2xl border border-[color:var(--color-line)] bg-[color:var(--color-bg)] p-5 space-y-3">

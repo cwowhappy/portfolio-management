@@ -71,6 +71,7 @@ test.describe("会话持久化", () => {
     const nonCurrent = page.locator("aside li:not(:has(button[aria-current]))").first();
     await expect(nonCurrent).toBeVisible();
     await nonCurrent.hover();
+    page.once("dialog", (d) => d.accept()); // F4 起删除会话带 window.confirm，接受后方可删除
     await nonCurrent.getByRole("button", { name: "删除会话" }).click();
     await expect(page.locator("aside li")).toHaveCount(1, { timeout: 15_000 });
   });

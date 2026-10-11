@@ -19,9 +19,10 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.stereotype.Component;
 
 /**
- * 提示词版本登记（MS-30 B3，设计规格 §4.1/§4.2）：启动时对 main 四类资产（系统提示词 1 +
- * @Tool 描述 16 + SKILL 全文 6 + 情报 prompt 4——LEAD_SYSTEM_PROMPT 改 public 后含第 4 项，
- * 共 27 项）逐项 hash 对账入 prompt_asset_version。幂等：同 (asset_type, asset_key,
+ * 提示词版本登记（MS-30 B3，设计规格 §4.1/§4.2）：启动时对 main 四类资产（系统提示词 3
+ * ——MS-31 B5 起 collector 增报 system.invest.profile / digest.memory + @Tool 描述 16 +
+ * SKILL 全文 6 + 情报 prompt 4——LEAD_SYSTEM_PROMPT 改 public 后含第 4 项，
+ * 共 29 项）逐项 hash 对账入 prompt_asset_version。幂等：同 (asset_type, asset_key,
  * content_hash) 命中不增行；内容变更插入 version+1 新行（append-only，旧行保留）。
  *
  * <p>键词表与 eval 侧 EvalAssetHasher 一致（system./tool./skill./intel. 前缀），保证 eval

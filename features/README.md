@@ -67,6 +67,7 @@
 | [code-review-2026-10](code-review-2026-10/) | 跨 MS 工程项（第一批 P1 已交付 2026-10-04 PR #86；第二批 P2 已交付 2026-10-05 PR #93/#94/#95，MS-28 收口） | M14 系统与工程（审查修复，覆盖 M01/M03/M05/M12/M15） | —（纯修复，无新页面） |
 | [trust-provenance](trust-provenance/) | MS-29（已交付 2026-10-06，PR #97 立项 / PR #98 实现） | M17 可信溯源与幻觉治理 | —（对话流内：数字级溯源角标/浮层、修正注记、低置信横幅、disclaimer） |
 | [eval-observability](eval-observability/) | MS-30（已交付 2026-10-10，待 PR） | M14 系统与工程（工程项：eval 三类基准/定时回归告警/提示词版本化/观测看板） | `/admin`（扩展：观测看板四区块） |
+| [memory-personalization](memory-personalization/) | MS-31（🚧 已立项 2026-10-10，需求规格 v1.0） | M18 记忆与用户个性化 | `/settings/memory`（新增：记忆管理+画像授权与预览） |
 
 > 里程碑（MS）定义与进度见 [产品落地计划](../docs/roadmap/2026-08-27-产品落地计划.md)；模块（M）定义与进度看板见 [功能模块概览](../docs/function/00-功能模块概览.md)。
 

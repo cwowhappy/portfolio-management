@@ -12,9 +12,11 @@ import io.agentscope.core.skill.repository.ClasspathSkillRepository;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.HarnessAgent;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -101,6 +103,39 @@ class HarnessAgentFactoryTest {
         return -1;
     }
 
+    @DisplayName("MS-31 B5 回归红线：画像块缺位（授权全关/无数据/异常同路）时 sysPrompt 与现状逐字节一致")
+    @Test
+    void givenEmptyProfileBlock_whenSystemPrompt_thenByteIdenticalToBaseline() throws IOException {
+        UserToolkitFactory toolkitFactory = mock(UserToolkitFactory.class);
+        SkillApplicationService skillApplicationService = mock(SkillApplicationService.class);
+        when(toolkitFactory.build(1L)).thenReturn(new Toolkit());
+        ProfileContextBuilder profileContextBuilder = mock(ProfileContextBuilder.class);
+        when(profileContextBuilder.build(1L)).thenReturn(Optional.empty());
+
+        String prompt = factory(toolkitFactory, skillApplicationService, profileContextBuilder)
+                .systemPrompt(1L);
+
+        // 逐字节口径：UTF-8 字节比对（红线验收 = 与现状完全一致，不容任何空白差异）
+        assertThat(prompt.getBytes(StandardCharsets.UTF_8))
+                .isEqualTo(InvestSystemPrompt.TEXT.getBytes(StandardCharsets.UTF_8));
+    }
+
+    @DisplayName("MS-31 B5：画像块存在时 sysPrompt = TEXT + 空行 + 画像块（拼接序固定）")
+    @Test
+    void givenProfileBlock_whenSystemPrompt_thenTextPlusBlankLineThenBlock() throws IOException {
+        UserToolkitFactory toolkitFactory = mock(UserToolkitFactory.class);
+        SkillApplicationService skillApplicationService = mock(SkillApplicationService.class);
+        when(toolkitFactory.build(1L)).thenReturn(new Toolkit());
+        String block = "<user_profile>\n<risk_profile>平衡型</risk_profile>\n</user_profile>";
+        ProfileContextBuilder profileContextBuilder = mock(ProfileContextBuilder.class);
+        when(profileContextBuilder.build(1L)).thenReturn(Optional.of(block));
+
+        String prompt = factory(toolkitFactory, skillApplicationService, profileContextBuilder)
+                .systemPrompt(1L);
+
+        assertThat(prompt).isEqualTo(InvestSystemPrompt.TEXT + "\n\n" + block);
+    }
+
     /** 真实 InvestProperties（Harness 嵌套 POJO 有默认值），workspace/stateRoot 指向 @TempDir，避免触碰仓库工作目录。 */
     private InvestProperties tempDirProperties() throws IOException {
         // 预建目录：WorkspaceManager 对不存在的 workspace 会告警（测试脚手架，非生产改动）
@@ -115,9 +150,17 @@ class HarnessAgentFactoryTest {
     /** 构造依赖全 mock + 指向 @TempDir 的真实 InvestProperties + 观测端口/ObjectMapper 替身。 */
     private HarnessAgentFactory factory(UserToolkitFactory toolkitFactory,
                                         SkillApplicationService skillApplicationService) throws IOException {
+        return factory(toolkitFactory, skillApplicationService, mock(ProfileContextBuilder.class));
+    }
+
+    /** 同上 + 显式画像构建器（MS-31 B5 注入链断言用；缺省 mock 的 build 返回 empty）。 */
+    private HarnessAgentFactory factory(UserToolkitFactory toolkitFactory,
+                                        SkillApplicationService skillApplicationService,
+                                        ProfileContextBuilder profileContextBuilder) throws IOException {
         return new HarnessAgentFactory(toolkitFactory, skillApplicationService,
                 mock(ClasspathSkillRepository.class), mock(Model.class), tempDirProperties(),
                 mock(com.portfolio.invest.domain.observability.ObservabilityRecorder.class),
-                new com.fasterxml.jackson.databind.ObjectMapper());
+                new com.fasterxml.jackson.databind.ObjectMapper(),
+                profileContextBuilder);
     }
 }

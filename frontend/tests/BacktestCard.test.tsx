@@ -94,4 +94,42 @@ describe("BacktestCard", () => {
     expect(card.textContent).toContain("—");
     expect(screen.getByText(/rf=0 口径/)).toBeTruthy();
   });
+
+  // P3-⑨：结果区窗口值经 WINDOW_OPTIONS 映射标签回显，未知值显式「未识别({raw})」不裸显内部枚举
+  it("窗口值映射标签回显：5Y → 「窗口 5 年」，不再裸显 5Y", async () => {
+    api.fetchBacktest.mockResolvedValue(fixture); // fixture.window = "5Y"
+    render(<BacktestCard />);
+    fireEvent.click(await screen.findByRole("button", { name: "运行回测" }));
+    await screen.findByTestId("backtest-chart");
+    const card = screen.getByTestId("backtest-card");
+    expect(card.textContent).toContain("窗口 5 年");
+    expect(card.textContent).not.toContain("窗口 5Y");
+  });
+
+  it("未知窗口值显式标注：42Y → 「窗口 未识别(42Y)」", async () => {
+    api.fetchBacktest.mockResolvedValue({ ...fixture, window: "42Y" });
+    render(<BacktestCard />);
+    fireEvent.click(await screen.findByRole("button", { name: "运行回测" }));
+    await screen.findByTestId("backtest-chart");
+    expect(screen.getByTestId("backtest-card").textContent).toContain("窗口 未识别(42Y)");
+  });
+
+  // P3-⑨（MS-31 C1 同行收口）：再平衡值经 REBALANCE_OPTIONS 映射标签回显，未知值显式标注不裸显内部枚举
+  it("再平衡值映射标签回显：annual → 「再平衡 年度」，不再裸显 annual", async () => {
+    api.fetchBacktest.mockResolvedValue(fixture); // fixture.rebalance = "annual"
+    render(<BacktestCard />);
+    fireEvent.click(await screen.findByRole("button", { name: "运行回测" }));
+    await screen.findByTestId("backtest-chart");
+    const card = screen.getByTestId("backtest-card");
+    expect(card.textContent).toContain("再平衡 年度");
+    expect(card.textContent).not.toContain("再平衡 annual");
+  });
+
+  it("未知再平衡值显式标注：weekly → 「再平衡 未识别(weekly)」", async () => {
+    api.fetchBacktest.mockResolvedValue({ ...fixture, rebalance: "weekly" });
+    render(<BacktestCard />);
+    fireEvent.click(await screen.findByRole("button", { name: "运行回测" }));
+    await screen.findByTestId("backtest-chart");
+    expect(screen.getByTestId("backtest-card").textContent).toContain("再平衡 未识别(weekly)");
+  });
 });

@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useState } from "react";
 import type { Message } from "@ag-ui/client";
 import {
   AGENT_ID,
@@ -319,6 +320,8 @@ describe("rebuildTrustFromHistory（F5 回灌重建）", () => {
 
 function Probe() {
   const ctx = useChatRuntime();
+  // P3-⑦：409 上抛语义探针——捕获 persistMessages 的 rejection 状态码（非 409 不应 reject）
+  const [putRejection, setPutRejection] = useState("");
   return (
     <div>
       <span data-testid="thread">{ctx.currentThreadId}</span>
@@ -348,6 +351,32 @@ function Probe() {
       >
         再存
       </button>
+      <button data-testid="persist-fail" onClick={() => void ctx.persistMessages("t1", [msg("user", "超长内容")]).catch(() => {})}>
+        存败
+      </button>
+      <button
+        data-testid="persist-keepalive-fail"
+        onClick={() =>
+          void ctx.persistMessages("t1", [msg("user", "超长内容")], { keepalive: true }).catch(() => {})
+        }
+      >
+        存败k
+      </button>
+      <button
+        data-testid="persist-409"
+        onClick={() =>
+          void ctx
+            .persistMessages("t1", [msg("user", "你好")], { ifMatch: "stale-value" })
+            .catch((e: unknown) => setPutRejection(String((e as { status?: number }).status ?? "none")))
+        }
+      >
+        冲
+      </button>
+      <button data-testid="dismiss-persist-error" onClick={ctx.dismissPersistError}>
+        关败
+      </button>
+      <span data-testid="persist-error">{ctx.persistError ?? ""}</span>
+      <span data-testid="put-rejection">{putRejection}</span>
     </div>
   );
 }
@@ -561,5 +590,127 @@ describe("RuntimeProvider", () => {
 
   it("AGENT_ID 为 invest（与后端 agent id 一致）", () => {
     expect(AGENT_ID).toBe("invest");
+  });
+
+  // ———— P3-⑦：保存失败可见（错误条语义），409 语义不变 ————
+
+  /** 仅 PUT /messages 返回指定状态码，其余请求走内存实现 */
+  function failPutWith(status: number, body: unknown) {
+    const api = installConversationsApi({ list: [{ id: "t1", title: "一", updatedAt: 1 }] });
+    const inner = api.fetchMock;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        if (/\/messages$/.test(String(input)) && init?.method === "PUT") {
+          return new Response(JSON.stringify(body), {
+            status,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return inner(input, init);
+      }),
+    );
+    return api;
+  }
+
+  it("保存失败（413）→ persistError 置「会话保存失败（内容过长）」；可手动关闭；下次成功保存自动清除", async () => {
+    const api = failPutWith(413, { message: "payload too large" });
+    render(
+      <RuntimeProvider>
+        <Probe />
+      </RuntimeProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId("thread").textContent).toBe("t1"));
+
+    fireEvent.click(screen.getByTestId("persist-fail"));
+    await waitFor(() =>
+      expect(screen.getByTestId("persist-error").textContent).toContain("会话保存失败（内容过长）"),
+    );
+    expect(screen.getByTestId("persist-error").textContent).toContain("请精简后重试");
+
+    // 可消失：手动关闭
+    fireEvent.click(screen.getByTestId("dismiss-persist-error"));
+    await waitFor(() => expect(screen.getByTestId("persist-error").textContent).toBe(""));
+
+    // 再次失败 → 下次成功保存自动清除
+    fireEvent.click(screen.getByTestId("persist-fail"));
+    await waitFor(() =>
+      expect(screen.getByTestId("persist-error").textContent).toContain("会话保存失败"),
+    );
+    vi.stubGlobal("fetch", api.fetchMock);
+    fireEvent.click(screen.getByTestId("persist-fail"));
+    await waitFor(() => expect(screen.getByTestId("persist-error").textContent).toBe(""));
+    expect(api.state.messages.get("t1")).toContainEqual(
+      expect.objectContaining({ content: "超长内容" }),
+    );
+  });
+
+  it("保存失败（传输层）→ persistError 含原始信息（status=0 路径同可见）", async () => {
+    const api = installConversationsApi({ list: [{ id: "t1", title: "一", updatedAt: 1 }] });
+    const inner = api.fetchMock;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        if (/\/messages$/.test(String(input)) && init?.method === "PUT") {
+          throw new TypeError("Request body exceeds the keepalive limit");
+        }
+        return inner(input, init);
+      }),
+    );
+    render(
+      <RuntimeProvider>
+        <Probe />
+      </RuntimeProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId("thread").textContent).toBe("t1"));
+    fireEvent.click(screen.getByTestId("persist-fail"));
+    await waitFor(() =>
+      expect(screen.getByTestId("persist-error").textContent).toContain("会话保存失败"),
+    );
+    expect(screen.getByTestId("persist-error").textContent).toContain(
+      "Request body exceeds the keepalive limit",
+    );
+  });
+
+  it("保存失败（keepalive 传输层 TypeError）→ 归因为「内容过长」而非裸 Failed to fetch（终审 F-5）", async () => {
+    // keepalive PUT 超 64KB 浏览器配额的主场景：fetch 直接抛 TypeError（status=0），非 413。
+    // 传输层失败 + keepalive 场景归因「内容过长」，兑现设计承诺的精简引导文案
+    const api = installConversationsApi({ list: [{ id: "t1", title: "一", updatedAt: 1 }] });
+    const inner = api.fetchMock;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        if (/\/messages$/.test(String(input)) && init?.method === "PUT") {
+          throw new TypeError("Failed to fetch");
+        }
+        return inner(input, init);
+      }),
+    );
+    render(
+      <RuntimeProvider>
+        <Probe />
+      </RuntimeProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId("thread").textContent).toBe("t1"));
+    fireEvent.click(screen.getByTestId("persist-keepalive-fail"));
+    await waitFor(() =>
+      expect(screen.getByTestId("persist-error").textContent).toContain("会话保存失败（内容过长）"),
+    );
+    expect(screen.getByTestId("persist-error").textContent).toContain("请精简后重试");
+    // 原始英文 TypeError 文案不透出给用户
+    expect(screen.getByTestId("persist-error").textContent).not.toContain("Failed to fetch");
+  });
+
+  it("409 仍向上抛给调用方（flushPersist 重试语义不变），且不置保存失败错误条", async () => {
+    installConversationsApi({ list: [{ id: "t1", title: "一", updatedAt: 1 }] });
+    render(
+      <RuntimeProvider>
+        <Probe />
+      </RuntimeProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId("thread").textContent).toBe("t1"));
+    fireEvent.click(screen.getByTestId("persist-409"));
+    await waitFor(() => expect(screen.getByTestId("put-rejection").textContent).toBe("409"));
+    expect(screen.getByTestId("persist-error").textContent).toBe("");
   });
 });

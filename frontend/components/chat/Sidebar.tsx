@@ -63,7 +63,11 @@ export default function Sidebar({
                     </span>
                   </button>
                   <button
-                    onClick={() => deleteThread(s.id)}
+                    // P3-⑤：破坏性操作先确认（文案照 GroupManager 先例），取消不删
+                    onClick={() => {
+                      if (window.confirm(`确认删除会话「${s.title}」？删除后不可恢复。`))
+                        void deleteThread(s.id);
+                    }}
                     disabled={running}
                     aria-label="删除会话"
                     className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-[color:var(--color-ink-faint)] opacity-0 transition-opacity hover:text-[color:var(--color-up)] group-hover:opacity-100 focus-visible:opacity-100 disabled:cursor-not-allowed disabled:opacity-30"

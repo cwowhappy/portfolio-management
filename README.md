@@ -57,8 +57,8 @@ docker compose up -d db
 make test                     # 后端单元/架构/集成测试（含 ArchUnit 分包规范 + Testcontainers）+ 前端单元测试（vitest）+ collector 测试（pytest）
                               # 覆盖率强制门槛：后端 JaCoCo 指令/分支 ≥ 80%，前端 V8 语句/分支 ≥ 80%，collector pytest ≥ 80%
 make smoke                    # 端到端冒烟（含真实行情接口 + AI 对话）
-cd frontend && pnpm test:e2e  # 浏览器端到端（Playwright，19 份 spec）：导航 / 登录注册（含邮箱验证码/找回密码）/ 行情台 / AI 对话（含聊天图表、HITL 审批）
-                              #   / 用户管理 / 会话持久化 / 估值 / 持仓 / 配置 / 筛选 / 行业 / 投资日志 / 收益分析 / 错误态
+cd frontend && pnpm test:e2e  # 浏览器端到端（Playwright，24 份 spec）：导航 / 登录注册（含邮箱验证码/找回密码）/ 行情台 / AI 对话（含聊天图表、HITL 审批）
+                              #   / 用户管理 / 会话持久化 / 估值 / 持仓 / 配置 / 筛选 / 行业 / 投资日志 / 收益分析 / 记忆与画像 / 错误态
                               #   自动拉起后端+前端（已运行时复用）；AI 用例需配置 DEEPSEEK_API_KEY
 ```
 
@@ -182,6 +182,17 @@ Playwright e2e 位于 `frontend/e2e/`，配置见 `frontend/playwright.config.ts
 | GET | `/api/skills` | 内置 skill 目录 + 我的启用状态 |
 | PUT | `/api/skills/config` | 全量保存我的启用集合（body `{"enabled":["tushare_data"]}`） |
 
+**记忆与画像**（前端经 /api/memory/** 反代，需登录，本人隔离——按当前登录用户寻址，无跨用户对象 id）：
+
+| 端点 | 说明 |
+|---|---|
+| GET /api/memory | 记忆全视图（策展层 MEMORY.md 行级 + 当期日账本 memory/*.md 节级，含各文件 sha-256） |
+| DELETE /api/memory/curated | 删策展层行（body `{lineIndex, expectLine, baseHash}` → `{purgedLedgerLines}`；含日账本同源行归一化清除，409/410 冲突与漂移） |
+| PUT /api/memory/curated | 编辑策展层行（body `{lineIndex, expectLine, newLine, baseHash}`，204） |
+| DELETE /api/memory/ledger/{date} | 删日账本整节（body `{sectionHeader, baseHash}`，204） |
+| GET /api/memory/profile-config | 画像授权四开关 + 四段预览同刻一次拉取（预览与注入同一渲染路径） |
+| PUT /api/memory/profile-config | 四开关全量保存（body `{style, industry, watchlist, holdings}`，回执返回保存后开关+预览） |
+
 ## 目录结构
 
 ```
@@ -198,7 +209,7 @@ backend/    Spring Boot 4 + Spring Security 7 + Spring Data JPA（DDD 洋葱分�
                       UserToolkitFactory / McpClientPool / CurrentUserHolder / chart(图表spec) /
                       AguiEventNonNullCodec / AguiWireJsonConfig
     config/           配置属性：InvestProperties
-  src/main/resources/ application.yml / application-prod.yml / db/migration/(V1__baseline.sql 单一基线) / skills/(内置skill)
+  src/main/resources/ application.yml / application-prod.yml / db/migration/(V1__baseline.sql 基线 + V2~V7 增量迁移) / skills/(内置skill)
 
 collector/  Python 3.12 采集服务（akshare/tushare → PostgreSQL，APScheduler 调度）：市场估值快照 / 指数估值 / 国债曲线 / 申万映射 / 指数成分股 / 个股基本面
 frontend/   Next.js 15（聊天 UI / 行情台 / 估值 / 持仓 / 配置 / 筛选 / 行业 / 投资日志 / MCP与Skill设置 / 登录注册 / 管理页 / API 反代）
