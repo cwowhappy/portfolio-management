@@ -11,7 +11,8 @@ vi.mock("@/components/auth/RequireAuth", () => ({
   RequireAuth: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
-// 四个子面板各有独立数据流（strategy/entry-plan/hits/reviews），与本用例无关，整体打桩
+// 四个子面板各有独立数据流（strategy/entry-plan/hits/reviews），与本用例无关，整体打桩；
+// ReportsPanel（第⑧区 AI 研报，MS-32 F3）保留真实组件供挂载用例断言，其 reportApi 数据流另行打桩
 vi.mock("@/components/research/StrategyPanel", () => ({ default: () => null }));
 vi.mock("@/components/research/EntryPlanPanel", () => ({ default: () => null }));
 vi.mock("@/components/research/FalsifierPanel", () => ({ default: () => null }));
@@ -36,6 +37,27 @@ vi.mock("@/lib/researchApi", async (importOriginal) => {
     patchProject: vi.fn(),
   };
 });
+
+// 第⑧区 ReportsPanel 数据流打桩：无任务（latest 404「研报任务不存在」= 初始态静默）+ 空列表
+const { latestTaskMock, listReportsMock } = vi.hoisted(() => ({
+  latestTaskMock: vi.fn(),
+  listReportsMock: vi.fn(),
+}));
+
+vi.mock("@/lib/reportApi", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/reportApi")>();
+  return {
+    ...actual,
+    latestTask: latestTaskMock,
+    listReports: listReportsMock,
+  };
+});
+
+/** latest 404「研报任务不存在」为初始态非错误（面板静默处理），空列表正常渲染。 */
+function resetReportApiMocks() {
+  latestTaskMock.mockReset().mockRejectedValue(new Error("研报任务不存在"));
+  listReportsMock.mockReset().mockResolvedValue([]);
+}
 
 const detail = (alertEnabled: boolean): ProjectDetailView => ({
   project: {
@@ -75,6 +97,7 @@ describe("ProjectDetail 情报提醒开关", () => {
     getNotesMock.mockReset().mockResolvedValue([]);
     getWikiMock.mockReset().mockResolvedValue([]);
     setAlertMock.mockReset();
+    resetReportApiMocks();
   });
 
   afterEach(cleanup);
@@ -111,5 +134,29 @@ describe("ProjectDetail 情报提醒开关", () => {
     fireEvent.click(screen.getByRole("button", { name: "保存开关" }));
     await waitFor(() => expect(screen.getByText("网络中断")).toBeTruthy());
     expect((screen.getByLabelText("情报提醒") as HTMLInputElement).checked).toBe(false);
+  });
+});
+
+describe("ProjectDetail 第⑧区「AI 研报」挂载（MS-32 F3）", () => {
+  beforeEach(() => {
+    getProjectMock.mockReset().mockResolvedValue(detail(true));
+    getNotesMock.mockReset().mockResolvedValue([]);
+    getWikiMock.mockReset().mockResolvedValue([]);
+    setAlertMock.mockReset();
+    resetReportApiMocks();
+  });
+
+  afterEach(cleanup);
+
+  it("真实 ReportsPanel 渲染第⑧区标题，projectId 取路由 id，且为第⑦区之后的最后分区", async () => {
+    await renderPage();
+    const panel = await screen.findByRole("region", { name: "AI 研报" });
+    expect(screen.getByRole("heading", { name: "AI 研报" })).toBeTruthy();
+    // 空态引导随面板渲染（latest 404 静默 + 空列表）
+    expect(screen.getByText("尚未生成研报——点击「生成研报」发起一次深度研究")).toBeTruthy();
+    expect(listReportsMock).toHaveBeenCalledWith(5);
+    expect(latestTaskMock).toHaveBeenCalledWith(5);
+    // 八分区顺序：第⑧区追加在第⑦区（关联记录）之后，为页面根容器最后一个分区
+    expect(screen.getByTestId("research-detail").lastElementChild).toBe(panel);
   });
 });

@@ -1,15 +1,17 @@
 "use client";
-// 研究项目详情页：七分区——①项目信息（改标题/切阶段/归档）②四阶段三态完成度 + 手动标记
+// 研究项目详情页：八分区——①项目信息（改标题/切阶段/归档）②四阶段三态完成度 + 手动标记
 // （D16 兜底）③投资策略面板（D13 两级状态机 + D10 证伪条件集）④建仓计划 + 纪律检查
 // （F09/F10/F12，D18 页面级确认流）⑤证伪命中（D21 实时判定 + 历史留痕 + F15 评审入口）
 // ⑥复盘（P4：F13 三档模板 + F14 快照对照 + F16 wiki 回流）⑦关联记录
-// （F08 反查 journal RESEARCH_EVENT 与 wiki 研究笔记）。完成度为后端唯一计算点读模型（S6/NFR-1）。
+// （F08 反查 journal RESEARCH_EVENT 与 wiki 研究笔记）⑧AI 研报（MS-32：深度研究生成
+// → 人工确认定稿）。完成度为后端唯一计算点读模型（S6/NFR-1）。
 
 import { use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { RequireAuth } from "@/components/auth/RequireAuth";
 import EntryPlanPanel from "@/components/research/EntryPlanPanel";
 import FalsifierPanel from "@/components/research/FalsifierPanel";
+import ReportsPanel from "@/components/research/ReportsPanel";
 import ReviewPanel from "@/components/research/ReviewPanel";
 import StageProgress from "@/components/research/StageProgress";
 import StrategyPanel from "@/components/research/StrategyPanel";
@@ -311,6 +313,9 @@ function ProjectDetail({ projectId }: { projectId: number }) {
           )}
         </div>
       </section>
+
+      {/* ⑧ AI 研报（MS-32：深度研究生成 → 人工确认定稿；区块标题/说明文案内置于面板） */}
+      <ReportsPanel projectId={project.id} />
     </div>
   );
 }
