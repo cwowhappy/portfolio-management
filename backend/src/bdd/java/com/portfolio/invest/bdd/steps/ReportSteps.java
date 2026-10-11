@@ -34,8 +34,9 @@ import org.springframework.test.web.servlet.MvcResult;
  * 深度研究工作流步骤（MS-32 B14 验收链路）：REST 全链走真实 HTTP（MockMvc + 会话）+
  * 真实 PG 落库（任务行/研报/锚点/假设/journal 事件），仅 Agent 侧以
  * {@link ScriptedReportRunnerFactory} 剧本回放替换真 LLM（照
- * {@code ReportWorkflowOrchestratorTest} 的 ScriptedRunner 口径：每轮 call 先 fresh 清池
- * （模拟生产 TrustAgentHook PRE_CALL 时序）再 record 本轮真值——真值池注入走反射，
+ * {@code ReportWorkflowOrchestratorTest} 的 ScriptedRunner 口径——Ruling-21 修复③拓扑
+ * 拟真：每轮在派生 rc 上 fresh 清池（模拟生产 TrustAgentHook PRE_CALL 时序）再 record
+ * 本轮真值，轮末 POST_CALL 经 {@code ReportUsageHook} 快照入编排器；真值池注入走反射，
  * {@code TrustContext.fresh/record} 包私有于 trust 包，B0 Ruling-1 同款取舍）。
  *
  * <p>三剧本：①正常三轮 + 过门草稿（关键假设数字与真值一致）→ SUCCEEDED → 确认挂项目；
@@ -304,7 +305,7 @@ public class ReportSteps {
                 "2026-10-11 09:00:00", ToolInvocation.AsOfKind.DATA, false, false, 120L);
     }
 
-    /** 模拟一轮：PRE_CALL fresh 清池（生产时序）→ 装载本轮真值（反射：trust 包私有成员，B9 单测同款）。 */
+    /** 模拟一轮（收到的 rc 为派生实例）：PRE_CALL fresh 清池（生产时序）→ 装载本轮真值（反射：trust 包私有成员，B9 单测同款）。 */
     private static void seedPool(RuntimeContext rc, ToolInvocation... invocations) {
         try {
             Method fresh = TrustContext.class.getDeclaredMethod("fresh", RuntimeContext.class);
