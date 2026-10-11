@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A 股投研对话助手（证券投资与分析系统）。AI Agent Web 服务：对话式投研问答（AG-UI 协议，Agent 调用 7 个行情数据工具并流式输出）+ 行情数据台 + 用户管理 + 会话持久化。
 
-- **后端**：Spring Boot 4 + Spring Security 7 + Spring Data JPA + PostgreSQL 16（Flyway 管 schema）+ AgentScope Java 2.0.3（core / openai 模型扩展 / agui starter / harness 四构件）+ DeepSeek
+- **后端**：Spring Boot 4 + Spring Security 7 + Spring Data JPA + PostgreSQL 16（Flyway 管 schema）+ AgentScope Java 2.0.4（core / openai 模型扩展 / agui starter / harness 四构件）+ DeepSeek
 - **前端**：Next.js 15 + React 19 + CopilotKit（AG-UI 前端）+ Tailwind 4 + echarts 6 + TanStack Table 9
 - **行情源**：东方财富公开接口（新浪/腾讯兜底）
 

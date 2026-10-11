@@ -14,16 +14,17 @@ import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 
 /**
- * TrustWireMessageIdMiddleware 单元测试（MS-29 B5）：onModelCall 旁路观察文本块 replyId
- * 写入 RuntimeContext（最近一次覆盖），不改流、不吞事件、rc 缺席安全。
+ * TrustWireMessageIdMiddleware 单元测试（MS-29 B5）：onModelCall 旁路观察文本块复合 id
+ * （2.0.4 #3010：replyId + "-" + blockId，与 TextBlockEventConverter 配方同源）写入
+ * RuntimeContext（最近一次覆盖，last-wins），不改流、不吞事件、rc 缺席安全。
  */
 class TrustWireMessageIdMiddlewareTest {
 
     private final TrustWireMessageIdMiddleware middleware = new TrustWireMessageIdMiddleware();
 
-    @DisplayName("文本块开始事件：replyId 写入 rc，最近一次覆盖前者")
+    @DisplayName("文本块开始事件：复合 id（replyId-blockId）写入 rc，最近一次覆盖前者")
     @Test
-    void givenTextBlockStarts_whenOnModelCall_thenLatestReplyIdRecorded() {
+    void givenTextBlockStarts_whenOnModelCall_thenLatestCompositeIdRecorded() {
         RuntimeContext rc = RuntimeContext.builder().userId("1").sessionId("s").build();
         AtomicInteger downstream = new AtomicInteger();
 
@@ -37,12 +38,12 @@ class TrustWireMessageIdMiddlewareTest {
 
         assertThat(out.collectList().block()).hasSize(3);
         assertThat(downstream.get()).isEqualTo(3); // 流不改不吞
-        assertThat((String) rc.get(TrustWireMessageIdMiddleware.RC_KEY)).isEqualTo("reply-2");
+        assertThat((String) rc.get(TrustWireMessageIdMiddleware.RC_KEY)).isEqualTo("reply-2-b2");
     }
 
-    @DisplayName("非文本块事件与 rc 缺席：安全旁路")
+    @DisplayName("非文本块事件、rc 缺席与 blockId 缺失：安全旁路")
     @Test
-    void givenNoTextStartOrNoRc_whenOnModelCall_thenPassthrough() {
+    void givenNoTextStartOrNoRcOrNoBlockId_whenOnModelCall_thenPassthrough() {
         Flux<AgentEvent> noRc = middleware.onModelCall(null, null,
                 new ModelCallInput(List.of(), null, null, null),
                 input -> Flux.just(new TextBlockStartEvent("reply-x", "b1")));
@@ -54,5 +55,13 @@ class TrustWireMessageIdMiddlewareTest {
                 input -> Flux.just(new TextBlockEndEvent("reply-y", "b1")));
         assertThat(noStart.collectList().block()).hasSize(1);
         assertThat((String) rc.get(TrustWireMessageIdMiddleware.RC_KEY)).isNull();
+
+        // 复合配方两要素缺一不可：blockId 为 null 的 start 事件不落 rc（避免写出 "id-null"）
+        RuntimeContext rc2 = RuntimeContext.builder().userId("1").sessionId("s").build();
+        Flux<AgentEvent> noBlockId = middleware.onModelCall(null, rc2,
+                new ModelCallInput(List.of(), null, null, null),
+                input -> Flux.just(new TextBlockStartEvent("reply-z", null)));
+        assertThat(noBlockId.collectList().block()).hasSize(1);
+        assertThat((String) rc2.get(TrustWireMessageIdMiddleware.RC_KEY)).isNull();
     }
 }

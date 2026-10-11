@@ -10,7 +10,6 @@ import io.agentscope.core.hook.PostCallEvent;
 import io.agentscope.core.hook.PostReasoningEvent;
 import io.agentscope.core.hook.PostSummaryEvent;
 import io.agentscope.core.hook.PreCallEvent;
-import io.agentscope.core.hook.RuntimeContextAware;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -46,15 +45,17 @@ import reactor.core.publisher.Mono;
  *       清理，CurrentUserHolder 先例）。</li>
  *   <li><strong>幂等防重</strong>：同回合三锚点任一处理后置标记，PRE_CALL 重置（ruling 1）。</li>
  *   <li>Middleware 路线（无弃用标记）只能改事件流、够不到 state/返回值的 Msg 改写——不采用，
- *       详见任务报告取舍记录。Hook API 2.0.3 标记 forRemoval，仓库钉版 2.0.3，升级时需随上游
- *       替代口迁移。</li>
+ *       详见任务报告取舍记录（MS-29 B5 历史结论保真）。Hook API 2.0.4 仍在（forRemoval 未
+ *       兑现）、仓库钉版 2.0.4；rc 供给自 2.0.4 起经 RuntimeContextBridgeMiddleware（框架侧
+ *       RuntimeContextAware 已删，PR #3279）。</li>
  * </ul>
  *
  * <p><strong>事件契约（§4.3）：</strong>{@code trust.correction}（有大偏差修正时，每条替换一个事件，
  * 先发）value={messageId, snippet, occ, replacement, note}；{@code trust.anchors}（每 assistant
  * 末轮一次）value={messageId, payload}（payload v1 见 {@link TrustTurnReport#toPayload()}，
  * advice（B6）/confidence（B7）键已接入）。messageId 取 {@link TrustWireMessageIdMiddleware} 观察到的
- * AG-UI 线上 id（TEXT_MESSAGE 的 replyId，观察缺席回退 {@link Msg#getId()}——线上同源）。发射经
+ * AG-UI 线上 id（TEXT_MESSAGE 的复合 id，2.0.4 #3010：{@code replyId + "-" + blockId}；观察缺席回退
+ * {@link Msg#getId()}——线上同源）。发射经
  * {@code deferContextual → AgentEventEmitter.fromContext}（B0 探针 2），emitter 不可得时静默跳过
  * （飞书 call() 路无消费者，不报错）。
  *
@@ -62,7 +63,7 @@ import reactor.core.publisher.Mono;
  * WARN 日志，SSE 不中断。留痕：每处理回合一条结构化 INFO（字段名供 MS-30 看板取数，见
  * {@code logTurn}）。
  */
-public class TrustAgentHook implements Hook, RuntimeContextAware {
+public class TrustAgentHook implements Hook {
 
     /** 跨轮数值池的 Msg metadata 键（§2.2；{@code _chat_usage} 先例风格）。 */
     public static final String POOL_METADATA_KEY = "_trust_pool";
@@ -95,7 +96,9 @@ public class TrustAgentHook implements Hook, RuntimeContextAware {
         return lastReport;
     }
 
-    @Override
+    /** rc 供给口：2.0.3 由框架经 RuntimeContextAware 回调；2.0.4 起由
+     *  {@link com.portfolio.invest.agent.RuntimeContextBridgeMiddleware} 在 onAgent 入口送抵
+     *  （时序契约一致，先于 PRE_CALL）。签名不变——测试/编排器直接调用兼容面。 */
     public void setRuntimeContext(RuntimeContext rc) {
         this.runtimeContext = rc;
     }
@@ -291,8 +294,9 @@ public class TrustAgentHook implements Hook, RuntimeContextAware {
 
     /**
      * Custom 事件携带的 messageId（§4.3「AG-UI 线上 messageId 同源」）：优先取
-     * {@link TrustWireMessageIdMiddleware} 观察到的线上 replyId（TEXT_MESSAGE messageId），
-     * 观察缺席（如装配未挂中间件/无文本块事件）时回退 assistant Msg id。
+     * {@link TrustWireMessageIdMiddleware} 观察到的线上复合 id（TEXT_MESSAGE messageId =
+     * {@code replyId + "-" + blockId}，2.0.4 #3010），观察缺席（如装配未挂中间件/无文本块事件）时回退
+     * assistant Msg id。
      */
     private String messageId(Msg original) {
         if (runtimeContext != null) {

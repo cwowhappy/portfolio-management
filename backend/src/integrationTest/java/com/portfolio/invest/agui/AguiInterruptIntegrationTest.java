@@ -58,15 +58,16 @@ import org.springframework.test.web.servlet.MockMvc;
 import reactor.core.publisher.Flux;
 
 /**
- * /agui/run 权限确认 HITL 中断端到端（agentscope 2.0.3 契约，见 docs/technology/research/copilotkit/agui-hitl.md）。
+ * /agui/run 权限确认 HITL 中断端到端（agentscope 2.0.4 契约，见 docs/technology/research/copilotkit/agui-hitl.md）。
  *
- * <p>验证链路：写工具（readOnly=false）触发权限 ASK → 2.0.3 将 RequireUserConfirmEvent 映射为
+ * <p>验证链路：写工具（readOnly=false）触发权限 ASK → 将 RequireUserConfirmEvent 映射为
  * {@code RUN_FINISHED.outcome.interrupts[]}（reason=tool_call，metadata.agentscope.interruptKind=
  * permission_confirm）→ 同 thread {@code resume[]}（approved=true/false）转 ConfirmResult → 工具执行/拒绝后
  * Agent 续跑。2.0.1 上同一链路为 RAW 事件透传 + resume[] 契约错误（P0 报告），场景 1-3 应跑红。
  *
- * <p>2.0.3 实测行为备注：resume 续跑轮的 SSE 不重放工具事件（TOOL_CALL_START 已在中断轮发过，
- * TOOL_CALL_RESULT 被 {@code AguiStreamContext#hasStartedToolCall} 抑制），工具执行情况以
+ * <p>2.0.4 实测行为备注（#3100 修复）：resume 续跑轮的 SSE 现包含 TOOL_CALL_RESULT（工具
+ * 结果保留，前端审批后直接可见）；TOOL_CALL_START 仍不重放（中断轮已发过）。2.0.3 曾将
+ * TOOL_CALL_RESULT 以 {@code AguiStreamContext#hasStartedToolCall} 抑制，工具执行情况只能以
  * WriteGateTool.executed 标志与服务端持久化 state（tool_result success）佐证。
  *
  * <p>技术方案说明：
@@ -195,12 +196,16 @@ class AguiInterruptIntegrationTest extends PostgresTestSupport {
 
         String second = run(mockMvc, session, resumeRequest(threadId, "r-2", interruptId, true));
 
-        // 2.0.3 实测钉住：续跑轮不重放工具事件——TOOL_CALL_START 在中断轮已发过，续跑流的
-        // startedToolCalls 为空，AguiStreamContext#hasStartedToolCall 抑制 TOOL_CALL_RESULT。
-        // 工具确已执行由下方 executed 标志与服务端 state（tool_result success）佐证。
-        assertThat(eventOfType(second, "TOOL_CALL_RESULT"))
+        // 2.0.4 契约（#3100 修复）：resume 续跑轮保留工具结果——TOOL_CALL_RESULT 帧在场且
+        // 内容正确（2.0.3 曾被 AguiStreamContext#hasStartedToolCall 抑制，工具执行情况只能以
+        // executed 标志与服务端 state 佐证；2.0.4 起前端审批后直接可见工具结果）。
+        // TOOL_CALL_START 仍不重放（中断轮已发过）。
+        JsonNode toolResult = eventOfType(second, "TOOL_CALL_RESULT");
+        assertThat(toolResult)
                 .as("r-2 事件流：%s", second)
-                .isNull();
+                .isNotNull();
+        assertThat(toolResult.path("toolCallId").asText()).isEqualTo("call_w_1");
+        assertThat(toolResult.path("content").asText()).contains("\"written\":true");
         assertThat(CREATED_TOOLS).anySatisfy(t -> assertThat(t.executed.get()).isTrue());
         assertThat(second).contains("已按确认完成写入。");
         JsonNode finished = lastEventOfType(second, "RUN_FINISHED");

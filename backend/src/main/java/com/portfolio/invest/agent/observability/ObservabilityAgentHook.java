@@ -17,7 +17,6 @@ import io.agentscope.core.hook.PostCallEvent;
 import io.agentscope.core.hook.PostReasoningEvent;
 import io.agentscope.core.hook.PostSummaryEvent;
 import io.agentscope.core.hook.PreCallEvent;
-import io.agentscope.core.hook.RuntimeContextAware;
 import io.agentscope.core.message.Msg;
 import java.time.Clock;
 import java.time.Instant;
@@ -73,9 +72,11 @@ import reactor.core.publisher.Mono;
  *
  * <p><strong>降级（§5.3/Review Focus #3）：观测旁路自身失效不得阻断对话</strong>——onEvent 整体
  * try/catch 仅 ERROR 日志，事件原样放行（{@code Mono.just(event)}）；端口实现侧另有自吞（Task 8），
- * 双层防御。Hook API 2.0.3 标记 forRemoval，仓库钉版 2.0.3——沿 {@link TrustAgentHook} 同款取舍。</p>
+ * 双层防御。Hook API 2.0.4 仍在（forRemoval 未兑现）、仓库钉版 2.0.4；rc 供给自 2.0.4 起
+ * 经 RuntimeContextBridgeMiddleware（框架侧 RuntimeContextAware 已删，PR #3279）——沿
+ * {@link TrustAgentHook} 同款取舍。</p>
  */
-public class ObservabilityAgentHook implements Hook, RuntimeContextAware {
+public class ObservabilityAgentHook implements Hook {
 
     /** PRE_CALL 时延起点在 RuntimeContext 的键（私有前缀 observability.，按回合隔离）。 */
     static final String RC_TURN_START_NANOS = "observability.turnStartNanos";
@@ -127,7 +128,9 @@ public class ObservabilityAgentHook implements Hook, RuntimeContextAware {
         return 200;
     }
 
-    @Override
+    /** rc 供给口：2.0.3 由框架经 RuntimeContextAware 回调；2.0.4 起由
+     *  {@link com.portfolio.invest.agent.RuntimeContextBridgeMiddleware} 在 onAgent 入口送抵
+     *  （时序契约一致，先于 PRE_CALL）。签名不变——测试/编排器直接调用兼容面。 */
     public void setRuntimeContext(RuntimeContext rc) {
         this.runtimeContext = rc;
     }

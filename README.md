@@ -24,7 +24,7 @@
 - **收益分析**：组合 TWR/年化收益/交易统计/风险指标（波动、回撤）/业绩归因——**需登录**（`/analytics`）
 - **投资日志**：投研日志 + 交易/分红事件时间线——**需登录**（`/journal`）
 - **飞书集成（opt-in）**：采集终态告警与日终新鲜度巡检推群卡片、原则预警推 owner、owner 单聊对话（事件长连接）——需配 `FEISHU_*`，未配置时全部静默
-- **技术栈**：Spring Boot 4 + Spring Security 7 + PostgreSQL/Flyway + AgentScope Java 2.0.3（含 harness）· Next.js 15 + React 19 + CopilotKit（AG-UI 前端）+ echarts + TanStack Table · 东方财富公开接口（新浪兜底）· Python 采集服务（akshare/tushare）
+- **技术栈**：Spring Boot 4 + Spring Security 7 + PostgreSQL/Flyway + AgentScope Java 2.0.4（含 harness）· Next.js 15 + React 19 + CopilotKit（AG-UI 前端）+ echarts + TanStack Table · 东方财富公开接口（新浪兜底）· Python 采集服务（akshare/tushare）
 
 ## 快速开始
 

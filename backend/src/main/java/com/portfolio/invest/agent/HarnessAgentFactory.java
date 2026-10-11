@@ -66,6 +66,8 @@ public class HarnessAgentFactory {
         // 双 hook 共享同一 TrustAgentHook 实例：观测 hook 读其 lastReport() 组装 trust 并集
         //（priority 保 trust=100 先行、observability=200 后行，见 ObservabilityAgentHook 类注释）
         TrustAgentHook trustHook = new TrustAgentHook(trust);
+        ObservabilityAgentHook observabilityHook =
+                new ObservabilityAgentHook(observabilityRecorder, trustHook, mapper);
         return HarnessAgent.builder()
                 .name("invest")
                 .sysPrompt(systemPrompt(userId))
@@ -88,7 +90,10 @@ public class HarnessAgentFactory {
                 // MS-29 B5 可信溯源钩子 + MS-30 B6 轮级观测钩子（AG-UI 与飞书共同漏斗）
                 // + 线上 messageId 观察中间件（两 hook 的 messageId 同源）
                 .hook(trustHook)
-                .hook(new ObservabilityAgentHook(observabilityRecorder, trustHook, mapper))
+                .hook(observabilityHook)
+                // rc 桥接（2.0.4 RuntimeContextAware 删除的供给替代）：最外层先于 PRE_CALL
+                .middleware(new RuntimeContextBridgeMiddleware(
+                        trustHook::setRuntimeContext, observabilityHook::setRuntimeContext))
                 .middleware(new TrustWireMessageIdMiddleware())
                 .build();
     }
@@ -104,6 +109,8 @@ public class HarnessAgentFactory {
     public HarnessAgent buildReportAgent(Long userId, ReportUsageHook usageHook) {
         List<String> enabled = skillApplicationService.enabledSkillCodes(userId);
         TrustAgentHook trustHook = new TrustAgentHook(trust);
+        ObservabilityAgentHook observabilityHook =
+                new ObservabilityAgentHook(observabilityRecorder, trustHook, mapper);
         return HarnessAgent.builder()
                 .name("invest-report")
                 .sysPrompt(reportSystemPrompt(userId))
@@ -126,8 +133,11 @@ public class HarnessAgentFactory {
                         .build())
                 // 既有双 hook 原样（trust 先行、观测后行）+ 研报用量钩子追加在后
                 .hook(trustHook)
-                .hook(new ObservabilityAgentHook(observabilityRecorder, trustHook, mapper))
+                .hook(observabilityHook)
                 .hook(usageHook)
+                .middleware(new RuntimeContextBridgeMiddleware(
+                        trustHook::setRuntimeContext, observabilityHook::setRuntimeContext,
+                        usageHook::setRuntimeContext))
                 .middleware(new TrustWireMessageIdMiddleware())
                 .build();
     }

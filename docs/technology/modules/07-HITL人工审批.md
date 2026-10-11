@@ -15,7 +15,7 @@ MCP 数据源工具可能包含写性质操作（写文件、下单、改配置�
 
 ### 2.1 判定（装配期，UserToolkitFactory）
 
-每个 MCP 工具注册时手动构造 `McpTool`，readOnly 判定式与上游 `McpClientManager`（agentscope 2.0.3）逐字一致（上游为包私有，只能复制）：
+每个 MCP 工具注册时手动构造 `McpTool`，readOnly 判定式与上游 `McpClientManager`（agentscope 2.0.4）逐字一致（上游为包私有，只能复制）：
 
 ```java
 boolean readOnly = t.annotations() != null && Boolean.TRUE.equals(t.annotations().readOnlyHint());
@@ -45,7 +45,7 @@ Agent 运行到写性质 MCP 工具
 
 ### 2.4 线格式配套（AguiEventNonNullCodec）
 
-agentscope 权限确认中断的 `expiresAt` 序列化为 `null`，而前端 `@ag-ui/core` 的 zod schema 只认缺省/字符串——null 会让整条事件被浏览器端拒收（卡片不渲染）。`AguiWireJsonConfig` 启动期把全局 JsonCodec 换为 `AguiEventNonNullCodec`：仅对 `AguiEvent` 的 toJson 剥离 null 字段（null→缺省，前端语义等价），其余序列化全部委托默认实现。该 codec 同时保障图表双通道线格式（见 [08-聊天图表双通道.md](08-聊天图表双通道.md)）。
+agentscope 权限确认中断的 `expiresAt` 序列化为 `null`，而前端 `@ag-ui/core` 的 zod schema 只认缺省/字符串——null 会让整条事件被浏览器端拒收（卡片不渲染）。`AguiWireJsonConfig` 启动期把全局 JsonCodec 换为 `AguiEventNonNullCodec`：仅对 `AguiEvent` 的 toJson 剥离 null 字段（null→缺省，前端语义等价），其余序列化全部委托默认实现。该 codec 同时保障图表双通道线格式（见 [08-聊天图表双通道.md](08-聊天图表双通道.md)）。2.0.4 配套变化：上游已删 `RuntimeContextAware`（rc 改经 agent 包 `RuntimeContextBridgeMiddleware` 桥接供给 Hook），AG-UI 线上不连续文本段 messageId 改复合 id（#3010），`TrustWireMessageIdMiddleware` 已按同源配方适配。
 
 ## 3. 关键类与配置
 

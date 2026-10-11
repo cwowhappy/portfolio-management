@@ -149,6 +149,18 @@ class HarnessAgentFactoryReportTest {
         assertThat(agent.getDelegate().getMaxIters())
                 .as("单轮最大迭代取 invest.report.execution.max-iters-per-round")
                 .isEqualTo(7);
+        // rc 桥接（2.0.4 升级）：buildReportAgent 路径三消费者（trust/observability/usage）同源送抵
+        List<io.agentscope.core.middleware.MiddlewareBase> middlewares = agent.getDelegate().getMiddlewares();
+        RuntimeContextBridgeMiddleware bridge = middlewares.stream()
+                .filter(RuntimeContextBridgeMiddleware.class::isInstance)
+                .map(RuntimeContextBridgeMiddleware.class::cast)
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("rc 桥接中间件未装配"));
+        // 防「加 hook 忘桥接」：消费者数与 hook 数同源
+        assertThat(bridge.consumerCount()).isEqualTo(hooks.size());
+        assertThat(bridge.order()).isEqualTo(Integer.MAX_VALUE);
+        assertThat(middlewares)
+                .anyMatch(m -> m instanceof com.portfolio.invest.agent.trust.TrustWireMessageIdMiddleware);
     }
 
     // ———— 脚手架 ————
