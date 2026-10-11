@@ -8,9 +8,9 @@ import {
 } from "@/lib/reportSchemas";
 import {
   confirmReport,
-  fetchLatestTask,
-  fetchReportDetail,
-  fetchReports,
+  getReport,
+  latestTask,
+  listReports,
   startReportTask,
 } from "@/lib/reportApi";
 
@@ -194,10 +194,10 @@ describe("reportApi 五端点（URL/方法/请求体逐字对齐 ReportTaskContr
     await expect(startReportTask(5)).rejects.toThrow("该项目已有进行中的研报任务");
   });
 
-  it("fetchLatestTask GET report-tasks/latest 解析任务状态视图", async () => {
+  it("latestTask GET report-tasks/latest 解析任务状态视图", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => taskStatusJson });
     vi.stubGlobal("fetch", fetchMock);
-    const task = await fetchLatestTask(5);
+    const task = await latestTask(5);
     expect(task.status).toBe("SUCCEEDED");
     expect(task.reportId).toBe(9);
     expect(fetchMockCall()).toEqual([
@@ -206,20 +206,20 @@ describe("reportApi 五端点（URL/方法/请求体逐字对齐 ReportTaskContr
     ]);
   });
 
-  it("fetchReports GET reports 解析摘要列表（倒序两行）", async () => {
+  it("listReports GET reports 解析摘要列表（倒序两行）", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => reportsJson });
     vi.stubGlobal("fetch", fetchMock);
-    const rows = await fetchReports(5);
+    const rows = await listReports(5);
     expect(rows).toHaveLength(2);
     expect(rows[1].status).toBe("REJECTED");
     expect(fetchMockCall()[0]).toBe("/api/research/projects/5/reports");
     expect(fetchMockCall()[1].method).toBe("GET");
   });
 
-  it("fetchReportDetail GET /api/research/reports/{id} 解析锚点四态详情", async () => {
+  it("getReport GET /api/research/reports/{id} 解析锚点四态详情", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => reportDetailJson });
     vi.stubGlobal("fetch", fetchMock);
-    const detail = await fetchReportDetail(9);
+    const detail = await getReport(9);
     expect(detail.assumptions[0].anchor?.state).toBe("FRESH");
     expect(fetchMockCall()).toEqual([
       "/api/research/reports/9",
