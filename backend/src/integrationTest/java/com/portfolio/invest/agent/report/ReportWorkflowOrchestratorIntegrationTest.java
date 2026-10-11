@@ -5,13 +5,18 @@ import static org.mockito.Mockito.mock;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.portfolio.invest.application.research.ReportTaskSink;
 import com.portfolio.invest.agent.trust.ToolInvocation;
 import com.portfolio.invest.agent.trust.TrustContext;
+import com.portfolio.invest.domain.research.ReportAnchor;
+import com.portfolio.invest.domain.research.ReportAnchorRepository;
+import com.portfolio.invest.domain.research.ReportAssumption;
+import com.portfolio.invest.domain.research.ReportAssumptionRepository;
 import com.portfolio.invest.domain.research.ReportTask;
 import com.portfolio.invest.domain.research.ReportTaskRepository;
 import com.portfolio.invest.domain.research.ResearchProject;
 import com.portfolio.invest.domain.research.ResearchProjectRepository;
+import com.portfolio.invest.domain.research.ResearchReport;
+import com.portfolio.invest.domain.research.ResearchReportRepository;
 import com.portfolio.invest.domain.research.ResearchStage;
 import com.portfolio.invest.support.PostgresTestSupport;
 import io.agentscope.core.agent.Agent;
@@ -27,26 +32,23 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.convention.TestBean;
 
 /**
  * 研报工作流编排器集成（MS-32 B9，真 PG）：@TestBean 以 fake runner 工厂整体替换真实现
- * （沿 HarnessAgentStateIsolationIntegrationTest 先例），@TestConfiguration 供 fake sink
- * （B11 未落地前的装配缺口，Ruling：Spring 装配完整性由 B11 收口）；happy path 全链断言：
- * 任务行终态 SUCCEEDED + tokenUsage&gt;0（真 ReportUsageHook 经事件源充电）+ sink 回调参数
- * （anchors/assumptions）+ 终态 state 会话清理（Ruling-5）。研报表落库归 B11 集成测试。
+ * （沿 HarnessAgentStateIsolationIntegrationTest 先例）；sink 为 B11 真落库实现
+ * （ReportApplicationService，原 B9 期 fake sink 装配缺口已由 B11 收口）。happy path 全链
+ * 断言：任务行终态 SUCCEEDED + tokenUsage&gt;0（真 ReportUsageHook 经事件源充电）+
+ * 研报/锚点/假设真实落库（PENDING_CONFIRM + JSONB args + anchorIndex 绑定）+ 配额 settle 行
+ * + 终态 state 会话清理（Ruling-5）。
  *
- * <p>异步执行：submit 走 reportTaskExecutor 线程池（core=max=2），fake sink 回调闭锁汇流，
- * 主线程 await 后断言（任务行读取新事务可见——异步线程已 saveAndFlush 提交）。
+ * <p>异步执行：submit 走 reportTaskExecutor 线程池（core=max=2），主线程轮询研报表
+ * （sink 同事务提交研报+结算——行可见即全链完成）后断言。
  */
 @SpringBootTest(properties = {
         "invest.mcp.harness.state-root=build/report-workflow-it/state"})
@@ -76,10 +78,16 @@ class ReportWorkflowOrchestratorIntegrationTest extends PostgresTestSupport {
     private ResearchProjectRepository projectRepository;
 
     @Autowired
-    private JdbcTemplate jdbcTemplate;
+    private ResearchReportRepository reportRepository;
 
     @Autowired
-    private RecordingSink sink;
+    private ReportAnchorRepository anchorRepository;
+
+    @Autowired
+    private ReportAssumptionRepository assumptionRepository;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     static ReportAgentRunnerFactory fakeRunnerFactory() {
         return (userId, usageHook) -> new ReportAgentRunner() {
@@ -105,18 +113,9 @@ class ReportWorkflowOrchestratorIntegrationTest extends PostgresTestSupport {
         };
     }
 
-    @TestConfiguration(proxyBeanMethods = false)
-    static class SinkConfig {
-
-        @Bean
-        RecordingSink reportTaskSink() {
-            return new RecordingSink();
-        }
-    }
-
-    @DisplayName("happy path 全链：fake runner 驱动 submit → 任务行 SUCCEEDED/tokenUsage>0 + sink 回调 + state 清理")
+    @DisplayName("happy path 全链：fake runner 驱动 submit → 任务 SUCCEEDED + 真落库研报/锚点/假设/结算 + state 清理")
     @Test
-    void givenFakedRunnerAndSink_whenSubmit_thenTaskSucceededRowAndCallbackAndStateCleaned()
+    void givenFakedRunner_whenSubmit_thenTaskSucceededAndSinkPersistsRealRows()
             throws Exception {
         Long userId = jdbcTemplate.queryForObject(
                 "INSERT INTO app_user(username, password_hash, role, status) "
@@ -129,10 +128,16 @@ class ReportWorkflowOrchestratorIntegrationTest extends PostgresTestSupport {
 
         orchestrator.submit(task.id(), userId, project.id());
 
-        assertThat(sink.succeededLatch.await(10, TimeUnit.SECONDS))
-                .as("fake runner 即时回放，10s 内必达成功回调").isTrue();
+        // sink 同事务提交研报+结算——轮询研报行可见即全链完成（任务行先行 SUCCEEDED，上限 10s）
+        ResearchReport report = null;
+        for (int i = 0; i < 100 && report == null; i++) {
+            Thread.sleep(100);
+            report = reportRepository.findByTaskId(task.id()).orElse(null);
+        }
+        assertThat(report).as("真 sink 落库：研报行 10s 内可见").isNotNull();
 
         ReportTask row = taskRepository.findById(task.id()).orElseThrow();
+
         assertThat(row.status()).isEqualTo(ReportTask.Status.SUCCEEDED);
         assertThat(row.stage()).isEqualTo(ReportTask.Stage.VALIDATING);
         assertThat(row.tokenUsage()).as("三轮充电 1200+800+500").isEqualTo(2500L);
@@ -140,14 +145,19 @@ class ReportWorkflowOrchestratorIntegrationTest extends PostgresTestSupport {
         assertThat(row.finishedAt()).isNotNull();
         assertThat(row.errorCode()).isNull();
 
-        assertThat(sink.succeeded).hasSize(1);
-        ReportTaskSink.SucceededPayload payload = sink.succeeded.get(0).payload();
-        assertThat(payload.title()).isEqualTo("贵州茅台深度研报（集成）");
-        assertThat(payload.contentMd()).isEqualTo(VALID_CONTENT_MD);
-        assertThat(payload.anchors()).isNotEmpty();
-        assertThat(payload.anchors()).allMatch(line -> "VERIFIED".equals(line.state()));
-        assertThat(payload.assumptions()).hasSize(2);
-        assertThat(payload.assumptions()).allMatch(line -> line.anchorIndex() >= 0);
+        assertThat(report.status()).isEqualTo(ResearchReport.Status.PENDING_CONFIRM);
+        assertThat(report.title()).isEqualTo("贵州茅台深度研报（集成）");
+        assertThat(report.contentMd()).isEqualTo(VALID_CONTENT_MD);
+        assertThat(report.limitations()).isEqualTo("无特别局限");
+        List<ReportAnchor> anchors = anchorRepository.findByReportId(report.id());
+        assertThat(anchors).isNotEmpty();
+        assertThat(anchors).allMatch(anchor -> "VERIFIED".equals(anchor.state()));
+        List<ReportAssumption> assumptions = assumptionRepository.findByReportId(report.id());
+        assertThat(assumptions).hasSize(2);
+        assertThat(assumptions).allSatisfy(assumption -> assertThat(assumption.anchorId()).isNotNull());
+        Long settled = jdbcTemplate.queryForObject(
+                "SELECT tokens_used FROM report_token_quota WHERE user_id = ?", Long.class, userId);
+        assertThat(settled).as("sink 结算与任务行 tokenUsage 一致").isEqualTo(2500L);
         assertThat(STATE_ROOT.resolve(String.valueOf(userId)).resolve("report-" + task.id()))
                 .as("终态后 state 会话目录已清理（Ruling-5）").doesNotExist();
     }
@@ -192,24 +202,5 @@ class ReportWorkflowOrchestratorIntegrationTest extends PostgresTestSupport {
         node.put("specVersion", 1).put("title", title)
                 .put("contentMd", contentMd).put("limitations", limitations);
         return "```research-report\n" + node + "\n```";
-    }
-
-    /** fake sink：闭锁汇流异步回调，参数就地留存。 */
-    static final class RecordingSink implements ReportTaskSink {
-        final CountDownLatch succeededLatch = new CountDownLatch(1);
-        final List<Callback> succeeded = new java.util.concurrent.CopyOnWriteArrayList<>();
-
-        record Callback(Long taskId, long tokenUsage, SucceededPayload payload) {}
-
-        @Override
-        public void onTaskSucceeded(Long taskId, long tokenUsage, SucceededPayload payload) {
-            succeeded.add(new Callback(taskId, tokenUsage, payload));
-            succeededLatch.countDown();
-        }
-
-        @Override
-        public void onTaskFailed(Long taskId, long tokenUsage, String errorCode, String errorMessage) {
-            // happy path 集成用例不应触达；触发则闭锁不释放，用例以超时失败暴露
-        }
     }
 }

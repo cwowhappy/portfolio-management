@@ -72,4 +72,8 @@ public final class ResearchErrorCode {
     public static final String ANCHOR_INVALID = "ANCHOR_INVALID";
     /** 假设字段非法：seq &lt; 1 或 statement 空白（UNIQUE(report_id, seq) 语义 1-based）。 */
     public static final String ASSUMPTION_INVALID = "ASSUMPTION_INVALID";
+    /** 同项目已有活跃任务（MS-32 §3.2：并发双发起第二个 save 撞 uq_report_task_active 部分唯一索引，HTTP 映射 409）。 */
+    public static final String TASK_ACTIVE_EXISTS = "TASK_ACTIVE_EXISTS";
+    /** 研报确认状态机非法（MS-32 §3.10：非 PENDING_CONFIRM 态 confirm/reject，或并发对手已迁移——CAS 返 0，HTTP 映射 409）。 */
+    public static final String REPORT_INVALID_STATE = "REPORT_INVALID_STATE";
 }
