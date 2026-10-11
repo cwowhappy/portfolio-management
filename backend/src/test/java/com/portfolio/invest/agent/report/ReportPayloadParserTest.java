@@ -126,4 +126,56 @@ class ReportPayloadParserTest {
                 .extracting("kind")
                 .isEqualTo(ReportPayloadException.Kind.CONTENT_OVERSIZE);
     }
+
+    // ———— Ruling-21 修复②：字符串字面量裸控制字符预清洗（真 LLM 实证形态） ————
+
+    @DisplayName("修复②：contentMd 值内裸换行/裸制表符（真 LLM 实证形态）→ 预清洗后解析成功且换行保真")
+    @Test
+    void givenRawNewlinesInsideStringValue_whenParse_thenSucceedsWithFaithfulNewlines() {
+        // 形态复刻 S1 taskId=13：Jackson 报 Illegal unquoted character ((CTRL-CHAR, code 10))
+        String json = "{\"specVersion\":1,\"title\":\"茅台研报\",\"contentMd\":\"# 茅台研报\n"
+                + "## 关键假设\n1. 现价1520.33元\t（来源 get_quote）\",\"limitations\":\"无\"}";
+        String text = fenced(json);
+
+        ResearchReportSpec.V1 parsed = ReportPayloadParser.parse(text, 131072);
+
+        assertThat(parsed.title()).isEqualTo("茅台研报");
+        assertThat(parsed.contentMd())
+                .startsWith("# 茅台研报\n")
+                .contains("## 关键假设\n1. 现价1520.33元\t（来源 get_quote）");
+    }
+
+    @DisplayName("修复②：字符串外结构性裸换行（pretty JSON）本就合法 → 原样保留不扰动")
+    @Test
+    void givenStructuralNewlinesOutsideStrings_whenParse_thenUntouched() {
+        String json = "{\n  \"specVersion\": 1,\n  \"title\": \"研报\",\n  \"contentMd\": \"正文\",\n  \"limitations\": \"无\"\n}";
+        String text = fenced(json);
+
+        ResearchReportSpec.V1 parsed = ReportPayloadParser.parse(text, 131072);
+
+        assertThat(parsed.contentMd()).isEqualTo("正文");
+    }
+
+    @DisplayName("修复②：已转义序列（字面反斜杠 n）不被二次加工 → 解析后保持字面 \\\\n")
+    @Test
+    void givenAlreadyEscapedSequence_whenParse_thenNotDoubleEscaped() {
+        // Java 源里 \\\\n = JSON 源文本中的 \\n（已转义反斜杠+字母 n）→ 解析后是字面 "\n" 两字符
+        String json = "{\"specVersion\":1,\"title\":\"研报\",\"contentMd\":\"路径 C:\\\\n 分区\",\"limitations\":\"无\"}";
+        String text = fenced(json);
+
+        ResearchReportSpec.V1 parsed = ReportPayloadParser.parse(text, 131072);
+
+        assertThat(parsed.contentMd()).isEqualTo("路径 C:\\n 分区");
+    }
+
+    @DisplayName("修复②：值内其它裸控制字符（\\r 0x0D / 0x00）→ \\u00XX 兜底转义可解析")
+    @Test
+    void givenExoticRawControlChars_whenParse_thenHexEscaped() {
+        String json = "{\"specVersion\":1,\"title\":\"研报\",\"contentMd\":\"a\rb\u0000b\",\"limitations\":\"无\"}";
+        String text = fenced(json);
+
+        ResearchReportSpec.V1 parsed = ReportPayloadParser.parse(text, 131072);
+
+        assertThat(parsed.contentMd()).isEqualTo("a\rb\u0000b");
+    }
 }
