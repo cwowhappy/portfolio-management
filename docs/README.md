@@ -52,5 +52,6 @@
 | [code-review-2026-09-03.md](reviews/code-review-2026-09-03.md) | 2026-09-03 三端全量审查报告（双轴方法，13 处 P1） |
 | [features/code-review-2026-10/](../features/code-review-2026-10/) | 2026-10-04 起审查报告与修复按特性目录管理（09-调研报告=审查报告，01/03/08=需求/计划/复盘） |
 | [code-review-lessons.md](reviews/code-review-lessons.md) | 代码审查经验沉淀（滚动文档，评审/开发前参考） |
+| [dev-process-lessons.md](reviews/dev-process-lessons.md) | 特性开发流程与经验沉淀（滚动文档：canonical 流程形态 + 跨特性教训，特性开发前参考） |
 
-> 一次性审查报告归档于 reviews/；长期沉淀的**问题模式与方法论**见 [code-review-lessons.md](reviews/code-review-lessons.md)。
+> 一次性审查报告归档于 reviews/；长期沉淀的**问题模式与方法论**见 [code-review-lessons.md](reviews/code-review-lessons.md)，**特性开发流程与跨特性开发经验**见 [dev-process-lessons.md](reviews/dev-process-lessons.md)。

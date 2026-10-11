@@ -1,6 +1,6 @@
 # features · 特性开发文档
 
-> 本目录收集**开发新特性**全生命周期的文档：需求、设计、计划、复盘与调研。产品功能现状见 [docs/function/](../docs/function/)，技术实现见 [docs/technology/](../docs/technology/)，里程碑级落地进度见 [docs/roadmap/2026-08-27-产品落地计划.md](../docs/roadmap/2026-08-27-产品落地计划.md)。
+> 本目录收集**开发新特性**全生命周期的文档：需求、设计、计划、复盘与调研。产品功能现状见 [docs/function/](../docs/function/)，技术实现见 [docs/technology/](../docs/technology/)，里程碑级落地进度见 [docs/roadmap/2026-08-27-产品落地计划.md](../docs/roadmap/2026-08-27-产品落地计划.md)，开发流程与跨特性经验见 [docs/reviews/dev-process-lessons.md](../docs/reviews/dev-process-lessons.md)。
 
 ## 目录规范（固定编号，2026-09-17 起）
 
@@ -10,7 +10,7 @@
 |:---:|---|---|:---:|
 | 01 | `01-需求规格/` | `需求规格说明.md`（背景目标 + 澄清决策汇总 + 功能需求 + NFR + 验收标准 + YAGNI） | 必有 |
 | 02 | `02-设计规格/` | `设计规格说明.md`（架构/数据模型/接口契约/测试策略，代码引用须 file:line 锚定） | 可选（仅需独立设计时） |
-| 03 | `03-实施计划/` | `P<N>-<主题>.md` 分阶段任务级计划（TDD 步骤 + Interfaces 产销块） | 必有 |
+| 03 | `03-实施计划/` | `P<N>-<主题>.md` 分阶段任务级计划（TDD 步骤 + Interfaces 产销块）；P0 技术验证可落 `验证记录.md` | 必有 |
 | 04 | `04-研发过程/` | 研发过程记录（评审讲解、设计推导、分析等过程性文档），`<日期>-<主题>.md` | 可选 |
 | 05–07 | — | **预留**（未定义，勿占用） | — |
 | 08 | `08-复盘总结/` | `复盘总结.md`（交付结果/经验/不足/优化建议/计划偏差清单），交付合并后回填 | 可选 |
@@ -33,7 +33,7 @@
   2. [功能模块概览](../docs/function/00-功能模块概览.md) 看板（已完成/待开发/进度）；**及 [01-产品概览](../docs/function/01-产品概览.md) §6 In/Out 范围清单**（若交付改变了版本边界——2026-09-26 MS-10 终审发现本 checklist 漏此文件致 Out 残留，补入）；
   3. [产品落地计划](../docs/roadmap/2026-08-27-产品落地计划.md)：里程碑节状态 + 基线表 + 变更记录行 + 风险表；
   4. 本 README 索引行补「已交付 日期 + PR #N」；
-  5. `08-复盘总结/复盘总结.md` 回填（含计划偏差清单）；
+  5. `08-复盘总结/复盘总结.md` 回填（含计划偏差清单），并滚动增补 [dev-process-lessons.md](../docs/reviews/dev-process-lessons.md) 第四/五章（复发次数 +1、新拦截机制、状态变更——2026-10-11 建档时补入此触发，堵滚动文档此前无外部触发环节的根因）；
   6. 若本次交付对应 `plans/` 跨特性计划：计划头部补 `状态：已完成（日期，PR #N）` + 更新 [plans/README.md](plans/README.md) 索引行（2026-10-04 审查发现 4 份已交付计划状态欠账，补入此步堵根因）。
 
 ## 特性目录索引（目录 ↔ 里程碑 ↔ 功能模块）
@@ -71,17 +71,24 @@
 
 > 里程碑（MS）定义与进度见 [产品落地计划](../docs/roadmap/2026-08-27-产品落地计划.md)；模块（M）定义与进度看板见 [功能模块概览](../docs/function/00-功能模块概览.md)。
 
-## 开发流程（superpowers 工作流）
+## 开发流程（canonical · superpowers 工作流）
 
-1. **brainstorming**（头脑风暴/需求澄清）→ 需求规格，落入 `<feature>/01-需求规格/`
-2. **writing-plans**（编写实施计划）→ 分阶段计划 P1/P2/P3，落入 `<feature>/03-实施计划/`
-3. **executing-plans / subagent-driven-development**（执行计划）→ 产物为代码
-4. **test-driven-development**（红-绿-重构）→ 随实现进行
-5. **requesting-code-review / receiving-code-review**（代码审查）
-6. **verification-before-completion**（完成前验证）
-7. **finishing-a-development-branch**（收尾合并）
+> 单特性从立项到复盘的**标准流程**（以阶段三成熟形态为准，2026-10-11 定稿）。每环节的质量门、常见坑与价值证据详见 [dev-process-lessons.md](../docs/reviews/dev-process-lessons.md) 第二章，**特性开发前必读**；跨特性复发教训（开发时怎么避）见其第四/五章，代码审查方法论（审查时怎么查）见 [code-review-lessons.md](../docs/reviews/code-review-lessons.md)。
 
-> 仅文档阶段产出持久化收于本目录；实现、测试、审查的产物为代码/提交/评审意见，不入本目录。
+| # | 环节 | superpowers 技能 | 产出与落位 | 质量门 / 关键纪律 |
+|---|---|---|---|---|
+| 1 | 立项侦察 | —（多路只读侦察） | 侦察报告（特性目录） | 机制假设须字节码/实机级证实；结论直接进设计规格依据（MS-29 起固定前置） |
+| 2 | 需求规格 | brainstorming + grilling | `01-需求规格/需求规格说明.md` | 裁决编号留痕（D#）；范围收窄显式标注「延后」；YAGNI 清单与实现范围一致 |
+| 3 | 设计规格 | — | `02-设计规格/设计规格说明.md`（需独立设计时） | 代码引用 file:line 锚定；机制假设「jar 字节码 + 集成测试」双实证 |
+| 4 | P0 探测/技术验证 | — | `09-调研报告/` 或 `03-实施计划/验证记录.md` | 凡外部依赖（数据源/协议/框架）先最小实证；结论是**计划的输入**而非附件；探针结论回填计划附录 |
+| 5 | 实施计划 | writing-plans | `03-实施计划/P<N>-*.md`（任务级：Files / Interfaces 产销块 / TDD Steps / Review Focus） | 册首 Global Constraints + 事实锚点；**代码样例必须对照真实代码核实**（签名/类型/数值刻度/时点口径四维）；「后续任务回接」注释显式携带进下游简报 |
+| 6 | 执行 | executing-plans / subagent-driven-development / test-driven-development | `feat/<msxx>-<feature>` 单分支承载调研→实现全周期，交付单一 PR | 逐任务「fresh 实现 + 独立审查」双签（报告 vs diff 对账）；TDD 先红后绿；破坏性/共享状态操作先停下确认 |
+| 7 | 收口门 | verification-before-completion | 全量验证证据 | 全量 `make test`（隔离跑不算数）+ e2e `E2E_FRESH_BUILD=1` + 三端覆盖 ≥80%；验证证据须「全新跑」（`--rerun-tasks` / cleanTest） |
+| 8 | 终审与修复波 | requesting-code-review / receiving-code-review | 终审报告 → 修复波 → 定向复审 | 全分支 diff、最强模型档、跨任务 + 跨文档视角；Minor 记台账 triage 后单波清 |
+| 9 | 合并 | finishing-a-development-branch | 单一 PR → main | — |
+| 10 | 交付回填与复盘 | — | 按「状态标注与交付回填」checklist 执行 | 复盘含**计划偏差清单**逐条留痕；首跑观察项单独立表 |
+
+> 执行细则（模型分档、progress 台账、并行约束等）与各环节常见坑不在此重复，见 [dev-process-lessons.md](../docs/reviews/dev-process-lessons.md) 第二章。仅文档阶段产出持久化收于本目录；实现、测试、审查的产物为代码/提交/评审意见，不入本目录。
 
 ## 命名约定
 
