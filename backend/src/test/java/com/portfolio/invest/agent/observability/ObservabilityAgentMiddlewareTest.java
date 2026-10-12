@@ -51,9 +51,9 @@ import reactor.core.publisher.Mono;
  * ModelCallEndEvent、POST_CALL→AgentResultEvent、ErrorEvent→doOnError。
  * 真值注池沿真实 decorator 播种先例（ObservabilityAgentHookTest:160）。
  *
- * <p>迁移对照：14 用例中 9 例落位于此（trust 双例、标识符双例各自合并为一）；
+ * <p>迁移对照：14 用例中 10 例落位于此（trust 双例、标识符双例各自合并为一）；
  * POST_SUMMARY 用例并入 ModelCallEndEvent 单一事件源、原 :419 hook 顺序用例不迁移
- * （priority 装配序退役，次序归 Task 4 factory 测试）、rc 缺席防御并入标识符回退例。
+ * （priority 装配序退役，次序归 Task 4 factory 测试）、rc 缺席防御独立成例。
  */
 class ObservabilityAgentMiddlewareTest {
 
@@ -167,6 +167,8 @@ class ObservabilityAgentMiddlewareTest {
         assertThat(turn.promptTokens()).isEqualTo(130);
         assertThat(turn.completionTokens()).isEqualTo(70);
         assertThat(turn.totalTokens()).isEqualTo(200);
+        assertThat(turn.failed()).isFalse();
+        assertThat(turn.toolCount()).isZero();
     }
 
     @Test
@@ -248,14 +250,17 @@ class ObservabilityAgentMiddlewareTest {
     }
 
     @Test
-    @DisplayName("防双写：doOnError 已记录后迟到 AgentResultEvent 不再落第二条")
+    @DisplayName("防双写：AgentResultEvent 已落库后 doOnError 再触发不再落第二条（原始错误照常上抛）")
     void givenErrorThenLateResult_whenBothSeen_thenRecordedOnce() {
         ObservabilityAgentMiddleware mw = newMiddleware();
         RuntimeContext rc = ctx("7", "conv-1");
 
-        mw.onAgent(null, rc, new AgentInput(List.of()), input -> Flux.concat(
-                Flux.<AgentEvent>error(new IllegalStateException("boom")).onErrorResume(e -> Flux.empty()),
-                Flux.just((AgentEvent) new AgentResultEvent(msg("m-1"))))).blockLast();
+        assertThatThrownBy(() -> mw.onAgent(null, rc, new AgentInput(List.of()),
+                input -> Flux.concat(
+                        Flux.just((AgentEvent) new AgentResultEvent(msg("m-1"))),
+                        Flux.error(new RuntimeException("boom")))).blockLast())
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("boom");
 
         verify(recorder, times(1)).recordTurn(any(), any());
     }
@@ -366,6 +371,24 @@ class ObservabilityAgentMiddlewareTest {
         assertThat(mcp.calledAt())
                 .as("CALL 线 asOf 即调用时刻，回解真实时间（非回合收尾兜底）")
                 .isNotNull();
+    }
+
+    // ———— 防御路径（原 :439 逐字移植） ————
+
+    @Test
+    @DisplayName("rc 缺席：流照常落库，标识符与 token 容忍 null（旁路 best-effort）")
+    void givenNoRuntimeContext_whenTurnEnds_thenStillRecordedWithNullIdentifiers() {
+        ObservabilityAgentMiddleware mw = newMiddleware();
+
+        mw.onAgent(null, null, new AgentInput(List.of()),
+                input -> normalStream("r-1", null, msg("m-1"))).blockLast();
+
+        TurnObservation turn = capturedTurn();
+        assertThat(turn.userId()).isNull();
+        assertThat(turn.conversationId()).isNull();
+        assertThat(turn.messageId()).isEqualTo("m-1");
+        assertThat(turn.durationMs()).isNotNull();
+        assertThat(turn.toolCount()).isZero();
     }
 
     // ———— 夹具 ————
