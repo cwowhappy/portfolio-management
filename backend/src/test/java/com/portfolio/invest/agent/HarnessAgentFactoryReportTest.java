@@ -124,7 +124,7 @@ class HarnessAgentFactoryReportTest {
         verifyNoInteractions(repository);
     }
 
-    @DisplayName("装配冒烟：buildReportAgent 双 hook + usage 中间件挂载（同实例），maxIters 取 report 执行档")
+    @DisplayName("装配冒烟：buildReportAgent Trust 单 hook + usage/观测/桥接/messageId 中间件挂载（usage 同实例），maxIters 取 report 执行档")
     @Test
     void givenReportUsageMiddleware_whenBuildReportAgent_thenUsageMiddlewareMountedAndReportMaxIters()
             throws IOException {
@@ -143,23 +143,26 @@ class HarnessAgentFactoryReportTest {
 
         HarnessAgent agent = factory.buildReportAgent(1L, usageMiddleware);
 
+        // Hook 引用面收敛：唯一 hook 即 Trust（观测旧 Hook 已迁中间件）
         List<Hook> hooks = agent.getDelegate().getHooks();
-        assertThat(hooks).anyMatch(h -> h instanceof com.portfolio.invest.agent.trust.TrustAgentHook);
-        assertThat(hooks).anyMatch(h -> h instanceof com.portfolio.invest.agent.observability.ObservabilityAgentHook);
+        assertThat(hooks).hasSize(1);
+        assertThat(hooks.get(0)).isInstanceOf(com.portfolio.invest.agent.trust.TrustAgentHook.class);
         List<io.agentscope.core.middleware.MiddlewareBase> middlewares = agent.getDelegate().getMiddlewares();
-        assertThat(middlewares).as("用量中间件按入参同实例挂载（追加在既有双 hook 后）").contains(usageMiddleware);
+        assertThat(middlewares).as("用量中间件按入参同实例挂载").contains(usageMiddleware);
+        assertThat(middlewares)
+                .anyMatch(m -> m instanceof com.portfolio.invest.agent.observability.ObservabilityAgentMiddleware);
         assertThat(agent.getDelegate().getMaxIters())
                 .as("单轮最大迭代取 invest.report.execution.max-iters-per-round")
                 .isEqualTo(7);
-        // rc 桥接（2.0.4 升级）：buildReportAgent 路径两消费者（trust/observability）同源送抵
-        // ——usage 中间件经 onAgent 入参直收 ctx，不进桥接
+        // rc 桥接（2.0.4 升级）：buildReportAgent 路径唯一消费者即 trust setter
+        // ——usage/观测中间件经 onAgent 入参直收 ctx，不进桥接
         RuntimeContextBridgeMiddleware bridge = middlewares.stream()
                 .filter(RuntimeContextBridgeMiddleware.class::isInstance)
                 .map(RuntimeContextBridgeMiddleware.class::cast)
                 .findFirst()
                 .orElseThrow(() -> new AssertionError("rc 桥接中间件未装配"));
-        // 防「加 hook 忘桥接」：消费者数与 hook 数同源
-        assertThat(bridge.consumerCount()).isEqualTo(hooks.size());
+        // 桥接单消费者（trust setter）
+        assertThat(bridge.consumerCount()).isEqualTo(1);
         assertThat(bridge.order()).isEqualTo(Integer.MAX_VALUE);
         assertThat(middlewares)
                 .anyMatch(m -> m instanceof com.portfolio.invest.agent.trust.TrustWireMessageIdMiddleware);

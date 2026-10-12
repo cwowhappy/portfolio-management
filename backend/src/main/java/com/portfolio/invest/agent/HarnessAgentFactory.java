@@ -1,7 +1,7 @@
 package com.portfolio.invest.agent;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.portfolio.invest.agent.observability.ObservabilityAgentHook;
+import com.portfolio.invest.agent.observability.ObservabilityAgentMiddleware;
 import com.portfolio.invest.agent.report.ReportUsageMiddleware;
 import com.portfolio.invest.agent.report.ReportWorkflowPrompt;
 import com.portfolio.invest.agent.trust.TrustAgentHook;
@@ -32,7 +32,7 @@ public class HarnessAgentFactory {
     private final InvestProperties.Mcp.Harness config;
     /** MS-29 B5：可信溯源设置（容差/修正上限，TrustAgentHook 消费）。 */
     private final InvestProperties.Trust trust;
-    /** MS-30 B6：轮级观测写端口（turn_observation/tool_invocation_obs，ObservabilityAgentHook 消费）。 */
+    /** MS-30 B6：轮级观测写端口（turn_observation/tool_invocation_obs，ObservabilityAgentMiddleware 消费）。 */
     private final ObservabilityRecorder observabilityRecorder;
     /** MS-30 B6：工具观测 argsJson 序列化（域端口不引 Jackson，序列化归 agent 侧调用方）。 */
     private final ObjectMapper mapper;
@@ -63,11 +63,11 @@ public class HarnessAgentFactory {
 
     public HarnessAgent build(Long userId) {
         List<String> enabled = skillApplicationService.enabledSkillCodes(userId);
-        // 双 hook 共享同一 TrustAgentHook 实例：观测 hook 读其 lastReport() 组装 trust 并集
-        //（priority 保 trust=100 先行、observability=200 后行，见 ObservabilityAgentHook 类注释）
+        // trust hook 与观测中间件共享同一 TrustAgentHook 实例：观测中间件读其 lastReport() 组装 trust 并集
+        //（中间件 onAgent 链在核心外侧，完成信号天然晚于核心内 trust POST_CALL，无 priority——见 ObservabilityAgentMiddleware 类注释）
         TrustAgentHook trustHook = new TrustAgentHook(trust);
-        ObservabilityAgentHook observabilityHook =
-                new ObservabilityAgentHook(observabilityRecorder, trustHook, mapper);
+        ObservabilityAgentMiddleware observability =
+                new ObservabilityAgentMiddleware(observabilityRecorder, trustHook, mapper);
         return HarnessAgent.builder()
                 .name("invest")
                 .sysPrompt(systemPrompt(userId))
@@ -87,13 +87,12 @@ public class HarnessAgentFactory {
                 .memory(MemoryConfig.builder()
                         .flushTrigger(MemoryConfig.FlushTrigger.throttled(config.getMemory().getFlushMinGap()))
                         .build())
-                // MS-29 B5 可信溯源钩子 + MS-30 B6 轮级观测钩子（AG-UI 与飞书共同漏斗）
-                // + 线上 messageId 观察中间件（两 hook 的 messageId 同源）
+                // MS-29 B5 可信溯源钩子 + MS-30 B6 轮级观测中间件（AG-UI 与飞书共同漏斗）
+                // + 线上 messageId 观察中间件（trust 与观测的 messageId 同源）
                 .hook(trustHook)
-                .hook(observabilityHook)
                 // rc 桥接（2.0.4 RuntimeContextAware 删除的供给替代）：最外层先于 PRE_CALL
-                .middleware(new RuntimeContextBridgeMiddleware(
-                        trustHook::setRuntimeContext, observabilityHook::setRuntimeContext))
+                .middleware(new RuntimeContextBridgeMiddleware(trustHook::setRuntimeContext))
+                .middleware(observability)
                 .middleware(new TrustWireMessageIdMiddleware())
                 .build();
     }
@@ -103,14 +102,14 @@ public class HarnessAgentFactory {
      * ①name=invest-report（区别对话链路，观测/留痕可归因）②sysPrompt 尾接深研指引块
      * （{@link #reportSystemPrompt}，恒注入非 skill）③maxIters 取 report 执行档
      * （invest.report.execution.max-iters-per-round）④toolkit 无 MCP（{@link #reportToolkit}，
-     * 天然无 MCP 写工具）⑤追加 {@link ReportUsageMiddleware}（既有双 hook 后，整任务 token 累计）。
+     * 天然无 MCP 写工具）⑤追加 {@link ReportUsageMiddleware}（trust hook/观测中间件后，整任务 token 累计）。
      * <strong>对话链路红线：build(Long) 与 systemPrompt(userId) 行为零变更。</strong>
      */
     public HarnessAgent buildReportAgent(Long userId, ReportUsageMiddleware usageMiddleware) {
         List<String> enabled = skillApplicationService.enabledSkillCodes(userId);
         TrustAgentHook trustHook = new TrustAgentHook(trust);
-        ObservabilityAgentHook observabilityHook =
-                new ObservabilityAgentHook(observabilityRecorder, trustHook, mapper);
+        ObservabilityAgentMiddleware observability =
+                new ObservabilityAgentMiddleware(observabilityRecorder, trustHook, mapper);
         return HarnessAgent.builder()
                 .name("invest-report")
                 .sysPrompt(reportSystemPrompt(userId))
@@ -131,12 +130,12 @@ public class HarnessAgentFactory {
                 .memory(MemoryConfig.builder()
                         .flushTrigger(MemoryConfig.FlushTrigger.throttled(config.getMemory().getFlushMinGap()))
                         .build())
-                // 既有双 hook 原样（trust 先行、观测后行）+ 研报用量中间件追加在后
+                // trust hook + 观测中间件（对话链路同款）+ 研报用量中间件追加在后
                 .hook(trustHook)
-                .hook(observabilityHook)
+                // rc 桥接（2.0.4 RuntimeContextAware 删除的供给替代）：最外层先于 PRE_CALL
+                .middleware(new RuntimeContextBridgeMiddleware(trustHook::setRuntimeContext))
+                .middleware(observability)
                 .middleware(usageMiddleware)
-                .middleware(new RuntimeContextBridgeMiddleware(
-                        trustHook::setRuntimeContext, observabilityHook::setRuntimeContext))
                 .middleware(new TrustWireMessageIdMiddleware())
                 .build();
     }

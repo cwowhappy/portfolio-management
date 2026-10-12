@@ -11,11 +11,12 @@ import java.util.function.Function;
 import reactor.core.publisher.Flux;
 
 /**
- * rc 桥接中间件（agentscope 2.0.4 升级）：2.0.4 删除
- * {@code io.agentscope.core.hook.RuntimeContextAware}（PR #3279，官方口径「context 访问点
- * 收敛到 middleware 与工具参数」），三个生产 Hook（TrustAgentHook/ObservabilityAgentHook/
- * 研报用量旧 Hook）的 rc 供给改由本中间件承担——onAgent 入口把派生 rc 逐个送抵消费者
- * （{@code Hook::setRuntimeContext} 方法引用），时序先于 runLifecycle 内的 PRE_CALL 钩子
+ * rc 桥接中间件（agentscope 2.0.4 升级）：2.0.4 删除 Hook 系接口
+ * {@code RuntimeContextAware}（PR #3279，官方口径「context 访问点
+ * 收敛到 middleware 与工具参数」），留守生产 Hook TrustAgentHook（hook-migration 后唯一；
+ * 留守理由与重开触发条件见 features/hook-migration/02-设计规格/设计规格说明.md §五）
+ * 的 rc 供给改由本中间件承担——onAgent 入口把派生 rc 送抵消费者
+ * （{@code TrustAgentHook::setRuntimeContext} 方法引用），时序先于 runLifecycle 内的 PRE_CALL 钩子
  * （onAgent 链包在整个生命周期外侧，2.0.4 ReActAgent.buildAgentStream 源码实证），与 2.0.3
  * 框架侧 setRuntimeContext 时序契约一致。
  *
