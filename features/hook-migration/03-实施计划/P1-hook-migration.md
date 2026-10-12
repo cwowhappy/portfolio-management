@@ -1,7 +1,7 @@
 # Hook forRemoval 专项实施计划（P1）
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development（本仓既定执行方式）来逐任务实施本计划。步骤用 checkbox（`- [ ]`）跟踪。
-> 分支：`chore/hook-migration`（规格已入库 @ 6b327c65）| 状态：进行中——T1–T5 收口（全量门禁绿：test 2422 / integrationTest 383 / bdd 34，JaCoCo 聚合指令 96.18% / 分支 84.56%），剩 Task 6 真流回归 + PR
+> 分支：`chore/hook-migration`（规格已入库 @ 6b327c65）| 状态：已完成（2026-10-12，PR #111）——T1–T6 全收口（全量门禁绿：test 2422 / integrationTest 383 / bdd 34，JaCoCo 聚合指令 96.18% / 分支 84.56%）
 
 **Goal:** ObservabilityAgentHook / ReportUsageHook 无损迁移为单点 onAgent 拦截 Middleware 并删除旧 Hook，TrustAgentHook 留守并文档化重开触发条件——main 的 `io.agentscope.core.hook` import 面收敛到 TrustAgentHook 一处。
 
@@ -41,7 +41,7 @@
 - Consumes: `MiddlewareBase.onAgent(Agent, RuntimeContext, AgentInput, Function<AgentInput,Flux<AgentEvent>>)`；`ModelCallEndEvent(String replyId, ChatUsage usage)` / `getUsage()`；`TrustContext.current(rc).invocations()`；`ToolInvocation`。
 - Produces: `public final class ReportUsageMiddleware implements MiddlewareBase`；`public long totalTokens()`；`public List<ToolInvocation> drainTruthInvocations()`（Task 3 涟漪与 Task 6 smoke 消费）。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```java
 package com.portfolio.invest.agent.report;
@@ -156,12 +156,12 @@ class ReportUsageMiddlewareTest {
 
 **注意**：`truth(...)` 夹具的 `ToolInvocation` 构造参数以 `ToolInvocation.java` 实际签名为准（计划按 record 组件序推定，实现者先 Read 该文件核对分量序与类型，不匹配则按真实签名修正夹具——语义不变：一条含 toolName 的成功 CALL 实录）。
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `cd backend && ./gradlew test --tests "com.portfolio.invest.agent.report.ReportUsageMiddlewareTest" --console=plain`
 Expected: 编译失败 `cannot find symbol: class ReportUsageMiddleware`
 
-- [ ] **Step 3: 最小实现**（逻辑自 ReportUsageHook 迁移；事件源替换见注释）
+- [x] **Step 3: 最小实现**（逻辑自 ReportUsageHook 迁移；事件源替换见注释）
 
 ```java
 package com.portfolio.invest.agent.report;
@@ -253,11 +253,11 @@ public final class ReportUsageMiddleware implements MiddlewareBase {
 }
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: 同 Step 2。Expected: 4 用例全 PASS
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add backend/src/main/java/com/portfolio/invest/agent/report/ReportUsageMiddleware.java \
@@ -282,7 +282,7 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 - Consumes: 同 Task 1 事件面 + `AgentResultEvent(Msg).getResult()`；`ObservabilityRecorder.recordTurn(TurnObservation, List<ToolCallObservation>)`（域端口）；`TrustAgentHook.lastReport()`（六键并集源）；`TrustWireMessageIdMiddleware.RC_KEY`。
 - Produces: `public final class ObservabilityAgentMiddleware implements MiddlewareBase`；构造 `ObservabilityAgentMiddleware(ObservabilityRecorder, TrustAgentHook, ObjectMapper)` 与包私有 `(…, Clock)`（测试钉 createdAt）。Task 4 factory 接线消费。
 
-- [ ] **Step 1: 写失败测试**（自 `ObservabilityAgentHookTest` 口径迁移；完整断言体以原文件为蓝本逐条搬——此处给新事件源脚手架与关键差异用例）
+- [x] **Step 1: 写失败测试**（自 `ObservabilityAgentHookTest` 口径迁移；完整断言体以原文件为蓝本逐条搬——此处给新事件源脚手架与关键差异用例）
 
 ```java
 package com.portfolio.invest.agent.observability;
@@ -418,12 +418,12 @@ class ObservabilityAgentMiddlewareTest {
 
 大括号注释的用例体：实现者以 `ObservabilityAgentHookTest` 对应用例（DisplayName 已标注原行号）的断言体为蓝本，只替换「触发方式」为新事件源——断言与口径**逐字保留**。原 `:419 hook 顺序` 用例**不迁移**（priority 机制随 Hook 删除退役，装配次序归 Task 4 factory 测试）。
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `cd backend && ./gradlew test --tests "com.portfolio.invest.agent.observability.ObservabilityAgentMiddlewareTest" --console=plain`
 Expected: 编译失败 `cannot find symbol: class ObservabilityAgentMiddleware`
 
-- [ ] **Step 3: 最小实现**（方法体自 ObservabilityAgentHook 逐段迁移；差异仅事件源与 ctx 传参）
+- [x] **Step 3: 最小实现**（方法体自 ObservabilityAgentHook 逐段迁移；差异仅事件源与 ctx 传参）
 
 ```java
 package com.portfolio.invest.agent.observability;
@@ -614,8 +614,8 @@ public final class ObservabilityAgentMiddleware implements MiddlewareBase {
 
 「逐字迁移」标注的私有方法：实现者 Read `ObservabilityAgentHook.java` 对应行段原样复制（该方法内对 `runtimeContext` 字段的引用改为参数 `rc`），**不改口径**。
 
-- [ ] **Step 4: 跑测试确认通过**（同 Step 2，全部用例含补全体 PASS）
-- [ ] **Step 5: 提交**（同 Task 1 模式，信息 `feat(agent): ObservabilityAgentMiddleware——onAgent 单点拦截的轮级观测（priority 装配序退役）`）
+- [x] **Step 4: 跑测试确认通过**（同 Step 2，全部用例含补全体 PASS）
+- [x] **Step 5: 提交**（同 Task 1 模式，信息 `feat(agent): ObservabilityAgentMiddleware——onAgent 单点拦截的轮级观测（priority 装配序退役）`）
 
 ### Task 3: ReportUsage 切换（涟漪 + 删旧 Hook）
 
@@ -638,8 +638,8 @@ public final class ObservabilityAgentMiddleware implements MiddlewareBase {
 - Consumes: Task 1 `ReportUsageMiddleware(totalTokens()/drainTruthInvocations())`。
 - Produces: `ReportAgentRunnerFactory.create(Long, ReportUsageMiddleware)`（新签名，Task 6 无消费但 BDD fake 与生产 bean `ReportTaskExecutorConfig` 依赖）；`buildReportAgent(Long, ReportUsageMiddleware)`。
 
-- [ ] **Step 1: 全部类型替换 + factory 切装配**（机械替换 `ReportUsageHook`→`ReportUsageMiddleware`；`HarnessAgentFactory.buildReportAgent` 内 `.hook(usageHook)` → `.middleware(usageMiddleware)`，javadoc ⑤「追加 ReportUsageHook」同步改；Orchestrator javadoc :37-41 的 ReportUsageHook 引用同步改）
-- [ ] **Step 2: BDD 剧本改 onAgent 模拟**——`CucumberSpringConfig:182-186` 的 `usageHook.setRuntimeContext(derived); usageHook.onEvent(new PostCallEvent(...)).block()` 替换为：
+- [x] **Step 1: 全部类型替换 + factory 切装配**（机械替换 `ReportUsageHook`→`ReportUsageMiddleware`；`HarnessAgentFactory.buildReportAgent` 内 `.hook(usageHook)` → `.middleware(usageMiddleware)`，javadoc ⑤「追加 ReportUsageHook」同步改；Orchestrator javadoc :37-41 的 ReportUsageHook 引用同步改）
+- [x] **Step 2: BDD 剧本改 onAgent 模拟**——`CucumberSpringConfig:182-186` 的 `usageHook.setRuntimeContext(derived); usageHook.onEvent(new PostCallEvent(...)).block()` 替换为：
 
 ```java
 usageMiddleware.onAgent(null, derived, new AgentInput(List.of()),
@@ -651,18 +651,18 @@ usageMiddleware.onAgent(null, derived, new AgentInput(List.of()),
 ```
 
 剧本类注释「轮末代拟 harness 接线」段同步改写（模拟 onAgent 完成流；**drain 通道契约注释原样保留**）。
-- [ ] **Step 3: 删除两个旧文件**（`git rm`）
-- [ ] **Step 4: 编译三源集**
+- [x] **Step 3: 删除两个旧文件**（`git rm`）
+- [x] **Step 4: 编译三源集**
 
 Run: `cd backend && ./gradlew compileJava compileTestJava compileIntegrationTestJava compileBddJava --console=plain`
 Expected: PASS（残留引用会在此暴露——全仓 grep `ReportUsageHook` 应只剩 docs 历史文档）
 
-- [ ] **Step 5: 跑 report/agent 包 + BDD**
+- [x] **Step 5: 跑 report/agent 包 + BDD**
 
 Run: `cd backend && ./gradlew test --tests "com.portfolio.invest.agent.*" --console=plain && ./gradlew bdd --console=plain`
 Expected: 全 PASS（BDD 剧本即 Review Focus #2/#5 钉子）
 
-- [ ] **Step 6: 提交**（信息 `refactor(agent): 研报用量/真值链切换 ReportUsageMiddleware 并删除 ReportUsageHook`）
+- [x] **Step 6: 提交**（信息 `refactor(agent): 研报用量/真值链切换 ReportUsageMiddleware 并删除 ReportUsageHook`）
 
 ### Task 4: Observability 切换 + 桥接瘦身 + 删旧 Hook
 
@@ -678,15 +678,15 @@ Expected: 全 PASS（BDD 剧本即 Review Focus #2/#5 钉子）
 - Consumes: Task 2 `ObservabilityAgentMiddleware(ObservabilityRecorder, TrustAgentHook, ObjectMapper)`。
 - Produces: **验收口径达成**——`grep -r "io.agentscope.core.hook" backend/src/main` 仅剩 TrustAgentHook。
 
-- [ ] **Step 1: factory 双装配点切换 + 桥接瘦身 + javadoc**（`build(Long)` 除「Hook 装配→中间件装配」外零变更——红线）
-- [ ] **Step 2: 删除两个旧文件**（`git rm`）
-- [ ] **Step 3: 适配两 factory 测试**（断言面按上；`ObservabilityAgentHook`/`ObservabilityAgentHookTest` 引用清零）
-- [ ] **Step 4: 验收 grep + agent 包全量**
+- [x] **Step 1: factory 双装配点切换 + 桥接瘦身 + javadoc**（`build(Long)` 除「Hook 装配→中间件装配」外零变更——红线）
+- [x] **Step 2: 删除两个旧文件**（`git rm`）
+- [x] **Step 3: 适配两 factory 测试**（断言面按上；`ObservabilityAgentHook`/`ObservabilityAgentHookTest` 引用清零）
+- [x] **Step 4: 验收 grep + agent 包全量**
 
 Run: `grep -rn "io.agentscope.core.hook" backend/src/main --include="*.java" | grep -v TrustAgentHook; cd backend && ./gradlew test --tests "com.portfolio.invest.agent.*" --console=plain`
 Expected: grep 零输出；agent 包全 PASS
 
-- [ ] **Step 5: 提交**（信息 `refactor(agent): 轮级观测切换 ObservabilityAgentMiddleware——Hook 引用面收敛至 TrustAgentHook`）
+- [x] **Step 5: 提交**（信息 `refactor(agent): 轮级观测切换 ObservabilityAgentMiddleware——Hook 引用面收敛至 TrustAgentHook`）
 
 ### Task 5: 全量门禁 + 文档与留守注记
 
@@ -697,22 +697,22 @@ Expected: grep 零输出；agent 包全 PASS
 - Modify: `docs/technology/modules/16-评测与可观测性.md`（:4 代码锚定行、:13/:50 机制描述、:91 测试清单——ObservabilityAgentHook→ObservabilityAgentMiddleware，事件源描述同步；现状陈述才改）
 - Modify: `features/hook-migration/03-实施计划/P1-hook-migration.md`（状态行回填）
 
-- [ ] **Step 1: 全量门禁**
+- [x] **Step 1: 全量门禁**
 
 Run: `cd backend && ./gradlew cleanTest cleanIntegrationTest cleanBdd --console=plain && make test-backend`
 Expected: 全绿（test/integrationTest/bdd/ArchUnit/JaCoCo 双门槛）
 
-- [ ] **Step 2: 文档现状陈述替换**（逐处 grep 判定「现状 vs 历史」；`docs/roadmap/2026-10-05` 与 `docs/function/modules/19` 与 research 调研为历史保真不动；modules/01 若有机理句提及 hook 链一并对齐）
-- [ ] **Step 3: `make check-links` 零断链**（注意：**不要**用 `| tail` 吞退出码）
-- [ ] **Step 4: 提交**（信息 `docs: hook-migration 现状注记对齐 + TrustAgentHook 留守触发条件`）
+- [x] **Step 2: 文档现状陈述替换**（逐处 grep 判定「现状 vs 历史」；`docs/roadmap/2026-10-05` 与 `docs/function/modules/19` 与 research 调研为历史保真不动；modules/01 若有机理句提及 hook 链一并对齐）
+- [x] **Step 3: `make check-links` 零断链**（注意：**不要**用 `| tail` 吞退出码）
+- [x] **Step 4: 提交**（信息 `docs: hook-migration 现状注记对齐 + TrustAgentHook 留守触发条件`）
 
 ### Task 6: 真流回归 + PR
 
 **Files:** 无代码改动（验证 + 回填 + PR）。
 
-- [ ] **Step 1: `make smoke`**——观测证据链不降：turn_observation 落行 user_id 非空、tokenUsage>0（研报路，Review Focus #1 钉子）、trust Custom 事件正常（Trust 零改动旁证）。红了先归因（环境 vs 回归）。
-- [ ] **Step 2: 清 `.next` 后 `cd frontend && pnpm test:e2e`**——全绿（含 HITL 审批卡）。
-- [ ] **Step 3: 回填计划状态行（已完成，PR #N 占位）+ `features/README.md` 索引状态更新 + `make check-links`；提交并 `git push -u origin chore/hook-migration`；`gh pr create --base main`（标题 `refactor: Hook forRemoval 专项——两观测 Hook 迁 Middleware，Trust 留守`；描述含规格链接、能力矩阵结论、门禁与 smoke/e2e 数字、Trust 触发条件；尾行 Generated with Claude Code）。**不合并 PR**（合并由用户拍板）。**复盘总结（08-复盘总结/）合并后回填**（特性流程惯例）。
+- [x] **Step 1: `make smoke`**——观测证据链不降：turn_observation 落行 user_id 非空、tokenUsage>0（研报路，Review Focus #1 钉子）、trust Custom 事件正常（Trust 零改动旁证）。红了先归因（环境 vs 回归）。
+- [x] **Step 2: 清 `.next` 后 `cd frontend && pnpm test:e2e`**——全绿（含 HITL 审批卡）。
+- [x] **Step 3: 回填计划状态行（已完成，PR #N 占位）+ `features/README.md` 索引状态更新 + `make check-links`；提交并 `git push -u origin chore/hook-migration`；`gh pr create --base main`（标题 `refactor: Hook forRemoval 专项——两观测 Hook 迁 Middleware，Trust 留守`；描述含规格链接、能力矩阵结论、门禁与 smoke/e2e 数字、Trust 触发条件；尾行 Generated with Claude Code）。**不合并 PR**（合并由用户拍板）。**复盘总结（08-复盘总结/）合并后回填**（特性流程惯例）。
 
 ---
 
