@@ -50,6 +50,14 @@ import reactor.core.publisher.Mono;
  *       RuntimeContextAware 已删，PR #3279）。</li>
  * </ul>
  *
+ * <p><strong>留守裁决（hook-migration 专项）：</strong>两观测 Hook 已迁 Middleware，本类是
+ * main 上唯一 {@code io.agentscope.core.hook} import 面，继续以 Hook API 留守（钉版 2.0.4 内
+ * forRemoval 未兑现删除，不构成弃用违例）。重开迁移触发条件（满足其一即另立任务迁移，
+ * 全文见 {@code features/hook-migration/02-设计规格/设计规格说明.md} §五）：
+ * ① 2.1.0 正式版删除 Hook 系——届时即使能力缺口仍在也被迫迁移，须先按缺口做功能降级设计评审；
+ * ② 上游补 Msg-metadata 写入口或 summary 路径 state 改写口——届时做无损迁移（2.0.4 Middleware
+ * 缺这两口，全迁将损失跨轮真值池持久化与 summary 锚点两项 MS-29 已交付能力）。
+ *
  * <p><strong>事件契约（§4.3）：</strong>{@code trust.correction}（有大偏差修正时，每条替换一个事件，
  * 先发）value={messageId, snippet, occ, replacement, note}；{@code trust.anchors}（每 assistant
  * 末轮一次）value={messageId, payload}（payload v1 见 {@link TrustTurnReport#toPayload()}，

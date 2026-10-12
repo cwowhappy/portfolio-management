@@ -1,7 +1,7 @@
 # Hook forRemoval 专项实施计划（P1）
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development（本仓既定执行方式）来逐任务实施本计划。步骤用 checkbox（`- [ ]`）跟踪。
-> 分支：`chore/hook-migration`（规格已入库 @ 6b327c65）| 状态：进行中
+> 分支：`chore/hook-migration`（规格已入库 @ 6b327c65）| 状态：进行中——T1–T5 收口（全量门禁绿：test 2422 / integrationTest 383 / bdd 34，JaCoCo 聚合指令 96.18% / 分支 84.56%），剩 Task 6 真流回归 + PR
 
 **Goal:** ObservabilityAgentHook / ReportUsageHook 无损迁移为单点 onAgent 拦截 Middleware 并删除旧 Hook，TrustAgentHook 留守并文档化重开触发条件——main 的 `io.agentscope.core.hook` import 面收敛到 TrustAgentHook 一处。
 
