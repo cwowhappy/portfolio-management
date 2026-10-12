@@ -55,7 +55,7 @@ import reactor.core.publisher.Mono;
  * forRemoval 未兑现删除，不构成弃用违例）。重开迁移触发条件（满足其一即另立任务迁移，
  * 全文见 {@code features/hook-migration/02-设计规格/设计规格说明.md} §五）：
  * ① 2.1.0 正式版删除 Hook 系——届时即使能力缺口仍在也被迫迁移，须先按缺口做功能降级设计评审；
- * ② 上游补 Msg-metadata 写入口或 summary 路径 state 改写口——届时做无损迁移（2.0.4 Middleware
+ * ② 上游补 Msg-metadata 写入口与 summary 路径 state 改写口（任一缺失即留守）——届时做无损迁移（2.0.4 Middleware
  * 缺这两口，全迁将损失跨轮真值池持久化与 summary 锚点两项 MS-29 已交付能力）。
  *
  * <p><strong>事件契约（§4.3）：</strong>{@code trust.correction}（有大偏差修正时，每条替换一个事件，
