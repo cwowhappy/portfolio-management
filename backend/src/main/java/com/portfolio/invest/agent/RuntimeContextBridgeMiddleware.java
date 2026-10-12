@@ -25,9 +25,12 @@ import reactor.core.publisher.Flux;
  * 是 rc typed 属性而非 rc 身份，工具侧 {@code buildMergedRuntimeContext} 的实例拷贝复制
  * extras、池引用随行——桥接对拷贝不敏感（S1 型「真值池恒空」不复发）。
  *
- * <p><strong>order()=Integer.MAX_VALUE：</strong>链按 order 降序，桥接恒为最外层、先于一切
- * （含 TrustWireMessageIdMiddleware）。null 容忍：ctx 可能缺席（裸调用路径），消费者
- * （Hook setter）自防 null。2.0.3 上与框架侧回调同 rc 幂等共存（升级前行为中性）。
+ * <p><strong>链序归因（2026-10-12 终审勘误）：</strong>2.0.4 MiddlewareChain 不做 order 排序
+ * （javap 全扫 core+harness 无 order() 调用），链序=纯注册序（MiddlewareChain.build 自尾向头
+ * 包裹，先注册=最外层）；本中间件以<strong>先注册</strong>保证最外层、先于一切
+ * （含 TrustWireMessageIdMiddleware），{@code order()} 返回 MAX_VALUE 仅作语义声明。
+ * null 容忍：ctx 可能缺席（裸调用路径），消费者（Hook setter）自防 null。
+ * 2.0.3 上与框架侧回调同 rc 幂等共存（升级前行为中性）。
  */
 public final class RuntimeContextBridgeMiddleware implements MiddlewareBase {
 

@@ -28,7 +28,8 @@ import reactor.core.publisher.Flux;
  * （{@code totalTokens()}），usage 缺席安全跳过。
  *
  * <p><strong>② 真值池轮末快照：</strong>onAgent 完成时点（doOnComplete）读
- * {@code TrustContext.current(ctx).invocations()} 入并发队列，编排器每轮 call 返回后
+ * {@code TrustContext.current(ctx).invocations()} 入并发队列（ctx 缺席防御性跳过——恢复旧
+ * Hook null 守卫路径），编排器每轮 call 返回后
  * {@link #drainTruthInvocations()} 排空。时序等价性：onAgent 链包在 runLifecycle 外侧
  * （2.0.4 ReActAgent.buildAgentStream），doOnComplete 晚于核心内 Trust hook 的 POST_CALL
  * 与 state 落盘；ctx 即 ensureSessionDefaults 派生 rc（与工具装饰器同源，PR #110 实证）——
@@ -78,6 +79,9 @@ public final class ReportUsageMiddleware implements MiddlewareBase {
     }
 
     private void collectTruth(RuntimeContext ctx) {
+        if (ctx == null) {
+            return;
+        }
         try {
             truthInvocations.addAll(TrustContext.current(ctx).invocations());
         } catch (Exception e) {

@@ -86,6 +86,18 @@ class ReportUsageMiddlewareTest {
         assertThat(mw.drainTruthInvocations()).isEmpty();
     }
 
+    @Test
+    @DisplayName("null ctx 完成流：真值采集防御性跳过，drain 为空且 ThreadLocal 无残留")
+    void givenNullContext_whenAgentCompletes_thenTruthSkippedAndDrainEmpty() {
+        TrustContext.reset();
+        ReportUsageMiddleware mw = new ReportUsageMiddleware();
+
+        mw.onAgent(null, null, new AgentInput(List.of()),
+                input -> Flux.just((AgentEvent) new AgentResultEvent(msg("m-1")))).blockLast();
+
+        assertThat(mw.drainTruthInvocations()).isEmpty();
+    }
+
     // ———— 夹具 ————
 
     private static Msg msg(String id) {
