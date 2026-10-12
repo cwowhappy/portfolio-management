@@ -8,7 +8,7 @@ import io.agentscope.core.agent.RuntimeContext;
  * （沿 {@code HarnessAgentInvoker.ask} 先例；null 文本原样透传——解析层按 FENCE_MISSING 分流）。
  *
  * <p>per-task 实例（非 Spring bean）：每任务经 {@link ReportAgentRunnerFactory} 装配
- * （agent 与 {@link ReportUsageHook} 均随任务构建）；同 {@code rc}（sessionId=report-&lt;taskId&gt;）
+ * （agent 与 {@link ReportUsageMiddleware} 均随任务构建）；同 {@code rc}（sessionId=report-&lt;taskId&gt;）
  * 续会话多轮。B14 BDD/fake 测试以本接口注入剧本回放。
  */
 public interface ReportAgentRunner {

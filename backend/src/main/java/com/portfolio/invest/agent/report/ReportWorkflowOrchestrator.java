@@ -34,11 +34,11 @@ import org.springframework.stereotype.Component;
  * COLLECTING→ANALYZING→DRAFTING→VALIDATING（三轮 call 续会话 + 校验门），
  * 多轮驱动替代超大 maxIters（同 sessionId=report-&lt;taskId&gt; 续会话，D3 失败重来 = 新任务新会话）。
  *
- * <p><strong>每轮护栏（call 返回后）：</strong>①真值池快照累积——排空 {@link ReportUsageHook}
- * 在 POST_CALL 时点采集的真值（Ruling-21 修复③主通道：HarnessAgent 对编排器裸 rc 恒派生新实例，
- * 工具记录与 hook 同见派生 rc，编排器自有 rc 上直读恒空——S1 真 LLM 实证 + 字节码归因，详见
- * {@link ReportUsageHook} 类注释②；派生池下一轮 PRE_CALL 被 fresh 覆盖，故 hook 抢先快照、
- * 此处排空防跨轮重复，门只吃累积池）；②单任务 token 上限（ReportUsageHook 累计，
+ * <p><strong>每轮护栏（call 返回后）：</strong>①真值池快照累积——排空 {@link ReportUsageMiddleware}
+ * 在轮末 onAgent 完成时点采集的真值（Ruling-21 修复③主通道：HarnessAgent 对编排器裸 rc 恒派生新实例，
+ * 工具记录与用量中间件同见派生 rc，编排器自有 rc 上直读恒空——S1 真 LLM 实证 + 字节码归因，详见
+ * {@link ReportUsageMiddleware} 类注释②；派生池下一轮 PRE_CALL 被 fresh 覆盖，故中间件抢先快照、
+ * 此处排空防跨轮重复，门只吃累积池）；②单任务 token 上限（ReportUsageMiddleware 累计，
  * 严格大于即 {@code FAILED(QUOTA_TASK_CAP)}）；③任务总超时（{@code FAILED(TIMEOUT)}）。</p>
  *
  * <p><strong>VALIDATING：</strong>payload 围栏提取（格式失败 → 格式反馈重试 1 轮，整任务一次；
@@ -109,27 +109,27 @@ public class ReportWorkflowOrchestrator {
             executor.execute(() -> run(taskId, userId, projectId));
         } catch (RejectedExecutionException e) {
             log.warn("研报任务 {} 提交被拒（执行线程池已满）", taskId);
-            failTask(taskId, userId, new ReportUsageHook(),
+            failTask(taskId, userId, new ReportUsageMiddleware(),
                     ReportWorkflowException.AGENT_ERROR, "执行队列已满，请稍后重试");
         }
     }
 
     private void run(Long taskId, Long userId, Long projectId) {
-        ReportUsageHook usageHook = new ReportUsageHook();
+        ReportUsageMiddleware usageMiddleware = new ReportUsageMiddleware();
         try {
-            executeWorkflow(taskId, userId, projectId, usageHook);
+            executeWorkflow(taskId, userId, projectId, usageMiddleware);
         } catch (ReportWorkflowException e) {
             log.warn("研报任务 {} 失败（{}）：{}", taskId, e.errorCode(), e.getMessage());
-            failTask(taskId, userId, usageHook, e.errorCode(), e.getMessage());
+            failTask(taskId, userId, usageMiddleware, e.errorCode(), e.getMessage());
         } catch (Exception e) {
             log.error("研报任务 {} 未预期异常", taskId, e);
-            failTask(taskId, userId, usageHook, ReportWorkflowException.AGENT_ERROR, e.toString());
+            failTask(taskId, userId, usageMiddleware, ReportWorkflowException.AGENT_ERROR, e.toString());
         } finally {
             TrustContext.reset();
         }
     }
 
-    private void executeWorkflow(Long taskId, Long userId, Long projectId, ReportUsageHook usageHook) {
+    private void executeWorkflow(Long taskId, Long userId, Long projectId, ReportUsageMiddleware usageMiddleware) {
         ReportTask task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new ReportWorkflowException(ReportWorkflowException.AGENT_ERROR,
                         "研报任务不存在：" + taskId));
@@ -141,7 +141,7 @@ public class ReportWorkflowOrchestrator {
                 .orElseThrow(() -> new ReportWorkflowException(ReportWorkflowException.AGENT_ERROR,
                         "研究项目不存在：" + projectId));
         task = taskRepository.save(task.markRunning(clock.instant()));
-        TaskRun run = new TaskRun(task, userId, usageHook, runnerFactory.create(userId, usageHook));
+        TaskRun run = new TaskRun(task, userId, usageMiddleware, runnerFactory.create(userId, usageMiddleware));
 
         run.round(collectPrompt(project));
         run.advance(ReportTask.Stage.ANALYZING);
@@ -169,7 +169,7 @@ public class ReportWorkflowOrchestrator {
                     ReportValidationGate.extractAssumptionStatements(spec.contentMd()), run.pool);
         }
 
-        long tokens = usageHook.totalTokens();
+        long tokens = usageMiddleware.totalTokens();
         taskRepository.save(run.task.succeed(tokens, clock.instant()));
         sink.onTaskSucceeded(taskId, tokens, succeededPayload(spec, result));
         cleanupState(userId, taskId);
@@ -181,9 +181,9 @@ public class ReportWorkflowOrchestrator {
      * 失败收尾（fail-closed）：任务行重读置 FAILED（FAILED 再失败覆盖诊断，Ruling-7）→
      * sink 失败回调（配额结算）→ 终态 state 清理；各步异常仅记日志不阻断后续步。
      */
-    private void failTask(Long taskId, Long userId, ReportUsageHook usageHook,
+    private void failTask(Long taskId, Long userId, ReportUsageMiddleware usageMiddleware,
             String errorCode, String errorMessage) {
-        long tokens = usageHook.totalTokens();
+        long tokens = usageMiddleware.totalTokens();
         try {
             ReportTask task = taskRepository.findById(taskId).orElse(null);
             if (task == null) {
@@ -274,25 +274,25 @@ public class ReportWorkflowOrchestrator {
     private final class TaskRun {
         private final RuntimeContext rc;
         private final ReportAgentRunner runner;
-        private final ReportUsageHook usageHook;
+        private final ReportUsageMiddleware usageMiddleware;
         private final List<ToolInvocation> pool = new ArrayList<>();
         private final Instant taskStart;
         private ReportTask task;
         private boolean formatRetryAvailable = true;
 
-        TaskRun(ReportTask task, Long userId, ReportUsageHook usageHook, ReportAgentRunner runner) {
+        TaskRun(ReportTask task, Long userId, ReportUsageMiddleware usageMiddleware, ReportAgentRunner runner) {
             this.task = task;
-            this.usageHook = usageHook;
+            this.usageMiddleware = usageMiddleware;
             this.runner = runner;
             this.taskStart = clock.instant();
             this.rc = RuntimeContext.builder().userId(userId.toString())
                     .sessionId(sessionId(task.id())).build();
         }
 
-        /** 单轮调用：返回最终消息文本；返回后排空 hook 采集真值 + 双上限卡点（§3.2 全程护栏）。 */
+        /** 单轮调用：返回最终消息文本；返回后排空中间件采集真值 + 双上限卡点（§3.2 全程护栏）。 */
         String round(String prompt) {
             String text = runner.call(rc, prompt);
-            pool.addAll(usageHook.drainTruthInvocations());
+            pool.addAll(usageMiddleware.drainTruthInvocations());
             checkCaps();
             return text;
         }
@@ -332,7 +332,7 @@ public class ReportWorkflowOrchestrator {
         }
 
         private void checkCaps() {
-            long tokens = usageHook.totalTokens();
+            long tokens = usageMiddleware.totalTokens();
             if (tokens > perTaskTokenCap) {
                 throw new ReportWorkflowException(ReportWorkflowException.QUOTA_TASK_CAP,
                         "单任务 token 消耗 " + tokens + " 超上限 " + perTaskTokenCap);

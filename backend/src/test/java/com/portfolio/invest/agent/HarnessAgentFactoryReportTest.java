@@ -6,7 +6,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-import com.portfolio.invest.agent.report.ReportUsageHook;
+import com.portfolio.invest.agent.report.ReportUsageMiddleware;
 import com.portfolio.invest.agent.report.ReportWorkflowPrompt;
 import com.portfolio.invest.application.skill.SkillApplicationService;
 import com.portfolio.invest.config.InvestProperties;
@@ -124,9 +124,10 @@ class HarnessAgentFactoryReportTest {
         verifyNoInteractions(repository);
     }
 
-    @DisplayName("装配冒烟：buildReportAgent 三 hook 挂载（usage 同实例），maxIters 取 report 执行档")
+    @DisplayName("装配冒烟：buildReportAgent 双 hook + usage 中间件挂载（同实例），maxIters 取 report 执行档")
     @Test
-    void givenReportUsageHook_whenBuildReportAgent_thenTripleHooksMountedAndReportMaxIters() throws IOException {
+    void givenReportUsageMiddleware_whenBuildReportAgent_thenUsageMiddlewareMountedAndReportMaxIters()
+            throws IOException {
         UserToolkitFactory toolkitFactory = mockedToolkitFactory();
         SkillApplicationService skillApplicationService = mock(SkillApplicationService.class);
         when(skillApplicationService.enabledSkillCodes(1L)).thenReturn(List.of());
@@ -138,19 +139,20 @@ class HarnessAgentFactoryReportTest {
                 mock(ClasspathSkillRepository.class), mock(Model.class), props,
                 mock(com.portfolio.invest.domain.observability.ObservabilityRecorder.class),
                 new com.fasterxml.jackson.databind.ObjectMapper(), mock(ProfileContextBuilder.class));
-        ReportUsageHook usageHook = new ReportUsageHook();
+        ReportUsageMiddleware usageMiddleware = new ReportUsageMiddleware();
 
-        HarnessAgent agent = factory.buildReportAgent(1L, usageHook);
+        HarnessAgent agent = factory.buildReportAgent(1L, usageMiddleware);
 
         List<Hook> hooks = agent.getDelegate().getHooks();
         assertThat(hooks).anyMatch(h -> h instanceof com.portfolio.invest.agent.trust.TrustAgentHook);
         assertThat(hooks).anyMatch(h -> h instanceof com.portfolio.invest.agent.observability.ObservabilityAgentHook);
-        assertThat(hooks).as("用量钩子按入参同实例挂载（追加在既有双 hook 后）").contains(usageHook);
+        List<io.agentscope.core.middleware.MiddlewareBase> middlewares = agent.getDelegate().getMiddlewares();
+        assertThat(middlewares).as("用量中间件按入参同实例挂载（追加在既有双 hook 后）").contains(usageMiddleware);
         assertThat(agent.getDelegate().getMaxIters())
                 .as("单轮最大迭代取 invest.report.execution.max-iters-per-round")
                 .isEqualTo(7);
-        // rc 桥接（2.0.4 升级）：buildReportAgent 路径三消费者（trust/observability/usage）同源送抵
-        List<io.agentscope.core.middleware.MiddlewareBase> middlewares = agent.getDelegate().getMiddlewares();
+        // rc 桥接（2.0.4 升级）：buildReportAgent 路径两消费者（trust/observability）同源送抵
+        // ——usage 中间件经 onAgent 入参直收 ctx，不进桥接
         RuntimeContextBridgeMiddleware bridge = middlewares.stream()
                 .filter(RuntimeContextBridgeMiddleware.class::isInstance)
                 .map(RuntimeContextBridgeMiddleware.class::cast)

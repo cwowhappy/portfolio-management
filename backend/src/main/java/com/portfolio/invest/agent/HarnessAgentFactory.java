@@ -2,7 +2,7 @@ package com.portfolio.invest.agent;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.portfolio.invest.agent.observability.ObservabilityAgentHook;
-import com.portfolio.invest.agent.report.ReportUsageHook;
+import com.portfolio.invest.agent.report.ReportUsageMiddleware;
 import com.portfolio.invest.agent.report.ReportWorkflowPrompt;
 import com.portfolio.invest.agent.trust.TrustAgentHook;
 import com.portfolio.invest.agent.trust.TrustWireMessageIdMiddleware;
@@ -103,10 +103,10 @@ public class HarnessAgentFactory {
      * ①name=invest-report（区别对话链路，观测/留痕可归因）②sysPrompt 尾接深研指引块
      * （{@link #reportSystemPrompt}，恒注入非 skill）③maxIters 取 report 执行档
      * （invest.report.execution.max-iters-per-round）④toolkit 无 MCP（{@link #reportToolkit}，
-     * 天然无 MCP 写工具）⑤追加 {@link ReportUsageHook}（既有双 hook 后，整任务 token 累计）。
+     * 天然无 MCP 写工具）⑤追加 {@link ReportUsageMiddleware}（既有双 hook 后，整任务 token 累计）。
      * <strong>对话链路红线：build(Long) 与 systemPrompt(userId) 行为零变更。</strong>
      */
-    public HarnessAgent buildReportAgent(Long userId, ReportUsageHook usageHook) {
+    public HarnessAgent buildReportAgent(Long userId, ReportUsageMiddleware usageMiddleware) {
         List<String> enabled = skillApplicationService.enabledSkillCodes(userId);
         TrustAgentHook trustHook = new TrustAgentHook(trust);
         ObservabilityAgentHook observabilityHook =
@@ -131,13 +131,12 @@ public class HarnessAgentFactory {
                 .memory(MemoryConfig.builder()
                         .flushTrigger(MemoryConfig.FlushTrigger.throttled(config.getMemory().getFlushMinGap()))
                         .build())
-                // 既有双 hook 原样（trust 先行、观测后行）+ 研报用量钩子追加在后
+                // 既有双 hook 原样（trust 先行、观测后行）+ 研报用量中间件追加在后
                 .hook(trustHook)
                 .hook(observabilityHook)
-                .hook(usageHook)
+                .middleware(usageMiddleware)
                 .middleware(new RuntimeContextBridgeMiddleware(
-                        trustHook::setRuntimeContext, observabilityHook::setRuntimeContext,
-                        usageHook::setRuntimeContext))
+                        trustHook::setRuntimeContext, observabilityHook::setRuntimeContext))
                 .middleware(new TrustWireMessageIdMiddleware())
                 .build();
     }

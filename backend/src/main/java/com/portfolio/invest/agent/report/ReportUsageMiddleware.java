@@ -18,7 +18,7 @@ import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 
 /**
- * 研报任务用量 + 真值采集中间件（hook-migration，自 ReportUsageHook 等价迁移）：
+ * 研报任务用量 + 真值采集中间件（hook-migration，自旧 Hook 等价迁移）：
  * per-task 实例（非 Spring bean），编排器每任务 new 一枚经 {@code HarnessAgentFactory
  * .buildReportAgent(userId, usageMiddleware)} 挂入，双职责——
  *
@@ -53,14 +53,14 @@ public final class ReportUsageMiddleware implements MiddlewareBase {
                 .doOnComplete(() -> collectTruth(ctx));
     }
 
-    /** 整任务 token 累计读数（input+output 之和，token）——签名/语义沿 ReportUsageHook。 */
+    /** 整任务 token 累计读数（input+output 之和，token）——签名/语义沿旧 Hook。 */
     public long totalTokens() {
         return totalTokens.sum();
     }
 
     /**
      * 排空已采集真值（编排器每轮 call 返回后消费并入任务级池；排空语义防跨轮重复累计）
-     * ——签名/语义沿 ReportUsageHook。
+     * ——签名/语义沿旧 Hook。
      */
     public List<ToolInvocation> drainTruthInvocations() {
         List<ToolInvocation> drained = new ArrayList<>();

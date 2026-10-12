@@ -21,7 +21,7 @@ import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 
 /**
- * ReportUsageMiddleware 单元测试（hook-migration，沿 ReportUsageHookTest 口径迁移）：
+ * ReportUsageMiddleware 单元测试（hook-migration，沿旧 Hook 单测口径迁移）：
  * usage 事件源改 ModelCallEndEvent（reasoning+summary 双路同事件）；真值快照在 onAgent
  * 完成时点（doOnComplete）——与旧 POST_CALL 时序等价。真值注池走反射
  * （TrustContext.fresh/record 包私有于 trust 包，ReportSteps:311 B0 Ruling-1 同款取舍）。

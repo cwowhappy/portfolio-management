@@ -25,14 +25,14 @@ public final class HarnessReportAgentRunner implements ReportAgentRunner {
     private final Duration roundTimeout;
 
     public HarnessReportAgentRunner(HarnessAgentFactory factory, Duration roundTimeout,
-            Long userId, ReportUsageHook usageHook) {
+            Long userId, ReportUsageMiddleware usageMiddleware) {
         if (factory == null) {
             throw new ReportWorkflowException(ReportWorkflowException.AGENT_ERROR,
                     "DEEPSEEK_API_KEY 未配置，研报 Agent 不可用");
         }
         this.agent = factory.buildReportAgent(
                 Objects.requireNonNull(userId, "userId 不能为空"),
-                Objects.requireNonNull(usageHook, "usageHook 不能为空"));
+                Objects.requireNonNull(usageMiddleware, "usageMiddleware 不能为空"));
         this.roundTimeout = Objects.requireNonNull(roundTimeout, "roundTimeout 不能为空");
     }
 
