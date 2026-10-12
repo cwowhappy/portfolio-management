@@ -2,7 +2,7 @@ package com.portfolio.invest.bdd;
 
 import com.portfolio.invest.agent.report.ReportAgentRunner;
 import com.portfolio.invest.agent.report.ReportAgentRunnerFactory;
-import com.portfolio.invest.agent.report.ReportUsageHook;
+import com.portfolio.invest.agent.report.ReportUsageMiddleware;
 import com.portfolio.invest.application.intelligence.IntelligencePushPort;
 import com.portfolio.invest.application.research.ReportAnchorRecheckPort;
 import com.portfolio.invest.infrastructure.market.EastmoneyClient;
@@ -10,12 +10,11 @@ import com.portfolio.invest.infrastructure.market.SinaClient;
 import com.portfolio.invest.infrastructure.market.TencentClient;
 import com.portfolio.invest.support.PostgresTestSupport;
 import com.portfolio.invest.support.RecordingMailSender;
-import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.hook.PostCallEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.GenerateOptions;
@@ -25,7 +24,6 @@ import io.cucumber.spring.CucumberContextConfiguration;
 import java.util.List;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.function.Function;
-import org.mockito.Mockito;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -140,15 +138,13 @@ public class CucumberSpringConfig extends PostgresTestSupport {
      *
      * <p><b>Ruling-21 修复③拓扑拟真（终审 C-1，照 {@code ReportWorkflowOrchestratorTest}
      * 的 ScriptedRunner / 集成测试 fakeRunnerFactory 同款）</b>：每轮对编排器裸 rc 派生新实例
-     * （模拟 {@code HarnessAgent.ensureSessionDefaults} 字节码行为——工具装饰器与 hook 只见
-     * 派生 rc），剧本步在<b>派生 rc</b> 上注真值；轮末代拟 harness 接线
-     * （{@code setRuntimeContext(派生 rc)} + POST_CALL）——编排器在自有 rc 上直读恒空，
-     * 只能经 {@link ReportUsageHook#drainTruthInvocations()} 真值通道拿到，回归旧读法场景即红。</p>
+     * （模拟 {@code HarnessAgent.ensureSessionDefaults} 字节码行为——工具装饰器与用量中间件只见
+     * 派生 rc），剧本步在<b>派生 rc</b> 上注真值；轮末代拟 harness 接线（onAgent 完成流：
+     * 派生 rc 作 ctx、AgentResultEvent 作轮收尾事件，doOnComplete 快照真值）——编排器在
+     * 自有 rc 上直读恒空，只能经 {@link ReportUsageMiddleware#drainTruthInvocations()}
+     * 真值通道拿到，回归旧读法场景即红。</p>
      */
     public static final class ScriptedReportRunnerFactory implements ReportAgentRunnerFactory {
-
-        /** 事件构造要求的非空 Agent 替身（OrchestratorTest/UsageHookTest 同款：hook 不解引用其行为面）。 */
-        private static final Agent STUB_AGENT = Mockito.mock(Agent.class);
 
         private final ConcurrentLinkedQueue<Function<RuntimeContext, String>> script =
                 new ConcurrentLinkedQueue<>();
@@ -170,19 +166,21 @@ public class CucumberSpringConfig extends PostgresTestSupport {
         }
 
         @Override
-        public ReportAgentRunner create(Long userId, ReportUsageHook usageHook) {
+        public ReportAgentRunner create(Long userId, ReportUsageMiddleware usageMiddleware) {
             return (rc, userPrompt) -> {
                 Function<RuntimeContext, String> step = script.poll();
                 if (step == null) {
                     throw new IllegalStateException("研报剧本耗尽：出现未预期的额外调用轮");
                 }
-                // 拓扑拟真：派生 rc 上跑剧本（真值注进派生池），轮末 POST_CALL 快照进 hook
+                // 拓扑拟真：派生 rc 上跑剧本（真值注进派生池），轮末 onAgent 完成流快照进中间件
                 RuntimeContext derived = RuntimeContext.builder(rc).build();
                 String result = step.apply(derived);
-                usageHook.setRuntimeContext(derived);
-                usageHook.onEvent(new PostCallEvent(STUB_AGENT, Msg.builder()
-                        .id("round-" + System.nanoTime()).role(MsgRole.ASSISTANT)
-                        .textContent("轮收尾").build())).block();
+                usageMiddleware.onAgent(null, derived, new AgentInput(List.of()),
+                        input -> reactor.core.publisher.Flux.just(
+                                (io.agentscope.core.event.AgentEvent) new io.agentscope.core.event.AgentResultEvent(
+                                        Msg.builder().id("round-" + System.nanoTime()).role(MsgRole.ASSISTANT)
+                                                .textContent("轮收尾").build())))
+                        .blockLast();
                 return result;
             };
         }

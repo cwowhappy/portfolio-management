@@ -49,9 +49,9 @@ public class ReportTaskExecutorConfig {
     @Bean
     public ReportAgentRunnerFactory reportAgentRunnerFactory(
             ObjectProvider<HarnessAgentFactory> agentFactory, InvestProperties props) {
-        return (userId, usageHook) -> new HarnessReportAgentRunner(
+        return (userId, usageMiddleware) -> new HarnessReportAgentRunner(
                 agentFactory.getIfAvailable(), props.getReport().getExecution().roundTimeout(),
-                userId, usageHook);
+                userId, usageMiddleware);
     }
 
     @Bean

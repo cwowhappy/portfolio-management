@@ -1,7 +1,6 @@
 package com.portfolio.invest.agent.report;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.mock;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -17,11 +16,12 @@ import com.portfolio.invest.domain.research.ResearchStage;
 import com.portfolio.invest.domain.research.StageCompletionService;
 import com.portfolio.invest.domain.research.StrategyDoc;
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.agent.Agent;
-import io.agentscope.core.hook.PostCallEvent;
-import io.agentscope.core.hook.PostReasoningEvent;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentResultEvent;
+import io.agentscope.core.event.ModelCallEndEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.model.ChatUsage;
 import com.portfolio.invest.agent.trust.ToolInvocation;
 import com.portfolio.invest.agent.trust.TrustContext;
@@ -51,6 +51,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import reactor.core.publisher.Flux;
 
 /**
  * 研报工作流编排器单测（MS-32 B9，设计规格 §3.2）：fake runner 剧本驱动全状态机，零 LLM。
@@ -63,8 +64,9 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
  * 拟真</b>：fake runner 每轮先派生新 rc（{@code RuntimeContext.builder(rc).build()}，模拟
  * HarnessAgent.ensureSessionDefaults 对裸 rc 恒派生新实例的字节码实证行为），剧本步在
  * <b>派生 rc</b> 上 fresh+record 本轮真值（生产中工具装饰器只见派生 rc），轮末 runner 代拟
- * harness 接线（hook.setRuntimeContext(派生 rc) + POST_CALL）——编排器在自有 rc 上直读恒空，
- * 只能经 {@link ReportUsageHook#drainTruthInvocations()} 拿到真值，回归旧读法全剧本即红。
+ * harness 接线（onAgent 完成流：派生 rc 作 ctx、AgentResultEvent 作轮收尾事件，doOnComplete
+ * 快照真值）——编排器在自有 rc 上直读恒空，
+ * 只能经 {@link ReportUsageMiddleware#drainTruthInvocations()} 拿到真值，回归旧读法全剧本即红。
  */
 class ReportWorkflowOrchestratorTest {
 
@@ -72,7 +74,6 @@ class ReportWorkflowOrchestratorTest {
     private static final Long USER_ID = 1L;
     private static final Long PROJECT_ID = 5L;
     private static final ObjectMapper JSON = new ObjectMapper();
-    private static final Agent STUB_AGENT = mock(Agent.class);
 
     /** 三轮各一条真值：行情/估值/财务（草稿四个数字全部可锚定）。 */
     private static final String QUOTE_TRUTH = "现价986.50元，总市值8500亿";
@@ -276,18 +277,18 @@ class ReportWorkflowOrchestratorTest {
     void givenUsageOverCapAfterFirstRound_whenSubmit_thenFailedQuotaTaskCap() {
         FakeTaskRepository tasks = new FakeTaskRepository();
         RecordingSink sink = new RecordingSink();
-        AtomicReference<ReportUsageHook> capturedHook = new AtomicReference<>();
+        AtomicReference<ReportUsageMiddleware> capturedMiddleware = new AtomicReference<>();
         ScriptedRunner runner = ScriptedRunner.of(
                 rc -> {
                     seedPool(rc, truth("get_quote", QUOTE_TRUTH));
-                    charge(capturedHook.get(), 150L);
+                    charge(capturedMiddleware.get(), 150L);
                     return "收集小结";
                 },
                 rc -> "不应到达的分析轮");
         InvestProperties props = props();
         props.getReport().setQuota(new InvestProperties.Report.Quota(500_000L, 100L));
         ReportWorkflowOrchestrator orchestrator = orchestrator(runner, sink, tasks, props, clock,
-                directExecutor(), capturedHook);
+                directExecutor(), capturedMiddleware);
         Long taskId = seedTask(tasks);
 
         orchestrator.submit(taskId, USER_ID, PROJECT_ID);
@@ -436,12 +437,12 @@ class ReportWorkflowOrchestratorTest {
 
     private ReportWorkflowOrchestrator orchestrator(ScriptedRunner runner, RecordingSink sink,
             FakeTaskRepository tasks, InvestProperties props, Clock clock, TaskExecutor executor,
-            AtomicReference<ReportUsageHook> capturedHook) {
+            AtomicReference<ReportUsageMiddleware> capturedMiddleware) {
         ResearchProjectRepository projectRepository = projectRepository();
-        ReportAgentRunnerFactory runnerFactory = (userId, usageHook) -> {
-            runner.wire(usageHook);
-            if (capturedHook != null) {
-                capturedHook.set(usageHook);
+        ReportAgentRunnerFactory runnerFactory = (userId, usageMiddleware) -> {
+            runner.wire(usageMiddleware);
+            if (capturedMiddleware != null) {
+                capturedMiddleware.set(usageMiddleware);
             }
             return runner;
         };
@@ -548,11 +549,11 @@ class ReportWorkflowOrchestratorTest {
         }
     }
 
-    /** 向 per-task 用量钩子累计 tokens（沿 ReportUsageHook 事件源：POST_REASONING 携带 usage）。 */
-    private static void charge(ReportUsageHook hook, long tokens) {
-        Msg msg = Msg.builder().id("charge").role(MsgRole.ASSISTANT).textContent("轮")
-                .usage(new ChatUsage((int) tokens, 0, 0.0)).build();
-        hook.onEvent(new PostReasoningEvent(STUB_AGENT, "deepseek-chat", null, msg)).block();
+    /** 向 per-task 用量中间件累计 tokens（ModelCallEndEvent 携带 usage，单点 onAgent 层过滤）。 */
+    private static void charge(ReportUsageMiddleware middleware, long tokens) {
+        middleware.onAgent(null, RuntimeContext.builder().build(), new AgentInput(List.of()),
+                input -> Flux.just((AgentEvent) new ModelCallEndEvent("charge",
+                        new ChatUsage((int) tokens, 0, 0.01)))).blockLast();
     }
 
     private static String fencedReport(String title, String contentMd, String limitations) {
@@ -618,11 +619,11 @@ class ReportWorkflowOrchestratorTest {
 
     /** 剧本 runner：按调用序回放（每步收到派生 rc 可注真值/推时钟）；剧本耗尽即抛（未预期轮转 AGENT_ERROR）。
      * Ruling-21 修复③拓扑拟真：每轮派生新 rc（ensureSessionDefaults 字节码行为）+ 轮末代拟
-     * harness 接线（setRuntimeContext(派生 rc) + POST_CALL）——真值只经 hook 通道可达编排器。 */
+     * harness 接线（onAgent 完成流：派生 rc 作 ctx）——真值只经中间件 drain 通道可达编排器。 */
     private static final class ScriptedRunner implements ReportAgentRunner {
         private final List<Function<RuntimeContext, String>> script;
         private final List<String> prompts = new ArrayList<>();
-        private volatile ReportUsageHook hook;
+        private volatile ReportUsageMiddleware middleware;
         private int calls;
 
         static ScriptedRunner of(@SuppressWarnings("unchecked") Function<RuntimeContext, String>... steps) {
@@ -633,8 +634,8 @@ class ReportWorkflowOrchestratorTest {
             this.script = script;
         }
 
-        void wire(ReportUsageHook hook) {
-            this.hook = hook;
+        void wire(ReportUsageMiddleware middleware) {
+            this.middleware = middleware;
         }
 
         int calls() {
@@ -651,13 +652,14 @@ class ReportWorkflowOrchestratorTest {
             if (calls >= script.size()) {
                 throw new RejectedExecutionException("剧本耗尽：第 " + (calls + 1) + " 轮未被预期");
             }
-            // 模拟 HarnessAgent.ensureSessionDefaults：对编排器裸 rc 派生新实例（工具/hook 只见它）
+            // 模拟 HarnessAgent.ensureSessionDefaults：对编排器裸 rc 派生新实例（工具/用量中间件只见它）
             RuntimeContext derived = RuntimeContext.builder(rc).build();
             String result = script.get(calls++).apply(derived);
-            ReportUsageHook wired = hook;
+            ReportUsageMiddleware wired = middleware;
             if (wired != null) {
-                wired.setRuntimeContext(derived);
-                wired.onEvent(new PostCallEvent(STUB_AGENT, endOfRoundMsg())).block();
+                wired.onAgent(null, derived, new AgentInput(List.of()),
+                        input -> Flux.just((AgentEvent) new AgentResultEvent(endOfRoundMsg())))
+                        .blockLast();
             }
             return result;
         }

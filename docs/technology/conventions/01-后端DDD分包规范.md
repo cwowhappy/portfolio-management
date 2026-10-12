@@ -58,7 +58,7 @@ com.portfolio.invest                    # 根包：仅启动类
 - **理由**：技术栈可替换而不影响领域/应用层；外部客户端、持久化、安全都收敛于此。
 
 ### agent（独立能力域）
-- **作用**：投研 Agent 的全部资产——系统提示词（`InvestSystemPrompt`）、数据工具（`InvestTools` 的 `@Tool` 方法）、图表契约（`chart/ChartSpec`+`ChartSpecs`：域数据→图表载荷）、MCP 客户端池（`McpClientPool`）、Agent 装配（`AgentConfig`/`HarnessAgentFactory`）、研报工作流（`report/`：`ReportWorkflowOrchestrator` 编排器、`ReportValidationGate` 校验门、`ReportUsageHook` 用量与真值钩子——MS-32 交付，详见 features/deep-research/）。
+- **作用**：投研 Agent 的全部资产——系统提示词（`InvestSystemPrompt`）、数据工具（`InvestTools` 的 `@Tool` 方法）、图表契约（`chart/ChartSpec`+`ChartSpecs`：域数据→图表载荷）、MCP 客户端池（`McpClientPool`）、Agent 装配（`AgentConfig`/`HarnessAgentFactory`）、研报工作流（`report/`：`ReportWorkflowOrchestrator` 编排器、`ReportValidationGate` 校验门、`ReportUsageMiddleware` 用量与真值中间件——MS-32 交付，详见 features/deep-research/）。
 - **定位**：独立能力域，**不并入 DDD 分层**；按真实 import 消费 application 的 `market`（`MarketDataService`）/`valuation`（`ValuationApplicationService`）/`skill`（`SkillApplicationService`）/`research`（研报用例与 `ReportTaskSink` 端口）与 domain 的 `market`/`valuation`/`research` 值对象及 `mcp` 端口（`McpConfigRepository` 等）。
 - **理由**：Agent 装配是域自身的产物，域内聚后全局 config 保持"纯配置"职责单一；保持 ADR-0001 的能力域独立原则。
 

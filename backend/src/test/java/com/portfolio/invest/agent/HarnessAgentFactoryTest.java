@@ -70,9 +70,9 @@ class HarnessAgentFactoryTest {
         assertThat(agent).isNotNull();
     }
 
-    @DisplayName("MS-29 B5 + MS-30 B6 挂载：build() 装配双 hook（trust 先行、观测后行）与观察中间件")
+    @DisplayName("hook-migration 收官：build() 装配 Trust 单 hook，观测/桥接/messageId 三中间件在位")
     @Test
-    void givenBuild_whenAssemble_thenTrustAndObservabilityHooksAndMiddlewareMounted() throws IOException {
+    void givenBuild_whenAssemble_thenTrustHookOnlyAndThreeMiddlewaresMounted() throws IOException {
         UserToolkitFactory toolkitFactory = mock(UserToolkitFactory.class);
         SkillApplicationService skillApplicationService = mock(SkillApplicationService.class);
         when(skillApplicationService.enabledSkillCodes(1L)).thenReturn(List.of());
@@ -80,36 +80,24 @@ class HarnessAgentFactoryTest {
 
         HarnessAgent agent = factory(toolkitFactory, skillApplicationService).build(1L);
 
+        // Hook 引用面收敛：唯一 hook 即 Trust（观测旧 Hook 已迁中间件）
         List<io.agentscope.core.hook.Hook> hooks = agent.getDelegate().getHooks();
-        assertThat(hooks)
-                .anyMatch(h -> h instanceof com.portfolio.invest.agent.trust.TrustAgentHook);
-        assertThat(hooks)
-                .anyMatch(h -> h instanceof com.portfolio.invest.agent.observability.ObservabilityAgentHook);
-        // 装配序钉死：trust 先行（默认 priority 100）、观测后行（priority 200 读其产物）
-        int trustIndex = indexOfInstance(hooks, com.portfolio.invest.agent.trust.TrustAgentHook.class);
-        int observabilityIndex =
-                indexOfInstance(hooks, com.portfolio.invest.agent.observability.ObservabilityAgentHook.class);
-        assertThat(trustIndex).isLessThan(observabilityIndex);
-        assertThat(agent.getDelegate().getMiddlewares())
-                .anyMatch(m -> m instanceof com.portfolio.invest.agent.trust.TrustWireMessageIdMiddleware);
+        assertThat(hooks).hasSize(1);
+        assertThat(hooks.get(0)).isInstanceOf(com.portfolio.invest.agent.trust.TrustAgentHook.class);
+        // 观测/桥接/messageId 三中间件挂载
         List<io.agentscope.core.middleware.MiddlewareBase> middlewares = agent.getDelegate().getMiddlewares();
+        assertThat(middlewares)
+                .anyMatch(m -> m instanceof com.portfolio.invest.agent.observability.ObservabilityAgentMiddleware);
+        assertThat(middlewares)
+                .anyMatch(m -> m instanceof com.portfolio.invest.agent.trust.TrustWireMessageIdMiddleware);
         RuntimeContextBridgeMiddleware bridge = middlewares.stream()
                 .filter(RuntimeContextBridgeMiddleware.class::isInstance)
                 .map(RuntimeContextBridgeMiddleware.class::cast)
                 .findFirst()
                 .orElseThrow(() -> new AssertionError("rc 桥接中间件未装配"));
-        // 防「加 hook 忘桥接」：消费者数与 hook 数同源
-        assertThat(bridge.consumerCount()).isEqualTo(hooks.size());
+        // 桥接单消费者（trust setter）：观测中间件经 onAgent 入参直收 ctx，不进桥接
+        assertThat(bridge.consumerCount()).isEqualTo(1);
         assertThat(bridge.order()).isEqualTo(Integer.MAX_VALUE);
-    }
-
-    private static int indexOfInstance(List<io.agentscope.core.hook.Hook> hooks, Class<?> type) {
-        for (int i = 0; i < hooks.size(); i++) {
-            if (type.isInstance(hooks.get(i))) {
-                return i;
-            }
-        }
-        return -1;
     }
 
     @DisplayName("MS-31 B5 回归红线：画像块缺位（授权全关/无数据/异常同路）时 sysPrompt 与现状逐字节一致")

@@ -151,14 +151,14 @@ invest:
 | `NumberExtractor` | `NumberExtractor.java:39` | B1 数据性数字提取（参数组②）：中文单位归一（万/亿/万亿）、年份/日期/时钟/序号/A股代码排除（B4 fix 防真值池吸入时间碎片） |
 | `ConsistencyValidator` | `ConsistencyValidator.java:45` | B2 三态判定（容差参数组①）+ 可归因大偏差确定性替换（参数组⑥）：verified / sourced / unverified，替换后重校验、重试上限触达降级转显式标注 |
 | `TrustTurnProcessor` / `TrustTurnReport` | `TrustTurnProcessor.java:22` | B5 回合流水纯函数半边：用户数字豁免（决策 #16）→ 校验改写 → 跨轮池摘要（Msg metadata `_trust_pool`，上限 40 条）→ payload v1 构造（`TrustTurnReport.java:46`） |
-| `TrustAgentHook` | `TrustAgentHook.java:65` | B5 回合钩子（锚点见 §7.2）：挂载于 `HarnessAgentFactory.build()`（`.hook()` + `.middleware()`，`HarnessAgentFactory.java:65-66`）——AG-UI 与飞书 call() 共同漏斗；护栏「宁可少标不可断流」：onEvent 整体 try-catch 原文直通 + WARN，emit 逐事件吞并，SSE 永不因校验中断 |
+| `TrustAgentHook` | `TrustAgentHook.java:76` | B5 回合钩子（锚点见 §7.2）：挂载于 `HarnessAgentFactory.build()`（`.hook()` + `.middleware()`，`HarnessAgentFactory.java:92-96`）——AG-UI 与飞书 call() 共同漏斗；护栏「宁可少标不可断流」：onEvent 整体 try-catch 原文直通 + WARN，emit 逐事件吞并，SSE 永不因校验中断 |
 | `TrustWireMessageIdMiddleware` | `TrustWireMessageIdMiddleware.java:30` | B5 旁路观察模型调用链的 TEXT_MESSAGE replyId 写入 rc（`RC_KEY`），Custom 事件的 messageId 与 AG-UI 线上消息 id 同源（观察缺席回退 Msg id） |
 | `AdviceDetector` | `AdviceDetector.java:20` | B6 投顾建议双层井集：`<!--advice-->` 自声明标记（检测到即剥离，干净文本才进校验）+ 词表兜底（参数组④，否定语境豁免）；`by=self\|lexicon\|both` |
 | `ConfidenceScorer` | `ConfidenceScorer.java:37` | B7 四类机制信号（参数组⑤，机制推导非模型自评）：unverified_ratio / 陈旧度三族（stale_quotes / stale_financials / stale_macro，按 asOfKind=DATA 归族）/ tool_failures / corrections（修正失败单列） |
 
 ### 7.2 锚点机制与事件契约
 
-锚点取舍（B0/B5 双探针在 HarnessAgent 生产路径实证，字节级依据见 `TrustAgentHook` 类注释）：**POST_REASONING 末轮为主**——agentscope 2.0.3 的 `runPostReasoningPipeline` 在 hook 链之后才把 reasoningMessage 写入 stateStore（与返回值同源），`setReasoningMessage` 是唯一同时送达两半边的官方口；**POST_SUMMARY 为辅**（maxIters 耗尽收尾，同构）；**POST_CALL 兜底 + 恒定回合收尾**（`TrustContext.reset()`；正常路径 state 落盘早于 POST_CALL，兜底只达返回值半边并 INFO 留痕）。末轮判定 = 无 ToolUseBlock 且文本非空（工具轮不处理）；同回合三锚点幂等防重、PRE_CALL 重置。Hook 系 API 上游标记 forRemoval（2.0.4 仍未移除），仓库 2.0.4 继续使用，后续升级需随上游替代口迁移。2.0.4 配套变化：上游已删 `RuntimeContextAware`，rc 改经 agent 包 `RuntimeContextBridgeMiddleware` 在 onAgent 入口桥接供给 Hook 消费者；AG-UI 线上 TEXT_MESSAGE messageId 改复合 id（#3010，`replyId + "-" + blockId`），`TrustWireMessageIdMiddleware` 已按同源配方适配。
+锚点取舍（B0/B5 双探针在 HarnessAgent 生产路径实证，字节级依据见 `TrustAgentHook` 类注释）：**POST_REASONING 末轮为主**——agentscope 2.0.3 的 `runPostReasoningPipeline` 在 hook 链之后才把 reasoningMessage 写入 stateStore（与返回值同源），`setReasoningMessage` 是唯一同时送达两半边的官方口；**POST_SUMMARY 为辅**（maxIters 耗尽收尾，同构）；**POST_CALL 兜底 + 恒定回合收尾**（`TrustContext.reset()`；正常路径 state 落盘早于 POST_CALL，兜底只达返回值半边并 INFO 留痕）。末轮判定 = 无 ToolUseBlock 且文本非空（工具轮不处理）；同回合三锚点幂等防重、PRE_CALL 重置。Hook 系 API 上游标记 forRemoval（2.0.4 仍未移除），仓库 2.0.4 继续使用——hook-migration 专项裁决**留守**（现为本仓唯一 `io.agentscope.core.hook` import 面），重开迁移触发条件见 `features/hook-migration/02-设计规格/设计规格说明.md` §五（① 2.1.0 正式版删除 Hook 系；② 上游补 Msg-metadata 写入口与 summary 路径 state 改写口（任一缺失即留守）——满足其一即另立任务迁移）。2.0.4 配套变化：上游已删 `RuntimeContextAware`，rc 改经 agent 包 `RuntimeContextBridgeMiddleware` 在 onAgent 入口桥接供给 Hook 消费者；AG-UI 线上 TEXT_MESSAGE messageId 改复合 id（#3010，`replyId + "-" + blockId`），`TrustWireMessageIdMiddleware` 已按同源配方适配。
 
 | Custom 事件 | value（Map，无 null） | 时机 |
 |---|---|---|

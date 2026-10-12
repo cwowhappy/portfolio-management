@@ -36,7 +36,7 @@ import org.springframework.test.web.servlet.MvcResult;
  * {@link ScriptedReportRunnerFactory} 剧本回放替换真 LLM（照
  * {@code ReportWorkflowOrchestratorTest} 的 ScriptedRunner 口径——Ruling-21 修复③拓扑
  * 拟真：每轮在派生 rc 上 fresh 清池（模拟生产 TrustAgentHook PRE_CALL 时序）再 record
- * 本轮真值，轮末 POST_CALL 经 {@code ReportUsageHook} 快照入编排器；真值池注入走反射，
+ * 本轮真值，轮末 onAgent 完成流经 {@code ReportUsageMiddleware} 快照入编排器；真值池注入走反射，
  * {@code TrustContext.fresh/record} 包私有于 trust 包，B0 Ruling-1 同款取舍）。
  *
  * <p>三剧本：①正常三轮 + 过门草稿（关键假设数字与真值一致）→ SUCCEEDED → 确认挂项目；

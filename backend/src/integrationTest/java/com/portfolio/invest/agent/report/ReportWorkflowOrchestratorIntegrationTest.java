@@ -1,7 +1,6 @@
 package com.portfolio.invest.agent.report;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.mock;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -19,12 +18,13 @@ import com.portfolio.invest.domain.research.ResearchReport;
 import com.portfolio.invest.domain.research.ResearchReportRepository;
 import com.portfolio.invest.domain.research.ResearchStage;
 import com.portfolio.invest.support.PostgresTestSupport;
-import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.hook.PostCallEvent;
-import io.agentscope.core.hook.PostReasoningEvent;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentResultEvent;
+import io.agentscope.core.event.ModelCallEndEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.model.ChatUsage;
 import java.io.IOException;
 import java.lang.reflect.Method;
@@ -39,12 +39,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.convention.TestBean;
+import reactor.core.publisher.Flux;
 
 /**
  * 研报工作流编排器集成（MS-32 B9，真 PG）：@TestBean 以 fake runner 工厂整体替换真实现
  * （沿 HarnessAgentStateIsolationIntegrationTest 先例）；sink 为 B11 真落库实现
  * （ReportApplicationService，原 B9 期 fake sink 装配缺口已由 B11 收口）。happy path 全链
- * 断言：任务行终态 SUCCEEDED + tokenUsage&gt;0（真 ReportUsageHook 经事件源充电）+
+ * 断言：任务行终态 SUCCEEDED + tokenUsage&gt;0（真 ReportUsageMiddleware 经事件源充电）+
  * 研报/锚点/假设真实落库（PENDING_CONFIRM + JSONB args + anchorIndex 绑定）+ 配额 settle 行
  * + 终态 state 会话清理（Ruling-5）。
  *
@@ -57,7 +58,6 @@ class ReportWorkflowOrchestratorIntegrationTest extends PostgresTestSupport {
 
     private static final Path STATE_ROOT = Path.of("build/report-workflow-it/state");
     private static final ObjectMapper JSON = new ObjectMapper();
-    private static final Agent STUB_AGENT = mock(Agent.class);
 
     private static final String QUOTE_TRUTH = "现价986.50元，总市值8500亿";
     private static final String VALUATION_TRUTH = "市盈率35.40，市净率9.80";
@@ -91,36 +91,36 @@ class ReportWorkflowOrchestratorIntegrationTest extends PostgresTestSupport {
     private JdbcTemplate jdbcTemplate;
 
     static ReportAgentRunnerFactory fakeRunnerFactory() {
-        return (userId, usageHook) -> new ReportAgentRunner() {
+        return (userId, usageMiddleware) -> new ReportAgentRunner() {
             private int calls;
 
             @Override
             public String call(RuntimeContext rc, String userPrompt) {
                 // Ruling-21 修复③拓扑拟真（与单测 ScriptedRunner 同款）：派生新 rc 模拟
                 // HarnessAgent.ensureSessionDefaults，真值记录进派生 rc，轮末代拟 harness
-                // 接线（setRuntimeContext + POST_CALL）——编排器只经 hook 通道拿真值
+                // 接线（onAgent 完成流）——编排器只经中间件 drain 通道拿真值
                 RuntimeContext derived = RuntimeContext.builder(rc).build();
                 String result;
                 switch (++calls) {
                     case 1:
                         seedPool(derived, truth("get_quote", QUOTE_TRUTH));
-                        charge(usageHook, 1200L);
+                        charge(usageMiddleware, 1200L);
                         result = "收集小结：get_quote 已取数";
                         break;
                     case 2:
                         seedPool(derived, truth("get_valuation", VALUATION_TRUTH));
-                        charge(usageHook, 800L);
+                        charge(usageMiddleware, 800L);
                         result = "分析小结：估值分位中等";
                         break;
                     default:
                         seedPool(derived, truth("get_financials", FINANCIALS_TRUTH));
-                        charge(usageHook, 500L);
+                        charge(usageMiddleware, 500L);
                         result = fencedReport("贵州茅台深度研报（集成）", VALID_CONTENT_MD, "无特别局限");
                 }
-                usageHook.setRuntimeContext(derived);
-                usageHook.onEvent(new PostCallEvent(STUB_AGENT, Msg.builder()
-                        .id("round-" + calls).role(MsgRole.ASSISTANT).textContent("轮收尾").build()))
-                        .block();
+                usageMiddleware.onAgent(null, derived, new AgentInput(List.of()),
+                        input -> Flux.just((AgentEvent) new AgentResultEvent(Msg.builder()
+                                .id("round-" + calls).role(MsgRole.ASSISTANT).textContent("轮收尾").build())))
+                        .blockLast();
                 return result;
             }
         };
@@ -204,10 +204,10 @@ class ReportWorkflowOrchestratorIntegrationTest extends PostgresTestSupport {
         }
     }
 
-    private static void charge(ReportUsageHook hook, long tokens) {
-        Msg msg = Msg.builder().id("charge").role(MsgRole.ASSISTANT).textContent("轮")
-                .usage(new ChatUsage((int) tokens, 0, 0.0)).build();
-        hook.onEvent(new PostReasoningEvent(STUB_AGENT, "deepseek-chat", null, msg)).block();
+    private static void charge(ReportUsageMiddleware middleware, long tokens) {
+        middleware.onAgent(null, RuntimeContext.builder().build(), new AgentInput(List.of()),
+                input -> Flux.just((AgentEvent) new ModelCallEndEvent("charge",
+                        new ChatUsage((int) tokens, 0, 0.01)))).blockLast();
     }
 
     private static String fencedReport(String title, String contentMd, String limitations) {

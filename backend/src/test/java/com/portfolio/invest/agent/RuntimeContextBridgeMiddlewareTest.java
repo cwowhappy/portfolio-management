@@ -14,7 +14,8 @@ import reactor.core.publisher.Flux;
 
 /**
  * rc 桥接中间件单元测试（agentscope 2.0.4 升级）：ctx 依序送抵全部消费者后放行 next；
- * order 最外层；null ctx 照送（Hook 侧自防 null，与 2.0.3 setRuntimeContext 缺席语义一致）。
+ * 链序=注册序（2.0.4 MiddlewareChain 无 order 排序），桥接以先注册保证最外层；
+ * null ctx 照送（Hook 侧自防 null，与 2.0.3 setRuntimeContext 缺席语义一致）。
  * agent 参数不解引用（传 null），事件流原样透传。
  */
 class RuntimeContextBridgeMiddlewareTest {
@@ -39,7 +40,7 @@ class RuntimeContextBridgeMiddlewareTest {
     }
 
     @Test
-    @DisplayName("order 恒为 Integer.MAX_VALUE——中间件链降序排序下最外层、先于一切")
+    @DisplayName("order() 恒为 Integer.MAX_VALUE——语义声明（2.0.4 链序=注册序，非排序依据）")
     void givenBridgeMiddleware_whenOrder_thenOutermostMaxValue() {
         assertThat(new RuntimeContextBridgeMiddleware(rc -> { }).order())
                 .isEqualTo(Integer.MAX_VALUE);
