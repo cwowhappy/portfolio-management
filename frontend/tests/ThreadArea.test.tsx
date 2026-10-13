@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Message } from "@ag-ui/client";
-import ThreadArea from "@/components/chat/ThreadArea";
+import ThreadArea, { isUnauthorizedError } from "@/components/chat/ThreadArea";
 import { RuntimeProvider, useChatRuntime } from "@/components/chat/RuntimeProvider";
 import { installConversationsApi } from "@/tests/mockConversationsApi";
 import { TRUST_ANCHORS_EVENT, TRUST_CORRECTION_EVENT, trustStore } from "@/lib/trustMeta";
@@ -1534,5 +1534,44 @@ describe("markdown 图片/链接防御（FR-6）", () => {
     const a = document.querySelector('a[href="https://example.com/doc"]') as HTMLAnchorElement;
     expect(a.getAttribute("target")).toBe("_blank");
     expect(a.getAttribute("rel")).toBe("noopener noreferrer");
+  });
+});
+
+// ———— isUnauthorizedError 401 识别契约（2026-10 P3 审查低-4：message 文本正则兜底钉测试）————
+// 判定序：结构化 status（本层 errorStatus/withStatus → HTTP 客户端 response.status →
+// fetch cause.status）优先；均无 401 时对 message 做 /\b401\b|unauthorized/i 文本兜底
+//（后端未包 status 的最后手段——文本一变即失效，故此处钉住当前契约形态）。
+
+describe("isUnauthorizedError 契约（ThreadArea 登录失效识别）", () => {
+  it("结构化 status=401（三种载体）均判真", () => {
+    expect(isUnauthorizedError({ status: 401 })).toBe(true);
+    expect(isUnauthorizedError({ response: { status: 401 } })).toBe(true);
+    expect(isUnauthorizedError({ cause: { status: 401 } })).toBe(true);
+  });
+
+  it("message 文本兜底：含独立词 401 或 unauthorized（大小写不敏感）判真", () => {
+    expect(isUnauthorizedError(new Error("HTTP 401 Unauthorized"))).toBe(true);
+    expect(isUnauthorizedError(new Error("Request failed with status 401"))).toBe(true);
+    expect(isUnauthorizedError({ message: "未登录：unauthorized access" })).toBe(true);
+    expect(isUnauthorizedError(new Error("UNAUTHORIZED"))).toBe(true);
+  });
+
+  it("词边界：401 前后须为非词字符（4011 / x401 不命中）", () => {
+    expect(isUnauthorizedError(new Error("订单号 4011 不存在"))).toBe(false);
+    expect(isUnauthorizedError(new Error("字段 a401b 非法"))).toBe(false);
+  });
+
+  it("非 401 错误不误判：403/409/500 与传输层 status=0", () => {
+    expect(isUnauthorizedError({ status: 403, message: "权限不足" })).toBe(false);
+    expect(isUnauthorizedError(Object.assign(new Error("冲突"), { status: 409 }))).toBe(false);
+    expect(isUnauthorizedError(Object.assign(new Error("Failed to fetch"), { status: 0 }))).toBe(false);
+    expect(isUnauthorizedError(new Error("500 Internal Server Error"))).toBe(false);
+  });
+
+  it("非对象/null/裸值输入安全返回假", () => {
+    expect(isUnauthorizedError(null)).toBe(false);
+    expect(isUnauthorizedError(undefined)).toBe(false);
+    expect(isUnauthorizedError("401")).toBe(false);
+    expect(isUnauthorizedError(401)).toBe(false);
   });
 });

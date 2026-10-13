@@ -1,6 +1,10 @@
 // 管理员 REST 客户端（经 /api/admin 同源反代，权限由后端 ADMIN 角色把关）。
+// P3 收敛：私有 request/requestNoContent 已迁 lib/http.ts 的 request()；admin 域传输形态被
+// tests/lib/adminApi.test.ts 钉死——全员 credentials:"same-origin"、GET 也带 Content-Type——
+// 经 RequestOptions.init 注入（与 http.ts 默认语义的差异仅此一处，见文件头注释）。
 
 import { z } from "zod";
+import { request } from "./http";
 
 export const AdminUserViewSchema = z.object({
   id: z.number(),
@@ -165,82 +169,44 @@ export function estimateCostCny(agg: Pick<CostAgg, "byDay">): number | null {
   return (tokens * UNIT_PRICE_CNY_PER_MTOK) / 1_000_000;
 }
 
-async function request<T>(path: string, schema: z.ZodType<T>, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
-    credentials: "same-origin",
-    cache: "no-store",
-    ...init,
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
-  });
-  const body: unknown = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error((body as { message?: string })?.message ?? "请求失败");
-  try {
-    return schema.parse(body);
-  } catch (e) {
-    console.error("[adminApi] 响应 schema 校验失败", path, e);
-    throw new Error("数据格式异常");
-  }
-}
-
-/** 无响应体请求（2xx 即成功，如 204；非 2xx 抛服务端 message）。 */
-async function requestNoContent(path: string, init?: RequestInit): Promise<void> {
-  const res = await fetch(path, {
-    credentials: "same-origin",
-    cache: "no-store",
-    ...init,
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
-  });
-  if (!res.ok) {
-    const body: unknown = await res.json().catch(() => ({}));
-    throw new Error((body as { message?: string })?.message ?? "请求失败");
-  }
-}
+/** admin 域统一传输形态（tests/lib/adminApi.test.ts 钉住）：same-origin 凭证 + 全员 JSON 头。 */
+const adminInit: RequestInit = {
+  credentials: "same-origin",
+  headers: { "Content-Type": "application/json" },
+};
 
 export const adminApi = {
-  list: () => request("/api/admin/users", z.array(AdminUserViewSchema)),
+  list: () => request("/api/admin/users", "GET", undefined, z.array(AdminUserViewSchema), { init: adminInit }),
   approve: (id: number) =>
-    request(`/api/admin/users/${id}/approve`, AdminUserViewSchema, { method: "POST" }),
+    request(`/api/admin/users/${id}/approve`, "POST", undefined, AdminUserViewSchema, { init: adminInit }),
   reject: (id: number) =>
-    request(`/api/admin/users/${id}/reject`, AdminUserViewSchema, { method: "POST" }),
+    request(`/api/admin/users/${id}/reject`, "POST", undefined, AdminUserViewSchema, { init: adminInit }),
   enable: (id: number) =>
-    request(`/api/admin/users/${id}/enable`, AdminUserViewSchema, { method: "POST" }),
+    request(`/api/admin/users/${id}/enable`, "POST", undefined, AdminUserViewSchema, { init: adminInit }),
   disable: (id: number) =>
-    request(`/api/admin/users/${id}/disable`, AdminUserViewSchema, { method: "POST" }),
+    request(`/api/admin/users/${id}/disable`, "POST", undefined, AdminUserViewSchema, { init: adminInit }),
   resetPassword: (id: number, newPassword: string) =>
-    request(`/api/admin/users/${id}/reset-password`, AdminUserViewSchema, {
-      method: "POST",
-      body: JSON.stringify({ newPassword }),
+    request(`/api/admin/users/${id}/reset-password`, "POST", { newPassword }, AdminUserViewSchema, {
+      init: adminInit,
     }),
   setEmail: (id: number, email: string) =>
-    request(`/api/admin/users/${id}/email`, AdminUserViewSchema, {
-      method: "POST",
-      body: JSON.stringify({ email }),
-    }),
+    request(`/api/admin/users/${id}/email`, "POST", { email }, AdminUserViewSchema, { init: adminInit }),
   /** P1-10：设置/更换 provider token；明文仅在请求体一次经过，响应 204 无回显。 */
   setMcpProviderToken: (code: string, token: string) =>
-    requestNoContent(`/api/admin/mcp/providers/${code}/token`, {
-      method: "PUT",
-      body: JSON.stringify({ token }),
-    }),
+    request<void>(`/api/admin/mcp/providers/${code}/token`, "PUT", { token }, undefined, { init: adminInit }),
   // —— MS-30 F1：评测与可观测性 ——
   /** 运行历史倒序（裸数组，沿 UserAdminController 先例非信封；RUNNING 行原样返回供轮询）。 */
   listEvalRuns: (limit = 20) =>
-    request(`/api/admin/eval/runs?limit=${limit}`, z.array(EvalRunSchema)),
+    request(`/api/admin/eval/runs?limit=${limit}`, "GET", undefined, z.array(EvalRunSchema), { init: adminInit }),
   /** 手动触发评测：202 受理即返回；进行中 409 / 未启用 503 由 message 通道透出文案。 */
   triggerEvalRun: () =>
-    request("/api/admin/eval/run", EvalTriggerResponseSchema, { method: "POST" }),
+    request("/api/admin/eval/run", "POST", undefined, EvalTriggerResponseSchema, { init: adminInit }),
   /** baseline 置位：置 true 仅限 COMPLETED 且非 DEGRADED 跑（422 由 message 通道透出资格文案）。 */
   setEvalBaseline: (id: number, baseline: boolean) =>
-    requestNoContent(`/api/admin/eval/runs/${id}/baseline`, {
-      method: "PUT",
-      body: JSON.stringify({ baseline }),
-    }),
+    request<void>(`/api/admin/eval/runs/${id}/baseline`, "PUT", { baseline }, undefined, { init: adminInit }),
   /** 版本变更说明补注：{id} 为版本行主键（非资产 key）。 */
   setPromptAssetNote: (id: number, note: string) =>
-    requestNoContent(`/api/admin/prompt-assets/${id}/note`, {
-      method: "PUT",
-      body: JSON.stringify({ note }),
-    }),
+    request<void>(`/api/admin/prompt-assets/${id}/note`, "PUT", { note }, undefined, { init: adminInit }),
   /** 工具调用明细分页筛选（from 含 / to 不含）。 */
   fetchTrace: (query: TraceQuery = {}) => {
     const params = new URLSearchParams();
@@ -251,14 +217,16 @@ export const adminApi = {
     if (query.tool != null) params.set("tool", query.tool);
     if (query.failed != null) params.set("failed", String(query.failed));
     const qs = params.toString();
-    return request(`/api/admin/observability/trace${qs ? `?${qs}` : ""}`, TracePageSchema);
+    return request(`/api/admin/observability/trace${qs ? `?${qs}` : ""}`, "GET", undefined, TracePageSchema, {
+      init: adminInit,
+    });
   },
   /** 成本看板：按日 token 消耗 + 按工具调用统计。 */
   fetchCost: (days = 7) =>
-    request(`/api/admin/observability/cost?days=${days}`, CostAggSchema),
+    request(`/api/admin/observability/cost?days=${days}`, "GET", undefined, CostAggSchema, { init: adminInit }),
   /** 时延看板：轮整体/按日 + 按工具 p50/p95 百分位。 */
   fetchLatency: (days = 7) =>
-    request(`/api/admin/observability/latency?days=${days}`, LatencyAggSchema),
+    request(`/api/admin/observability/latency?days=${days}`, "GET", undefined, LatencyAggSchema, { init: adminInit }),
   /** 提示词版本链（分组、组内倒序、最新 current=true）。 */
-  fetchPromptAssets: () => request("/api/admin/prompt-assets", PromptAssetsSchema),
+  fetchPromptAssets: () => request("/api/admin/prompt-assets", "GET", undefined, PromptAssetsSchema, { init: adminInit }),
 };

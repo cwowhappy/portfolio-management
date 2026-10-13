@@ -181,6 +181,7 @@ export default function ReportsPanel({ projectId }: { projectId: number }) {
   }, [loadReports, refreshDetail, openId]);
 
   const startGenerate = () => {
+    // 全站无通用确认弹窗组件（各域弹窗均为场景定制内联实现），P3 审查裁定沿用原生 confirm
     if (
       !window.confirm("确认发起深度研报生成？将消耗当日研报算力（token），完成后需人工确认定稿。")
     ) {

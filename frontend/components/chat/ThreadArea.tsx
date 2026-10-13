@@ -1,15 +1,17 @@
 "use client";
+// 会话区（P3 审查 F4 按节拆分）：Composer → chat/composer.tsx，消息行/思考折叠 →
+// chat/messageRow.tsx，反馈条 → chat/feedbackBar.tsx（纯搬移零行为变更）；本文件保留
+// 错误翻译、通配工具渲染器、空状态、401 识别与会话编排主体。
 
 import {
   useAgent,
   useCopilotKit,
   useDefaultRenderTool,
   useInterrupt,
-  useRenderToolCall,
   UseAgentUpdate,
 } from "@copilotkit/react-core/v2";
 import type { Message } from "@ag-ui/client";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AGENT_ID,
   agentMessagesToHistory,
@@ -22,8 +24,8 @@ import { handleTrustCustomEvent } from "@/lib/trustMeta";
 import InterruptApprovalCard from "./InterruptApprovalCard";
 import ToolCallCard from "./ToolCallCard";
 import { ChartToolRenderers } from "./toolRenderers";
-import { TrustMessageContent } from "@/components/shared/TrustMarkdownView";
-import { TrustMessageAdvisories } from "@/components/shared/TrustAdvisories";
+import { Composer } from "./composer";
+import { AssistantMessage, ReasoningMessage, UserMessage, buildToolMessageMap } from "./messageRow";
 
 // 模块级常量：避免每次渲染新建数组触发潜在的重订阅
 const AGENT_UPDATES = [UseAgentUpdate.OnMessagesChanged, UseAgentUpdate.OnRunStatusChanged];
@@ -53,22 +55,6 @@ function toSendErrorText(e: unknown): string {
   return msg !== "" ? msg : "请求失败，请稍后重试";
 }
 
-// ———— 思考折叠 ————
-
-function Reasoning({ text }: { text: string }) {
-  if (!text) return null;
-  return (
-    <details className="mb-2 rounded-md border border-[color:var(--color-line-soft)] bg-[color:var(--color-bg-soft)] px-3 py-2">
-      <summary className="cursor-pointer select-none text-[12px] text-[color:var(--color-ink-faint)]">
-        思考过程（{text.length} 字）
-      </summary>
-      <p className="mt-1.5 whitespace-pre-wrap text-[12px] leading-relaxed text-[color:var(--color-ink-dim)]">
-        {text}
-      </p>
-    </details>
-  );
-}
-
 // ———— 工具卡通配渲染器（通配兜底） ————
 
 function ToolCallRenderers() {
@@ -90,174 +76,6 @@ function ToolCallRenderers() {
     </>
   );
 }
-
-// ———— 反馈 ————
-
-// localStorage 反馈键容量上限：超出时清最旧，避免无限增长
-const FEEDBACK_KEY_PREFIX = "invest.feedback.";
-const FEEDBACK_MAX_ENTRIES = 200;
-
-/** 反馈键数量达到上限时，按写入时间清掉最旧的，腾出位置给新反馈。 */
-function pruneFeedbackKeys() {
-  const entries: { key: string; at: number }[] = [];
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (!key?.startsWith(FEEDBACK_KEY_PREFIX)) continue;
-    let at = 0;
-    try {
-      at = (JSON.parse(localStorage.getItem(key) ?? "{}") as { at?: number }).at ?? 0;
-    } catch {
-      // 损坏数据视为最旧，优先清掉
-    }
-    entries.push({ key, at });
-  }
-  entries.sort((a, b) => a.at - b.at);
-  while (entries.length >= FEEDBACK_MAX_ENTRIES) {
-    const oldest = entries.shift();
-    if (oldest) localStorage.removeItem(oldest.key);
-  }
-}
-
-function FeedbackBar({ messageId }: { messageId: string }) {
-  const [voted, setVoted] = useState<"positive" | "negative" | null>(null);
-  useEffect(() => {
-    // localStorage 仅客户端可读，必须挂载后恢复；微任务 defer 避免 effect 体内同步 setState
-    // （同步读会破坏服务端/客户端首帧一致性，见规范 4.3）
-    let cancelled = false;
-    void Promise.resolve().then(() => {
-      if (cancelled) return;
-      try {
-        const raw = localStorage.getItem(FEEDBACK_KEY_PREFIX + messageId);
-        if (raw) setVoted((JSON.parse(raw) as { type: "positive" | "negative" }).type);
-      } catch {
-        // ignore
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [messageId]);
-  const vote = (type: "positive" | "negative") => {
-    try {
-      pruneFeedbackKeys();
-      localStorage.setItem(
-        FEEDBACK_KEY_PREFIX + messageId,
-        JSON.stringify({ type, at: Date.now() }),
-      );
-    } catch {
-      // ignore
-    }
-    setVoted(type);
-  };
-  return (
-    <div className="mt-1.5 flex items-center gap-1 opacity-35 transition-opacity hover:opacity-100">
-      <button
-        aria-label="回答有帮助"
-        aria-pressed={voted === "positive"}
-        onClick={() => vote("positive")}
-        className={
-          "rounded px-1.5 py-0.5 text-[12px] transition-colors " +
-          (voted === "positive" ? "text-[color:var(--color-down)]" : "text-[color:var(--color-ink-faint)] hover:text-[color:var(--color-down)]")
-        }
-      >
-        👍
-      </button>
-      <button
-        aria-label="回答需要改进"
-        aria-pressed={voted === "negative"}
-        onClick={() => vote("negative")}
-        className={
-          "rounded px-1.5 py-0.5 text-[12px] transition-colors " +
-          (voted === "negative" ? "text-[color:var(--color-up)]" : "text-[color:var(--color-ink-faint)] hover:text-[color:var(--color-up)]")
-        }
-      >
-        👎
-      </button>
-    </div>
-  );
-}
-
-// ———— 消息行 ————
-
-function UserMessage({ content }: { content: string }) {
-  return (
-    <div className="animate-rise my-5 flex justify-end">
-      <div className="max-w-[78%] rounded-xl rounded-tr-sm border border-[color:var(--color-line-soft)] bg-[color:var(--color-panel)] px-4 py-2.5 text-[14px] leading-relaxed text-[color:var(--color-ink)]">
-        {content}
-      </div>
-    </div>
-  );
-}
-
-function ReasoningMessage({ text }: { text: string }) {
-  return (
-    <div className="animate-rise my-5 flex gap-3.5">
-      <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-md border border-[color:var(--color-line)] bg-[color:var(--color-panel)] text-[13px] text-[color:var(--color-accent)]">
-        和
-      </span>
-      <div className="min-w-0 flex-1">
-        <Reasoning text={text} />
-      </div>
-    </div>
-  );
-}
-
-/** ag-ui 的 role:"tool" 消息（配对键 toolCallId，@ag-ui/core ToolMessage 的本地形态） */
-type ToolMessage = Extract<Message, { role: "tool" }>;
-
-/** role:"tool" 消息按 toolCallId 建索引，供工具卡渲染时配对取 result（FR-7）。 */
-function buildToolMessageMap(messages: Message[]): Map<string, ToolMessage> {
-  const map = new Map<string, ToolMessage>();
-  for (const m of messages) if (m.role === "tool" && m.toolCallId) map.set(m.toolCallId, m);
-  return map;
-}
-
-// memo 隔离历史消息重渲染：流式期间 agent.messages 高频变化，
-// 已完成的历史消息 props 不变时不重渲染（Markdown 解析是主要开销）。
-// 比较器必须自定义：messages 每次变化都会重建 toolMessageByCallId（Map 新引用），
-// 默认浅比较会让全部历史消息在每次流式 delta 重渲染，废掉本隔离。
-const AssistantMessage = memo(function AssistantMessage({
-  message,
-  toolMessageByCallId,
-}: {
-  message: Message;
-  toolMessageByCallId: Map<string, ToolMessage>;
-}) {
-  const renderToolCall = useRenderToolCall();
-  const toolCalls = message.role === "assistant" ? (message.toolCalls ?? []) : [];
-  const content = typeof message.content === "string" ? message.content : "";
-
-  return (
-    <div className="animate-rise my-5 flex gap-3.5">
-      <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-md border border-[color:var(--color-line)] bg-[color:var(--color-panel)] text-[13px] text-[color:var(--color-accent)]">
-        和
-      </span>
-      <div className="min-w-0 flex-1">
-        {toolCalls.map((tc) => (
-          // FR-7：complete 态依赖 toolMessage 配对（官方 CopilotChatToolCallsView 范式，05 §4.2）
-          <div key={tc.id}>
-            {renderToolCall({ toolCall: tc, toolMessage: toolMessageByCallId.get(tc.id) })}
-          </div>
-        ))}
-        {/* MS-29 F2：信任渲染入口——TrustMessageContent 独立订阅 trustStore（useSyncExternalStore
-            引用稳定契约），有锚渲染角标、无锚走原 MarkdownView；store 事件不触发本 memo 组件
-            重渲染（比较器无需 trust 项，F1 契约建议形态）。 */}
-        {content && <TrustMessageContent messageId={message.id} content={content} />}
-        {/* MS-29 F3：低置信横幅 + disclaimer——TrustMessageAdvisories 与 F2 同消息级独立订阅，
-            插在正文与反馈条之间；两组件并存不互斥，payload 无 confidence/advice 键零渲染。 */}
-        <TrustMessageAdvisories messageId={message.id} />
-        <FeedbackBar messageId={message.id} />
-      </div>
-    </div>
-  );
-}, (prev, next) => {
-  if (prev.message !== next.message) return false;
-  const tcs = next.message.role === "assistant" ? (next.message.toolCalls ?? []) : [];
-  // 只有本条消息涉及的 toolMessage 变化才重渲染
-  return tcs.every(
-    (tc) => prev.toolMessageByCallId.get(tc.id) === next.toolMessageByCallId.get(tc.id),
-  );
-});
 
 // ———— 空状态 ————
 
@@ -304,83 +122,15 @@ function EmptyState({
   );
 }
 
-// ———— 输入区 ————
-
-function Composer({
-  isRunning,
-  ready,
-  onSend,
-  onStop,
-}: {
-  isRunning: boolean;
-  ready: boolean;
-  onSend: (text: string) => void;
-  onStop: () => void;
-}) {
-  const [draft, setDraft] = useState("");
-  const taRef = useRef<HTMLTextAreaElement>(null);
-  const submit = () => {
-    const t = draft.trim();
-    if (!t || isRunning || !ready) return;
-    setDraft("");
-    if (taRef.current) taRef.current.style.height = "auto"; // 重置自增高
-    onSend(t);
-  };
-  return (
-    <div className="border-t border-[color:var(--color-line)] bg-[color:var(--color-bg)]/80 px-4 pb-4 pt-3 backdrop-blur-sm">
-      <div className="composer mx-auto max-w-[860px] p-2">
-        <textarea
-          ref={taRef}
-          rows={1}
-          autoFocus
-          value={draft}
-          placeholder="问行情、看走势、读财报… 例如：帮我看看贵州茅台最近的走势和估值"
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              // 中文 IME 组合中 Enter 用于选定候选词，不得发送（Shift+Enter 换行不受影响）
-              if (e.nativeEvent.isComposing) return;
-              e.preventDefault();
-              submit();
-            }
-          }}
-          onInput={(e) => {
-            const el = e.currentTarget;
-            el.style.height = "auto";
-            el.style.height = Math.min(el.scrollHeight, 160) + "px";
-          }}
-          className="max-h-40 w-full resize-none bg-transparent px-2.5 py-1.5 text-[14px] leading-relaxed text-[color:var(--color-ink)] placeholder:text-[color:var(--color-ink-faint)] focus:outline-none"
-        />
-        <div className="flex items-center justify-between px-1.5 pb-0.5 pt-1.5">
-          <span className="text-[11px] text-[color:var(--color-ink-faint)]">
-            Enter 发送 · Shift+Enter 换行 · 回答由 DeepSeek 生成
-          </span>
-          {isRunning ? (
-            <button
-              onClick={onStop}
-              className="rounded-md border border-[color:var(--color-line)] px-3 py-1 text-[12px] text-[color:var(--color-ink-dim)] transition-colors hover:border-[color:var(--color-up)] hover:text-[color:var(--color-up)]"
-            >
-              ■ 停止
-            </button>
-          ) : (
-            <button
-              onClick={submit}
-              disabled={!ready || !draft.trim()}
-              className="rounded-md bg-[color:var(--color-up)] px-4 py-1 text-[12px] text-white transition-all enabled:hover:brightness-110 disabled:opacity-30"
-            >
-              发送
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ———— 会话区 ————
 
-/** 判断 AI 请求错误是否为登录失效（401），用于触发跳登录（对齐 /api/auth/me 的 401 处理）。 */
-function isUnauthorizedError(e: unknown): boolean {
+/**
+ * 判断 AI 请求错误是否为登录失效（401），用于触发跳登录（对齐 /api/auth/me 的 401 处理）。
+ * 契约兜底序：结构化 status（本层 errorStatus/withStatus、HTTP 客户端 response.status、
+ * fetch cause.status）→ message 文本正则（\b401\b|unauthorized，后端 GlobalExceptionHandler
+ * 未包 status 的最后手段；文本变更即失效，契约用例见 tests/ThreadArea.test.tsx）。
+ */
+export function isUnauthorizedError(e: unknown): boolean {
   if (typeof e !== "object" || e === null) return false;
   const err = e as { status?: unknown; response?: { status?: unknown }; cause?: { status?: unknown }; message?: unknown };
   const status =

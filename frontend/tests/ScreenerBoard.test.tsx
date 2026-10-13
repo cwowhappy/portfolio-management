@@ -5,7 +5,6 @@ import { useAuth } from "@/lib/auth";
 import * as screeningApi from "@/lib/screeningApi";
 import * as fundScreeningApi from "@/lib/fundScreeningApi";
 import * as watchlistApi from "@/lib/watchlistApi";
-import * as valuationApi from "@/lib/valuationApi";
 import type { FundScreeningParams, FundScreeningResult, ScreeningStock, WatchlistItemView } from "@/lib/types";
 
 vi.mock("next/navigation", () => ({
