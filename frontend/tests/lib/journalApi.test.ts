@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
-import { fetchEntries, fetchTimeline, createEntry, deleteEntry } from "@/lib/journalApi";
+import { fetchEntries, fetchTimeline, createEntry } from "@/lib/journalApi";
 
 const entryJson = {
   id: 5, type: "BUY_MEMO", stockCode: "600519", stockName: "贵州茅台", tradeId: 10,

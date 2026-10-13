@@ -2,6 +2,7 @@ package com.portfolio.invest.agent;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.portfolio.invest.agent.chart.ChartSpecs;
+import com.portfolio.invest.agent.tools.ToolResultBlocks;
 import com.portfolio.invest.application.allocation.AllocationApplicationService;
 import com.portfolio.invest.application.intelligence.AnnouncementScope;
 import com.portfolio.invest.application.intelligence.AnnouncementSearchFilter;

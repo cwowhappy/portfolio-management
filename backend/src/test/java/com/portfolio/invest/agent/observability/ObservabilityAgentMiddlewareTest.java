@@ -33,6 +33,8 @@ import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
+import io.micrometer.core.instrument.Metrics;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -389,6 +391,56 @@ class ObservabilityAgentMiddlewareTest {
         assertThat(turn.messageId()).isEqualTo("m-1");
         assertThat(turn.durationMs()).isNotNull();
         assertThat(turn.toolCount()).isZero();
+    }
+
+    // ———— 吞并计数（审查 2026-10-12 §三.8：观测自身失败留痕 Micrometer counter） ————
+
+    @Test
+    @DisplayName("采集吞并计数：getUsage 抛异常被吞并，stage=collection counter +1 且流不受影响")
+    void givenUsageThrows_whenEventSeen_thenCollectionCounterIncrementedAndStreamUnharmed() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        Metrics.addRegistry(registry);
+        try {
+            ModelCallEndEvent brokenUsage = mock(ModelCallEndEvent.class);
+            doThrow(new IllegalStateException("usage boom")).when(brokenUsage).getUsage();
+            ObservabilityAgentMiddleware mw = newMiddleware();
+            RuntimeContext rc = ctx("7", "conv-1");
+
+            assertThatCode(() -> mw.onAgent(null, rc, new AgentInput(List.of()),
+                    input -> Flux.just((AgentEvent) brokenUsage,
+                            new AgentResultEvent(msg("m-1")))).blockLast())
+                    .doesNotThrowAnyException();
+
+            assertThat(registry.get(ObservabilityAgentMiddleware.SWALLOWED_COUNTER_NAME)
+                    .tags("stage", "collection").counter().count()).isEqualTo(1.0);
+            // 吞并仅跳过 usage 累计：后续 AgentResultEvent 照常落库（正常轮收尾）
+            TurnObservation turn = capturedTurn();
+            assertThat(turn.failed()).isFalse();
+            assertThat(turn.promptTokens()).isNull();
+        } finally {
+            Metrics.removeRegistry(registry);
+        }
+    }
+
+    @Test
+    @DisplayName("落库吞并计数：recorder 抛异常被吞并，stage=record counter +1 且流不受影响")
+    void givenRecorderThrows_whenTurnEnds_thenRecordCounterIncrementedAndStreamUnharmed() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        Metrics.addRegistry(registry);
+        try {
+            doThrow(new IllegalStateException("db down")).when(recorder).recordTurn(any(), any());
+            ObservabilityAgentMiddleware mw = newMiddleware();
+            RuntimeContext rc = ctx("7", "conv-1");
+
+            assertThatCode(() -> mw.onAgent(null, rc, new AgentInput(List.of()),
+                    input -> normalStream("r-1", null, msg("m-1"))).blockLast())
+                    .doesNotThrowAnyException();
+
+            assertThat(registry.get(ObservabilityAgentMiddleware.SWALLOWED_COUNTER_NAME)
+                    .tags("stage", "record").counter().count()).isEqualTo(1.0);
+        } finally {
+            Metrics.removeRegistry(registry);
+        }
     }
 
     // ———— 夹具 ————

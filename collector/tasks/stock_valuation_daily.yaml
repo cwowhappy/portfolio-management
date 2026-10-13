@@ -9,6 +9,10 @@ converter: field_mapping_stock_valuation
 calc: null
 validator:
   - { check: min_rows, value: 1000, level: hard }
+  # C1（2026-10-12 审查）：close/turnover 边界 soft 剔行——上游异常帧（零/负价、负换手）落库前拦截，
+  # 越界行进 issues 记 partial 不毒化整轮；close 下界 0.01 即「>0」（A 股最小价位 0.01 元），None 放行
+  - { field: close, check: range, min: 0.01, max: 99999999, level: soft }
+  - { field: turnover_rate, check: range, min: 0, max: 99999999, level: soft }
 target_table: stock_valuation_daily
 schedule: { type: cron, cron: "35 15 * * 1-5" }
 enabled: true

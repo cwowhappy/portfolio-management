@@ -522,3 +522,29 @@ def test_source_specs_cover_four_sites():
     assert specs["csrc"]["url"].startswith("https://www.csrc.gov.cn/searchList/")
     assert specs["mof"]["url"] == "https://www.mof.gov.cn/zhengwuxinxi/zhengcefabu/"
     assert specs["stats"]["url"].endswith("/xw/tjxw/tzgg/")
+
+
+# ---------------------------------------------------------------- C5 解析兜底留痕（2026-10-12 审查）
+
+
+def test_extract_text_parse_failure_logs_warning(caplog):
+    """正文容器解析失败兜底 ""：记 warning 留痕（C5），不再静默。"""
+    with caplog.at_level("WARNING", logger="collector.sources.policy"):
+        assert policy._extract_text(None, ("div",)) == ""  # None 使 HTMLParser.feed 抛 TypeError
+    assert "容器解析失败" in caplog.text
+
+
+def test_strip_html_parse_failure_logs_warning(caplog):
+    """全文剥标签解析失败降级正则：记 warning 留痕（C5）。"""
+    with caplog.at_level("WARNING", logger="collector.sources.policy"):
+        assert policy._strip_html(None) == ""
+    assert "剥标签解析失败" in caplog.text
+
+
+def test_trs_entries_parse_failure_logs_warning(caplog):
+    """TRS 列表解析失败兜底 []：记 warning（C5）——「上游改版解析失败」不会被
+    误判为「当轮无新数据」。"""
+    src = _src("mof")  # TRS 两跳站
+    with caplog.at_level("WARNING", logger="collector.sources.policy"):
+        assert src._trs_entries(None) == []
+    assert "TRS 列表页解析失败" in caplog.text

@@ -13,14 +13,15 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.portfolio.invest.domain.market.Financials;
 import com.portfolio.invest.domain.market.KlineBar;
 import com.portfolio.invest.domain.market.MarketDataErrorCode;
 import com.portfolio.invest.domain.market.MarketDataException;
 import com.portfolio.invest.domain.market.MarketDataSource;
 import com.portfolio.invest.domain.market.MarketOverview;
+import com.portfolio.invest.domain.market.Financials;
 import com.portfolio.invest.domain.market.Quote;
 import com.portfolio.invest.domain.market.StockHit;
+import com.portfolio.invest.infrastructure.market.EastmoneyFormat;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -43,7 +44,7 @@ class OrchestratingMarketDataServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new OrchestratingMarketDataService(source);
+        service = new OrchestratingMarketDataService(source, EastmoneyFormat::parseQuote);
         // 腾讯主源默认置为不可用：未显式覆盖的用例自动走「东财→新浪」既有路径
         when(source.tencentQuote(anyString()))
                 .thenThrow(new MarketDataException(MarketDataErrorCode.UPSTREAM_UNAVAILABLE, "腾讯行情挂了"));
@@ -526,7 +527,7 @@ class OrchestratingMarketDataServiceTest {
             @Override public ZoneId getZone() { return ZoneOffset.UTC; }
             @Override public Clock withZone(ZoneId zone) { return this; }
         };
-        OrchestratingMarketDataService clocked = new OrchestratingMarketDataService(source, fakeClock);
+        OrchestratingMarketDataService clocked = new OrchestratingMarketDataService(source, EastmoneyFormat::parseQuote, fakeClock);
         when(source.quote("1.600519")).thenAnswer(inv -> {
             now.addAndGet(120); // 模拟上游耗时 120ms
             return fixture("eastmoney-quote.json");

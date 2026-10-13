@@ -23,6 +23,8 @@ public interface ResearchFalsifierHitJpaRepository extends JpaRepository<Researc
     /**
      * hit 表唯一合法更新（NFR-2 append-only 例外）：评审落库后回填 review_id 软引用。
      * WHERE review_id IS NULL 守卫——首评占据软引用，二次评审不覆盖（留痕照常 append）。
+     * 不加 clearAutomatically（2026-10-12 B5 复核）：同事务 hit 实体仅前置存在性读取（未修改），
+     * UPDATE 后无同实体 save/读回，返回视图不依赖 hit 行新值。
      */
     @Modifying
     @Query("update ResearchFalsifierHitJpaEntity h set h.reviewId = :reviewId "

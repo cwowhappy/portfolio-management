@@ -124,7 +124,7 @@ def test_list_runs_includes_rows_affected(pg_conn):
 
 
 def test_etf_tracking_error_sets_last_affected_rows(pg_conn):
-    from collector.sources.plugins import EtfTrackingErrorSource
+    from collector.sources.etf import EtfTrackingErrorSource
 
     pg_conn.execute(
         "INSERT INTO etf_basic (fund_code, fund_name, category, tracking_index_code)"

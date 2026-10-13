@@ -1,7 +1,10 @@
 // 会话持久化客户端（经 /api/conversations 反代），响应用 zod 在边界校验。
 // 替代原 localStorage 方案（lib/sessions.ts），threadId 即 conversation.id。
+// P3 收敛：status 承载 / keepalive / If-Match 等传输形态统一经 lib/http.ts 的 RequestOptions
+// 注入，本模块不再持有私有 request；错误状态码读取仍走本模块 errorStatus。
 
 import { z } from "zod";
+import { request } from "./http";
 import type { ChatMessage } from "./types";
 
 export interface ConversationMeta {
@@ -34,30 +37,6 @@ export function newThreadId(): string {
   return "t-" + Date.now() + "-" + Math.random().toString(36).slice(2, 10);
 }
 
-async function request<T>(path: string, schema: z.ZodType<T>, init?: RequestInit): Promise<T> {
-  let res: Response;
-  try {
-    res = await fetch(path, { cache: "no-store", ...init });
-  } catch (e) {
-    // P3-⑦：传输层失败（断网 / keepalive PUT 体积超限被浏览器拒绝等）此前裸抛 TypeError，
-    // errorStatus 无法分类、调用方只能吞。与 HTTP 错误同口径包成带 status 的错误（0 表传输层）
-    throw Object.assign(new Error(e instanceof Error ? e.message : "网络请求失败"), { status: 0 });
-  }
-  if (!res.ok) {
-    let message = "请求失败";
-    try {
-      const b = await res.json();
-      if (b?.message) message = b.message;
-    } catch {
-      /* ignore */
-    }
-    // 携带 HTTP 状态码抛出（如 409 并发冲突），供调用方按错误分类处理
-    throw Object.assign(new Error(message), { status: res.status });
-  }
-  if (res.status === 204) return undefined as T;
-  return schema.parse(await res.json());
-}
-
 /** 读取 request() 抛出错误上的 HTTP 状态码；非本层错误返回 null。 */
 export function errorStatus(e: unknown): number | null {
   if (typeof e === "object" && e !== null) {
@@ -67,32 +46,41 @@ export function errorStatus(e: unknown): number | null {
   return null;
 }
 
-export const listConversations = () => request("/api/conversations", z.array(MetaSchema));
+// withStatus 口径：非 2xx 错误挂 HTTP status（409 乐观锁分类）、传输层失败挂 0（P3-⑦）
+const withStatus = { withStatus: true } as const;
+
+export const listConversations = () =>
+  request("/api/conversations", "GET", undefined, z.array(MetaSchema), withStatus);
 export const createConversation = (id: string) =>
-  request("/api/conversations", MetaSchema, { method: "POST", body: JSON.stringify({ id }) });
+  request("/api/conversations", "POST", { id }, MetaSchema, withStatus);
 export const loadMessages = (threadId: string): Promise<MessagesView> =>
-  request(`/api/conversations/${threadId}/messages`, MessagesViewSchema);
+  request(`/api/conversations/${threadId}/messages`, "GET", undefined, MessagesViewSchema, withStatus);
 export const saveMessages = (
   threadId: string,
   msgs: ChatMessage[],
   opts?: { keepalive?: boolean; ifMatch?: string },
 ) =>
-  request(`/api/conversations/${threadId}/messages`, SaveResultSchema, {
-    method: "PUT",
-    ...(opts?.keepalive ? { keepalive: true } : {}),
-    // B6 乐观校验：携带服务端 updatedAt 作为 If-Match，冲突时后端返回 409
-    ...(opts?.ifMatch ? { headers: { "If-Match": opts.ifMatch } } : {}),
-    body: JSON.stringify(
-      msgs.map((m) => ({
-        id: m.id,
-        role: m.role,
-        content: m.content,
-        createdAt: m.createdAt,
-        // MS-29 F4：payload 仅携带非空 JSON 文本（user 恒不带；null/缺省为 B8 回带形态，
-        // 后端守卫口径本就归一 null，省键等价且少一条降级 WARN）
-        ...(typeof m.payload === "string" && m.payload !== "" ? { payload: m.payload } : {}),
-      })),
-    ),
-  });
+  request(
+    `/api/conversations/${threadId}/messages`,
+    "PUT",
+    msgs.map((m) => ({
+      id: m.id,
+      role: m.role,
+      content: m.content,
+      createdAt: m.createdAt,
+      // MS-29 F4：payload 仅携带非空 JSON 文本（user 恒不带；null/缺省为 B8 回带形态，
+      // 后端守卫口径本就归一 null，省键等价且少一条降级 WARN）
+      ...(typeof m.payload === "string" && m.payload !== "" ? { payload: m.payload } : {}),
+    })),
+    SaveResultSchema,
+    {
+      ...withStatus,
+      init: {
+        ...(opts?.keepalive ? { keepalive: true } : {}),
+        // B6 乐观校验：携带服务端 updatedAt 作为 If-Match，冲突时后端返回 409
+        ...(opts?.ifMatch ? { headers: { "If-Match": opts.ifMatch } } : {}),
+      },
+    },
+  );
 export const deleteConversation = (threadId: string) =>
-  request(`/api/conversations/${threadId}`, z.void(), { method: "DELETE" });
+  request(`/api/conversations/${threadId}`, "DELETE", undefined, z.void(), withStatus);

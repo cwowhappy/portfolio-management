@@ -49,10 +49,21 @@ def build_parser():
     return parser
 
 
+# C3（规范）：按命令分级配置校验——每命令声明所需键；list/history/seed 等只读 DB
+# 命令不强制数据源密钥（不实例化数据源注册表），缺配置报错由 config.load 统一列出缺失项。
+COMMAND_REQUIRED_KEYS = {
+    "run": ("database_url", "tushare_token"),
+    "backfill": ("database_url", "tushare_token"),
+    "seed": ("database_url",),
+    "list": ("database_url",),
+    "history": ("database_url",),
+}
+
+
 def main(argv=None):
     args = build_parser().parse_args(argv)
-    config = load()
-    registries = build_registries(config)
+    config = load(required=COMMAND_REQUIRED_KEYS[args.command])
+    registries = None  # 仅 run/backfill 需要（下方惰性构建）；只读命令不实例化数据源
 
     with psycopg.connect(config.database_url) as conn:
         if args.command == "seed":
@@ -92,6 +103,7 @@ def main(argv=None):
                 )
             return
 
+        registries = build_registries(config)
         task = assemble_collector(row, registries)
         runner = TaskRunner(config.database_url, load_calendar(conn), Executor(SourceSelector(), Store()))
         try:

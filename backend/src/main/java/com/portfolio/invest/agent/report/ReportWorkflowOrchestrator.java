@@ -1,5 +1,6 @@
 package com.portfolio.invest.agent.report;
 
+import com.portfolio.invest.agent.trust.ConfidenceScorer;
 import com.portfolio.invest.agent.trust.ToolInvocation;
 import com.portfolio.invest.agent.trust.TrustContext;
 import com.portfolio.invest.application.research.ReportTaskSink;
@@ -14,11 +15,6 @@ import java.nio.file.Paths;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.YearMonth;
-import java.time.ZoneId;
-import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -59,9 +55,6 @@ import org.springframework.stereotype.Component;
 public class ReportWorkflowOrchestrator {
 
     private static final Logger log = LoggerFactory.getLogger(ReportWorkflowOrchestrator.class);
-
-    /** asOf 解析时区（沿 RecordingAgentToolDecorator/ObservabilityAgentHook 的 Asia/Shanghai 口径）。 */
-    private static final ZoneId AS_OF_ZONE = ZoneId.of("Asia/Shanghai");
 
     private final ReportTaskRepository taskRepository;
     private final ResearchProjectRepository projectRepository;
@@ -223,28 +216,13 @@ public class ReportWorkflowOrchestrator {
     }
 
     /**
-     * asOf String → Instant（best-effort，B11 落库/重查均 null 安全）：≥10 位取
-     * {@code yyyy-MM-dd[ HH:mm[:ss]]}（空格转 ISO 'T'，Asia/Shanghai 源站口径）；不足 10 位按
-     * {@code yyyy-MM} 折算月初；不可解析 null（沿 ConfidenceScorer.parseAsOf 解析阶梯语义，
-     * trust 包私有不可直引故就地同构）。
+     * asOf String → Instant（best-effort，B11 落库/重查均 null 安全）：解析阶梯单一实现
+     * 在 {@link ConfidenceScorer#parseAsOfInstant}（2026-10-12 审查 B4 收敛——原就地同构
+     * 实现提升为 agent/trust 公有静态方法，锚点落库与置信评分对同一字符串必然同结论，
+     * 防两链漂移）。
      */
     static Instant parseAsOf(String asOf) {
-        if (asOf == null || asOf.isBlank()) {
-            return null;
-        }
-        String text = asOf.strip();
-        try {
-            if (text.length() >= 10) {
-                String normalized = text.substring(0, Math.min(text.length(), 19)).replace(' ', 'T');
-                if (normalized.length() == 10) {
-                    return LocalDate.parse(normalized).atStartOfDay(AS_OF_ZONE).toInstant();
-                }
-                return LocalDateTime.parse(normalized).atZone(AS_OF_ZONE).toInstant();
-            }
-            return YearMonth.parse(text).atDay(1).atStartOfDay(AS_OF_ZONE).toInstant();
-        } catch (DateTimeParseException e) {
-            return null;
-        }
+        return ConfidenceScorer.parseAsOfInstant(asOf);
     }
 
     private static String sessionId(Long taskId) {

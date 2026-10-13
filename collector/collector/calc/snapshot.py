@@ -5,6 +5,10 @@ from collector.calc.base import Calc
 
 class SnapshotCalc(Calc):
     def compute(self, records):
+        # PE 中位数口径（C6 注记，2026-10-12 审查）：0 < pe ≤ 100——剔除亏损股（pe≤0）
+        # 与极端高 PE（>100，炒作/壳价值股），使中位数代表「正常可投资区间」的市场估值
+        # 水平。出处：market-valuation P1-估值数据底座 SRS 决策（「全 A PE/PB 中位数
+        # 剔除 PE≤0 与 PE>100」）；与行业加权口径同向（IndustryValuationCalc 亦跳过 pe<=0）。
         pe_valid = [r["pe"] for r in records if r.get("pe") and 0 < r["pe"] <= 100]
         pb = [r["pb"] for r in records if r.get("pb") is not None]
         net_breaker = sum(1 for r in records if r.get("pb") is not None and r["pb"] < 1)

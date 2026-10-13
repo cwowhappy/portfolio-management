@@ -15,6 +15,7 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.portfolio.invest.application.alert.AlertMailer;
 import com.portfolio.invest.application.alert.AlertNotifier;
 import com.portfolio.invest.application.auth.MailSender;
 import com.portfolio.invest.config.InvestProperties;
@@ -82,7 +83,7 @@ class EvalHarvesterTest {
                 new PromptAssetVersion(2L, PromptAssetVersion.TYPE_EVAL_RUBRIC,
                         "rubric.answer-quality", 1, "hash-rubric", null, null)));
         harvester = new EvalHarvester(runRepository, registrar, assetVersions,
-                notifier, mailSender, props, FIXED, judge);
+                notifier, new AlertMailer(mailSender, props), props, FIXED, judge);
     }
 
     // ———— 报告 fixture（结构与 ReportWriter schema v2 对齐） ————

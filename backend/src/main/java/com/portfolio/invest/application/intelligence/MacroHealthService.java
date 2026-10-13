@@ -1,8 +1,7 @@
 package com.portfolio.invest.application.intelligence;
 
-import com.portfolio.invest.application.auth.MailSender;
+import com.portfolio.invest.application.alert.AlertMailer;
 import com.portfolio.invest.application.intelligence.CollectorRunInspectPort.TaskRunSummary;
-import com.portfolio.invest.config.InvestProperties;
 import com.portfolio.invest.domain.intelligence.MacroRepository;
 import com.portfolio.invest.domain.intelligence.SourceSwitch;
 import java.time.YearMonth;
@@ -69,17 +68,14 @@ public class MacroHealthService {
     private final CollectorRunInspectPort runInspect;
     private final MacroRepository macroRepository;
     private final IntelligencePushPort pushPort;
-    private final MailSender mailSender;
-    private final InvestProperties props;
+    private final AlertMailer alertMailer;
 
     public MacroHealthService(CollectorRunInspectPort runInspect, MacroRepository macroRepository,
-                              IntelligencePushPort pushPort, MailSender mailSender,
-                              InvestProperties props) {
+                              IntelligencePushPort pushPort, AlertMailer alertMailer) {
         this.runInspect = runInspect;
         this.macroRepository = macroRepository;
         this.pushPort = pushPort;
-        this.mailSender = mailSender;
-        this.props = props;
+        this.alertMailer = alertMailer;
     }
 
     @Scheduled(cron = "0 5 8 * * *", zone = "Asia/Shanghai")
@@ -165,25 +161,8 @@ public class MacroHealthService {
             log.warn("社融源降级：{} 连续 2 发布期失败，已留痕并告警（M2 口径兜底）", twoMonths);
         } else {
             log.warn("社融源降级：{} 已留痕，但告警推送失败（次日巡检不重发，见 source_switch 留痕）", twoMonths);
-            sendAlertMail(title, bodyLines);
-        }
-    }
-
-    /** 飞书告警失败的邮件降级（B13，仅降级告警面——情报推送面不降级，契约决策 #8）：
-     * SMTP 可用且配置了收件人才发；降级自身尽力而为绝不抛。 */
-    private void sendAlertMail(String title, List<String> bodyLines) {
-        List<String> tos = props.getMail().getAlertMailTo();
-        if (!mailSender.enabled() || tos.isEmpty()) {
-            return;
-        }
-        String subject = "[invest 告警] " + title;
-        String text = title + "\n" + String.join("\n", bodyLines);
-        for (String to : tos) {
-            try {
-                mailSender.send(to, subject, text);
-            } catch (Exception e) { // 单个收件人失败不阻断其余，也绝不反向拖垮调度
-                log.error("告警邮件降级失败 to={}", to, e);
-            }
+            // 邮件降级仅告警面（B13，情报推送面不降级，契约决策 #8）
+            alertMailer.sendAlertMail(title, bodyLines);
         }
     }
 }

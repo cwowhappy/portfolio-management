@@ -1,11 +1,12 @@
 // 记忆管理客户端（经 /api/memory 反代），响应用 zod 在边界校验（B3/B4 契约）。
 //
-// 不复用 lib/http.ts 的 request：其非 2xx 抛 Error 丢 HTTP status，而记忆管理需要
-// 409（并发冲突）/410（版本漂移）/400（只读标题/非法请求）分流刷新提示（B3 评审 Minor-2
-// 承接）。沿 lib/conversations.ts 带 status 的 request 变体先例在本模块内薄封装，
-// 抛类型化 MemoryApiError（status + 后端错误码 code），不改 lib/http.ts 本体。
+// P3 收敛：传输/错误处理统一走 lib/http.ts 的 request()（withStatus 承载状态码，错误体
+// code 一并挂载）；本模块仅保留错误类型适配——HTTP 层错误翻译为 MemoryApiError
+// （status + 后端错误码 code），供 F2/F3 按 409/410/400 分流；传输层（status=0）与
+// schema 校验错误保持 http.ts 语义原样上抛（与旧私有 request 行为等价）。
 
 import { z } from "zod";
+import { request as httpRequest } from "./http";
 
 /** 日账本节类型（后端 SectionKind：节头前缀判定） */
 export const MemorySectionKindSchema = z.enum(["FLUSH", "EXTERNAL_EVENT"]);
@@ -76,33 +77,22 @@ async function request<T>(
   body?: unknown,
   schema?: z.ZodType<T>,
 ): Promise<T> {
-  const res = await fetch(path, {
-    method,
-    headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-    cache: "no-store",
-  });
-  if (!res.ok) {
-    let message = "请求失败";
-    let code: string | null = null;
-    try {
-      const b = await res.json();
-      if (typeof b?.message === "string") message = b.message;
-      if (typeof b?.code === "string") code = b.code;
-    } catch {
-      // ignore：body 非 JSON 或无 message 时回退默认文案
+  try {
+    return await httpRequest<T>(path, method, body, schema, { withStatus: true });
+  } catch (e) {
+    // 仅 HTTP 层错误（status>0）翻译为 MemoryApiError；status=0 传输层与「数据格式异常」
+    // 等非 HTTP 错误保持 http.ts 语义原样上抛
+    const status = (e as { status?: unknown }).status;
+    if (typeof status === "number" && status > 0) {
+      const code = (e as { code?: unknown }).code;
+      throw new MemoryApiError(
+        e instanceof Error ? e.message : "请求失败",
+        status,
+        typeof code === "string" ? code : null,
+      );
     }
-    throw new MemoryApiError(message, res.status, code);
+    throw e;
   }
-  if (res.status === 204) return undefined as T;
-  const data: unknown = await res.json();
-  if (!schema) return data as T;
-  const parsed = schema.safeParse(data);
-  if (!parsed.success) {
-    console.error("[memoryApi] 响应 schema 校验失败", path, parsed.error);
-    throw new Error("数据格式异常");
-  }
-  return parsed.data;
 }
 
 /** GET /api/memory：策展层 + 当期日账本全视图 */

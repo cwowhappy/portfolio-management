@@ -250,6 +250,82 @@ def test_seed_syncs_tasks(mocker, capsys):
     assert "2" in out
 
 
+# ---------------------------------------------------------------- C3 按命令分级配置（规范）
+
+
+def _db_only_env(mocker, monkeypatch):
+    """真实 config.load 路径 + 无 TUSHARE_TOKEN：验证只读 DB 命令可运行（不 patch load）。"""
+    monkeypatch.setattr("collector.config.load_dotenv", lambda: None)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@localhost:5432/db")
+    monkeypatch.delenv("TUSHARE_TOKEN", raising=False)
+    build_registries = mocker.patch("collector.cli.build_registries")
+    psycopg = mocker.patch("collector.cli.psycopg")
+    conn = MagicMock()
+    psycopg.connect.return_value.__enter__.return_value = conn
+    return build_registries, conn
+
+
+def test_list_without_tushare_token_runs(mocker, monkeypatch, capsys):
+    """C3：collector list 只要求 DATABASE_URL——无 TUSHARE_TOKEN 可运行，且不实例化数据源。"""
+    build_registries, _ = _db_only_env(mocker, monkeypatch)
+    task_repo = MagicMock()
+    task_repo.list_all.return_value = [
+        {"task_code": "all_a_valuation", "enabled": True, "schedule": {"type": "cron", "cron": "30 15 * * 1-5"}},
+    ]
+    mocker.patch("collector.cli.TaskRepository", return_value=task_repo)
+    run_repo = MagicMock()
+    run_repo.latest_run_status.return_value = {"all_a_valuation": (None, None)}
+    mocker.patch("collector.cli.RunRepository", return_value=run_repo)
+
+    main(["list"])
+
+    build_registries.assert_not_called()
+    assert "all_a_valuation" in capsys.readouterr().out
+
+
+def test_history_without_tushare_token_runs(mocker, monkeypatch):
+    """C3：history 同属只读 DB 命令，无 TUSHARE_TOKEN 可运行。"""
+    build_registries, _ = _db_only_env(mocker, monkeypatch)
+    task_repo = MagicMock()
+    task_repo.get.return_value = {"task_code": "t"}
+    mocker.patch("collector.cli.TaskRepository", return_value=task_repo)
+    run_repo = MagicMock()
+    run_repo.list_runs.return_value = []
+    mocker.patch("collector.cli.RunRepository", return_value=run_repo)
+
+    main(["history", "t"])
+
+    build_registries.assert_not_called()
+    run_repo.list_runs.assert_called_once_with("t", 20)
+
+
+def test_seed_without_tushare_token_runs(mocker, monkeypatch, capsys):
+    """C3：seed 只写 DB 任务定义、不触数据源，无 TUSHARE_TOKEN 可运行。"""
+    build_registries, conn = _db_only_env(mocker, monkeypatch)
+    defs = [{"task_code": "a"}, {"task_code": "b"}]
+    mocker.patch("collector.cli.load_task_defs", return_value=defs)
+    seed_tasks = mocker.patch("collector.cli.seed_tasks")
+
+    main(["seed"])
+
+    build_registries.assert_not_called()
+    seed_tasks.assert_called_once_with(conn, defs)
+    assert "2" in capsys.readouterr().out
+
+
+def test_run_without_tushare_token_fails_with_hint(mocker, monkeypatch):
+    """C3：采集命令（run/backfill）仍需数据源密钥——fail-fast 报错列出缺失项。"""
+    monkeypatch.setattr("collector.config.load_dotenv", lambda: None)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@localhost:5432/db")
+    monkeypatch.delenv("TUSHARE_TOKEN", raising=False)
+    build_registries = mocker.patch("collector.cli.build_registries")
+
+    with pytest.raises(SystemExit, match="TUSHARE_TOKEN"):
+        main(["run", "t"])
+
+    build_registries.assert_not_called()
+
+
 # ---------------------------------------------------------------- 参数错误友好退出
 
 

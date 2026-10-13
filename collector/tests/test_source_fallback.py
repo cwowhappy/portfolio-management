@@ -15,7 +15,7 @@ from collector.executor.executor import Executor
 from collector.executor.selector import SourceSelector
 from collector.model.task import Collector
 from collector.sources.configurable import ConfigurableSource
-from collector.sources.plugins import AllASpotBackupSource
+from collector.sources.stock import AllASpotBackupSource
 
 
 @pytest.fixture

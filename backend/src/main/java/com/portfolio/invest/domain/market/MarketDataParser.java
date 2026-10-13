@@ -10,7 +10,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
-/** 纯函数解析器：JsonNode → DTO，全部可离线单测（fixture 驱动）。 */
+/** 纯函数解析器：已规范化中间结构 / wire 文本 → DTO，全部可离线单测（fixture 驱动）。 */
 public final class MarketDataParser {
 
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
@@ -18,42 +18,45 @@ public final class MarketDataParser {
 
     private MarketDataParser() {}
 
-    /** 东财实时行情（fltt=2 下数值均为浮点，异常值为 "-" 字符串）。 */
-    public static Quote parseQuote(JsonNode root) {
-        JsonNode data = root.path("data");
-        if (data.isMissingNode() || data.isNull()) {
+    /**
+     * 实时行情解析（供应商无关）：接收 infrastructure 映射好的 {@link RawQuote} 中间结构
+     * （东财 fltt=2 字段码映射见 infrastructure/market/EastmoneyFormat——2026-10-12 字段码
+     * 下沉，本类不再携带任何 f43/f57 类 wire format 知识）。价格校验、成交量归一化、
+     * 时间戳格式化等纯逻辑不变，fixture 可离线单测（fixture 驱动）。
+     */
+    public static Quote parseQuote(RawQuote raw) {
+        if (raw == null) {
             throw new MarketDataException(MarketDataErrorCode.BAD_RESPONSE, "行情数据为空");
         }
-        double price = data.path("f43").asDouble();
+        double price = raw.price();
         if (price <= 0) {
             throw new MarketDataException(MarketDataErrorCode.BAD_RESPONSE, "行情价格为空或无效");
         }
-        long f86 = data.path("f86").asLong();
-        String time = f86 > 0
-                ? LocalDateTime.ofInstant(Instant.ofEpochSecond(f86), MARKET_ZONE).format(TIME_FMT)
+        long epochSeconds = raw.epochSeconds();
+        String time = epochSeconds > 0
+                ? LocalDateTime.ofInstant(Instant.ofEpochSecond(epochSeconds), MARKET_ZONE).format(TIME_FMT)
                 : "";
-        double amount = numOrZero(data.path("f48"));
-        long volume = normalizeVolume(data.path("f47").asLong(), amount, price);
+        long volume = normalizeVolume(raw.volume(), raw.amount(), price);
         return new Quote(
-                data.path("f57").asText(""),
-                data.path("f58").asText(""),
+                raw.code(),
+                raw.name(),
                 price,
-                numOrZero(data.path("f169")),
-                numOrZero(data.path("f170")),
-                numOrZero(data.path("f46")),
-                numOrZero(data.path("f44")),
-                numOrZero(data.path("f45")),
-                numOrZero(data.path("f60")),
+                raw.change(),
+                raw.changePct(),
+                raw.open(),
+                raw.high(),
+                raw.low(),
+                raw.prevClose(),
                 volume,
-                amount,
-                nullable(data.path("f162")),
-                nullable(data.path("f167")),
+                raw.amount(),
+                raw.pe(),
+                raw.pb(),
                 time);
     }
 
     /**
-     * 东财 f47 单位不稳定（有时手、有时股），以成交额反推归一化为股：
-     * 取 |f47 - amount/price| 与 |f47*100 - amount/price| 中更接近者。
+     * 上游成交量单位不稳定（有时手、有时股），以成交额反推归一化为股：
+     * 取 |raw - amount/price| 与 |raw*100 - amount/price| 中更接近者。
      */
     public static long normalizeVolume(long raw, double amount, double price) {
         if (raw <= 0 || amount <= 0 || price <= 0) {

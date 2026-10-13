@@ -209,7 +209,10 @@ def _extract_text(html, containers):
     try:
         parser.feed(html)
         parser.close()
-    except Exception:
+    except Exception as e:
+        # C5（2026-10-12 审查）：容器解析兜底静默返回 ""——上游模板漂移时「解析失败」会被
+        # 误判为「正文为空」，记 warning 留痕（与该文件既有 warning 通道一致）
+        logger.warning("政策正文容器解析失败，按空正文兜底：%s", e)
         return ""
     text = parser.text()
     if text:
@@ -223,7 +226,9 @@ def _strip_html(html):
     try:
         parser.feed(html)
         parser.close()
-    except Exception:
+    except Exception as e:
+        # C5：剥标签解析兜底静默降级正则——记 warning 留痕，防上游改版无感漂移
+        logger.warning("政策全文剥标签解析失败，按正则兜底：%s", e)
         return re.sub(r"<[^>]+>", "", html or "")
     return parser.text()
 
@@ -432,7 +437,9 @@ class PolicySiteSource(Source):
         try:
             parser.feed(html)
             parser.close()
-        except Exception:
+        except Exception as e:
+            # C5：TRS 列表解析兜底静默返回 [] 会把「上游改版解析失败」误判为「当轮无新数据」
+            logger.warning("政策 TRS 列表页解析失败，按零命中兜底：%s", e)
             return []
         pattern = _TRS_SITE_CONFIG[self.site]["detail_path"]
         entries: list[dict] = []

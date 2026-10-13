@@ -55,7 +55,7 @@ def test_build_registries_has_all_plugins():
 
 def test_index_valuation_plugin_wired_with_dividend_fetch():
     """C-3.2：index_valuation 插件必须装配 dividend_fetch，否则 dividend_yield 恒 None。"""
-    from collector.sources.plugins import IndexValuationSource
+    from collector.sources.index import IndexValuationSource
 
     regs = build_registries(Config(database_url="postgresql://x", tushare_token="tok"))
     plugin = regs["source"].plugins["index_valuation"]
@@ -65,6 +65,6 @@ def test_index_valuation_plugin_wired_with_dividend_fetch():
 
 def test_stock_valuation_daily_backfill_allowed():
     # supports_range=True 后，backfill 不再拒绝该任务
-    from collector.sources.plugins import StockValuationDailySource
+    from collector.sources.stock import StockValuationDailySource
 
     assert StockValuationDailySource.supports_range is True

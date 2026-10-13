@@ -10,6 +10,7 @@ import com.portfolio.invest.domain.market.MarketDataParser;
 import com.portfolio.invest.domain.market.Quote;
 import com.portfolio.invest.domain.market.StockHit;
 import com.portfolio.invest.domain.market.StockRef;
+import com.portfolio.invest.infrastructure.market.EastmoneyFormat;
 import java.io.IOException;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
@@ -33,17 +34,18 @@ class MarketDataParserEdgeCasesTest {
     @DisplayName("parseQuote数据缺失抛BAD_RESPONSE")
     @Test
     void givenQuoteDataMissing_whenParseQuote_thenThrowBadResponse() {
-        assertThatThrownBy(() -> MarketDataParser.parseQuote(json("{}")))
+        assertThatThrownBy(() -> EastmoneyFormat.parseQuote(json("{}")))
                 .isInstanceOf(MarketDataException.class)
                 .hasMessageContaining("行情数据为空");
-        assertThatThrownBy(() -> MarketDataParser.parseQuote(json("{\"data\":null}")))
+        assertThatThrownBy(() -> EastmoneyFormat.parseQuote(json("{\"data\":null}")))
                 .isInstanceOf(MarketDataException.class);
     }
 
     @DisplayName("parseQuote价格无效抛BAD_RESPONSE")
     @Test
     void givenQuotePriceInvalid_whenParseQuote_thenThrowBadResponse() {
-        assertThatThrownBy(() -> MarketDataParser.parseQuote(json("{\"data\":{\"f43\":0}}")))
+        assertThatThrownBy(() -> MarketDataParser.parseQuote(
+                        EastmoneyFormat.extractQuote(json("{\"data\":{\"f43\":0}}"))))
                 .isInstanceOf(MarketDataException.class)
                 .hasMessageContaining("行情价格为空或无效");
     }
@@ -51,7 +53,7 @@ class MarketDataParserEdgeCasesTest {
     @DisplayName("parseQuote无时间戳时time为空")
     @Test
     void givenQuoteWithoutTimestamp_whenParseQuote_thenTimeEmpty() {
-        Quote q = MarketDataParser.parseQuote(json(
+        Quote q = EastmoneyFormat.parseQuote(json(
                 "{\"data\":{\"f43\":10,\"f57\":\"600519\",\"f58\":\"贵州茅台\",\"f86\":0}}"));
         assertThat(q.time()).isEmpty();
         assertThat(q.volume()).isZero();
@@ -61,7 +63,7 @@ class MarketDataParserEdgeCasesTest {
     @DisplayName("parseQuote异常值字符串视为空")
     @Test
     void givenQuoteDashValueStrings_whenParseQuote_thenTreatedAsEmpty() {
-        Quote q = MarketDataParser.parseQuote(json(
+        Quote q = EastmoneyFormat.parseQuote(json(
                 "{\"data\":{\"f43\":10,\"f57\":\"600519\",\"f58\":\"贵州茅台\",\"f162\":\"-\",\"f167\":\"-\"}}"));
         assertThat(q.pe()).isNull();
         assertThat(q.pb()).isNull();

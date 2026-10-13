@@ -15,6 +15,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.portfolio.invest.application.alert.AlertMailer;
 import com.portfolio.invest.application.auth.MailSender;
 import com.portfolio.invest.config.InvestProperties;
 import com.portfolio.invest.domain.research.Falsifier;
@@ -53,12 +54,13 @@ class ResearchFalsifierScanServiceTest {
     private final ResearchFalsifierNotifier notifier = mock(ResearchFalsifierNotifier.class);
     private final MailSender mailSender = mock(MailSender.class);
     private final InvestProperties props = new InvestProperties();
+    private final AlertMailer alertMailer = new AlertMailer(mailSender, props);
     private ResearchFalsifierScanService service;
 
     @BeforeEach
     void setUp() {
         service = new ResearchFalsifierScanService(repository, checkRepository,
-                snapshotAssembler, notifier, mailSender, props);
+                snapshotAssembler, notifier, alertMailer);
         when(notifier.notify(anyLong(), any(), anyList())).thenReturn(true);
     }
 

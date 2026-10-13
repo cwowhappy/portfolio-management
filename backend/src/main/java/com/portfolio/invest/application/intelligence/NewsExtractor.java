@@ -3,9 +3,7 @@ package com.portfolio.invest.application.intelligence;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.portfolio.invest.domain.intelligence.Direction;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Optional;
 
 /**
@@ -75,14 +73,14 @@ public class NewsExtractor {
         }
         JsonNode root;
         try {
-            root = mapper.readTree(stripFences(text));
+            root = mapper.readTree(LlmJsonParseSupport.stripFences(text));
         } catch (Exception e) {
             return null;
         }
         if (root == null || !root.isObject()) {
             return null;
         }
-        String summary = textOrNull(root.get("summary"));
+        String summary = LlmJsonParseSupport.textOrNull(root.get("summary"));
         if (summary == null || summary.isBlank()) {
             return null;
         }
@@ -90,77 +88,18 @@ public class NewsExtractor {
         if (importanceNode == null || importanceNode.isNull() || !importanceNode.isNumber()) {
             return null;
         }
-        Direction direction = parseDirection(root.get("direction"));
-        if (direction == null && isPresentNonEnumDirection(root.get("direction"))) {
+        Direction direction = LlmJsonParseSupport.parseEnum(root.get("direction"), Direction.class);
+        if (LlmJsonParseSupport.presentButIllegal(root.get("direction"), direction)) {
             return null; // 受控枚举违约（非 null 占位但取值不合法）
         }
-        List<String> stockCodes = stringList(root.get("stock_codes"));
-        List<String> industryCodes = stringList(root.get("industry_codes"));
-        List<String> keyNumbers = stringList(root.get("key_numbers"));
+        List<String> stockCodes = LlmJsonParseSupport.stringList(root.get("stock_codes"));
+        List<String> industryCodes = LlmJsonParseSupport.stringList(root.get("industry_codes"));
+        List<String> keyNumbers = LlmJsonParseSupport.stringList(root.get("key_numbers"));
         if (stockCodes == null || industryCodes == null || keyNumbers == null) {
             return null; // 数组字段类型违约（缺失/null 已归一为空列表，此处是非数组取值）
         }
-        return new ExtractedFields(textOrNull(root.get("event_type")), stockCodes, industryCodes,
+        return new ExtractedFields(LlmJsonParseSupport.textOrNull(root.get("event_type")), stockCodes, industryCodes,
                 summary, direction, keyNumbers,
                 Math.max(0, Math.min(100, importanceNode.asInt())));
-    }
-
-    /** direction：缺失/null → null；合法枚举名（大小写不敏感）→ 枚举；否则违约。 */
-    private static Direction parseDirection(JsonNode node) {
-        if (node == null || node.isNull()) {
-            return null;
-        }
-        if (!node.isTextual()) {
-            return null;
-        }
-        try {
-            return Direction.valueOf(node.asText().trim().toUpperCase(Locale.ROOT));
-        } catch (IllegalArgumentException e) {
-            return null;
-        }
-    }
-
-    private static boolean isPresentNonEnumDirection(JsonNode node) {
-        return node != null && !node.isNull() && node.isTextual() && parseDirection(node) == null;
-    }
-
-    /** 文本字段：缺失/null → null；其余按文本取值（数值等宽容转字符串）。 */
-    private static String textOrNull(JsonNode node) {
-        return node == null || node.isNull() ? null : node.asText();
-    }
-
-    /** 数组字段：缺失/null → 空列表；数组 → 非空字符串元素列表；非数组 → null（违约）。 */
-    private static List<String> stringList(JsonNode node) {
-        if (node == null || node.isNull()) {
-            return List.of();
-        }
-        if (!node.isArray()) {
-            return null;
-        }
-        List<String> out = new ArrayList<>();
-        for (JsonNode element : node) {
-            String text = element.asText();
-            if (text != null && !text.isBlank()) {
-                out.add(text.trim());
-            }
-        }
-        return List.copyOf(out);
-    }
-
-    /** 剥离模型违规加的 Markdown 围栏（```json … ```）；无围栏原样返回（trim 后）。 */
-    private static String stripFences(String text) {
-        String trimmed = text.trim();
-        if (!trimmed.startsWith("```")) {
-            return trimmed;
-        }
-        int lineBreak = trimmed.indexOf('\n');
-        if (lineBreak < 0) {
-            return trimmed;
-        }
-        String body = trimmed.substring(lineBreak + 1).trim();
-        if (body.endsWith("```")) {
-            body = body.substring(0, body.length() - 3);
-        }
-        return body.trim();
     }
 }

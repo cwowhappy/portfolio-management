@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 import pandas as pd
 
 from collector.sources.constants import ETF_ENRICH_INTERVAL
-from collector.sources.plugins import EtfBasicSource
+from collector.sources.etf import EtfBasicSource
 
 
 def _catalog(codes_names):

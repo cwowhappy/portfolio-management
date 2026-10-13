@@ -1,4 +1,4 @@
-package com.portfolio.invest.agent;
+package com.portfolio.invest.agent.tools;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.portfolio.invest.domain.market.MarketDataException;
@@ -8,25 +8,26 @@ import java.util.Map;
 import org.slf4j.Logger;
 
 /**
- * Agent 工具错误兜底共享（包私有）：InvestTools 与 UserInvestTools 同包共用，
- * 防「runBlock 复制体各自演化」——{\@code {"error","hint"}} 形状是前端 ChartCard 嗅探降级的跨栈契约。
+ * Agent 工具错误兜底共享：InvestTools（门面）/UserInvestTools 与 agent.tools 域子组件
+ * 共用，防「runBlock 复制体各自演化」——{\@code {"error","hint"}} 形状是前端 ChartCard 嗅探降级的跨栈契约。
+ * 2026-10-12 InvestTools 按域拆分子组件时由包私有放宽为 public（仅供 agent 能力域内部使用）。
  */
-final class ToolResultBlocks {
+public final class ToolResultBlocks {
 
     private ToolResultBlocks() {}
 
     @FunctionalInterface
-    interface BlockSupplier {
+    public interface BlockSupplier {
         ToolResultBlock get() throws Exception;
     }
 
     @FunctionalInterface
-    interface StringSupplier {
+    public interface StringSupplier {
         String get() throws Exception;
     }
 
     /** 失败不 emit，返回错误 JSON 文本（前端 ChartCard 嗅探降级）；MarketDataException 给数据源专属提示。 */
-    static ToolResultBlock runBlock(Logger log, ObjectMapper mapper, BlockSupplier supplier) {
+    public static ToolResultBlock runBlock(Logger log, ObjectMapper mapper, BlockSupplier supplier) {
         try {
             return supplier.get();
         } catch (MarketDataException e) {
@@ -39,7 +40,7 @@ final class ToolResultBlocks {
     }
 
     /** String 返回版兜底（InvestTools.run 同款形状，UserInvestTools 的 JSON 工具共用，防复制体漂移）。 */
-    static String runString(Logger log, ObjectMapper mapper, StringSupplier supplier) {
+    public static String runString(Logger log, ObjectMapper mapper, StringSupplier supplier) {
         try {
             return supplier.get();
         } catch (MarketDataException e) {
@@ -52,7 +53,7 @@ final class ToolResultBlocks {
     }
 
     /** 用 ObjectMapper 序列化错误，避免手工拼 JSON 导致非法输出。 */
-    static String toError(ObjectMapper mapper, String message, String hint) {
+    public static String toError(ObjectMapper mapper, String message, String hint) {
         try {
             Map<String, String> body = new LinkedHashMap<>();
             body.put("error", message);

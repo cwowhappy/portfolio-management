@@ -6,6 +6,9 @@ upsert 键与各表 DDL（后端 Flyway V3/V4/V7/V13/V18、intelligence V3）对
 
 import datetime as dt
 
+import pytest
+
+from collector.executor.executor import StoreError
 from collector.store.writer import Store
 
 DAY = dt.date(2026, 8, 28)
@@ -346,6 +349,50 @@ def test_intelligence_policy_raw_upsert_idempotent(pg_conn):
         "SELECT count(*) FROM intelligence_policy_raw WHERE external_id=%s", ("202609301946",)
     ).fetchone()[0]
     assert count == 2
+
+
+def test_stock_valuation_daily_missing_required_column_fails_fast(pg_conn):
+    """C2：白名单外缺列（converter 改名漏列场景）→ StoreError，真实 PG 不落任何行。"""
+    store = Store()
+    rec = {
+        "trading_day": DAY,
+        "stock_code": "600519",
+        "stock_name": "贵州茅台",
+        "pe_ttm": 22.5,
+        "pb": 7.8,
+        "dividend_yield": 2.1,
+        "total_mv": 2.1e12,
+        "circ_mv": 2.1e12,
+        "turnover_rate": 0.35,
+        # close 缺失：若静默写 NULL 会污染收益分析收盘价序列，必须整批拒绝
+    }
+    with pytest.raises(StoreError, match="缺列"):
+        store.upsert(pg_conn, "stock_valuation_daily", [rec])
+    count = pg_conn.execute("SELECT count(*) FROM stock_valuation_daily").fetchone()[0]
+    assert count == 0
+
+
+def test_stock_valuation_daily_whitelisted_column_may_be_absent(pg_conn):
+    """C2：白名单列（dividend_yield——备源降级日全 NULL 口径）缺键放行，写 NULL。"""
+    store = Store()
+    rec = {
+        "trading_day": DAY,
+        "stock_code": "600519",
+        "stock_name": "贵州茅台",
+        "pe_ttm": 22.5,
+        "pb": 7.8,
+        # dividend_yield 缺键：口径可空（akshare 备源无 dv_ttm），写 NULL 是设计语义
+        "total_mv": 2.1e12,
+        "circ_mv": 2.1e12,
+        "turnover_rate": 0.35,
+        "close": 1500.0,
+    }
+    assert store.upsert(pg_conn, "stock_valuation_daily", [rec]) == 1
+    rows = pg_conn.execute(
+        "SELECT dividend_yield, close FROM stock_valuation_daily WHERE trading_day=%s AND stock_code=%s",
+        (DAY, "600519"),
+    ).fetchall()
+    assert rows == [(None, 1500.0)]
 
 
 def test_index_constituent_replaces_members_on_rerun(pg_conn):

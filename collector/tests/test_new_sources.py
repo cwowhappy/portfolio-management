@@ -1,6 +1,6 @@
 import pandas as pd
 
-from collector.sources.plugins import IndexConstituentSource, TreasuryCurveSource
+from collector.sources.index import IndexConstituentSource, TreasuryCurveSource
 
 
 def _curve_df(dates, **overrides):
@@ -23,7 +23,7 @@ def _curve_df(dates, **overrides):
 
 
 def test_treasury_curve_multiterm(mocker):
-    import collector.sources.plugins as p
+    import collector.sources.index as p
 
     mocker.patch.object(p.ak, "bond_china_yield", return_value=_curve_df(["2026-08-28"]))
     src = TreasuryCurveSource("curve")
@@ -33,7 +33,7 @@ def test_treasury_curve_multiterm(mocker):
 
 
 def test_treasury_curve_skips_na_term(mocker):
-    import collector.sources.plugins as p
+    import collector.sources.index as p
 
     mocker.patch.object(p.ak, "bond_china_yield", return_value=_curve_df(["2026-08-28"], **{"30年": [None]}))
     src = TreasuryCurveSource("curve")
@@ -45,7 +45,7 @@ def test_treasury_curve_missing_term_column_fails_loudly(mocker):
     """期限列缺失时显式报错，不再静默跳过（1Y/3Y 静默缺失的教训）。"""
     import pytest
 
-    import collector.sources.plugins as p
+    import collector.sources.index as p
     from collector.sources.base import SourceError
 
     mocker.patch.object(
@@ -85,7 +85,7 @@ def _conn_factory(mocker, max_day):
 
 
 def test_treasury_curve_incremental_skips_loaded_days(mocker):
-    import collector.sources.plugins as p
+    import collector.sources.index as p
 
     mocker.patch.object(p.ak, "bond_china_yield", return_value=_curve_df(["2026-08-27", "2026-08-28"]))
     src = TreasuryCurveSource("curve", conn_factory=_conn_factory(mocker, dt.date(2026, 8, 27)))
@@ -95,7 +95,7 @@ def test_treasury_curve_incremental_skips_loaded_days(mocker):
 
 
 def test_treasury_curve_full_load_when_table_empty(mocker):
-    import collector.sources.plugins as p
+    import collector.sources.index as p
 
     mocker.patch.object(
         p.ak,
@@ -112,7 +112,7 @@ def test_treasury_curve_full_load_when_table_empty(mocker):
 
 def test_treasury_curve_backfill_respects_range_on_empty_table(mocker):
     """空表 + 显式 start/end 回填：只返回区间内行，不再整段写历史。"""
-    import collector.sources.plugins as p
+    import collector.sources.index as p
 
     mocker.patch.object(p.ak, "bond_china_yield", return_value=_curve_df(["2026-07-30", "2026-08-05", "2026-08-12"]))
     src = TreasuryCurveSource("curve", conn_factory=_conn_factory(mocker, None))
@@ -123,7 +123,7 @@ def test_treasury_curve_backfill_respects_range_on_empty_table(mocker):
 def test_treasury_curve_backfill_range_overrides_watermark(mocker):
     """显式区间回填时以区间为准：即使 DB watermark 已越过区间起点，区间内历史仍被返回，
     区间外行（即使晚于 watermark）不被写入。"""
-    import collector.sources.plugins as p
+    import collector.sources.index as p
 
     mocker.patch.object(p.ak, "bond_china_yield", return_value=_curve_df(["2026-08-05", "2026-09-02"]))
     src = TreasuryCurveSource("curve", conn_factory=_conn_factory(mocker, dt.date(2026, 9, 1)))
@@ -133,7 +133,7 @@ def test_treasury_curve_backfill_range_overrides_watermark(mocker):
 
 def test_treasury_curve_incremental_still_uses_watermark_when_no_range(mocker):
     """无显式区间（增量调度）仍保留 DB watermark 行为，不受区间逻辑影响。"""
-    import collector.sources.plugins as p
+    import collector.sources.index as p
 
     mocker.patch.object(p.ak, "bond_china_yield", return_value=_curve_df(["2026-08-27", "2026-08-28", "2026-09-02"]))
     src = TreasuryCurveSource("curve", conn_factory=_conn_factory(mocker, dt.date(2026, 8, 27)))
@@ -143,7 +143,7 @@ def test_treasury_curve_incremental_still_uses_watermark_when_no_range(mocker):
 
 def test_treasury_curve_long_range_fetches_in_chunks(mocker):
     """bond_china_yield 单次区间上限约 1 年，长区间按 180 天切块分多次调用。"""
-    import collector.sources.plugins as p
+    import collector.sources.index as p
 
     mocked = mocker.patch.object(p.ak, "bond_china_yield", return_value=_curve_df(["2026-08-05"]))
     src = TreasuryCurveSource("curve", conn_factory=_conn_factory(mocker, None))

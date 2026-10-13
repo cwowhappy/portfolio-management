@@ -560,3 +560,31 @@ def test_unknown_parser_kind_rejected():
             title_keyword="k",
             sleep_fn=_no_sleep,
         )
+
+
+# ---------------------------------------------------------------- C5 解析兜底留痕（2026-10-12 审查）
+
+
+def test_visible_text_parse_failure_logs_warning(caplog):
+    """正文剥标签解析失败兜底 ""：记 warning 留痕（C5），不再静默——上游改版时
+    「解析失败」不会被误判为「正文为空」。"""
+    with caplog.at_level("WARNING", logger="collector.sources.macro"):
+        assert macro._visible_text(None) == ""  # None 使 HTMLParser.feed 抛 TypeError，触发兜底分支
+    assert "可见文本解析失败" in caplog.text
+
+
+def test_list_entries_parse_failure_logs_warning(caplog):
+    """列表锚点流解析失败兜底 []：记 warning（C5）——「上游改版解析失败」不会被
+    误判为「当轮无新数据」（0 新增不留痕）。"""
+    src = _src("cpi")  # stats_table：走 _AnchorStreamParser 列表解析
+    with caplog.at_level("WARNING", logger="collector.sources.macro"):
+        assert src._list_entries(None) == []
+    assert "锚点流解析失败" in caplog.text
+
+
+def test_xlsx_entries_parse_failure_logs_warning(caplog):
+    """xlsx 附件流解析失败兜底 []：记 warning（C5）。"""
+    src = _src("socfin")  # pboc_xlsx：走 _DocumentStreamParser 两跳定位
+    with caplog.at_level("WARNING", logger="collector.sources.macro"):
+        assert src._xlsx_entries(None) == []
+    assert "xlsx 附件流解析失败" in caplog.text

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.portfolio.invest.infrastructure.market.EastmoneyFormat;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -46,7 +47,7 @@ class MarketDataParserTest {
     @DisplayName("东财行情JSON解析出报价")
     @Test
     void givenEastmoneyQuoteJson_whenParseQuote_thenReturnQuote() {
-        Quote q = MarketDataParser.parseQuote(quoteJson);
+        Quote q = MarketDataParser.parseQuote(EastmoneyFormat.extractQuote(quoteJson));
         assertThat(q.code()).isEqualTo("600519");
         assertThat(q.name()).isEqualTo("贵州茅台");
         assertThat(q.price()).isEqualTo(1415.0);
@@ -194,7 +195,7 @@ class MarketDataParserTest {
     @DisplayName("空行情JSON解析抛异常")
     @Test
     void givenEmptyQuoteJson_whenParseQuote_thenThrowBadResponse() {
-        assertThatThrownBy(() -> MarketDataParser.parseQuote(MAPPER.createObjectNode()))
+        assertThatThrownBy(() -> EastmoneyFormat.parseQuote(MAPPER.createObjectNode()))
                 .isInstanceOf(MarketDataException.class)
                 .hasMessageContaining("行情数据为空");
     }

@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-import collector.sources.plugins as plugins
+import collector.sources.stock as plugins
 
 
 def _fake_stock_basic():
