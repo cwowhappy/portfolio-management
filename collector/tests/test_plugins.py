@@ -2,7 +2,8 @@ import datetime as dt
 
 import pandas as pd
 
-from collector.sources.plugins import IndexValuationSource, IndustryUniverseSource, ShenwanMappingSource
+from collector.sources.index import IndexValuationSource
+from collector.sources.industry import IndustryUniverseSource, ShenwanMappingSource
 
 
 def test_shenwan_mapping_loops_31(mocker):
@@ -115,7 +116,7 @@ def test_industry_universe_joins_mapping(mocker):
 
 import pytest
 
-from collector.sources.plugins import normalize_date
+from collector.sources.common import normalize_date
 
 
 def test_normalize_date_iso_and_compact():
@@ -186,7 +187,7 @@ def test_industry_universe_empty_result_fails_min_rows_hard(mocker):
 
 def test_make_index_dividend_fetch_returns_weighted_non_none(mocker):
     """真实股息率拉取：成分股权重 × dv_ttm 加权均值，返回非 None。"""
-    from collector.sources.plugins import make_index_dividend_fetch
+    from collector.sources.index import make_index_dividend_fetch
 
     pro = mocker.Mock()
     pro.trade_cal.return_value = pd.DataFrame({"cal_date": ["20260828"], "is_open": [1]})
@@ -200,7 +201,7 @@ def test_make_index_dividend_fetch_returns_weighted_non_none(mocker):
 
 def test_make_index_dividend_fetch_falls_back_default_when_no_data(mocker):
     """积分不足/无数据时不崩，回退默认值（非 None）。"""
-    from collector.sources.plugins import make_index_dividend_fetch
+    from collector.sources.index import make_index_dividend_fetch
 
     pro = mocker.Mock()
     pro.trade_cal.return_value = pd.DataFrame({"cal_date": ["20260828"], "is_open": [1]})
@@ -212,7 +213,7 @@ def test_make_index_dividend_fetch_falls_back_default_when_no_data(mocker):
 
 def test_make_index_dividend_fetch_swallows_api_exception(mocker):
     """tushare 抛错（积分/限流）时也应返回默认值，不向外崩。"""
-    from collector.sources.plugins import make_index_dividend_fetch
+    from collector.sources.index import make_index_dividend_fetch
 
     def boom_pro():
         raise RuntimeError("tushare 403")
@@ -224,7 +225,7 @@ def test_make_index_dividend_fetch_swallows_api_exception(mocker):
 # ---------------------------------------------------------------- MS-07 基准指数收盘价 index_close
 
 
-from collector.sources.plugins import IndexCloseSource
+from collector.sources.index import IndexCloseSource
 
 
 def test_index_close_fetches_three_benchmarks(mocker):
@@ -247,7 +248,7 @@ def test_index_close_supports_range_for_backfill():
 
 # ---------------------------------------------------------------- MS-07 个股估值日快照 close + 区间回填
 
-from collector.sources.plugins import StockValuationDailySource
+from collector.sources.stock import StockValuationDailySource
 
 
 class _NoWaitLimiter:
@@ -304,7 +305,7 @@ def test_stock_valuation_daily_range_loops_open_days():
 
 def test_industry_index_close_fetches_all_industries(mocker):
     from collector.sources.constants import INDUSTRY_INDEX_CODES
-    from collector.sources.plugins import IndustryIndexCloseSource
+    from collector.sources.industry import IndustryIndexCloseSource
 
     captured = []
 
@@ -327,7 +328,7 @@ def test_industry_index_close_fetches_all_industries(mocker):
 
 
 def test_industry_index_close_supports_range_for_backfill():
-    from collector.sources.plugins import IndustryIndexCloseSource
+    from collector.sources.industry import IndustryIndexCloseSource
 
     assert IndustryIndexCloseSource.supports_range is True
 
@@ -336,7 +337,7 @@ def test_industry_index_close_supports_range_for_backfill():
 
 
 def test_bond_index_close_maps_columns(mocker):
-    from collector.sources.plugins import BondIndexCloseSource
+    from collector.sources.index import BondIndexCloseSource
 
     class FakePro:
         def index_daily(self, ts_code, start_date, end_date):
@@ -351,13 +352,13 @@ def test_bond_index_close_maps_columns(mocker):
 
 
 def test_bond_index_close_supports_range_for_backfill():
-    from collector.sources.plugins import BondIndexCloseSource
+    from collector.sources.index import BondIndexCloseSource
 
     assert BondIndexCloseSource.supports_range is True
 
 
 def test_gold_etf_close_maps_columns(mocker):
-    from collector.sources.plugins import GoldEtfCloseSource
+    from collector.sources.etf import GoldEtfCloseSource
 
     class FakePro:
         def fund_daily(self, ts_code, start_date, end_date):
@@ -371,7 +372,7 @@ def test_gold_etf_close_maps_columns(mocker):
 
 
 def test_gold_etf_close_supports_range_for_backfill():
-    from collector.sources.plugins import GoldEtfCloseSource
+    from collector.sources.etf import GoldEtfCloseSource
 
     assert GoldEtfCloseSource.supports_range is True
 
@@ -475,7 +476,7 @@ def _etf_detail_map():
 
 
 def _etf_source(sleep_log=None):
-    from collector.sources.plugins import EtfBasicSource
+    from collector.sources.etf import EtfBasicSource
 
     details = _etf_detail_map()
 
@@ -559,7 +560,7 @@ def test_etf_basic_enrich_failure_keeps_row_with_catalog_fallback():
 
 def test_etf_basic_fee_rate_requires_both_parts():
     """费率=管理+托管合计：任一部分缺失/不可解析 → null（宁缺毋低估，防费率筛选漏杀）。"""
-    from collector.sources.plugins import _etf_fee_rate
+    from collector.sources.etf import _etf_fee_rate
 
     assert _etf_fee_rate({"MGREXP": "0.50%", "TRUSTEXP": "0.10%"}) == 0.60
     assert _etf_fee_rate({"MGREXP": "0.50%", "TRUSTEXP": "--"}) is None
@@ -569,7 +570,7 @@ def test_etf_basic_fee_rate_requires_both_parts():
 
 def test_etf_basic_category_rule_constants():
     """category 常量规则钉住（探测报告 §2.2 七品类实测口径）。"""
-    from collector.sources.plugins import _etf_category
+    from collector.sources.etf import _etf_category
 
     assert _etf_category("指数型-股票", "沪深300指数") == "宽基"
     assert _etf_category("指数型-股票", "中证银行指数") == "行业"
@@ -592,7 +593,7 @@ def test_etf_basic_sleeps_between_enrich_calls():
 
 
 def test_etf_basic_supports_range_false():
-    from collector.sources.plugins import EtfBasicSource
+    from collector.sources.etf import EtfBasicSource
 
     assert EtfBasicSource.supports_range is False
 
@@ -681,7 +682,7 @@ _ETF_WHITELIST = [
 def test_etf_close_trade_date_mode_filters_by_etf_basic_whitelist():
     """日常增量：fund_daily(trade_date=最近开市日) 单次全市场，FakePro 收到 trade_date 而非 ts_code；
     etf_basic 半连接剔除 LOF（501000/160605）与 .OF 脏行（158008）。"""
-    from collector.sources.plugins import EtfCloseSource
+    from collector.sources.etf import EtfCloseSource
 
     pro = _EtfClosePro()
     src = EtfCloseSource(
@@ -702,7 +703,7 @@ def test_etf_close_trade_date_mode_filters_by_etf_basic_whitelist():
 
 def test_etf_close_backfill_loops_open_days():
     """backfill range 模式：start/end 区间按交易日历逐日循环 trade_date；上游无数据的开市日跳过不阻断。"""
-    from collector.sources.plugins import EtfCloseSource
+    from collector.sources.etf import EtfCloseSource
 
     pro = _EtfClosePro(empty_days={"20260923"})
     sleeps = []
@@ -720,7 +721,7 @@ def test_etf_close_backfill_loops_open_days():
 
 
 def test_etf_close_supports_range_for_backfill():
-    from collector.sources.plugins import EtfCloseSource
+    from collector.sources.etf import EtfCloseSource
 
     assert EtfCloseSource.supports_range is True
 
@@ -746,7 +747,7 @@ def _index_frame(days, closes):
 
 def test_tracking_index_close_dedupes_codes_and_loops_index_daily():
     """读 etf_basic 去重 tracking_index_code 循环 index_daily；指数行 index_name 用 tracking_index_name。"""
-    from collector.sources.plugins import TrackingIndexCloseSource
+    from collector.sources.etf import TrackingIndexCloseSource
 
     pro = _TrackingPro(
         {
@@ -777,7 +778,7 @@ def test_tracking_index_close_dedupes_codes_and_loops_index_daily():
 
 def test_tracking_index_close_probes_suffix_fallback_and_caches():
     """000 段先 .SH 拉空回退 .CSI 命中并缓存；第二次 fetch 直接用缓存不再重复探测。"""
-    from collector.sources.plugins import TrackingIndexCloseSource
+    from collector.sources.etf import TrackingIndexCloseSource
 
     pro = _TrackingPro({"000300.CSI": _index_frame(["20260924"], [3905.5])})
     src = TrackingIndexCloseSource(
@@ -797,7 +798,7 @@ def test_tracking_index_close_probes_suffix_fallback_and_caches():
 
 def test_tracking_index_close_skips_unavailable_codes_and_counts(caplog):
     """NDX100 等海外码候选全空 → 跳过计数（warning 日志留痕），返回 df 不含该码。"""
-    from collector.sources.plugins import TrackingIndexCloseSource
+    from collector.sources.etf import TrackingIndexCloseSource
 
     pro = _TrackingPro({"000300.SH": _index_frame(["20260924"], [3905.5])})
     src = TrackingIndexCloseSource(
@@ -806,7 +807,7 @@ def test_tracking_index_close_skips_unavailable_codes_and_counts(caplog):
         pro_factory=lambda: pro,
         sleep_fn=lambda s: None,
     )
-    with caplog.at_level(logging.WARNING, logger="collector.sources.plugins"):
+    with caplog.at_level(logging.WARNING, logger="collector.sources.etf"):
         df = src.fetch({})
     assert set(df["index_code"]) == {"000300"}  # NDX100 不在结果里
     assert "NDX100" in caplog.text and "1 个跟踪指数" in caplog.text
@@ -816,7 +817,7 @@ def test_tracking_index_close_skips_unavailable_codes_and_counts(caplog):
 
 def test_index_ts_candidates_rule_constants():
     """后缀解析规则常量钉住（探测报告 §三：首轮假阴性教训——不能照搬 INDEXTEXCH 拼后缀）。"""
-    from collector.sources.plugins import _index_ts_candidates
+    from collector.sources.etf import _index_ts_candidates
 
     assert _index_ts_candidates("931573") == ("931573.CSI",)  # 中证系 93 段
     assert _index_ts_candidates("H30202") == ("H30202.CSI",)  # 中证系 H 码族
@@ -828,7 +829,7 @@ def test_index_ts_candidates_rule_constants():
 
 
 def test_tracking_index_close_supports_range_for_backfill():
-    from collector.sources.plugins import TrackingIndexCloseSource
+    from collector.sources.etf import TrackingIndexCloseSource
 
     assert TrackingIndexCloseSource.supports_range is True
 
@@ -877,7 +878,7 @@ class _DbConn:
 
 
 def _te_source(pairs, closes, log):
-    from collector.sources.plugins import EtfTrackingErrorSource
+    from collector.sources.etf import EtfTrackingErrorSource
 
     return EtfTrackingErrorSource(
         "etf_tracking_error",
@@ -993,6 +994,6 @@ def test_etf_tracking_error_empty_participant_set_no_update():
 
 
 def test_etf_tracking_error_supports_range_false():
-    from collector.sources.plugins import EtfTrackingErrorSource
+    from collector.sources.etf import EtfTrackingErrorSource
 
     assert EtfTrackingErrorSource.supports_range is False

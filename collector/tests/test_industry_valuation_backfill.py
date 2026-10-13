@@ -5,7 +5,7 @@ import pytest
 
 from collector.calc.snapshot import IndustryValuationCalc
 from collector.scheduler.jobs import _field_columns
-from collector.sources.plugins import IndustryValuationBackfillSource
+from collector.sources.industry import IndustryValuationBackfillSource
 from collector.store.writer import Store
 
 

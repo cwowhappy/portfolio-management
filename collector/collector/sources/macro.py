@@ -241,7 +241,10 @@ def _visible_text(html):
     try:
         parser.feed(html)
         parser.close()
-    except Exception:
+    except Exception as e:
+        # C5（2026-10-12 审查）：剥标签兜底曾静默返回 ""——上游改版时「解析失败」会被
+        # 误判为「正文为空」，记 warning 留痕（与该文件既有 warning 通道一致）
+        logger.warning("宏观正文可见文本解析失败，按空正文兜底：%s", e)
         return ""
     return parser.text()
 
@@ -384,7 +387,9 @@ class MacroPageSource(Source):
         try:
             parser.feed(html)
             parser.close()
-        except Exception:
+        except Exception as e:
+            # C5：列表解析兜底静默返回 [] 会把「上游改版解析失败」误判为「当轮无新数据」
+            logger.warning("宏观列表页锚点流解析失败，按零命中兜底：%s", e)
             return []
         if self.parser_kind == "pboc_xlsx":
             return self._xlsx_entries(html)
@@ -409,7 +414,9 @@ class MacroPageSource(Source):
         try:
             parser.feed(html)
             parser.close()
-        except Exception:
+        except Exception as e:
+            # C5：两跳定位解析兜底静默返回 [] 会把「上游改版解析失败」误判为「当轮无新数据」
+            logger.warning("宏观 xlsx 附件流解析失败，按零命中兜底：%s", e)
             return []
         events = parser.events
         for idx, (kind, payload) in enumerate(events):

@@ -12,28 +12,28 @@ import pandas as pd
 from collector.executor.executor import Executor
 from collector.model.run import STATUS_SUCCESS
 from collector.model.task import Collector
-from collector.sources.plugins import IndexValuationSource, make_index_dividend_fetch
+from collector.sources.index import IndexValuationSource, make_index_dividend_fetch
 
 # ---------------------------------------------------------------- make_index_dividend_fetch
 
 
 def test_fetch_returns_none_when_upstream_fails(mocker):
     pro = MagicMock()
-    with patch("collector.sources.plugins._index_dividend_yield", side_effect=RuntimeError("积分不足")):
+    with patch("collector.sources.index._index_dividend_yield", side_effect=RuntimeError("积分不足")):
         fetch = make_index_dividend_fetch(pro_factory=lambda: pro)
         assert fetch("000300", None, "2026-09-25") is None
 
 
 def test_fetch_returns_none_on_no_data(mocker):
     pro = MagicMock()
-    with patch("collector.sources.plugins._index_dividend_yield", return_value=None):
+    with patch("collector.sources.index._index_dividend_yield", return_value=None):
         fetch = make_index_dividend_fetch(pro_factory=lambda: pro)
         assert fetch("000300", None, "2026-09-25") is None
 
 
 def test_fetch_returns_value_and_records_fallbacks():
     pro = MagicMock()
-    with patch("collector.sources.plugins._index_dividend_yield", side_effect=[2.5, None]):
+    with patch("collector.sources.index._index_dividend_yield", side_effect=[2.5, None]):
         fetch = make_index_dividend_fetch(pro_factory=lambda: pro)
         assert fetch("000300", None, None) == 2.5
         assert fetch("000905", None, None) is None
@@ -42,7 +42,7 @@ def test_fetch_returns_value_and_records_fallbacks():
 
 def test_explicit_default_still_supported():
     pro = MagicMock()
-    with patch("collector.sources.plugins._index_dividend_yield", return_value=None):
+    with patch("collector.sources.index._index_dividend_yield", return_value=None):
         fetch = make_index_dividend_fetch(pro_factory=lambda: pro, default=0.0)
         assert fetch("000300", None, None) == 0.0
 
@@ -63,7 +63,7 @@ def _basic_frame():
 def test_source_writes_null_and_warns_on_fallback():
     pro = MagicMock()
     pro.index_dailybasic.return_value = _basic_frame()
-    with patch("collector.sources.plugins._index_dividend_yield", side_effect=RuntimeError("积分不足")):
+    with patch("collector.sources.index._index_dividend_yield", side_effect=RuntimeError("积分不足")):
         dividend_fetch = make_index_dividend_fetch(pro_factory=lambda: pro)
         src = IndexValuationSource(
             "idx", pro_factory=lambda: pro, dividend_fetch=dividend_fetch, index_codes={"000300": "沪深300"}
@@ -76,7 +76,7 @@ def test_source_writes_null_and_warns_on_fallback():
 def test_source_no_warning_when_value_computed():
     pro = MagicMock()
     pro.index_dailybasic.return_value = _basic_frame()
-    with patch("collector.sources.plugins._index_dividend_yield", return_value=2.5):
+    with patch("collector.sources.index._index_dividend_yield", return_value=2.5):
         dividend_fetch = make_index_dividend_fetch(pro_factory=lambda: pro)
         src = IndexValuationSource(
             "idx", pro_factory=lambda: pro, dividend_fetch=dividend_fetch, index_codes={"000300": "沪深300"}

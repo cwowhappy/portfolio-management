@@ -26,34 +26,40 @@ from collector.repositories.tasks import TASK_COLS, TaskRepository
 from collector.scheduler.alerts import alerter_from_env
 from collector.scheduler.calendar import TradingCalendar
 from collector.scheduler.patrol import run_freshness_patrol
-from collector.scheduler.runner import TaskRunner
+from collector.scheduler.runner import STRATEGY_EXPONENTIAL, STRATEGY_FIXED, TaskRunner
 from collector.sources.announcements import CninfoAnnouncementSource, EastmoneyAnnouncementSource
-from collector.sources.macro import MACRO_SOURCE_SPECS, MacroPageSource
-from collector.sources.news import EastmoneyFastNewsSource, SinaZhiboNewsSource
-from collector.sources.plugins import (
-    AllASpotBackupSource,
-    BondIndexCloseSource,
+from collector.sources.etf import (
     EtfBasicSource,
     EtfCloseSource,
     EtfTrackingErrorSource,
     GoldEtfCloseSource,
+    TrackingIndexCloseSource,
+)
+from collector.sources.index import (
+    BondIndexCloseSource,
     IndexCloseSource,
     IndexConstituentSource,
     IndexValuationSource,
+    TreasuryCurveSource,
+    make_index_dividend_fetch,
+)
+from collector.sources.industry import (
     IndustryIndexCloseSource,
     IndustryUniverseSource,
     IndustryValuationBackfillSource,
     ShenwanMappingSource,
+)
+from collector.sources.macro import MACRO_SOURCE_SPECS, MacroPageSource
+from collector.sources.news import EastmoneyFastNewsSource, SinaZhiboNewsSource
+from collector.sources.policy import POLICY_SOURCE_SPECS, PolicySiteSource
+from collector.sources.registry import SourceRegistry
+from collector.sources.stock import (
+    AllASpotBackupSource,
     StockFinancialSource,
     StockValuationDailyBackupSource,
     StockValuationDailySource,
-    TrackingIndexCloseSource,
-    TreasuryCurveSource,
-    make_index_dividend_fetch,
     make_open_day_check,
 )
-from collector.sources.policy import POLICY_SOURCE_SPECS, PolicySiteSource
-from collector.sources.registry import SourceRegistry
 from collector.store.writer import Store
 from collector.validators.registry import ValidatorRegistry
 
@@ -80,7 +86,9 @@ TASK_DEF_KEYS = frozenset(TASK_COLS)
 
 
 def _validate_task_keys(t):
-    """缺必填键或含未知键都 fail-fast：缺键会静默写入 NULL，未知键是死配置。"""
+    """缺必填键或含未知键都 fail-fast：缺键会静默写入 NULL，未知键是死配置。
+    retry_backoff 值域同点校验（C6，2026-10-12 审查）：非法值此前到运行时
+    backoff_delays 才 ValueError，seed 时即拒。"""
     code = t.get("task_code", "<未知>")
     missing = TASK_DEF_KEYS - t.keys()
     if missing:
@@ -88,6 +96,8 @@ def _validate_task_keys(t):
     unknown = t.keys() - TASK_DEF_KEYS
     if unknown:
         raise ValueError(f"任务 {code} 含未知键: {sorted(unknown)}")
+    if t["retry_backoff"] not in (STRATEGY_EXPONENTIAL, STRATEGY_FIXED):
+        raise ValueError(f"任务 {code} retry_backoff 非法: {t['retry_backoff']!r}（须为 exponential/fixed）")
 
 
 def seed_tasks(conn, task_defs):

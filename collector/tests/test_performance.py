@@ -5,6 +5,7 @@
 阈值刻意放宽到 CI 抖动不会误报。
 """
 
+import datetime as dt
 import time
 from unittest.mock import MagicMock
 
@@ -48,8 +49,19 @@ def test_convert_and_executemany_5k_rows_within_budget():
     start = time.perf_counter()
     records = conv.convert(_all_a_df(ROW_COUNT))
     # writer 只验批量调用形态：mock 连接走真实 executemany 参数构造。
-    # 真实链路里 valuation_snapshot 写的是 calc 聚合后的记录，这里借其表定义驱动 writer 路径。
-    written = store.upsert(conn, "valuation_snapshot", records)
+    # 真实链路里 valuation_snapshot 写的是 calc 聚合后的记录——C2 fail-fast（首行键集
+    # ⊇ 表列）后夹具须按 snapshot 列形重放，方借其表定义驱动 writer 路径。
+    snapshot_records = [
+        {
+            "trading_day": dt.date(2026, 8, 28),
+            "pe_median": r["pe"],
+            "pb_median": r["pb"],
+            "net_breaker_count": 0,
+            "net_breaker_ratio": 0.0,
+        }
+        for r in records
+    ]
+    written = store.upsert(conn, "valuation_snapshot", snapshot_records)
     elapsed = time.perf_counter() - start
 
     assert len(records) == ROW_COUNT

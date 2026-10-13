@@ -39,6 +39,9 @@ UPSERT_SQL = {
         ON CONFLICT (index_code, stock_code) DO UPDATE SET
           stock_name=EXCLUDED.stock_name, weight=EXCLUDED.weight
     """,
+    # 停牌语义（C1，2026-10-12 审查）：本表只写当日有交易的股票（daily_basic 缺席即停牌），
+    # 无 suspended 标志列；下游消费方按「(trading_day, stock_code) 当日无行 = 停牌」解读，
+    # 连续停牌期间不得把最近有行日的旧估值当作当日数据。源侧契约见 sources/stock.py docstring。
     "stock_valuation_daily": """
         INSERT INTO stock_valuation_daily (
             trading_day, stock_code, stock_name, pe_ttm, pb, dividend_yield, total_mv, circ_mv, turnover_rate, close
@@ -203,6 +206,21 @@ TABLE_COLUMNS = {
 }
 
 
+# 缺口径可空列白名单（C2，2026-10-12 审查）：这些列业务口径允许整条缺失（缺键写 NULL
+# 是设计语义而非事故），不触发 fail-fast；白名单外的列缺失说明 converter/calc 输出契约
+# 被破坏（如字段改名漏列），必须报错而非静默写 NULL。口径出处：
+# - index_valuation_history.dividend_yield：P0-4 估算不可得回退 NULL（sources/index.py 注记）
+# - stock_valuation_daily.dividend_yield：备源降级日全 NULL（akshare spot 无 dv_ttm，sources/stock.py 注记）
+# - industry_valuation.roe/dividend_yield：左连接并入，上游无数据留 NULL（sources/industry.py 注记）
+# - index_constituent.stock_name：converter 显式 default None（成分名可缺）
+OPTIONAL_COLUMNS = {
+    "index_valuation_history": {"dividend_yield"},
+    "stock_valuation_daily": {"dividend_yield"},
+    "industry_valuation": {"roe", "dividend_yield"},
+    "index_constituent": {"stock_name"},
+}
+
+
 class Store:
     def upsert(self, conn, table: str, records: list[dict]) -> int:
         if not records:
@@ -212,6 +230,12 @@ class Store:
             sql = UPSERT_SQL[table]
         except KeyError as e:
             raise StoreError(f"未知目标表: {table}") from e
+        # C2 fail-fast：白名单外缺列按事故处理——converter/calc 改名漏列时 r.get() 会
+        # 静默写全表 NULL，此处拒绝。校验首行（records 由同一 converter 产出，键集一致）。
+        optional = OPTIONAL_COLUMNS.get(table, set())
+        missing = [c for c in cols if c not in records[0] and c not in optional]
+        if missing:
+            raise StoreError(f"目标表 {table} 缺列 {missing}：records 首行未携带，拒绝静默写 NULL")
         rows = [tuple(r.get(c) for c in cols) for r in records]
         try:
             with conn.cursor() as cur:

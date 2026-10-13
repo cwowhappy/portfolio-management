@@ -208,6 +208,14 @@ def test_seed_tasks_unknown_key_fails():
         seed_tasks(MagicMock(), [bad])
 
 
+def test_seed_tasks_invalid_retry_backoff_fails():
+    """C6：retry_backoff 值域 ∈ {exponential, fixed}，seed 时 fail-fast（此前要到运行时
+    backoff_delays 才 ValueError，非法任务已入库被调度）。"""
+    bad = {**_valid_task_def(), "retry_backoff": "linear"}
+    with pytest.raises(ValueError, match="retry_backoff 非法.*linear"):
+        seed_tasks(MagicMock(), [bad])
+
+
 def test_seed_tasks_accepts_depends_on_key():
     """C1：depends_on 进封闭键集后，声明依赖的任务定义放行。"""
     conn = MagicMock()

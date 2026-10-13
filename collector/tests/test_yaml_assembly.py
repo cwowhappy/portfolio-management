@@ -217,6 +217,31 @@ def test_policy_tasks_yaml(code):
     ]
 
 
+def test_stock_valuation_daily_range_soft_drops_out_of_bounds():
+    """C1（2026-10-12 审查）：stock_valuation_daily 补 close>0/turnover≥0 soft range——
+    用真实 YAML 装配 validator 做行为回归：越界行（close≤0、turnover<0）剔行进 issues，
+    边界内行（close=0.01、turnover=0、None）保留，整轮不 hard 失败。"""
+    defs = {d["task_code"]: d for d in load_task_defs(str(TASKS_DIR))}
+    d = defs["stock_valuation_daily"]
+    assert d["validator"][:1] == [{"check": "min_rows", "value": 1000, "level": "hard"}]
+    assert d["validator"][1:] == [
+        {"field": "close", "check": "range", "min": 0.01, "max": 99999999, "level": "soft"},
+        {"field": "turnover_rate", "check": "range", "min": 0, "max": 99999999, "level": "soft"},
+    ]
+    validator = _registries()["validator"].get(d["validator"])
+    records = [{"close": 10.5, "turnover_rate": 0.8}] * 1000  # 满足 min_rows hard
+    records += [
+        {"close": 0, "turnover_rate": 0.8},  # 零价（停牌残留帧/数据错误）→ 剔
+        {"close": -5.0, "turnover_rate": 0.8},  # 负价 → 剔
+        {"close": 10.5, "turnover_rate": -0.1},  # 负换手无业务含义 → 剔
+        {"close": 0.01, "turnover_rate": 0.0},  # 边界值（含下界）→ 保留
+        {"close": None, "turnover_rate": None},  # None 放行（range 只拦确定的坏值）
+    ]
+    kept, issues = validator.validate(records)
+    assert len(kept) == 1002  # 1000 正常 + 边界行 + None 行；3 行越界被剔
+    assert issues == ["range close: 剔除 2 行", "range turnover_rate: 剔除 1 行"]
+
+
 def test_field_mapping_macro_converter_passthrough():
     """field_mapping_macro 7 列同名映射：value（Decimal）经 numeric 强转 float、
     yoy 恒 None 透传、source_note 可空列 None 透传；空帧（增量已存全命中的空产出）

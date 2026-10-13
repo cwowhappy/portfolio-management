@@ -98,11 +98,14 @@ def test_policy_title_blacklist_two_scopes():
 
 
 def test_plugins_reference_central_module():
-    """plugins 不再自带这些常量定义（引用集中模块）——防回潮。"""
+    """源模块（C4 按域拆分后逐域检查）不再自带这些常量定义（引用集中模块）——防回潮。"""
     import inspect
 
-    import collector.sources.plugins as plugins
+    import collector.sources.etf as etf
+    import collector.sources.index as index
+    import collector.sources.industry as industry
+    import collector.sources.stock as stock
 
-    src = inspect.getsource(plugins)
+    src = "".join(inspect.getsource(m) for m in (stock, etf, index, industry))
     for name in ("INDEX_CODES =", "INDUSTRY_INDEX_CODES = {", "ETF_DETAIL_URL = (", "TERMS = ["):
-        assert name not in src, f"plugins.py 仍定义 {name!r}，应引用 constants"
+        assert name not in src, f"源模块仍定义 {name!r}，应引用 constants"

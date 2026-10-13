@@ -13,7 +13,7 @@ import pandas as pd
 import pytest
 
 from collector.sources.base import SourceError
-from collector.sources.plugins import StockValuationDailyBackupSource, make_open_day_check
+from collector.sources.stock import StockValuationDailyBackupSource, make_open_day_check
 
 EXPECTED_COLUMNS = [
     "trading_day",
@@ -167,3 +167,15 @@ def test_make_open_day_check_unavailable_proceeds():
 
     assert make_open_day_check(_boom)("20261001")
     assert make_open_day_check(lambda: SimpleNamespace(trade_cal=lambda **kw: pd.DataFrame()))("20261001")
+
+
+def test_make_open_day_check_failure_logs_warning(caplog):
+    """C5（2026-10-12 审查）：trade_cal 查询失败仍 fail-open，但记 warning 留痕——
+    此时恰是 tushare 故障场景，静默放行会在节假日写入当日快照行。"""
+
+    def _boom():
+        raise RuntimeError("tushare down")
+
+    with caplog.at_level("WARNING", logger="collector.sources.stock"):
+        assert make_open_day_check(_boom)("20261001") is True
+    assert "视为开市" in caplog.text and "tushare down" in caplog.text

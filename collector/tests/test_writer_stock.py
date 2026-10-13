@@ -46,6 +46,7 @@ def test_upsert_stock_financial_idempotent(pg_conn):
         "current_ratio": 3.8,
         "revenue_yoy": 16.8,
         "netprofit_yoy": 15.2,
+        "revenue": None,  # V15 加列：旧夹具补全（C2 fail-fast 后缺列即拒绝）
     }
     store.upsert(pg_conn, "stock_financial", [row])
     store.upsert(pg_conn, "stock_financial", [row])

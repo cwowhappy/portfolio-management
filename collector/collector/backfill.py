@@ -11,8 +11,8 @@ import datetime as dt
 import logging
 
 from collector.model.run import MODE_BACKFILL
+from collector.sources.common import normalize_date
 from collector.sources.constants import BACKFILL_WHOLE_RANGE_TASKS
-from collector.sources.plugins import normalize_date
 
 logger = logging.getLogger(__name__)
 

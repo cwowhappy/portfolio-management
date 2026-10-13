@@ -54,7 +54,19 @@ def test_non_constituent_table_does_not_delete():
     store = Store()
     conn = MagicMock()
     cur = conn.cursor.return_value.__enter__.return_value
-    store.upsert(conn, "valuation_snapshot", [{"trading_day": dt.date(2026, 8, 28), "pe_median": 1.0}])
+    store.upsert(
+        conn,
+        "valuation_snapshot",
+        [
+            {
+                "trading_day": dt.date(2026, 8, 28),
+                "pe_median": 1.0,
+                "pb_median": 1.5,
+                "net_breaker_count": 0,
+                "net_breaker_ratio": 0.0,
+            }
+        ],
+    )
     cur.execute.assert_not_called()
     cur.executemany.assert_called_once()
 
@@ -87,6 +99,28 @@ def test_upsert_psycopg_error_becomes_store_error():
             ],
         )
     conn.rollback.assert_called_once()
+    conn.commit.assert_not_called()
+
+
+def test_upsert_missing_required_column_fails_fast():
+    """C2：白名单外缺列（converter/calc 改名漏列场景）→ StoreError，且不落任何行。"""
+    store = Store()
+    conn = MagicMock()
+    rec = {
+        "trading_day": dt.date(2026, 8, 28),
+        "stock_code": "600519",
+        "stock_name": "贵州茅台",
+        "pe_ttm": 22.5,
+        "pb": 7.8,
+        # close 缺失：字段改名漏列场景，必须 fail-fast 而非静默写 NULL
+        "dividend_yield": 2.1,
+        "total_mv": 2.1e12,
+        "circ_mv": 2.1e12,
+        "turnover_rate": 0.35,
+    }
+    with pytest.raises(StoreError, match="缺列"):
+        store.upsert(conn, "stock_valuation_daily", [rec])
+    conn.cursor.assert_not_called()  # 写库前就拒绝
     conn.commit.assert_not_called()
 
 
