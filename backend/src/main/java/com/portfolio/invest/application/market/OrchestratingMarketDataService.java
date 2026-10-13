@@ -31,18 +31,20 @@ public class OrchestratingMarketDataService implements MarketDataService {
     private static final Logger log = LoggerFactory.getLogger(OrchestratingMarketDataService.class);
 
     private final MarketDataSource source;
+    private final EastmoneyQuotePort eastmoneyQuote;
     private final Clock clock;
 
     /** 主构造器（@Autowired：存在测试专用重载构造器时需显式指定注入入口）。 */
     @Autowired
-    public OrchestratingMarketDataService(MarketDataSource source) {
+    public OrchestratingMarketDataService(MarketDataSource source, EastmoneyQuotePort eastmoneyQuote) {
         // A3：application 层禁止直调 System 时钟，探活耗时经注入时钟测量
-        this(source, Clock.systemUTC());
+        this(source, eastmoneyQuote, Clock.systemUTC());
     }
 
     /** 测试注入：自定义时钟（避免真实墙钟等待）。 */
-    OrchestratingMarketDataService(MarketDataSource source, Clock clock) {
+    OrchestratingMarketDataService(MarketDataSource source, EastmoneyQuotePort eastmoneyQuote, Clock clock) {
         this.source = source;
+        this.eastmoneyQuote = eastmoneyQuote;
         this.clock = clock;
     }
 
@@ -79,7 +81,7 @@ public class OrchestratingMarketDataService implements MarketDataService {
         return withFallback(
                 () -> withFallback(
                         () -> MarketDataParser.parseTencentQuote(source.tencentQuote(symbol), ref.code()),
-                        () -> MarketDataParser.parseQuote(source.quote(ref.secid())),
+                        () -> eastmoneyQuote.parse(source.quote(ref.secid())),
                         e -> log.info("腾讯行情失败({}), 降级东财: {}", ref.code(), e.getMessage())),
                 () -> MarketDataParser.parseSinaQuote(source.sinaQuote(ref.sinaPrefix(), ref.code()), ref.code()),
                 e -> log.info("腾讯与东财行情均失败({}), 降级新浪: {}", ref.code(), e.getMessage()));

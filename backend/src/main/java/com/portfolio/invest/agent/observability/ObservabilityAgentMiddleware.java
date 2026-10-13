@@ -18,6 +18,7 @@ import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.ChatUsage;
+import io.micrometer.core.instrument.Metrics;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -51,6 +52,15 @@ public final class ObservabilityAgentMiddleware implements MiddlewareBase {
 
     /** failed 轮错误摘要上限（码点）：human-facing 摘要，全文走 ERROR 日志。 */
     static final int ERROR_SUMMARY_MAX_CHARS = 200;
+
+    /**
+     * 吞并失败计数器名（审查 2026-10-12 §三.8：观测系统自身的失败被静默时必须有度量）：
+     * {@code stage} 标签区分采集（collection）与落库（record）两处吞并点。经 Micrometer
+     * 全局注册表暴露——Spring Boot Actuator 将自动配置的 MeterRegistry 挂入
+     * {@link Metrics#globalRegistry}，生产计数直达 /actuator/metrics；无注册表环境（单测）
+     * 为 no-op 计数，行为不变。
+     */
+    static final String SWALLOWED_COUNTER_NAME = "invest.observability.turn.swallowed";
 
     private static final Logger log = LoggerFactory.getLogger(ObservabilityAgentMiddleware.class);
     private static final DateTimeFormatter CALL_TIME =
@@ -112,6 +122,7 @@ public final class ObservabilityAgentMiddleware implements MiddlewareBase {
                 safeRecord(ctx, result.getResult(), false, null);
             }
         } catch (Exception e) {
+            Metrics.counter(SWALLOWED_COUNTER_NAME, "stage", "collection").increment();
             log.error("observability.middleware: 轮级采集失败已吞并（error={}）", e.getMessage(), e);
         }
     }
@@ -130,6 +141,7 @@ public final class ObservabilityAgentMiddleware implements MiddlewareBase {
         try {
             record(ctx, finalMessage, failed, error);
         } catch (Exception e) {
+            Metrics.counter(SWALLOWED_COUNTER_NAME, "stage", "record").increment();
             log.error("observability.middleware: 轮级落库失败已吞并（failed={}, error={}）",
                     failed, e.getMessage(), e);
         }

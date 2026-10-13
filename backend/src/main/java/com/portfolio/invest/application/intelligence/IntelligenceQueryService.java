@@ -1,132 +1,62 @@
 package com.portfolio.invest.application.intelligence;
 
 import com.portfolio.invest.application.research.IntelligenceSubscriptionHook;
-import com.portfolio.invest.application.research.IntelligenceSubscriptionHook.IntelligenceTarget;
 import com.portfolio.invest.domain.intelligence.AnnouncementMetrics;
 import com.portfolio.invest.domain.intelligence.AnnouncementRecord;
-import com.portfolio.invest.domain.intelligence.AnnouncementRepository;
 import com.portfolio.invest.domain.intelligence.AnnouncementType;
+import com.portfolio.invest.domain.intelligence.AnnouncementRepository;
 import com.portfolio.invest.domain.intelligence.BriefRepository;
 import com.portfolio.invest.domain.intelligence.Direction;
-import com.portfolio.invest.domain.intelligence.IntelligenceErrorCode;
-import com.portfolio.invest.domain.intelligence.IntelligenceException;
-import com.portfolio.invest.domain.intelligence.IntelligenceSubscription;
-import com.portfolio.invest.domain.intelligence.MacroPoint;
 import com.portfolio.invest.domain.intelligence.NewsRecord;
 import com.portfolio.invest.domain.intelligence.NewsRepository;
-import com.portfolio.invest.domain.intelligence.PageQuery;
-import com.portfolio.invest.domain.intelligence.PageResult;
 import com.portfolio.invest.domain.intelligence.PolicyConfidence;
 import com.portfolio.invest.domain.intelligence.PolicyDirection;
 import com.portfolio.invest.domain.intelligence.PolicyEvent;
 import com.portfolio.invest.domain.intelligence.PolicyRepository;
 import com.portfolio.invest.domain.intelligence.PolicyStrength;
 import com.portfolio.invest.domain.intelligence.SubscriptionRepository;
-import com.portfolio.invest.domain.intelligence.SubscriptionStock;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
-import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
- * 情报检索用例（MS-20 Task 12 最小版 + MS-21 Task 8 公告检索 + MS-22 Task 6 宏观简报 +
- * P4 Task 1 四区块扩全）：组装 {@link PageQuery} 委托 {@link NewsRepository#search} /
+ * 情报检索用例门面（2026-10-12 按读端点族拆分：原 637 行单类承载工具检索/宏观/分页/
+ * 聚合 10+ 读端点，现纯搬移至
+ * {@link IntelligenceSearchApplicationService}（工具检索 searchNews/searchAnnouncements +
+ * scope 三态）、{@link IntelligenceMacroApplicationService}（macroBrief/macroOverview/calendar）、
+ * {@link IntelligencePageApplicationService}（web 四区块分页 newsPage/announcementsPage/
+ * policies/briefs/briefDetail）、{@link IntelligenceStockApplicationService}（stockIntel 标的聚合）；
+ * 共享空白串归一见 {@link IntelligenceQuerySupport}）。
+ *
+ * <p>本门面保留全部对外契约：web/agent 注入点、方法签名与条目/结果视图 record 均未变
+ * （web/agent/bdd/测试 import 不动），方法体为一行委托；行为与拆分前完全一致。
+ *
+ * <p>assemble {@link PageQuery} 委托 {@link NewsRepository#search} /
  * {@link AnnouncementRepository#search} / {@link PolicyRepository#searchEvents} /
  * {@link BriefRepository#search}，把合并视图收敛为条目视图（LLM 工具与 P4 web 查询
  * 共用口径）。P4 四区块（新闻流/公告流/政策库/简报归档）+ 标的聚合（F17）+ 宏观页
  * 聚合（macroOverview/calendar，D22）。
  *
  * <p>limit 夹紧 1..20（缺省 10）与 macroBrief 的 indicators 解析 / policyDays 夹紧
- * 1..90（缺省 30）单点收口在本服务——工具层与 web 层不各自防御；
- * page 固定 1（工具场景只取第一页）。P4 web 分页（newsPage 等四方法）page/pageSize
- * 缺省 1/20、夹紧经 {@link PageQuery} compact constructor（page ≥ 1、1..100）。
+ * 1..90（缺省 30）单点收口在各子服务——工具层与 web 层不各自防御；page 固定 1（工具
+ * 场景只取第一页）。P4 web 分页（newsPage 等四方法）page/pageSize 缺省 1/20、夹紧经
+ * {@code PageQuery} compact constructor（page ≥ 1、1..100）。
  */
 @Service
 public class IntelligenceQueryService {
 
-    /** 单页条数缺省值。 */
-    static final int DEFAULT_LIMIT = 10;
-
-    /** 单页条数上限（工具口径；PageQuery 的 100 上限是 web 大分页口径）。 */
-    static final int MAX_LIMIT = 20;
-
-    /** web 分页缺省页码（D20：page 默认 1）。 */
-    static final int DEFAULT_PAGE = 1;
-
-    /** web 分页缺省页大小（D20：pageSize 默认 20）。 */
-    static final int DEFAULT_PAGE_SIZE = 20;
-
-    /** 标的聚合各路最新条数（F17 三路聚合的每路条目数）。 */
-    static final int STOCK_INTEL_ITEMS = 5;
-
-    /** 标的聚合政策路说明（政策事件无标的维度——引导到政策库检索）。 */
-    static final String POLICY_NO_STOCK_NOTE =
-            "政策事件不按标的归集——请到「政策库」按方向/日期/关键词检索";
-
-    /** 宏观日历缺省天数（D22：政策库区块日历卡「未来 7 天预期发布」）。 */
-    static final int DEFAULT_CALENDAR_DAYS = 7;
-
-    /** 宏观简报缺省指标全集：五先行指标 + 国债收益率两点（F13 决策 #12 + T4 跨表合成）。 */
-    static final List<String> MACRO_BRIEF_ALL_INDICATORS = List.of(
-            "CPI", "PPI", "PMI", "LPR", "AFMI",
-            MacroPoint.INDICATOR_TY1Y, MacroPoint.INDICATOR_TY10Y);
-
-    /** 宏观简报每指标历史序列期数（近 5 期迷你趋势，LLM 上下文友好）。 */
-    static final int MACRO_BRIEF_SERIES_LIMIT = 5;
-
-    /** 政策回看天数缺省值。 */
-    static final int DEFAULT_POLICY_DAYS = 30;
-
-    /** 政策回看天数上限。 */
-    static final int MAX_POLICY_DAYS = 90;
-
     /** 市场时区（政策窗口「今日」口径，与宏观采集/简报调度 zone 一致）。 */
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
 
-    /** scope=subscription 空集话术（未设置订阅标的，引导先订阅再定向检索）。 */
-    static final String SUBSCRIPTION_EMPTY_MESSAGE =
-            "未设置订阅标的——可先到「情报订阅」添加关注股票后再检索（scope=subscription 仅检索订阅标的）";
-
-    /** scope=holdings 空集话术（无建仓持仓阶段项目）。 */
-    static final String HOLDINGS_EMPTY_MESSAGE =
-            "当前无建仓持仓阶段项目——研究项目建仓后，持仓标的公告自动纳入检索范围（scope=holdings 仅检索持仓标的）";
-
-    /** stock 参数不在 scope 标的集话术（区分于「该标的无公告」的误导性空结果）。 */
-    static final String STOCK_OUT_OF_SUBSCRIPTION_MESSAGE =
-            "该标的不在你的订阅标的范围内（scope=subscription 仅检索订阅标的）";
-
-    static final String STOCK_OUT_OF_HOLDINGS_MESSAGE =
-            "该标的不在你的持仓跟踪标的范围内（scope=holdings 仅检索持仓项目标的）";
-
-    /**
-     * scope 路径残余护栏话术（P4 SQL IN 升级后为纯防御：items 空 ∧ total>0 的仓库违约
-     * 场景才触发——非「检索无结果」，加 stock 定向或收窄日期可解）。
-     */
-    static final String SUBSCRIPTION_PAGE_MISS_MESSAGE =
-            "本页未命中你的订阅标的公告——可加 stock 参数定向检索或收窄日期范围";
-
-    static final String HOLDINGS_PAGE_MISS_MESSAGE =
-            "本页未命中你的持仓标的公告——可加 stock 参数定向检索或收窄日期范围";
-
-    private final NewsRepository newsRepository;
-    private final AnnouncementRepository announcementRepository;
-    private final SubscriptionRepository subscriptionRepository;
-    private final IntelligenceSubscriptionHook subscriptionHook;
-    private final MacroQueryService macroQueryService;
-    private final PolicyRepository policyRepository;
-    private final BriefRepository briefRepository;
-    private final Clock clock;
+    private final IntelligenceSearchApplicationService searchService;
+    private final IntelligenceMacroApplicationService macroService;
+    private final IntelligencePageApplicationService pageService;
+    private final IntelligenceStockApplicationService stockService;
 
     @Autowired
     public IntelligenceQueryService(NewsRepository newsRepository,
@@ -149,214 +79,62 @@ public class IntelligenceQueryService {
                              PolicyRepository policyRepository,
                              BriefRepository briefRepository,
                              Clock clock) {
-        this.newsRepository = newsRepository;
-        this.announcementRepository = announcementRepository;
-        this.subscriptionRepository = subscriptionRepository;
-        this.subscriptionHook = subscriptionHook;
-        this.macroQueryService = macroQueryService;
-        this.policyRepository = policyRepository;
-        this.briefRepository = briefRepository;
-        this.clock = clock;
+        this.searchService = new IntelligenceSearchApplicationService(newsRepository,
+                announcementRepository, subscriptionRepository, subscriptionHook);
+        this.macroService = new IntelligenceMacroApplicationService(macroQueryService, policyRepository, clock);
+        this.pageService = new IntelligencePageApplicationService(newsRepository,
+                announcementRepository, policyRepository, briefRepository);
+        this.stockService = new IntelligenceStockApplicationService(newsRepository, announcementRepository);
     }
 
     /**
      * 检索结构化情报：条目（AI 摘要优先、缺席退化源站摘要）+ 命中总数。
      */
     public NewsSearchResult searchNews(NewsSearchFilter filter) {
-        int limit = Math.min(
-                Math.max(filter.limit() == null ? DEFAULT_LIMIT : filter.limit(), 1), MAX_LIMIT);
-        PageQuery query = new PageQuery(1, limit,
-                blankToNull(filter.q()), blankToNull(filter.stock()), blankToNull(filter.industry()),
-                filter.from(), filter.to(), filter.minImportance());
-        PageResult<NewsRecord> page = newsRepository.search(query);
-        return new NewsSearchResult(page.items().stream().map(NewsItemView::of).toList(), page.total());
+        return searchService.searchNews(filter);
     }
 
     /**
      * 检索公告情报（MS-21 Task 8，P4 Task 1 scope 路径升级 SQL IN）：条目视图 +
-     * 命中总数 + scope 引导语。
-     *
-     * <p>scope 解析：<b>subscription</b>=当前用户订阅标的集（无行经
-     * {@link IntelligenceSubscription#defaults} 物化，空集短路返回引导语不打仓库）；
-     * <b>holdings</b>=持仓 hook 全用户列表按 userId 过滤（hook 尽力而为不抛，失败空集
-     * 同走引导语）；<b>all</b>=不过滤。<b>已升级 SQL IN</b>（P4 Task 1，废止最小版的
-     * 「本页超采 + 内存过滤」口径）：scope 标的集经 {@link PageQuery#stockCodes()} 以
-     * SQL IN 下推仓库，pageSize 取夹紧 limit（不超采），total 为全库精确命中数；
-     * stock 参数不在标的集时短路返回（省一次仓库调用）。
-     *
-     * <p>护栏话术保留为<b>残余防御</b>：SQL IN 契约下 items 空即真无命中（total 同为 0），
-     * {@code items 空 ∧ total > 0} 理论上不再出现——万一仓库违约仍给 scope 专属话术
-     * （不用「检索无结果」误导），保留无害。
+     * 命中总数 + scope 引导语。scope 解析与残余护栏话术见
+     * {@link IntelligenceSearchApplicationService#searchAnnouncements}。
      */
     public AnnouncementSearchResult searchAnnouncements(Long userId, AnnouncementSearchFilter filter) {
-        int limit = Math.min(
-                Math.max(filter.limit() == null ? DEFAULT_LIMIT : filter.limit(), 1), MAX_LIMIT);
-        AnnouncementScope scope = filter.scope() == null ? AnnouncementScope.ALL : filter.scope();
-        Set<String> scopeStocks = scopeStocks(userId, scope);
-        if (scopeStocks != null) {
-            if (scopeStocks.isEmpty()) {
-                return AnnouncementSearchResult.empty(scope == AnnouncementScope.SUBSCRIPTION
-                        ? SUBSCRIPTION_EMPTY_MESSAGE : HOLDINGS_EMPTY_MESSAGE);
-            }
-            String stock = blankToNull(filter.stock());
-            if (stock != null && !scopeStocks.contains(stock)) {
-                return AnnouncementSearchResult.empty(scope == AnnouncementScope.SUBSCRIPTION
-                        ? STOCK_OUT_OF_SUBSCRIPTION_MESSAGE : STOCK_OUT_OF_HOLDINGS_MESSAGE);
-            }
-        }
-        // scope 标的集 SQL IN 下推（all 路径 stockCodes=null 不过滤）；pageSize=夹紧 limit 不超采
-        PageQuery query = new PageQuery(1, limit, blankToNull(filter.q()), blankToNull(filter.stock()),
-                null, filter.from(), filter.to(), null, filter.type(), null, null,
-                scopeStocks == null ? null : List.copyOf(scopeStocks));
-        PageResult<AnnouncementRecord> page = announcementRepository.search(query);
-        List<AnnouncementItemView> items = page.items().stream()
-                .map(AnnouncementItemView::of)
-                .toList();
-        if (scopeStocks != null && items.isEmpty() && page.total() > 0) {
-            // 残余防御（SQL IN 契约下不应发生）：全库有公告但本页未命中 scope——非「检索无结果」
-            return AnnouncementSearchResult.empty(scope == AnnouncementScope.SUBSCRIPTION
-                    ? SUBSCRIPTION_PAGE_MISS_MESSAGE : HOLDINGS_PAGE_MISS_MESSAGE);
-        }
-        return new AnnouncementSearchResult(items, page.total(), null);
-    }
-
-    /**
-     * scope 标的集：all 返回 null（不过滤哨兵）；subscription 订阅聚合标的码；
-     * holdings hook 全用户列表按 userId 过滤后的标的码。
-     */
-    private Set<String> scopeStocks(Long userId, AnnouncementScope scope) {
-        return switch (scope) {
-            case ALL -> null;
-            case SUBSCRIPTION -> subscriptionRepository.findByUserId(userId)
-                    .orElseGet(() -> IntelligenceSubscription.defaults(userId))
-                    .stocks().stream().map(SubscriptionStock::stockCode)
-                    .collect(Collectors.toCollection(LinkedHashSet::new));
-            case HOLDINGS -> subscriptionHook.activePositionTargets().stream()
-                    .filter(t -> userId.equals(t.userId()))
-                    .map(IntelligenceTarget::stockCode)
-                    .collect(Collectors.toCollection(LinkedHashSet::new));
-        };
-    }
-
-    /** 空白串归一为 null（空白关键词不启用条件）。 */
-    private static String blankToNull(String s) {
-        return s == null || s.isBlank() ? null : s;
+        return searchService.searchAnnouncements(userId, filter);
     }
 
     /**
      * 宏观简报（MS-22 Task 6）：指标节（latest + 近 5 期序列）+ 政策节（近 policyDays 天
-     * searchEvents，direction 不过滤）+ 缺失指标显式列出。
-     *
-     * <p>指标串解析：逗号分隔 trim/大写/去重保序，空/空白归
-     * {@link #MACRO_BRIEF_ALL_INDICATORS}；policyDays 夹紧 1..90（缺省 30）。latest 一次
-     * 取全指标后按请求序装配——请求指标在 latest 无命中（含未知指标码）进 missing
-     * （F13 缺失不编造不省略），不查 series。TY 两点 series 恒空列表原样透传（T4 裁定：
-     * 「仅最新点、无历史序列」的 note 字段翻译归工具层，服务层不当数据缺失处理）。
-     * 政策窗口为 [今日-policyDays+1, 今日] 闭区间（Asia/Shanghai，与抽取游标窗口同口径）。
+     * searchEvents，direction 不过滤）+ 缺失指标显式列出。指标串解析与政策窗口口径见
+     * {@link IntelligenceMacroApplicationService#macroBrief}。
      */
     public MacroBriefResult macroBrief(MacroBriefFilter filter) {
-        List<String> requested = requestedIndicators(filter.indicators());
-        int policyDays = filter.policyDays() == null ? DEFAULT_POLICY_DAYS
-                : Math.min(Math.max(filter.policyDays(), 1), MAX_POLICY_DAYS);
-        LocalDate today = LocalDate.now(clock);
-
-        List<String> missing = new ArrayList<>();
-        List<MacroIndicatorView> indicators =
-                assembleIndicators(requested, MACRO_BRIEF_SERIES_LIMIT, missing);
-
-        PageResult<PolicyEvent> page = policyRepository.searchEvents(new PageQuery(
-                1, MAX_LIMIT, null, null, null, today.minusDays(policyDays - 1L), today,
-                null, null, null, null));
-        List<PolicyItemView> policies = page.items().stream().map(PolicyItemView::of).toList();
-        return new MacroBriefResult(indicators, policies, page.total(), missing,
-                Instant.now(clock));
+        return macroService.macroBrief(filter);
     }
 
     /**
-     * 指标节装配（macroBrief 与 macroOverview 共用）：latest 一次取全指标后按请求序
-     * 装配，请求指标在 latest 无命中（含未知指标码）进 missing、不查 series；命中指标
-     * 各取 seriesLimit 期序列（period 倒序）。TY 两点 series 恒空列表原样透传
-     * （T4 裁定：note 字段翻译归展示层，不当数据缺失处理）。
-     */
-    private List<MacroIndicatorView> assembleIndicators(List<String> requested, int seriesLimit,
-                                                        List<String> missing) {
-        Map<String, MacroPoint> latestByIndicator = new LinkedHashMap<>();
-        for (MacroPoint point : macroQueryService.latest()) {
-            latestByIndicator.put(point.indicator(), point);
-        }
-        List<MacroIndicatorView> indicators = new ArrayList<>();
-        for (String indicator : requested) {
-            MacroPoint point = latestByIndicator.get(indicator);
-            if (point == null) {
-                missing.add(indicator);
-                continue;
-            }
-            List<SeriesPoint> series = macroQueryService
-                    .series(indicator, seriesLimit).stream()
-                    .map(p -> new SeriesPoint(p.period(), p.value()))
-                    .toList();
-            indicators.add(new MacroIndicatorView(indicator, point.value(), point.yoy(),
-                    point.period(), point.periodType(), series));
-        }
-        return indicators;
-    }
-
-    /** 指标串解析：逗号分隔 trim + 大写归一 + 去重保序；空/空白归全七缺省。 */
-    private static List<String> requestedIndicators(String indicators) {
-        if (indicators == null || indicators.isBlank()) {
-            return MACRO_BRIEF_ALL_INDICATORS;
-        }
-        Set<String> normalized = new LinkedHashSet<>();
-        for (String part : indicators.split(",")) {
-            String trimmed = part.trim();
-            if (!trimmed.isEmpty()) {
-                normalized.add(trimmed.toUpperCase(Locale.ROOT));
-            }
-        }
-        return normalized.isEmpty() ? MACRO_BRIEF_ALL_INDICATORS : List.copyOf(normalized);
-    }
-
-    // ===== P4 Task 1：四区块分页查询（web 端点口径，工具方法 searchNews 等不动）=====
-
-    /**
-     * 新闻流分页查询（/api/intelligence/news，D20 §4.3）：过滤器逐字段映射 PageQuery
-     * （空白 q/stock/industry 归 null 不启用），page/pageSize 缺省 1/20、夹紧经
-     * {@link PageQuery}（page ≥ 1、pageSize 1..100）；条目映射与工具口径一致
-     * （{@link NewsItemView#of}——AI 摘要优先退化源站摘要）。
+     * 新闻流分页查询（/api/intelligence/news，D20 §4.3）：过滤器逐字段映射 PageQuery，
+     * 条目映射与工具口径一致（{@link NewsItemView#of}）。
      */
     public IntelligenceViews.PageView<NewsItemView> newsPage(NewsFilter filter) {
-        PageQuery query = new PageQuery(pageOr(filter.page()), pageSizeOr(filter.pageSize()),
-                blankToNull(filter.q()), blankToNull(filter.stock()), blankToNull(filter.industry()),
-                filter.from(), filter.to(), filter.minImportance(), null, null, null, null);
-        return IntelligenceViews.PageView.of(newsRepository.search(query))
-                .map(NewsItemView::of);
+        return pageService.newsPage(filter);
     }
 
     /**
      * 公告流分页查询（/api/intelligence/announcements）：全库检索 + 显式过滤
-     * （q/stock/type/from/to/major），无 scope 概念（scope 为 Agent 工具定向入参）；
-     * 分页缺省与夹紧同 {@link #newsPage}。
+     * （q/stock/type/from/to/major），无 scope 概念（scope 为 Agent 工具定向入参）。
      */
     public IntelligenceViews.PageView<AnnouncementItemView> announcementsPage(
             AnnouncementFilter filter) {
-        PageQuery query = new PageQuery(pageOr(filter.page()), pageSizeOr(filter.pageSize()),
-                blankToNull(filter.q()), blankToNull(filter.stock()), null,
-                filter.from(), filter.to(), null, filter.type(), filter.major(), null, null);
-        return IntelligenceViews.PageView.of(announcementRepository.search(query))
-                .map(AnnouncementItemView::of);
+        return pageService.announcementsPage(filter);
     }
 
     /**
      * 政策库分页查询（/api/intelligence/policies）：q 标题近似 / from·to 闭区间 /
-     * direction 取向等值（仅 SUCCESS 行进检索面，兜底行带 isPolicy=false 标记）；
-     * 分页缺省与夹紧同 {@link #newsPage}。
+     * direction 取向等值（仅 SUCCESS 行进检索面，兜底行带 isPolicy=false 标记）。
      */
     public IntelligenceViews.PageView<PolicyItemView> policies(PolicyFilter filter) {
-        PageQuery query = new PageQuery(pageOr(filter.page()), pageSizeOr(filter.pageSize()),
-                blankToNull(filter.q()), null, null, filter.from(), filter.to(),
-                null, null, null, filter.direction(), null);
-        return IntelligenceViews.PageView.of(policyRepository.searchEvents(query))
-                .map(PolicyItemView::of);
+        return pageService.policies(filter);
     }
 
     /**
@@ -365,11 +143,7 @@ public class IntelligenceQueryService {
      * 条目为档案行视图（不含 content_md 正文——详情走 {@link #briefDetail}）。
      */
     public IntelligenceViews.PageView<IntelligenceViews.BriefItemView> briefs(BriefFilter filter) {
-        PageQuery query = new PageQuery(pageOr(filter.page()), pageSizeOr(filter.pageSize()),
-                blankToNull(filter.q()), blankToNull(filter.stock()), null,
-                filter.from(), filter.to(), null);
-        return IntelligenceViews.PageView.of(briefRepository.search(query))
-                .map(IntelligenceViews.BriefItemView::of);
+        return pageService.briefs(filter);
     }
 
     /**
@@ -378,40 +152,15 @@ public class IntelligenceQueryService {
      * 区别于「检索无结果」，调用方（web → 404）据此给明确提示。
      */
     public IntelligenceViews.BriefDetailView briefDetail(LocalDate tradeDate) {
-        return briefRepository.findByDate(tradeDate)
-                .map(IntelligenceViews.BriefDetailView::of)
-                .orElseThrow(() -> new IntelligenceException(IntelligenceErrorCode.NOT_FOUND,
-                        "当日简报不存在：" + tradeDate));
+        return pageService.briefDetail(tradeDate);
     }
-
-    // ===== P4 Task 1：标的聚合（F17）与宏观页聚合（D22）=====
 
     /**
      * 标的聚合（/api/intelligence/stocks/{code}，F17）：三路命中计数 + 新闻/公告各路
-     * 最新 {@link #STOCK_INTEL_ITEMS} 条。新闻路走 stock_codes JSONB contains、公告路
-     * 走 stock_code 直列等值、政策路无标的维度（计数恒 0 + 引导说明）；三路命中全零
-     * 时 {@code empty=true}（前端空态引导）。空白标的码抛 INVALID_FILTER。
+     * 最新 5 条；三路命中全零时 {@code empty=true}（前端空态引导）。空白标的码抛 INVALID_FILTER。
      */
     public IntelligenceViews.StockIntelView stockIntel(String stockCode) {
-        String code = blankToNull(stockCode);
-        if (code == null) {
-            throw new IntelligenceException(IntelligenceErrorCode.INVALID_FILTER,
-                    "stockCode 不能为空");
-        }
-        PageResult<NewsRecord> news = newsRepository.search(new PageQuery(
-                1, STOCK_INTEL_ITEMS, null, code, null, null, null, null));
-        PageResult<AnnouncementRecord> announcements = announcementRepository.search(new PageQuery(
-                1, STOCK_INTEL_ITEMS, null, code, null, null, null, null));
-        boolean empty = news.total() == 0 && announcements.total() == 0;
-        return new IntelligenceViews.StockIntelView(
-                code,
-                news.total(),
-                news.items().stream().map(NewsItemView::of).toList(),
-                announcements.total(),
-                announcements.items().stream().map(AnnouncementItemView::of).toList(),
-                0,
-                POLICY_NO_STOCK_NOTE,
-                empty);
+        return stockService.stockIntel(stockCode);
     }
 
     /**
@@ -421,36 +170,16 @@ public class IntelligenceQueryService {
      * 期数可调。generatedAt 取服务时钟。
      */
     public IntelligenceViews.MacroOverviewView macroOverview(String indicators, Integer limit) {
-        int seriesLimit = limit == null ? MACRO_BRIEF_SERIES_LIMIT
-                : Math.min(Math.max(limit, 1), MacroQueryService.MAX_SERIES_LIMIT);
-        List<String> missing = new ArrayList<>();
-        List<MacroIndicatorView> assembled =
-                assembleIndicators(requestedIndicators(indicators), seriesLimit, missing);
-        return new IntelligenceViews.MacroOverviewView(assembled, missing, Instant.now(clock));
+        return macroService.macroOverview(indicators, limit);
     }
 
     /**
      * 宏观日历（/api/intelligence/macro/calendar，D22）：今日（Asia/Shanghai）起
-     * days 天的预期发布日程（缺省 {@link #DEFAULT_CALENDAR_DAYS} 天——政策库区块
-     * 日历卡「未来 7 天」口径；MacroQueryService 夹紧 1..30）。预期非承诺
-     * （展示层带此口径）。
+     * days 天的预期发布日程（缺省 7 天——政策库区块日历卡「未来 7 天」口径；
+     * MacroQueryService 夹紧 1..30）。预期非承诺（展示层带此口径）。
      */
     public List<IntelligenceViews.CalendarView> calendar(Integer days) {
-        return macroQueryService
-                .calendarUpcoming(days == null ? DEFAULT_CALENDAR_DAYS : days)
-                .stream()
-                .map(IntelligenceViews.CalendarView::of)
-                .toList();
-    }
-
-    /** web 分页页码缺省解析（null → 1；越界夹紧归 PageQuery）。 */
-    private static int pageOr(Integer page) {
-        return page == null ? DEFAULT_PAGE : page;
-    }
-
-    /** web 分页页大小缺省解析（null → 20；越界夹紧归 PageQuery）。 */
-    private static int pageSizeOr(Integer pageSize) {
-        return pageSize == null ? DEFAULT_PAGE_SIZE : pageSize;
+        return macroService.calendar(days);
     }
 
     /**
