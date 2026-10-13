@@ -2,8 +2,8 @@ package com.portfolio.invest.application.eval;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.portfolio.invest.application.alert.AlertMailer;
 import com.portfolio.invest.application.alert.AlertNotifier;
-import com.portfolio.invest.application.auth.MailSender;
 import com.portfolio.invest.config.InvestProperties;
 import com.portfolio.invest.domain.eval.EvalRunHarvest;
 import com.portfolio.invest.domain.eval.EvalRunRepository;
@@ -84,7 +84,7 @@ public class EvalHarvester {
     private final PromptVersionRegistrar registrar;
     private final PromptAssetVersionRepository assetVersions;
     private final AlertNotifier notifier;
-    private final MailSender mailSender;
+    private final AlertMailer alertMailer;
     private final InvestProperties props;
     private final Clock clock;
     private final EvalRegressionJudge judge;
@@ -93,8 +93,8 @@ public class EvalHarvester {
     @Autowired
     public EvalHarvester(EvalRunRepository runRepository, PromptVersionRegistrar registrar,
                          PromptAssetVersionRepository assetVersions, AlertNotifier notifier,
-                         MailSender mailSender, InvestProperties props) {
-        this(runRepository, registrar, assetVersions, notifier, mailSender, props,
+                         AlertMailer alertMailer, InvestProperties props) {
+        this(runRepository, registrar, assetVersions, notifier, alertMailer, props,
                 Clock.system(ZoneId.of("Asia/Shanghai")),
                 new EvalRegressionJudge(props.getEval().getRegression().getPassRateDropPp(),
                         props.getEval().getRegression().getFlipThreshold(),
@@ -104,13 +104,13 @@ public class EvalHarvester {
     /** 测试便利构造：注入时钟与判定器（阈值接线由主构造器从 invest.eval.regression.* 装配）。 */
     EvalHarvester(EvalRunRepository runRepository, PromptVersionRegistrar registrar,
                   PromptAssetVersionRepository assetVersions, AlertNotifier notifier,
-                  MailSender mailSender, InvestProperties props,
+                  AlertMailer alertMailer, InvestProperties props,
                   Clock clock, EvalRegressionJudge judge) {
         this.runRepository = runRepository;
         this.registrar = registrar;
         this.assetVersions = assetVersions;
         this.notifier = notifier;
-        this.mailSender = mailSender;
+        this.alertMailer = alertMailer;
         this.props = props;
         this.clock = clock;
         this.judge = judge;
@@ -429,7 +429,7 @@ public class EvalHarvester {
         boolean ok = notifier.send(title, "red", lines);
         if (!ok) {
             log.warn("eval 回归告警飞书推送失败（runId={}），邮件降级", runId);
-            sendAlertMail(title, lines);
+            alertMailer.sendAlertMail(title, lines);
         }
     }
 
@@ -444,24 +444,7 @@ public class EvalHarvester {
         boolean ok = notifier.send(title, "blue", lines);
         if (!ok) {
             log.warn("eval 回归恢复飞书推送失败（runId={}），邮件降级", runId);
-            sendAlertMail(title, lines);
-        }
-    }
-
-    /** 飞书告警失败的邮件降级（沿 PrincipleAlertService:137-159 形态）：SMTP 可用且配置收件人才发。 */
-    private void sendAlertMail(String title, List<String> bodyLines) {
-        List<String> tos = props.getMail().getAlertMailTo();
-        if (!mailSender.enabled() || tos.isEmpty()) {
-            return;
-        }
-        String subject = "[invest 告警] " + title;
-        String text = title + "\n" + String.join("\n", bodyLines);
-        for (String to : tos) {
-            try {
-                mailSender.send(to, subject, text);
-            } catch (Exception e) { // 单个收件人失败不阻断其余，也绝不反向拖垮收割
-                log.error("eval 告警邮件降级失败 to={}", to, e);
-            }
+            alertMailer.sendAlertMail(title, lines);
         }
     }
 

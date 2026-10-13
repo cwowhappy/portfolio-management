@@ -84,7 +84,7 @@ public class AnnouncementExtractor {
         }
         JsonNode root;
         try {
-            root = mapper.readTree(stripFences(text));
+            root = mapper.readTree(LlmJsonParseSupport.stripFences(text));
         } catch (Exception e) {
             return null;
         }
@@ -102,7 +102,7 @@ public class AnnouncementExtractor {
                     decimal(metricsNode.get("netProfitYoyPct")),
                     decimal(metricsNode.get("deductedProfitYi")),
                     decimal(metricsNode.get("grossMarginPct")),
-                    textOrNull(metricsNode.get("dividendDesc")),
+                    LlmJsonParseSupport.textOrNull(metricsNode.get("dividendDesc")),
                     stringList(metricsNode.get("undisclosed")));
             return new ExtractedFields(metrics, union(sourceTypes, enumList(root.get("annTypes"))));
         } catch (ContractViolationException e) {
@@ -130,11 +130,6 @@ public class AnnouncementExtractor {
             }
         }
         throw new ContractViolationException();
-    }
-
-    /** 文本字段：缺失/null → null；其余按文本取值（数值等宽容转字符串）。 */
-    private static String textOrNull(JsonNode node) {
-        return node == null || node.isNull() ? null : node.asText();
     }
 
     /** 字符串数组字段：缺失/null → 空列表；数组 → 非空字符串元素列表；非数组 → 违约。 */
@@ -184,22 +179,5 @@ public class AnnouncementExtractor {
                 new LinkedHashSet<>(sourceTypes == null ? List.of() : sourceTypes);
         merged.addAll(llmTypes == null ? List.of() : llmTypes);
         return List.copyOf(merged);
-    }
-
-    /** 剥离模型违规加的 Markdown 围栏（```json … ```）；无围栏原样返回（trim 后）。 */
-    private static String stripFences(String text) {
-        String trimmed = text.trim();
-        if (!trimmed.startsWith("```")) {
-            return trimmed;
-        }
-        int lineBreak = trimmed.indexOf('\n');
-        if (lineBreak < 0) {
-            return trimmed;
-        }
-        String body = trimmed.substring(lineBreak + 1).trim();
-        if (body.endsWith("```")) {
-            body = body.substring(0, body.length() - 3);
-        }
-        return body.trim();
     }
 }

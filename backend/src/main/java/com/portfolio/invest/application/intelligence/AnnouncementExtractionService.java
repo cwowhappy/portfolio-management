@@ -11,10 +11,8 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
-import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -23,10 +21,12 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 /**
- * 公告 LLM 结构化抽取批（MS-21 F07/决策 #11，照 {@link NewsExtractionService}「批量→逐条→
- * 失败隔离」骨架）：工作日 22:40（晚间披露高峰后）/06:40（早间补采后）两批（Asia/Shanghai），
- * 游标窗口内（{@link #EXTRACTION_LOOKBACK_DAYS} 个自然日含当日）的 PENDING 公告按
- * {@code extract-batch-size} 循环取批逐条抽取。
+ * 公告 LLM 结构化抽取批（MS-21 F07/决策 #11）：工作日 22:40（晚间披露高峰后）/06:40
+ * （早间补采后）两批（Asia/Shanghai），游标窗口内（{@link #EXTRACTION_LOOKBACK_DAYS} 个自然日
+ * 含当日）的 PENDING 公告按 {@code extract-batch-size} 循环取批逐条抽取。
+ * 「批量→逐条→失败隔离」骨架与批末告警在 {@link ExtractionBatchService} 模板
+ * （2026-10-12 审查 B2 归一，与新闻/政策同模板），本类只覆盖公告域差异点——送审预筛、
+ * PDF 链路、PDF 阶段 FAILED 终态、批末定向推送。
  *
  * <p><b>送审预筛（fix round 1 裁定 + 同根因补全）</b>：标题命中 {@link #TITLE_REVIEW_KEYWORDS}
  * 任一关键词（业绩类 + 增持/减持/回购/关联交易宽栏目 4 类 + 直判 3 类跨源收口词——两源
@@ -41,27 +41,19 @@ import org.springframework.stereotype.Service;
  * <p>单条链路：PdfFetcher 下载 → {@link AnnouncementPdfTextPort} 内存文本 →
  * {@link AnnouncementExtractor} LLM 抽取 → upsertExtract。失败语义：PDF 下载/解析异常/
  * 无文本层（端口空串契约，扫描件重试无益）标 FAILED 终态；无 pdf_url 罕见——跳过下载凭标题
- * 送 LLM（metrics 可能全 null + undisclosed 全量）；LLM 通道不可用整批静默跳过、条目留
- * PENDING 下批再试；单条意外异常隔离不阻塞批次。顶层 try/catch 吞异常护调度线程。
- *
- * <p>短文本跳过：pdfText &lt; {@link #MIN_PDF_TEXT_LENGTH} 且标题 &lt;
- * {@link #MIN_TITLE_LENGTH} 的条目不送 LLM、不落库、留 PENDING（同轮不重选），由游标窗口
- * 自然过期。成本护栏（D16）：每条 LLM 抽取后向共享 {@link IntelligenceTokenBudget} 计入
- * inputTokens（与新闻抽取批同一 bean，跨服务共享当日额度），超限当日停批 + AlertNotifier
- * 每日告警一次；FAILED 批末计数告警（独立按日去重，NFR-5）。
+ * 送 LLM（metrics 可能全 null + undisclosed 全量）。短文本跳过：pdfText &lt;
+ * {@link #MIN_PDF_TEXT_LENGTH} 且标题 &lt; {@link #MIN_TITLE_LENGTH} 的条目不送 LLM、
+ * 不落库、留 PENDING（同轮不重选），由游标窗口自然过期。
  *
  * <p>批末触发 {@link AnnouncementPushTrigger#pushExtracted}（批起点 Instant，extracted_at
- * 轴 ≥ 含边界恰好覆盖本批置换行）——Task 7 的 AnnouncementPushService 就位前无实现 bean，
- * ObjectProvider 取空跳过（debug 日志）。幂等可重入：PENDING→SUCCESS/FAILED 置换，
- * FAILED 为终态不重试；LLM 失效/护栏停批的积压在游标窗口内由后续批次续抽。
+ * 轴 ≥ 含边界恰好覆盖本批置换行）——经模板 {@link #afterBatches} 钩子（批末先推送再
+ * FAILED 告警，推送异常绝不拖垮抽取批与告警）。Task 7 的 AnnouncementPushService 就位前
+ * 无实现 bean，ObjectProvider 取空跳过（debug 日志）。
  */
 @Service
-public class AnnouncementExtractionService {
+public class AnnouncementExtractionService extends ExtractionBatchService<AnnouncementRecord> {
 
     private static final Logger log = LoggerFactory.getLogger(AnnouncementExtractionService.class);
-
-    /** 抽取游标窗口（自然日含当日）：LLM 失效/护栏停批后的积压跨日续抽上界（与新闻同款）。 */
-    static final int EXTRACTION_LOOKBACK_DAYS = 3;
 
     /** 短文本跳过阈值：PDF 文本低于此字符数且标题过短即不值得过 LLM。 */
     static final int MIN_PDF_TEXT_LENGTH = 50;
@@ -114,18 +106,8 @@ public class AnnouncementExtractionService {
     private final IntelligenceChatPort chatPort;
     private final AnnouncementPdfTextPort pdfTextPort;
     private final PdfFetcher pdfFetcher;
-    private final IntelligenceTokenBudget tokenBudget;
-    private final AlertNotifier alertNotifier;
-    private final InvestProperties props;
     private final AnnouncementExtractor extractor;
     private final ObjectProvider<AnnouncementPushTrigger> pushTriggerProvider;
-    private final Clock clock;
-
-    /** 护栏告警去重：同一自然日最多告警一次（跨日随日期比较自动失效）。 */
-    private LocalDate alertedDay;
-
-    /** 解析失败告警去重（独立于护栏告警）：同一自然日最多告警一次。 */
-    private LocalDate failedAlertedDay;
 
     @Autowired
     public AnnouncementExtractionService(AnnouncementRepository announcementRepository,
@@ -152,16 +134,13 @@ public class AnnouncementExtractionService {
                                   ObjectProvider<AnnouncementPushTrigger> pushTriggerProvider,
                                   AnnouncementExtractor extractor,
                                   Clock clock) {
+        super(tokenBudget, alertNotifier, props, clock);
         this.announcementRepository = announcementRepository;
         this.chatPort = chatPort;
         this.pdfTextPort = pdfTextPort;
         this.pdfFetcher = pdfFetcher;
-        this.tokenBudget = tokenBudget;
-        this.alertNotifier = alertNotifier;
-        this.props = props;
         this.pushTriggerProvider = pushTriggerProvider;
         this.extractor = extractor;
-        this.clock = clock;
     }
 
     @Scheduled(cron = "0 40 22 * * MON-FRI", zone = "Asia/Shanghai")
@@ -182,93 +161,63 @@ public class AnnouncementExtractionService {
         }
     }
 
-    /**
-     * 幂等可重入抽取入口（集成测试/运维也可直调）：批起点记 Instant → 循环取批直至窗口内
-     * 无 PENDING、LLM 失效或护栏停批 → 批末先触发定向推送（批起点，本批置换行 extracted_at
-     * ≥ 该值全命中）再按本轮 FAILED 置换数告警（NFR-5）。同轮已处理条目记 {@code handled}
-     * （含杂项空抽取与异常跳过者，同轮不重选）；短文本条目记 {@code lengthSkipped} 同样
-     * 同轮不重选，但不送 LLM、不落库、留 PENDING 由窗口自然过期。
-     */
-    public void extractPending() {
-        Instant batchStart = Instant.now(clock);
-        int failedCount = extractInBatches();
-        pushExtracted(batchStart);
-        alertParseFailures(LocalDate.now(clock), failedCount);
+    @Override
+    protected List<AnnouncementRecord> findPendingBatch(LocalDate today) {
+        return announcementRepository.findPendingForExtraction(today, EXTRACTION_LOOKBACK_DAYS,
+                props.getIntelligence().getExtractBatchSize());
     }
 
-    /** 批处理主体：返回本轮 FAILED 置换条数（含 PDF 阶段失败与 LLM 解析失败）。 */
-    private int extractInBatches() {
-        LocalDate today = LocalDate.now(clock);
-        Set<Long> handled = new HashSet<>();
-        Set<Long> lengthSkipped = new HashSet<>();
-        int failedCount = 0;
-        while (true) {
-            if (tokenBudget.exhausted()) { // 晨间已超限的晚批：不取数不调 LLM 快退
-                stopForGuardrail(today);
-                return failedCount;
-            }
-            List<AnnouncementRecord> batch = announcementRepository
-                    .findPendingForExtraction(today, EXTRACTION_LOOKBACK_DAYS,
-                            props.getIntelligence().getExtractBatchSize())
-                    .stream().filter(a -> !handled.contains(a.id())
-                            && !lengthSkipped.contains(a.id())).toList();
-            if (batch.isEmpty()) { // 空批快退（无新披露/窗口内已清空）
-                return failedCount;
-            }
-            for (AnnouncementRecord announcement : batch) {
-                try {
-                    if (!isExtractable(announcement)) { // 未命中送审预筛（杂项）：SUCCESS 空抽取标记已处理
-                        announcementRepository.upsertExtract(announcement.id(), unreviewedResult());
-                        handled.add(announcement.id());
-                        log.debug("杂项公告跳过 LLM 抽取（announcementId={}，title={}）：SUCCESS 空抽取落库",
-                                announcement.id(), announcement.title());
-                        continue;
-                    }
-                    String pdfText = resolvePdfText(announcement); // null = 无 pdf_url 凭标题降级
-                    if (tooShortForExtraction(announcement.title(), pdfText)) {
-                        // 不入 handled（未处置），仅同轮防重选；留 PENDING 由窗口自然过期
-                        lengthSkipped.add(announcement.id());
-                        log.info("短文本跳过（announcementId={}，pdfText<{} 且标题<{}）：不送 LLM、不落库，留 PENDING 由 {} 日游标窗口自然过期",
-                                announcement.id(), MIN_PDF_TEXT_LENGTH, MIN_TITLE_LENGTH,
-                                EXTRACTION_LOOKBACK_DAYS);
-                        continue;
-                    }
-                    handled.add(announcement.id());
-                    AnnouncementExtractor.ExtractionOutcome outcome = extractor.extractOne(
-                            chatPort, announcement.title(), pdfText == null ? "" : pdfText,
-                            directTypesFromColumn(announcement.annTypeSource()));
-                    if (outcome.status() == AnnouncementExtractor.OutcomeStatus.LLM_UNAVAILABLE) {
-                        log.warn("情报 LLM 通道不可用，本批跳过（剩余 {} 条留 PENDING 待后续批次续抽，{} 日游标窗口）",
-                                batch.size() - batch.indexOf(announcement), EXTRACTION_LOOKBACK_DAYS);
-                        return failedCount;
-                    }
-                    AnnouncementExtractResult result = toResult(outcome, pdfText);
-                    announcementRepository.upsertExtract(announcement.id(), result);
-                    if (result.status() == ExtractStatus.FAILED) { // FAILED 置换计数（批末告警口径）
-                        failedCount++;
-                    }
-                    if (!tokenBudget.tryAcquire(outcome.inputTokens())) { // 本条已落库，剩余停批
-                        stopForGuardrail(today);
-                        return failedCount;
-                    }
-                } catch (PdfStageException e) { // PDF 阶段失败：单条 FAILED 终态，不阻塞批次
-                    handled.add(announcement.id());
-                    log.warn("公告 PDF 获取/解析失败（announcementId={}，pdfUrl={}）：标 FAILED 终态——{}",
-                            announcement.id(), announcement.pdfUrl(), e.getMessage());
-                    try {
-                        announcementRepository.upsertExtract(announcement.id(), failedResult());
-                        failedCount++;
-                    } catch (Exception upsertError) { // FAILED 落库也失败：留 PENDING 后续批续试
-                        log.error("FAILED 落库异常（announcementId={}），本条跳过待后续批次续抽",
-                                announcement.id(), upsertError);
-                    }
-                } catch (Exception e) { // 单条隔离：一条失败不拖垮其余
-                    handled.add(announcement.id());
-                    log.error("单条公告抽取异常（announcementId={}），本条跳过待后续批次续抽",
-                            announcement.id(), e);
-                }
+    @Override
+    protected Long itemId(AnnouncementRecord item) {
+        return item.id();
+    }
+
+    @Override
+    protected boolean isTooShortForExtraction(AnnouncementRecord item) {
+        return false; // 公告长度判定依赖 PDF 解析结果，在 extractAndPersist 内完成后回报 lengthSkip
+    }
+
+    @Override
+    protected void onLengthSkipped(Long id) {
+        log.info("短文本跳过（announcementId={}，pdfText<{} 且标题<{}）：不送 LLM、不落库，留 PENDING 由 {} 日游标窗口自然过期",
+                id, MIN_PDF_TEXT_LENGTH, MIN_TITLE_LENGTH, EXTRACTION_LOOKBACK_DAYS);
+    }
+
+    @Override
+    protected ItemStep extractAndPersist(AnnouncementRecord announcement) {
+        if (!isExtractable(announcement)) { // 未命中送审预筛（杂项）：SUCCESS 空抽取标记已处理
+            announcementRepository.upsertExtract(announcement.id(), unreviewedResult());
+            log.debug("杂项公告跳过 LLM 抽取（announcementId={}，title={}）：SUCCESS 空抽取落库",
+                    announcement.id(), announcement.title());
+            return new ItemStep(null, false, false, false);
+        }
+        String pdfText;
+        try {
+            pdfText = resolvePdfText(announcement); // null = 无 pdf_url 凭标题降级
+        } catch (PdfStageException e) { // PDF 阶段失败：单条 FAILED 终态，不阻塞批次
+            log.warn("公告 PDF 获取/解析失败（announcementId={}，pdfUrl={}）：标 FAILED 终态——{}",
+                    announcement.id(), announcement.pdfUrl(), e.getMessage());
+            try {
+                announcementRepository.upsertExtract(announcement.id(), failedResult());
+                return new ItemStep(null, true, false, false);
+            } catch (Exception upsertError) { // FAILED 落库也失败：留 PENDING 后续批续试
+                log.error("FAILED 落库异常（announcementId={}），本条跳过待后续批次续抽",
+                        announcement.id(), upsertError);
+                return new ItemStep(null, false, false, false);
             }
         }
+        if (tooShortForExtraction(announcement.title(), pdfText)) {
+            return new ItemStep(null, false, false, true);
+        }
+        AnnouncementExtractor.ExtractionOutcome outcome = extractor.extractOne(
+                chatPort, announcement.title(), pdfText == null ? "" : pdfText,
+                directTypesFromColumn(announcement.annTypeSource()));
+        if (outcome.status() == AnnouncementExtractor.OutcomeStatus.LLM_UNAVAILABLE) {
+            return new ItemStep(outcome.inputTokens(), false, true, false);
+        }
+        AnnouncementExtractResult result = toResult(outcome, pdfText);
+        announcementRepository.upsertExtract(announcement.id(), result);
+        return new ItemStep(outcome.inputTokens(), result.status() == ExtractStatus.FAILED, false, false);
     }
 
     /** 送审判定：栏目直判命中或标题含送审关键词（二者其一即送 LLM）。 */
@@ -366,6 +315,11 @@ public class AnnouncementExtractionService {
         }
     }
 
+    @Override
+    protected void afterBatches(Instant batchStart) {
+        pushExtracted(batchStart);
+    }
+
     /** 批末定向推送触发（Task 7 就位前无实现 bean 跳过）；推送异常绝不拖垮抽取批。 */
     private void pushExtracted(Instant since) {
         AnnouncementPushTrigger trigger = pushTriggerProvider.getIfAvailable();
@@ -380,34 +334,18 @@ public class AnnouncementExtractionService {
         }
     }
 
-    /** 批末解析失败告警（NFR-5）：本轮有 FAILED 置换且当日未告警过才发，文案含条数；尽力而为不重试。 */
-    private void alertParseFailures(LocalDate today, int failedCount) {
-        if (failedCount == 0 || today.equals(failedAlertedDay)) {
-            return;
-        }
-        failedAlertedDay = today;
+    @Override
+    protected void onItemError(Long id, Exception e) {
+        log.error("单条公告抽取异常（announcementId={}），本条跳过待后续批次续抽", id, e);
+    }
+
+    @Override
+    protected void sendParseFailureAlert(int failedCount) {
         boolean ok = alertNotifier.send("⚠️ 公告抽取出现失败条目", "red", List.of(
                 "本轮抽取有 " + failedCount + " 条公告失败（PDF 下载/解析失败或 LLM 输出解析失败），已标 FAILED 终态",
                 "FAILED 不自动重试，请抽查 intelligence_announcement_extract 的 FAILED 行评估 PDF 链路与提示词稳定性"));
         if (!ok) {
             log.warn("公告抽取失败告警推送失败（不重试，同日如再触发按日去重不再重复告警）");
-        }
-    }
-
-    /** 护栏超限停批：当日告警恰一次（AlertNotifier 尽力而为，失败不重试）。 */
-    private void stopForGuardrail(LocalDate today) {
-        long guardrail = props.getIntelligence().getDailyTokenGuardrail();
-        log.warn("情报抽取当日 input token 超护栏（{}），当日停批，剩余条目留 PENDING 待后续批次续抽（{} 日游标窗口）",
-                guardrail, EXTRACTION_LOOKBACK_DAYS);
-        if (today.equals(alertedDay)) {
-            return;
-        }
-        alertedDay = today;
-        boolean ok = alertNotifier.send("⚠️ 情报抽取 token 护栏超限", "red", List.of(
-                "当日累计 input tokens 已超过护栏 " + guardrail,
-                "当日剩余批已停止，未抽取条目留 PENDING，" + EXTRACTION_LOOKBACK_DAYS + " 日游标窗口内后续批次续抽"));
-        if (!ok) {
-            log.warn("护栏超限告警推送失败（不重试，同日如再触发按日去重不再重复告警）");
         }
     }
 }

@@ -3,6 +3,7 @@ package com.portfolio.invest.application.eval;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
+import com.portfolio.invest.application.alert.AlertMailer;
 import com.portfolio.invest.application.alert.AlertNotifier;
 import com.portfolio.invest.application.auth.MailSender;
 import com.portfolio.invest.config.InvestProperties;
@@ -37,7 +38,8 @@ class EvalModeBeanGatingTest {
             .withBean(AlertNotifier.class, () -> mock(AlertNotifier.class))
             .withBean(MailSender.class, () -> mock(MailSender.class))
             .withUserConfiguration(PromptVersionRegistrar.class, EvalScheduler.class,
-                    EvalHarvester.class, SystemParentEnvironment.class, EvalAdminApplicationService.class);
+                    EvalHarvester.class, SystemParentEnvironment.class, EvalAdminApplicationService.class,
+                    AlertMailer.class);
 
     @DisplayName("Eval_MODE=true：调度器/收割器/登记器/admin用例全缺席（子进程上下文可启动，C1 回归防线）")
     @Test

@@ -12,6 +12,8 @@ public interface PortfolioJpaRepository extends JpaRepository<PortfolioJpaEntity
     /**
      * 幂等创建组合：并发首次访问时，唯一一次 INSERT 生效，其余命中 {@code ON CONFLICT} 后静默跳过。
      * 该查询为 {@link Modifying}，要求调用方处于活动事务中（事务边界见 application 层）。
+     * 不加 clearAutomatically（2026-10-12 B5 复核）：原生 INSERT 不改动既有行，事务内无
+     * Portfolio 实体 save/读回与之混用。
      */
     @Modifying
     @Query(value = "INSERT INTO portfolio (user_id, cost_method, created_at, updated_at) "

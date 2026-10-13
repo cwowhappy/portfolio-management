@@ -62,8 +62,9 @@ class PrincipleAlertServiceTest {
     }
 
     private PrincipleAlertService service(Clock clock) {
+        // props 在 setUp 中重建，AlertMailer 须在构造服务时现配（持同一 props 引用才能读到用例设置的收件人）
         return new PrincipleAlertService(ruleRepo, portfolioRepo, valuationRepo, valDaily, notifier,
-                mailSender, userRepo, evaluator, props, clock);
+                new AlertMailer(mailSender, props), userRepo, evaluator, props, clock);
     }
 
     private void givenOwnerAndPortfolio() {

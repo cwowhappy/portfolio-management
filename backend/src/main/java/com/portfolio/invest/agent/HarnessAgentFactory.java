@@ -62,17 +62,50 @@ public class HarnessAgentFactory {
     }
 
     public HarnessAgent build(Long userId) {
+        return baseBuilder(userId, "invest", systemPrompt(userId), toolkitFactory.build(userId))
+                // 线上 messageId 观察中间件（trust 与观测的 messageId 同源），末位追加
+                .middleware(new TrustWireMessageIdMiddleware())
+                .build();
+    }
+
+    /**
+     * 研报任务 Agent 变体（MS-32 B8，B9 编排器消费）：复用 {@link #build(Long)} 全管线（公共装配
+     * 见 {@link #baseBuilder}），五处差异——①name=invest-report（区别对话链路，观测/留痕可归因）
+     * ②sysPrompt 尾接深研指引块（{@link #reportSystemPrompt}，恒注入非 skill）③maxIters 取 report
+     * 执行档（invest.report.execution.max-iters-per-round）④toolkit 无 MCP（{@link #reportToolkit}，
+     * 天然无 MCP 写工具）⑤追加 {@link ReportUsageMiddleware}（trust hook/观测中间件后，
+     * messageId 中间件前，整任务 token 累计）。
+     * <strong>对话链路红线：build(Long) 与 systemPrompt(userId) 行为零变更。</strong>
+     */
+    public HarnessAgent buildReportAgent(Long userId, ReportUsageMiddleware usageMiddleware) {
+        return baseBuilder(userId, "invest-report", reportSystemPrompt(userId), reportToolkit(userId))
+                .maxIters(report.getExecution().maxItersPerRound())
+                // 研报用量中间件追加在观测中间件后、messageId 中间件前
+                .middleware(usageMiddleware)
+                .middleware(new TrustWireMessageIdMiddleware())
+                .build();
+    }
+
+    /**
+     * 两链公共装配（2026-10-12 审查 B3，消除 build/buildReportAgent 整链复制）：skill 白名单 /
+     * trust hook / 观测中间件 / 工作区 / 状态存储 / 压缩 / 记忆 / rc 桥接。差异点
+     * （name/sysPrompt/maxIters/toolkit/追加中间件）由调用方在返回的 builder 上覆盖——
+     * 新增中间件时两链天然同步，杜绝单链漏改。
+     *
+     * <p>trust hook 与观测中间件共享同一 TrustAgentHook 实例：观测中间件读其 lastReport() 组装
+     * trust 并集（中间件 onAgent 链在核心外侧，完成信号天然晚于核心内 trust POST_CALL，
+     * 无 priority——见 ObservabilityAgentMiddleware 类注释）。
+     */
+    private HarnessAgent.Builder baseBuilder(Long userId, String name, String sysPrompt, Toolkit toolkit) {
         List<String> enabled = skillApplicationService.enabledSkillCodes(userId);
-        // trust hook 与观测中间件共享同一 TrustAgentHook 实例：观测中间件读其 lastReport() 组装 trust 并集
-        //（中间件 onAgent 链在核心外侧，完成信号天然晚于核心内 trust POST_CALL，无 priority——见 ObservabilityAgentMiddleware 类注释）
         TrustAgentHook trustHook = new TrustAgentHook(trust);
         ObservabilityAgentMiddleware observability =
                 new ObservabilityAgentMiddleware(observabilityRecorder, trustHook, mapper);
         return HarnessAgent.builder()
-                .name("invest")
-                .sysPrompt(systemPrompt(userId))
+                .name(name)
+                .sysPrompt(sysPrompt)
                 .model(model)
-                .toolkit(toolkitFactory.build(userId))
+                .toolkit(toolkit)
                 .skillRepository(builtInSkillRepository)
                 .skillFilter(skillFilter(enabled))
                 .disableDefaultWorkspaceSkills()
@@ -88,56 +121,10 @@ public class HarnessAgentFactory {
                         .flushTrigger(MemoryConfig.FlushTrigger.throttled(config.getMemory().getFlushMinGap()))
                         .build())
                 // MS-29 B5 可信溯源钩子 + MS-30 B6 轮级观测中间件（AG-UI 与飞书共同漏斗）
-                // + 线上 messageId 观察中间件（trust 与观测的 messageId 同源）
                 .hook(trustHook)
                 // rc 桥接（2.0.4 RuntimeContextAware 删除的供给替代）：最外层先于 PRE_CALL
                 .middleware(new RuntimeContextBridgeMiddleware(trustHook::setRuntimeContext))
-                .middleware(observability)
-                .middleware(new TrustWireMessageIdMiddleware())
-                .build();
-    }
-
-    /**
-     * 研报任务 Agent 变体（MS-32 B8，B9 编排器消费）：复用 {@link #build(Long)} 全管线，五处差异——
-     * ①name=invest-report（区别对话链路，观测/留痕可归因）②sysPrompt 尾接深研指引块
-     * （{@link #reportSystemPrompt}，恒注入非 skill）③maxIters 取 report 执行档
-     * （invest.report.execution.max-iters-per-round）④toolkit 无 MCP（{@link #reportToolkit}，
-     * 天然无 MCP 写工具）⑤追加 {@link ReportUsageMiddleware}（trust hook/观测中间件后，整任务 token 累计）。
-     * <strong>对话链路红线：build(Long) 与 systemPrompt(userId) 行为零变更。</strong>
-     */
-    public HarnessAgent buildReportAgent(Long userId, ReportUsageMiddleware usageMiddleware) {
-        List<String> enabled = skillApplicationService.enabledSkillCodes(userId);
-        TrustAgentHook trustHook = new TrustAgentHook(trust);
-        ObservabilityAgentMiddleware observability =
-                new ObservabilityAgentMiddleware(observabilityRecorder, trustHook, mapper);
-        return HarnessAgent.builder()
-                .name("invest-report")
-                .sysPrompt(reportSystemPrompt(userId))
-                .model(model)
-                .maxIters(report.getExecution().maxItersPerRound())
-                .toolkit(reportToolkit(userId))
-                .skillRepository(builtInSkillRepository)
-                .skillFilter(skillFilter(enabled))
-                .disableDefaultWorkspaceSkills()
-                .disableDynamicSkills()
-                .workspace(Paths.get(config.getWorkspace()))
-                .stateStore(new JsonFileAgentStateStore(Paths.get(config.getStateRoot())))
-                .compaction(CompactionConfig.builder()
-                        .triggerMessages(config.getCompaction().getTriggerMessages())
-                        .keepMessages(config.getCompaction().getKeepMessages())
-                        .flushBeforeCompact(config.getCompaction().isFlushBeforeCompact())
-                        .build())
-                .memory(MemoryConfig.builder()
-                        .flushTrigger(MemoryConfig.FlushTrigger.throttled(config.getMemory().getFlushMinGap()))
-                        .build())
-                // trust hook + 观测中间件（对话链路同款）+ 研报用量中间件追加在后
-                .hook(trustHook)
-                // rc 桥接（2.0.4 RuntimeContextAware 删除的供给替代）：最外层先于 PRE_CALL
-                .middleware(new RuntimeContextBridgeMiddleware(trustHook::setRuntimeContext))
-                .middleware(observability)
-                .middleware(usageMiddleware)
-                .middleware(new TrustWireMessageIdMiddleware())
-                .build();
+                .middleware(observability);
     }
 
     static SkillFilter skillFilter(List<String> enabled) {

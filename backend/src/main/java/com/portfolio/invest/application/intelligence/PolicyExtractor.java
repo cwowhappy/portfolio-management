@@ -6,9 +6,7 @@ import com.portfolio.invest.domain.intelligence.PolicyConfidence;
 import com.portfolio.invest.domain.intelligence.PolicyDirection;
 import com.portfolio.invest.domain.intelligence.PolicyEvent;
 import com.portfolio.invest.domain.intelligence.PolicyStrength;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Optional;
 
 /**
@@ -84,7 +82,7 @@ public class PolicyExtractor {
         }
         JsonNode root;
         try {
-            root = mapper.readTree(stripFences(text));
+            root = mapper.readTree(LlmJsonParseSupport.stripFences(text));
         } catch (Exception e) {
             return null;
         }
@@ -95,19 +93,19 @@ public class PolicyExtractor {
         if (isPolicyNode == null || !isPolicyNode.isBoolean()) {
             return null; // isPolicy 是产出锚点（兜底转换与 F12 标注依赖）：缺失/非布尔即失败
         }
-        String summary = textOrNull(root.get("summary"));
+        String summary = LlmJsonParseSupport.textOrNull(root.get("summary"));
         if (summary == null || summary.isBlank()) {
             return null;
         }
-        PolicyDirection direction = parseEnum(root.get("direction"), PolicyDirection.class);
-        PolicyStrength strength = parseEnum(root.get("strength"), PolicyStrength.class);
-        PolicyConfidence confidence = parseEnum(root.get("confidence"), PolicyConfidence.class);
-        if (presentButIllegal(root.get("direction"), direction)
-                || presentButIllegal(root.get("strength"), strength)
-                || presentButIllegal(root.get("confidence"), confidence)) {
+        PolicyDirection direction = LlmJsonParseSupport.parseEnum(root.get("direction"), PolicyDirection.class);
+        PolicyStrength strength = LlmJsonParseSupport.parseEnum(root.get("strength"), PolicyStrength.class);
+        PolicyConfidence confidence = LlmJsonParseSupport.parseEnum(root.get("confidence"), PolicyConfidence.class);
+        if (LlmJsonParseSupport.presentButIllegal(root.get("direction"), direction)
+                || LlmJsonParseSupport.presentButIllegal(root.get("strength"), strength)
+                || LlmJsonParseSupport.presentButIllegal(root.get("confidence"), confidence)) {
             return null; // 受控枚举违约（非 null 占位但取值不合法）
         }
-        List<String> affectedAreas = stringList(root.get("affectedAreas"));
+        List<String> affectedAreas = LlmJsonParseSupport.stringList(root.get("affectedAreas"));
         if (affectedAreas == null) {
             return null; // 数组字段类型违约（缺失/null 已归一为空列表，此处是非数组取值）
         }
@@ -122,62 +120,5 @@ public class PolicyExtractor {
         }
         return new ExtractedFields(PolicyDirection.NEUTRAL, PolicyStrength.LOW, List.of(),
                 PolicyEvent.NON_POLICY_SUMMARY, PolicyConfidence.LOW, false);
-    }
-
-    /** 枚举字段：缺失/null → null；文本取值大小写不敏感归一 → 枚举；非文本 → null（调用方按违约判）。 */
-    private static <E extends Enum<E>> E parseEnum(JsonNode node, Class<E> type) {
-        if (node == null || !node.isTextual()) {
-            return null;
-        }
-        try {
-            return Enum.valueOf(type, node.asText().trim().toUpperCase(Locale.ROOT));
-        } catch (IllegalArgumentException e) {
-            return null;
-        }
-    }
-
-    /** 受控枚举违约判定：字段占位非 null（文本形态）但解析不出合法枚举名。 */
-    private static boolean presentButIllegal(JsonNode node, Enum<?> parsed) {
-        return node != null && !node.isNull() && node.isTextual() && parsed == null;
-    }
-
-    /** 文本字段：缺失/null → null；其余按文本取值（数值等宽容转字符串）。 */
-    private static String textOrNull(JsonNode node) {
-        return node == null || node.isNull() ? null : node.asText();
-    }
-
-    /** 数组字段：缺失/null → 空列表；数组 → 非空字符串元素列表；非数组 → null（违约）。 */
-    private static List<String> stringList(JsonNode node) {
-        if (node == null || node.isNull()) {
-            return List.of();
-        }
-        if (!node.isArray()) {
-            return null;
-        }
-        List<String> out = new ArrayList<>();
-        for (JsonNode element : node) {
-            String text = element.asText();
-            if (text != null && !text.isBlank()) {
-                out.add(text.trim());
-            }
-        }
-        return List.copyOf(out);
-    }
-
-    /** 剥离模型违规加的 Markdown 围栏（```json … ```）；无围栏原样返回（trim 后）。 */
-    private static String stripFences(String text) {
-        String trimmed = text.trim();
-        if (!trimmed.startsWith("```")) {
-            return trimmed;
-        }
-        int lineBreak = trimmed.indexOf('\n');
-        if (lineBreak < 0) {
-            return trimmed;
-        }
-        String body = trimmed.substring(lineBreak + 1).trim();
-        if (body.endsWith("```")) {
-            body = body.substring(0, body.length() - 3);
-        }
-        return body.trim();
     }
 }

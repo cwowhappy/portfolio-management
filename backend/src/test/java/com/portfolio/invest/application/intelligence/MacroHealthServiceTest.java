@@ -14,6 +14,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.portfolio.invest.application.alert.AlertMailer;
 import com.portfolio.invest.application.auth.MailSender;
 import com.portfolio.invest.application.intelligence.CollectorRunInspectPort.TaskRunSummary;
 import com.portfolio.invest.config.InvestProperties;
@@ -46,11 +47,12 @@ class MacroHealthServiceTest {
     private final IntelligencePushPort pushPort = mock(IntelligencePushPort.class);
     private final MailSender mailSender = mock(MailSender.class);
     private final InvestProperties props = new InvestProperties();
+    private final AlertMailer alertMailer = new AlertMailer(mailSender, props);
     private MacroHealthService service;
 
     @BeforeEach
     void setUp() {
-        service = new MacroHealthService(runInspect, macroRepository, pushPort, mailSender, props);
+        service = new MacroHealthService(runInspect, macroRepository, pushPort, alertMailer);
         when(runInspect.runsOf(anyString(), anyInt())).thenReturn(List.of());
         when(macroRepository.findLatestSwitch(anyString())).thenReturn(Optional.empty());
         when(pushPort.sendToGroup(anyString(), anyString(), anyList())).thenReturn(true);

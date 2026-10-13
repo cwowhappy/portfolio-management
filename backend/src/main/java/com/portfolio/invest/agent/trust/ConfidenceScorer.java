@@ -2,8 +2,11 @@ package com.portfolio.invest.agent.trust;
 
 import com.portfolio.invest.config.InvestProperties;
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.YearMonth;
+import java.time.ZoneId;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -47,6 +50,9 @@ public class ConfidenceScorer {
 
     private final InvestProperties.Trust.ConfidenceSettings settings;
     private final Clock clock;
+
+    /** asOf 解析时区（沿 RecordingAgentToolDecorator 的 Asia/Shanghai 源站口径）：落库 Instant 与评分取日期同口径。 */
+    private static final ZoneId AS_OF_ZONE = ZoneId.of("Asia/Shanghai");
 
     public ConfidenceScorer(InvestProperties.Trust.ConfidenceSettings settings, Clock clock) {
         this.settings = settings;
@@ -140,25 +146,43 @@ public class ConfidenceScorer {
     }
 
     /**
-     * asOf 解析（best-effort，对齐 B3 resolveAsOf 产出）：≥10 字符取前 10 位
-     * {@code yyyy-MM-dd}（兼容 "HH:mm[:ss]" 与 ISO 时间前缀）；不足 10 位按宏观月度期别
-     * {@code yyyy-MM} 折算月初；不可解析返回 null（保守跳过）。
-     * 包私有共享：{@link RecordingAgentToolDecorator} 的 macro_brief 期别透出（B7 fix）
-     * 复用同一解析阶梯（单一真相源）。
+     * asOf String → Instant（best-effort，B11 落库/重查均 null 安全）——asOf 解析阶梯
+     * 单一实现（2026-10-12 审查 B4：原 ReportWorkflowOrchestrator 就地同构副本收敛于此
+     * 公有静态方法，锚点落库与置信评分对同一字符串必然同结论，防两链漂移）：
+     * ≥10 位取 {@code yyyy-MM-dd[ HH:mm[:ss]]}（空格转 ISO 'T'，{@link #AS_OF_ZONE}
+     * 源站口径，时间精度保留）；不足 10 位按宏观月度期别 {@code yyyy-MM} 折算月初；
+     * 不可解析 null（保守跳过）。
      */
-    static LocalDate parseAsOf(String asOf) {
+    public static Instant parseAsOfInstant(String asOf) {
         if (asOf == null || asOf.isBlank()) {
             return null;
         }
         String text = asOf.strip();
         try {
             if (text.length() >= 10) {
-                return LocalDate.parse(text.substring(0, 10));
+                String normalized = text.substring(0, Math.min(text.length(), 19)).replace(' ', 'T');
+                if (normalized.length() == 10) {
+                    return LocalDate.parse(normalized).atStartOfDay(AS_OF_ZONE).toInstant();
+                }
+                return LocalDateTime.parse(normalized).atZone(AS_OF_ZONE).toInstant();
             }
-            return YearMonth.parse(text).atDay(1);
+            return YearMonth.parse(text).atDay(1).atStartOfDay(AS_OF_ZONE).toInstant();
         } catch (DateTimeParseException e) {
             return null;
         }
+    }
+
+    /**
+     * asOf 解析（best-effort，对齐 B3 resolveAsOf 产出形态）：{@link #parseAsOfInstant}
+     * 的 LocalDate 投影（同一时区取日期）——{@code yyyy-MM-dd[ HH:mm[:ss]]}（兼容 ISO
+     * 时间前缀）与宏观月度期别 {@code yyyy-MM}（按月初折算，MacroPoint 契约）；
+     * 不可解析返回 null（保守跳过）。
+     * 包私有共享：{@link RecordingAgentToolDecorator} 的 macro_brief 期别透出（B7 fix）
+     * 复用同一解析阶梯（单一真相源）。
+     */
+    static LocalDate parseAsOf(String asOf) {
+        Instant instant = parseAsOfInstant(asOf);
+        return instant == null ? null : instant.atZone(AS_OF_ZONE).toLocalDate();
     }
 
     private static long failedCount(List<ToolInvocation> currentPool) {
