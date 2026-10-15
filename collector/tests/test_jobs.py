@@ -269,3 +269,195 @@ def test_task_job_swallows_runner_exception_and_logs(caplog):
     runner.run.assert_called_once()
     assert "调度运行失败" in caplog.text
     assert "boom" in caplog.text
+
+
+# ---------------------------------------------------------------- once 模式（--once 单轮执行后退出）
+
+from types import SimpleNamespace
+
+from collector.model.run import (
+    STATUS_FAILED,
+    STATUS_PARTIAL,
+    STATUS_SKIPPED,
+    STATUS_SUCCESS,
+    RunResult,
+)
+from collector.model.task import Collector
+from collector.scheduler.jobs import (
+    _run_task_job,
+    main,
+    parse_args,
+    run_once,
+    select_tasks,
+    topo_sort_tasks,
+)
+
+
+def _collector(code, deps=None):
+    return Collector(
+        task_code=code,
+        task_name=code.upper(),
+        sources=[],
+        converter=None,
+        calc=None,
+        target_table="x",
+        schedule={"type": "cron", "cron": "30 15 * * 1-5"},
+        depends_on=deps,
+    )
+
+
+def test_parse_args_defaults_keep_scheduler_mode():
+    """不带 --once：解析结果走调度器长驻路径，无任务过滤。"""
+    args = parse_args([])
+    assert args.once is False
+    assert args.tasks is None
+
+
+def test_parse_args_once_with_task_filter():
+    args = parse_args(["--once", "--tasks", "a,b"])
+    assert args.once is True
+    assert args.tasks == "a,b"
+
+
+def test_run_task_job_returns_bool_for_exit_code_counting():
+    """once 模式据返回值计退出码：异常 / failed 终态 → False，其余 → True。
+    调度器路径忽略返回值，行为不变。"""
+    runner = MagicMock()
+    runner.run.return_value = RunResult("t", "incremental", STATUS_SUCCESS)
+    assert _run_task_job(runner, _collector("t")) is True
+    runner.run.return_value = RunResult("t", "incremental", STATUS_FAILED)
+    assert _run_task_job(runner, _collector("t")) is False
+    runner.run.side_effect = RuntimeError("boom")
+    assert _run_task_job(runner, _collector("t")) is False
+
+
+def test_select_tasks_returns_all_when_no_filter():
+    tasks = [_collector("a"), _collector("b")]
+    assert select_tasks(tasks, None) == tasks
+
+
+def test_select_tasks_filters_by_code_and_rejects_unknown():
+    tasks = [_collector("a"), _collector("b")]
+    # 输出保持入参序（拓扑排序的前置输入，过滤自身不重排）
+    assert [t.task_code for t in select_tasks(tasks, "b,a")] == ["a", "b"]
+    with pytest.raises(ValueError, match="未知任务.*c.*可选"):
+        select_tasks(tasks, "c")
+
+
+def test_topo_sort_runs_dependencies_before_dependents():
+    """菱形以下真实依赖形态：下游必须排在上游之后（once 无调度器重试，
+    顺序错了下游因「依赖未满足」被 skip 且当轮无补偿）。"""
+    tasks = [
+        _collector("etf_tracking_error", deps=["tracking_index_close", "etf_close"]),
+        _collector("etf_close"),
+        _collector("tracking_index_close"),
+    ]
+    codes = [t.task_code for t in topo_sort_tasks(tasks)]
+    assert codes.index("tracking_index_close") < codes.index("etf_tracking_error")
+    assert codes.index("etf_close") < codes.index("etf_tracking_error")
+
+
+def test_topo_sort_handles_diamond_dependencies():
+    """断言拓扑性质而非兄弟次序：a 最先、d 最后、b/c 互不依赖次序随意（实现细节）。"""
+    tasks = [
+        _collector("d", deps=["b", "c"]),
+        _collector("c", deps=["a"]),
+        _collector("b", deps=["a"]),
+        _collector("a"),
+    ]
+    codes = [t.task_code for t in topo_sort_tasks(tasks)]
+    assert codes[0] == "a"
+    assert codes[-1] == "d"
+    assert set(codes[1:-1]) == {"b", "c"}
+
+
+def test_topo_sort_external_dep_ignored_and_cycle_raises():
+    """集合外依赖（未 enabled / 未被 --tasks 选中）不参与排序，交由 runner
+    运行时 succeeded_on 前置检查兜底；集合内成环则 fail-fast。"""
+    assert [t.task_code for t in topo_sort_tasks([_collector("a", deps=["external"])])] == ["a"]
+    with pytest.raises(ValueError, match="环"):
+        topo_sort_tasks([_collector("x", deps=["y"]), _collector("y", deps=["x"])])
+
+
+def test_run_once_runs_all_tasks_topo_ordered_and_patrols(mocker):
+    """全量任务拓扑序各跑一次；尾部执行新鲜度巡检（调度器模式挂 17:30 cron，
+    once 模式每轮收尾补位）。"""
+    patrol = mocker.patch("collector.scheduler.jobs._freshness_patrol_job")
+    runner = MagicMock()
+    runner.run.return_value = RunResult("t", "incremental", STATUS_SUCCESS)
+    tasks = [
+        _collector("etf_tracking_error", deps=["etf_close"]),
+        _collector("etf_close"),
+    ]
+    code = run_once(tasks, runner, "postgresql://db/x", calendar=MagicMock(), alerter=None)
+    assert code == 0
+    assert [c.args[0].task_code for c in runner.run.call_args_list] == ["etf_close", "etf_tracking_error"]
+    patrol.assert_called_once()
+
+
+def test_run_once_continues_after_failure_and_returns_nonzero(mocker):
+    """单任务异常不中断其余任务（S3 同款兜底），任一失败退出码 1；
+    partial 数据已落库、不健康由 P0-2 告警覆盖，不抬退出码。"""
+    mocker.patch("collector.scheduler.jobs._freshness_patrol_job")
+    runner = MagicMock()
+    runner.run.side_effect = [
+        RunResult("a", "incremental", STATUS_SUCCESS),
+        RuntimeError("boom"),
+        RunResult("c", "incremental", STATUS_PARTIAL),
+    ]
+    tasks = [_collector("a"), _collector("b"), _collector("c")]
+    assert run_once(tasks, runner, "postgresql://db/x", calendar=MagicMock(), alerter=None) == 1
+    assert runner.run.call_count == 3
+
+
+def test_run_once_skipped_and_empty_are_zero(mocker):
+    mocker.patch("collector.scheduler.jobs._freshness_patrol_job")
+    runner = MagicMock()
+    runner.run.return_value = RunResult("t", "incremental", STATUS_SKIPPED)
+    assert run_once([_collector("t")], runner, "postgresql://db/x", calendar=MagicMock(), alerter=None) == 0
+    assert run_once([], runner, "postgresql://db/x", calendar=MagicMock(), alerter=None) == 0
+
+
+def _patch_main_env(mocker, once):
+    """main() 装配链全量打桩，返回 (argv, build_scheduler mock, run_once mock)。"""
+    mocker.patch("collector.scheduler.jobs.install_default_http_timeout")
+    mocker.patch("collector.scheduler.jobs.command")
+    mocker.patch("collector.scheduler.jobs.AlembicConfig")
+    mocker.patch(
+        "collector.scheduler.jobs.load",
+        return_value=SimpleNamespace(database_url="postgresql://db/x", tushare_token="tok"),
+    )
+    mocker.patch("collector.scheduler.jobs.build_registries", return_value=MagicMock())
+    conn = MagicMock()
+    mocker.patch("collector.scheduler.jobs.psycopg.connect", return_value=conn)
+    # with psycopg.connect(...) as c: 的 c 是 connect(...).__enter__() 的返回值
+    inner = conn.__enter__.return_value
+    inner.cursor.return_value.__enter__.return_value.fetchone.return_value = (dt.date(2026, 10, 1),)
+    mocker.patch("collector.scheduler.jobs.TaskRepository").return_value.list_enabled.return_value = []
+    mocker.patch("collector.scheduler.jobs.RunRepository").return_value.never_succeeded.return_value = set()
+    mocker.patch("collector.scheduler.jobs.alerter_from_env", return_value=None)
+    mocker.patch("collector.scheduler.jobs.reap_stale_running_once")
+    mocker.patch("collector.scheduler.jobs.TaskRunner")
+    build_scheduler = mocker.patch("collector.scheduler.jobs.build_scheduler")
+    run_once_mock = mocker.patch("collector.scheduler.jobs.run_once", return_value=0)
+    return (["--once"] if once else []), build_scheduler, run_once_mock
+
+
+def test_main_default_builds_scheduler_and_blocks(mocker):
+    """守护现状：不带 --once 时走 build_scheduler + start 阻塞长驻，不碰 run_once。"""
+    argv, build_scheduler, run_once_mock = _patch_main_env(mocker, once=False)
+    assert main(argv) is None
+    build_scheduler.assert_called_once()
+    build_scheduler.return_value.start.assert_called_once()
+    run_once_mock.assert_not_called()
+
+
+def test_main_once_runs_single_round_without_scheduler(mocker):
+    """--once：不建调度器，run_once 收到装配好的 runner 与过滤参数，返回退出码。"""
+    argv, build_scheduler, run_once_mock = _patch_main_env(mocker, once=True)
+    assert main(argv) == 0
+    build_scheduler.assert_not_called()
+    run_once_mock.assert_called_once()
+    call = run_once_mock.call_args
+    assert call.args[2] == "postgresql://db/x"
+    assert call.kwargs == {"only": None}

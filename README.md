@@ -36,6 +36,22 @@ docker compose up -d --build
 # 打开 http://localhost:3000（首次需用内置管理员审核注册用户后方可对话）
 ```
 
+#### 定时窗口部署（collector 跑完即退）
+
+collector 默认长驻调度（容器内 cron 触发各任务）。若想让容器只在采集窗口运行，可用宿主机 cron 定时拉起/关闭，collector 以 `--once` 单轮执行全部 enabled 任务后退出：
+
+```cron
+# 交易日 18:00：拉起依赖 → 单轮采集 → 无条件关闭（; 保证任务失败也释放容器）
+0 18 * * 1-5 cd /srv/portfolio-management && docker compose up -d db backend \
+  && docker compose run --rm collector python -m collector.scheduler.jobs --once \
+  ; cd /srv/portfolio-management && docker compose down
+```
+
+- collector 必须经 `docker compose run --rm` 跑 once 模式：它带 `restart: unless-stopped`，若以 `docker compose up` 常规拉起，跑完即退会被无限重启。
+- 退出码透传：任一任务 failed 时为 1（partial/skipped 不算失败，partial 的不健康已走告警通道），cron 邮件可据此发现异常。
+- 行为差异：低频任务（周频 / 180 天间隔 / 月度宏观窗口）随每次 invocation 重跑，源内增量截断保证幂等，代价是少量重复请求；日内时点任务（如 22:20 夜间公告）塌缩为「每轮一次」，公告靠回看窗口回补；新鲜度巡检在每轮收尾自动执行（交易日）。
+- 手动补跑子集：`make collector-once TASKS=index_close,etf_close`；本地直跑 `cd collector && python -m collector.scheduler.jobs --once`。
+
 ### 方式二：本地开发
 
 依赖：JDK 21+（可用 sdkman）、Node 20+、pnpm、Docker（集成测试用 Testcontainers 拉取 postgres:16）
