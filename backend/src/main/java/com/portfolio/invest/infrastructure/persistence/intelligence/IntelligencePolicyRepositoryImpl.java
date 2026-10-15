@@ -11,14 +11,12 @@ import com.portfolio.invest.domain.intelligence.PolicyRepository;
 import com.portfolio.invest.domain.intelligence.PolicyStrength;
 import com.portfolio.invest.domain.intelligence.PageQuery;
 import com.portfolio.invest.domain.intelligence.PageResult;
+import com.portfolio.invest.infrastructure.persistence.WhereClauseBuilder;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
-import java.time.ZoneId;
-import java.time.ZoneOffset;
-import java.util.ArrayList;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -28,15 +26,14 @@ import org.springframework.stereotype.Repository;
  * 政策域仓库实现（intelligence_policy_raw 连 intelligence_policy_event）。
  *
  * <p>三方法全走 JdbcTemplate 原生 SQL，照 {@link IntelligenceNewsRepositoryImpl} 先例：
- * trgm 相似度算子（{@code %}）、JSONB 列与 INSERT … ON CONFLICT 均为 PG 方言，JPQL 无法
- * 表达。分页为 OFFSET/LIMIT + 独立 COUNT 双查询（D20）。日界按 Asia/Shanghai 折算。
+ * {@code ?} 参数绑定，用户输入绝不拼接进 SQL 文本；动态 where 装配与 D20 分页
+ * 双查询已收敛于 {@link WhereClauseBuilder}。trgm 相似度算子（{@code %}）、JSONB 列与
+ * INSERT … ON CONFLICT 均为 PG 方言，JPQL 无法表达。分页为 OFFSET/LIMIT + 独立 COUNT
+ * 双查询（D20）。日界按 Asia/Shanghai 折算（市场时区，收敛于 WhereClauseBuilder）。
  * <b>长期保留</b>：无删除方法（FK 无级联，政策不滚动清理）。事务边界在 application 层。
  */
 @Repository
 public class IntelligencePolicyRepositoryImpl implements PolicyRepository {
-
-    /** 市场时区（日界折算口径，与调度任务 zone 一致）。 */
-    private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -82,40 +79,15 @@ public class IntelligencePolicyRepositoryImpl implements PolicyRepository {
 
     @Override
     public PageResult<PolicyEvent> searchEvents(PageQuery q) {
-        // 仅 SUCCESS：PENDING/FAILED 为抽取中间态不出检索面（isPolicy=false 兜底行为 SUCCESS 可见）
-        StringBuilder where = new StringBuilder(" WHERE e.status = 'SUCCESS'");
-        List<Object> args = new ArrayList<>();
-        if (q.keyword() != null && !q.keyword().isBlank()) {
-            // LIKE 保底子串命中 + trgm 容错近似（两算子均走 PG 方言）
-            where.append(" AND (r.title LIKE ? OR r.title % ?)");
-            args.add("%" + q.keyword().trim() + "%");
-            args.add(q.keyword().trim());
-        }
-        if (q.from() != null) {
-            where.append(" AND r.published_at >= ?");
-            args.add(dayStart(q.from()));
-        }
-        if (q.to() != null) {
-            where.append(" AND r.published_at < ?"); // to 为闭区间右端：次日起始即排除点
-            args.add(dayStart(q.to().plusDays(1)));
-        }
-        if (q.direction() != null) {
-            where.append(" AND e.direction = ?");
-            args.add(q.direction().name());
-        }
-
-        Long total = jdbc.queryForObject(
-                "SELECT count(*)" + RAW_JOIN_EVENT + where, Long.class, args.toArray());
-
-        List<Object> pageArgs = new ArrayList<>(args);
-        pageArgs.add(q.pageSize());
-        pageArgs.add((long) (q.page() - 1) * q.pageSize());
-        List<PolicyEvent> items = jdbc.query(
-                EVENT_SELECT_COLS + RAW_JOIN_EVENT + where
-                        + " ORDER BY r.published_at DESC, r.id DESC LIMIT ? OFFSET ?",
-                EVENT_ROW_MAPPER, pageArgs.toArray());
-
-        return new PageResult<>(items, total == null ? 0 : total, q.page(), q.pageSize());
+        // 仅 SUCCESS：PENDING/FAILED 为抽取中间态不出检索面（isPolicy=false 兜底行为 SUCCESS 可见）；
+        // 动态过滤（可空条件逐一追加，参数顺序与占位符一致）——装配骨架收敛于 WhereClauseBuilder
+        WhereClauseBuilder where = WhereClauseBuilder.where(" WHERE e.status = 'SUCCESS'")
+                .andIfKeyword("r.title", q.keyword())
+                .andDayStart("r.published_at", q.from())
+                .andDayEnd("r.published_at", q.to())
+                .andIfNotNull("e.direction", q.direction());
+        return WhereClauseBuilder.paged(jdbc, EVENT_SELECT_COLS, RAW_JOIN_EVENT,
+                "r.published_at DESC, r.id DESC", EVENT_ROW_MAPPER, q, where);
     }
 
     @Override
@@ -132,7 +104,8 @@ public class IntelligencePolicyRepositoryImpl implements PolicyRepository {
                           ORDER BY r.id
                           LIMIT ?
                         """,
-                RECORD_ROW_MAPPER, dayStart(windowStart), dayStart(day.plusDays(1)), limit);
+                RECORD_ROW_MAPPER, WhereClauseBuilder.dayStart(windowStart),
+                WhereClauseBuilder.dayStart(day.plusDays(1)), limit);
     }
 
     @Override
@@ -156,19 +129,11 @@ public class IntelligencePolicyRepositoryImpl implements PolicyRepository {
                 result.summary(),
                 result.confidence() == null ? null : result.confidence().name(),
                 result.status().name(), result.model(),
-                offsetDateTimeOf(result.extractedAt() == null ? Instant.now() : result.extractedAt()));
+                WhereClauseBuilder.offsetDateTimeOf(
+                        result.extractedAt() == null ? Instant.now() : result.extractedAt()));
     }
 
-    // ── 私有助手 ─────────────────────────────────────────────────
-
-    /** LocalDate 当日零点（Asia/Shanghai）→ Instant → OffsetDateTime（PG timestamptz 参数绑定）。 */
-    private static OffsetDateTime dayStart(LocalDate day) {
-        return offsetDateTimeOf(day.atStartOfDay(ZONE).toInstant());
-    }
-
-    private static OffsetDateTime offsetDateTimeOf(Instant instant) {
-        return instant.atOffset(ZoneOffset.UTC);
-    }
+    // ── 私有助手（dayStart/offsetDateTimeOf 日界折算收敛于 WhereClauseBuilder） ──
 
     private static Instant instant(ResultSet rs, String column) throws SQLException {
         OffsetDateTime value = rs.getObject(column, OffsetDateTime.class);

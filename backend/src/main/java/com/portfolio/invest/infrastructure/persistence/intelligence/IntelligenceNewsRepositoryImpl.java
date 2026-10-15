@@ -8,14 +8,12 @@ import com.portfolio.invest.domain.intelligence.NewsRecord;
 import com.portfolio.invest.domain.intelligence.NewsRepository;
 import com.portfolio.invest.domain.intelligence.PageQuery;
 import com.portfolio.invest.domain.intelligence.PageResult;
+import com.portfolio.invest.infrastructure.persistence.WhereClauseBuilder;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
-import java.time.ZoneId;
-import java.time.ZoneOffset;
-import java.util.ArrayList;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -25,16 +23,14 @@ import org.springframework.stereotype.Repository;
  * 新闻域仓库实现（intelligence_news_raw 左连 intelligence_news_extract）。
  *
  * <p>六方法全走 JdbcTemplate 原生 SQL，照 ScreeningRepositoryImpl 的动态拼接先例
- * （StringBuilder + {@code ?} 参数绑定，用户输入绝不拼接进 SQL 文本）：trgm 相似度
+ * （{@code ?} 参数绑定，用户输入绝不拼接进 SQL 文本；动态 where 装配与 D20 分页
+ * 双查询已收敛于 {@link WhereClauseBuilder}）：trgm 相似度
  * 算子（{@code %}）、JSONB 包含（{@code @>}）与 INSERT … ON CONFLICT 均为 PG 方言，
  * JPQL 无法表达。分页为 OFFSET/LIMIT + 独立 COUNT 双查询（D20）。日界按
  * Asia/Shanghai 折算（市场时区，照 MarketDataParser 先例）。事务边界在 application 层。
  */
 @Repository
 public class IntelligenceNewsRepositoryImpl implements NewsRepository {
-
-    /** 市场时区（日界折算口径，与调度任务 zone 一致）。 */
-    private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -70,48 +66,16 @@ public class IntelligenceNewsRepositoryImpl implements NewsRepository {
 
     @Override
     public PageResult<NewsRecord> search(PageQuery q) {
-        // 动态过滤（可空条件逐一追加，参数顺序与占位符一致）
-        StringBuilder where = new StringBuilder(" WHERE true");
-        List<Object> args = new ArrayList<>();
-        if (q.keyword() != null && !q.keyword().isBlank()) {
-            // LIKE 保底子串命中 + trgm 容错近似（两算子均被 GIN trgm 索引加速）
-            where.append(" AND (r.title LIKE ? OR r.title % ?)");
-            args.add("%" + q.keyword().trim() + "%");
-            args.add(q.keyword().trim());
-        }
-        if (q.stockCode() != null && !q.stockCode().isBlank()) {
-            where.append(" AND e.stock_codes @> ?::jsonb");
-            args.add(toJson(List.of(q.stockCode().trim())));
-        }
-        if (q.industryCode() != null && !q.industryCode().isBlank()) {
-            where.append(" AND e.industry_codes @> ?::jsonb");
-            args.add(toJson(List.of(q.industryCode().trim())));
-        }
-        if (q.from() != null) {
-            where.append(" AND r.published_at >= ?");
-            args.add(dayStart(q.from()));
-        }
-        if (q.to() != null) {
-            where.append(" AND r.published_at < ?"); // to 为闭区间右端：次日起始即排除点
-            args.add(dayStart(q.to().plusDays(1)));
-        }
-        if (q.minImportance() != null) {
-            where.append(" AND e.importance >= ?");
-            args.add(q.minImportance());
-        }
-
-        Long total = jdbc.queryForObject(
-                "SELECT count(*)" + RAW_LEFT_JOIN_EXTRACT + where, Long.class, args.toArray());
-
-        List<Object> pageArgs = new ArrayList<>(args);
-        pageArgs.add(q.pageSize());
-        pageArgs.add((long) (q.page() - 1) * q.pageSize());
-        List<NewsRecord> items = jdbc.query(
-                SELECT_COLS + RAW_LEFT_JOIN_EXTRACT + where
-                        + " ORDER BY r.published_at DESC, r.id DESC LIMIT ? OFFSET ?",
-                NEWS_ROW_MAPPER, pageArgs.toArray());
-
-        return new PageResult<>(items, total == null ? 0 : total, q.page(), q.pageSize());
+        // 动态过滤（可空条件逐一追加，参数顺序与占位符一致）——装配骨架收敛于 WhereClauseBuilder
+        WhereClauseBuilder where = WhereClauseBuilder.whereTrue()
+                .andIfKeyword("r.title", q.keyword())
+                .andIfJsonbContains("e.stock_codes", q.stockCode())
+                .andIfJsonbContains("e.industry_codes", q.industryCode())
+                .andDayStart("r.published_at", q.from())
+                .andDayEnd("r.published_at", q.to())
+                .andIfNotNull("e.importance", ">=", q.minImportance());
+        return WhereClauseBuilder.paged(jdbc, SELECT_COLS, RAW_LEFT_JOIN_EXTRACT,
+                "r.published_at DESC, r.id DESC", NEWS_ROW_MAPPER, q, where);
     }
 
     @Override
@@ -125,7 +89,8 @@ public class IntelligenceNewsRepositoryImpl implements NewsRepository {
                           ORDER BY r.id
                           LIMIT ?
                         """,
-                NEWS_ROW_MAPPER, dayStart(windowStart), dayStart(day.plusDays(1)), limit);
+                NEWS_ROW_MAPPER, WhereClauseBuilder.dayStart(windowStart),
+                WhereClauseBuilder.dayStart(day.plusDays(1)), limit);
     }
 
     @Override
@@ -137,7 +102,8 @@ public class IntelligenceNewsRepositoryImpl implements NewsRepository {
                           WHERE r.fetched_at >= ? AND r.fetched_at < ?
                             AND (e.id IS NULL OR e.status = 'PENDING')
                         """,
-                Long.class, dayStart(windowStart), dayStart(day.plusDays(1)));
+                Long.class, WhereClauseBuilder.dayStart(windowStart),
+                WhereClauseBuilder.dayStart(day.plusDays(1)));
         return count == null ? 0 : count;
     }
 
@@ -160,20 +126,21 @@ public class IntelligenceNewsRepositoryImpl implements NewsRepository {
                 result.summary(), result.direction() == null ? null : result.direction().name(),
                 toJson(result.keyNumbers()), result.importance(), result.status().name(),
                 result.model(),
-                offsetDateTimeOf(result.extractedAt() == null ? Instant.now() : result.extractedAt()));
+                WhereClauseBuilder.offsetDateTimeOf(
+                        result.extractedAt() == null ? Instant.now() : result.extractedAt()));
     }
 
     @Override
     public long deleteRawBefore(Instant cutoff) {
         return jdbc.update("DELETE FROM intelligence_news_raw WHERE published_at < ?",
-                offsetDateTimeOf(cutoff));
+                WhereClauseBuilder.offsetDateTimeOf(cutoff));
     }
 
     @Override
     public long countExtractedByDate(LocalDate day) {
         Long count = jdbc.queryForObject(
                 "SELECT count(*) FROM intelligence_news_extract WHERE extracted_at >= ? AND extracted_at < ?",
-                Long.class, dayStart(day), dayStart(day.plusDays(1)));
+                Long.class, WhereClauseBuilder.dayStart(day), WhereClauseBuilder.dayStart(day.plusDays(1)));
         return count == null ? 0 : count;
     }
 
@@ -186,19 +153,10 @@ public class IntelligenceNewsRepositoryImpl implements NewsRepository {
                           WHERE r.published_at >= ? AND e.status = 'SUCCESS' AND e.importance >= ?
                           ORDER BY r.published_at DESC, r.id DESC
                         """,
-                NEWS_ROW_MAPPER, offsetDateTimeOf(since), majorAt);
+                NEWS_ROW_MAPPER, WhereClauseBuilder.offsetDateTimeOf(since), majorAt);
     }
 
-    // ── 私有助手 ─────────────────────────────────────────────────
-
-    /** LocalDate 当日零点（Asia/Shanghai）→ Instant → OffsetDateTime（PG timestamptz 参数绑定）。 */
-    private static OffsetDateTime dayStart(LocalDate day) {
-        return offsetDateTimeOf(day.atStartOfDay(ZONE).toInstant());
-    }
-
-    private static OffsetDateTime offsetDateTimeOf(Instant instant) {
-        return instant.atOffset(ZoneOffset.UTC);
-    }
+    // ── 私有助手（dayStart/offsetDateTimeOf 日界折算收敛于 WhereClauseBuilder） ──
 
     private static Instant instant(ResultSet rs, String column) throws SQLException {
         OffsetDateTime value = rs.getObject(column, OffsetDateTime.class);

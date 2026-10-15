@@ -9,14 +9,12 @@ import com.portfolio.invest.domain.intelligence.AnnouncementType;
 import com.portfolio.invest.domain.intelligence.ExtractStatus;
 import com.portfolio.invest.domain.intelligence.PageQuery;
 import com.portfolio.invest.domain.intelligence.PageResult;
+import com.portfolio.invest.infrastructure.persistence.WhereClauseBuilder;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
-import java.time.ZoneId;
-import java.time.ZoneOffset;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -27,16 +25,14 @@ import org.springframework.stereotype.Repository;
  * 公告域仓库实现（intelligence_announcement 左连 intelligence_announcement_extract）。
  *
  * <p>五方法全走 JdbcTemplate 原生 SQL，照 {@link IntelligenceNewsRepositoryImpl} 先例
- * （StringBuilder + {@code ?} 参数绑定，用户输入绝不拼接进 SQL 文本）：trgm 相似度算子
+ * （{@code ?} 参数绑定，用户输入绝不拼接进 SQL 文本；动态 where 装配与 D20 分页
+ * 双查询已收敛于 {@link WhereClauseBuilder}）：trgm 相似度算子
  * （{@code %}）、JSONB 包含（{@code @>}）与 INSERT … ON CONFLICT 均为 PG 方言，JPQL 无法
  * 表达。分页为 OFFSET/LIMIT + 独立 COUNT 双查询（D20）。日界按 Asia/Shanghai 折算
  * （市场时区，照 MarketDataParser 先例）。事务边界在 application 层。
  */
 @Repository
 public class IntelligenceAnnouncementRepositoryImpl implements AnnouncementRepository {
-
-    /** 市场时区（日界折算口径，与调度任务 zone 一致）。 */
-    private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -70,57 +66,17 @@ public class IntelligenceAnnouncementRepositoryImpl implements AnnouncementRepos
 
     @Override
     public PageResult<AnnouncementRecord> search(PageQuery q) {
-        // 动态过滤（可空条件逐一追加，参数顺序与占位符一致）
-        StringBuilder where = new StringBuilder(" WHERE true");
-        List<Object> args = new ArrayList<>();
-        if (q.keyword() != null && !q.keyword().isBlank()) {
-            // LIKE 保底子串命中 + trgm 容错近似（两算子均被 GIN trgm 索引加速）
-            where.append(" AND (r.title LIKE ? OR r.title % ?)");
-            args.add("%" + q.keyword().trim() + "%");
-            args.add(q.keyword().trim());
-        }
-        if (q.stockCode() != null && !q.stockCode().isBlank()) {
-            // 公告表直列等值（区别于新闻的抽取侧 JSONB 包含）
-            where.append(" AND r.stock_code = ?");
-            args.add(q.stockCode().trim());
-        }
-        if (q.stockCodes() != null && !q.stockCodes().isEmpty()) {
-            // 标的集 SQL IN 下推（P4 scope 升级）：占位符逐标的展开、参数依序绑定
-            // （用户输入绝不拼接进 SQL 文本）；PageQuery 已把空列表归一 null 不过滤
-            String placeholders = String.join(",", q.stockCodes().stream().map(c -> "?").toList());
-            where.append(" AND r.stock_code IN (").append(placeholders).append(")");
-            args.addAll(q.stockCodes());
-        }
-        if (q.type() != null) {
-            // ann_types 在 extract 侧：未抽取条目无标签，type 过滤不命中（语义正确）
-            where.append(" AND e.ann_types @> ?::jsonb");
-            args.add(toJson(List.of(q.type().name())));
-        }
-        if (q.from() != null) {
-            where.append(" AND r.published_at >= ?");
-            args.add(dayStart(q.from()));
-        }
-        if (q.to() != null) {
-            where.append(" AND r.published_at < ?"); // to 为闭区间右端：次日起始即排除点
-            args.add(dayStart(q.to().plusDays(1)));
-        }
-        if (q.major() != null) {
-            where.append(" AND r.major = ?");
-            args.add(q.major());
-        }
-
-        Long total = jdbc.queryForObject(
-                "SELECT count(*)" + ANNOUNCEMENT_LEFT_JOIN_EXTRACT + where, Long.class, args.toArray());
-
-        List<Object> pageArgs = new ArrayList<>(args);
-        pageArgs.add(q.pageSize());
-        pageArgs.add((long) (q.page() - 1) * q.pageSize());
-        List<AnnouncementRecord> items = jdbc.query(
-                SELECT_COLS + ANNOUNCEMENT_LEFT_JOIN_EXTRACT + where
-                        + " ORDER BY r.published_at DESC, r.id DESC LIMIT ? OFFSET ?",
-                ANNOUNCEMENT_ROW_MAPPER, pageArgs.toArray());
-
-        return new PageResult<>(items, total == null ? 0 : total, q.page(), q.pageSize());
+        // 动态过滤（可空条件逐一追加，参数顺序与占位符一致）——装配骨架收敛于 WhereClauseBuilder
+        WhereClauseBuilder where = WhereClauseBuilder.whereTrue()
+                .andIfKeyword("r.title", q.keyword())
+                .andIfNotBlank("r.stock_code", q.stockCode()) // 公告表直列等值（区别于新闻的抽取侧 JSONB 包含）
+                .andIn("r.stock_code", q.stockCodes()) // 标的集 SQL IN 下推（PageQuery 已把空列表归一 null 不过滤）
+                .andIfJsonbContains("e.ann_types", q.type()) // ann_types 在 extract 侧：未抽取条目无标签，type 过滤不命中（语义正确）
+                .andDayStart("r.published_at", q.from())
+                .andDayEnd("r.published_at", q.to())
+                .andIfNotNull("r.major", q.major());
+        return WhereClauseBuilder.paged(jdbc, SELECT_COLS, ANNOUNCEMENT_LEFT_JOIN_EXTRACT,
+                "r.published_at DESC, r.id DESC", ANNOUNCEMENT_ROW_MAPPER, q, where);
     }
 
     @Override
@@ -135,7 +91,8 @@ public class IntelligenceAnnouncementRepositoryImpl implements AnnouncementRepos
                           ORDER BY r.id
                           LIMIT ?
                         """,
-                ANNOUNCEMENT_ROW_MAPPER, dayStart(windowStart), dayStart(day.plusDays(1)), limit);
+                ANNOUNCEMENT_ROW_MAPPER, WhereClauseBuilder.dayStart(windowStart),
+                WhereClauseBuilder.dayStart(day.plusDays(1)), limit);
     }
 
     @Override
@@ -154,7 +111,8 @@ public class IntelligenceAnnouncementRepositoryImpl implements AnnouncementRepos
                 result.metrics() == null ? null : toJson(result.metrics()),
                 toJson(result.annTypes()),
                 result.pdfText(), result.status().name(), result.model(),
-                offsetDateTimeOf(result.extractedAt() == null ? Instant.now() : result.extractedAt()));
+                WhereClauseBuilder.offsetDateTimeOf(
+                        result.extractedAt() == null ? Instant.now() : result.extractedAt()));
     }
 
     @Override
@@ -168,7 +126,7 @@ public class IntelligenceAnnouncementRepositoryImpl implements AnnouncementRepos
                           WHERE e.extracted_at >= ? AND e.status = 'SUCCESS' AND r.major = true
                           ORDER BY e.extracted_at DESC, r.id DESC
                           """,
-                ANNOUNCEMENT_ROW_MAPPER, offsetDateTimeOf(since));
+                ANNOUNCEMENT_ROW_MAPPER, WhereClauseBuilder.offsetDateTimeOf(since));
     }
 
     @Override
@@ -179,16 +137,7 @@ public class IntelligenceAnnouncementRepositoryImpl implements AnnouncementRepos
         return Boolean.TRUE.equals(exists);
     }
 
-    // ── 私有助手 ─────────────────────────────────────────────────
-
-    /** LocalDate 当日零点（Asia/Shanghai）→ Instant → OffsetDateTime（PG timestamptz 参数绑定）。 */
-    private static OffsetDateTime dayStart(LocalDate day) {
-        return offsetDateTimeOf(day.atStartOfDay(ZONE).toInstant());
-    }
-
-    private static OffsetDateTime offsetDateTimeOf(Instant instant) {
-        return instant.atOffset(ZoneOffset.UTC);
-    }
+    // ── 私有助手（dayStart/offsetDateTimeOf 日界折算收敛于 WhereClauseBuilder） ──
 
     private static Instant instant(ResultSet rs, String column) throws SQLException {
         OffsetDateTime value = rs.getObject(column, OffsetDateTime.class);

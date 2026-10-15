@@ -6,13 +6,12 @@ import com.portfolio.invest.domain.intelligence.BriefStatus;
 import com.portfolio.invest.domain.intelligence.DailyBrief;
 import com.portfolio.invest.domain.intelligence.PageQuery;
 import com.portfolio.invest.domain.intelligence.PageResult;
+import com.portfolio.invest.infrastructure.persistence.WhereClauseBuilder;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -27,8 +26,8 @@ import org.springframework.stereotype.Repository;
  * {@code @>} contains 命中），save 为 INSERT … ON CONFLICT (trade_date) 整体置换——
  * 服务层幂等守卫之外兜底并发双触发（本仓库不建 JPA 实体门面：写入仅此一处，Task 5
  * 遗留的「JPA 门面无运行时消费者」教训不再复制）。search 的 keyword 走 content_md
- * trgm 双臂（LIKE 子串 + {@code %} 容错，均被 GIN trgm 索引加速）。事务边界在
- * application 层。
+ * trgm 双臂（LIKE 子串 + {@code %} 容错，均被 GIN trgm 索引加速）；动态 where 装配
+ * 与 D20 分页双查询已收敛于 {@link WhereClauseBuilder}。事务边界在 application 层。
  */
 @Repository
 public class IntelligenceDailyBriefRepositoryImpl implements BriefRepository {
@@ -38,6 +37,8 @@ public class IntelligenceDailyBriefRepositoryImpl implements BriefRepository {
     private static final String SELECT_COLS = """
             SELECT id, trade_date, content_md, top_stocks, status, fail_reason, model, generated_at
             """;
+
+    private static final String FROM_BRIEF = " FROM intelligence_daily_brief";
 
     /** 归档行映射（findByDate / search 共用）。 */
     private static final RowMapper<DailyBrief> BRIEF_ROW_MAPPER = (rs, i) -> new DailyBrief(
@@ -65,13 +66,13 @@ public class IntelligenceDailyBriefRepositoryImpl implements BriefRepository {
                 """,
                 brief.tradeDate(), brief.contentMd(), toJson(brief.topStocks()),
                 brief.status().name(), brief.failReason(), brief.model(),
-                offsetDateTimeOf(brief.generatedAt()));
+                WhereClauseBuilder.offsetDateTimeOf(brief.generatedAt()));
     }
 
     @Override
     public Optional<DailyBrief> findByDate(LocalDate tradeDate) {
         List<DailyBrief> rows = jdbc.query(
-                SELECT_COLS + " FROM intelligence_daily_brief WHERE trade_date = ?",
+                SELECT_COLS + FROM_BRIEF + " WHERE trade_date = ?",
                 BRIEF_ROW_MAPPER, tradeDate);
         return rows.stream().findFirst();
     }
@@ -79,47 +80,17 @@ public class IntelligenceDailyBriefRepositoryImpl implements BriefRepository {
     @Override
     public PageResult<DailyBrief> search(PageQuery q) {
         // 动态过滤（可空条件逐一追加，参数顺序与占位符一致）；trade_date 为 DATE 直比闭区间
-        StringBuilder where = new StringBuilder(" WHERE true");
-        List<Object> args = new ArrayList<>();
-        if (q.keyword() != null && !q.keyword().isBlank()) {
-            // LIKE 保底子串命中 + trgm 容错近似（两算子均被 content_md GIN trgm 索引加速）
-            where.append(" AND (content_md LIKE ? OR content_md % ?)");
-            args.add("%" + q.keyword().trim() + "%");
-            args.add(q.keyword().trim());
-        }
-        if (q.stockCode() != null && !q.stockCode().isBlank()) {
-            // 决策 #23 检索维度：top_stocks JSONB contains（空简版/失败版无快照不命中）
-            where.append(" AND top_stocks @> ?::jsonb");
-            args.add(toJson(List.of(q.stockCode().trim())));
-        }
-        if (q.from() != null) {
-            where.append(" AND trade_date >= ?");
-            args.add(java.sql.Date.valueOf(q.from()));
-        }
-        if (q.to() != null) {
-            where.append(" AND trade_date <= ?"); // DATE 直比：to 当日含（闭区间右端即含）
-            args.add(java.sql.Date.valueOf(q.to()));
-        }
-
-        Long total = jdbc.queryForObject(
-                "SELECT count(*) FROM intelligence_daily_brief" + where, Long.class, args.toArray());
-
-        List<Object> pageArgs = new ArrayList<>(args);
-        pageArgs.add(q.pageSize());
-        pageArgs.add((long) (q.page() - 1) * q.pageSize());
-        List<DailyBrief> items = jdbc.query(
-                SELECT_COLS + " FROM intelligence_daily_brief" + where
-                        + " ORDER BY trade_date DESC LIMIT ? OFFSET ?",
-                BRIEF_ROW_MAPPER, pageArgs.toArray());
-
-        return new PageResult<>(items, total == null ? 0 : total, q.page(), q.pageSize());
+        // （与新闻/公告/政策的 timestamptz 日界折算不同口径）——装配骨架收敛于 WhereClauseBuilder
+        WhereClauseBuilder where = WhereClauseBuilder.whereTrue()
+                .andIfKeyword("content_md", q.keyword())
+                .andIfJsonbContains("top_stocks", q.stockCode()) // 决策 #23 检索维度：空简版/失败版无快照不命中
+                .andDateStart("trade_date", q.from())
+                .andDateEnd("trade_date", q.to());
+        return WhereClauseBuilder.paged(jdbc, SELECT_COLS, FROM_BRIEF,
+                "trade_date DESC", BRIEF_ROW_MAPPER, q, where);
     }
 
-    // ── 私有助手（照 IntelligenceNewsRepositoryImpl 同名助手） ────
-
-    private static OffsetDateTime offsetDateTimeOf(Instant instant) {
-        return instant.atOffset(ZoneOffset.UTC);
-    }
+    // ── 私有助手（offsetDateTimeOf 日界折算收敛于 WhereClauseBuilder） ──
 
     private static Instant instant(ResultSet rs, String column) throws SQLException {
         OffsetDateTime value = rs.getObject(column, OffsetDateTime.class);
