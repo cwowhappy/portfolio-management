@@ -3,6 +3,7 @@ package com.portfolio.invest.bdd;
 import com.portfolio.invest.agent.report.ReportAgentRunner;
 import com.portfolio.invest.agent.report.ReportAgentRunnerFactory;
 import com.portfolio.invest.agent.report.ReportUsageMiddleware;
+import com.portfolio.invest.application.eval.EvalScheduler;
 import com.portfolio.invest.application.intelligence.IntelligencePushPort;
 import com.portfolio.invest.application.research.ReportAnchorRecheckPort;
 import com.portfolio.invest.infrastructure.market.EastmoneyClient;
@@ -86,6 +87,15 @@ public class CucumberSpringConfig extends PostgresTestSupport {
 
     @MockitoBean
     TencentClient tencentClient;
+
+    /**
+     * 评测调度器打桩（2026-10-15 审查 §三.6 eval 生命周期 BDD）：triggerNow 不真起 JVM 子进程
+     * （互斥/CAS/白名单/看护归 EvalSchedulerTest，真子进程链归 opt-in 的
+     * EvalSchedulerEndToEndTest）——{@code EvalRunSteps} 按场景 stub「真插 RUNNING 行返
+     * runId」，收割器/运行历史/落库全链真实；此前各域场景零引用 eval 调度器，全局替换无副作用。
+     */
+    @MockitoBean
+    EvalScheduler evalScheduler;
 
     /**
      * 情报推送口打桩（M16-F11 BDD 公告推送场景）：推送服务全链真实（命中集 union +
