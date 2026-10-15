@@ -31,6 +31,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
@@ -356,6 +358,31 @@ class EvalSchedulerTest {
         EvalScheduler retry = new EvalScheduler(runRepository, harvester, props, environment,
                 () -> parentEnv, pb -> new FakeProcess(0, true), watchTasks::add);
         retry.triggerNow("SCHEDULED");
+        verify(runRepository, times(2)).insertRunning(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("给定看护 executor 已 shutdown（停机与触发并发窗口，审查 §三.1），when触发，then子进程被强杀、行标 FAILED、互斥旗释放且 runId 仍返回")
+    void givenWatchExecutorShutdown_whenTriggerNow_thenProcessKilledRowFailedAndFlagReleased() {
+        ExecutorService shutdownExecutor = Executors.newSingleThreadExecutor();
+        shutdownExecutor.shutdown(); // @PreDestroy 之后的真实形态：execute 必抛 RejectedExecutionException
+        FakeProcess process = new FakeProcess(0, false);
+        EvalScheduler scheduler = new EvalScheduler(runRepository, harvester, props, environment,
+                () -> parentEnv, pb -> process, shutdownExecutor);
+
+        long runId = scheduler.triggerNow("SCHEDULED");
+
+        // 孤儿窗口闭合：移交被拒收即 destroyForcibly（子进程不脱离看护烧 LLM 预算），runId 照常返回
+        assertThat(runId).isEqualTo(7L);
+        assertThat(process.destroyed).isTrue();
+        verify(harvester, never()).harvest(anyLong(), any(Path.class), anyInt(), anyBoolean());
+        // 行标 FAILED（轮询可见终态，不留永滞 RUNNING 行）
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<String>> reasons = ArgumentCaptor.forClass((Class) List.class);
+        verify(runRepository).markFailed(eq(7L), reasons.capture());
+        assertThat(reasons.getValue().get(0)).contains("看护移交被拒收");
+        // 互斥旗已就地释放：再次触发不再被 InProgress 拒（第二跑同样走拒收路径，行亦标 FAILED）
+        scheduler.triggerNow("MANUAL");
         verify(runRepository, times(2)).insertRunning(anyString(), anyString(), anyString());
     }
 

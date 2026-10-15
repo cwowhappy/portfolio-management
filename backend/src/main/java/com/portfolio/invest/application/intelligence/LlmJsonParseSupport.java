@@ -1,20 +1,39 @@
 package com.portfolio.invest.application.intelligence;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
 /**
  * LLM 抽取输出 JSON 的字段级解析共享助手（2026-10-12 审查 B2）：新闻/政策/公告三个
- * 抽取器誊写的解析骨架单实现——Markdown 围栏剥离、文本字段、字符串数组字段、受控
- * 枚举字段。宽严口径三域一致（缺失/null 归一、类型违约判解析失败），防逐处复制漂移。
- * 公告的数值字段/违约异常与「枚举名剔除不判失败」口径为域特有，留在
- * {@link AnnouncementExtractor} 本地。
+ * 抽取器誊写的解析骨架单实现——parse 入口（{@link #readObject}）、Markdown 围栏剥离、
+ * 文本字段、字符串数组字段、受控枚举字段。宽严口径三域一致（缺失/null 归一、类型违约判
+ * 解析失败），防逐处复制漂移。公告的数值字段/违约异常与「枚举名剔除不判失败」口径为域
+ * 特有，留在 {@link AnnouncementExtractor} 本地。
  */
 final class LlmJsonParseSupport {
 
     private LlmJsonParseSupport() {
+    }
+
+    /**
+     * parse 入口下沉（2026-10-15 审查 §三.3）：三抽取器共享的「blank 兜底 → 剥围栏 →
+     * readTree → 根对象校验」——null/空白输入、解析失败、非对象根统一返回 null（调用方按
+     * 解析失败处理）；仅根为 JSON 对象时返回该节点。
+     */
+    static JsonNode readObject(ObjectMapper mapper, String text) {
+        if (text == null || text.isBlank()) {
+            return null; // Task 4 边界：present("") 空串兜底
+        }
+        JsonNode root;
+        try {
+            root = mapper.readTree(stripFences(text));
+        } catch (Exception e) {
+            return null;
+        }
+        return root == null || !root.isObject() ? null : root;
     }
 
     /** 文本字段：缺失/null → null；其余按文本取值（数值等宽容转字符串）。 */

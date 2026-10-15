@@ -14,6 +14,7 @@ import java.util.Set;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 import org.slf4j.Logger;
@@ -182,8 +183,10 @@ public class EvalScheduler {
      * 序：建数据根（I3：目录缺失 start() 抛 IOException）→ 删上一跑残留同名报告（C2：防
      * 陈旧报告跨跑污染——早退/超时跑收割到旧文件即假告警；两轨报告位都删）→ 派生 jar/命令
      * （I2：先于插行，派生抛异常不泄漏 RUNNING 行）→ 插对话轨 RUNNING 行 → 起进程（失败行
-     * 标 FAILED）→ 移交看护。未启用/缺 key 抛 {@link IllegalStateException}（手动端友好
-     * 失败）；进行中抛 {@link EvalRunInProgressException}。
+     * 标 FAILED）→ 移交看护（executor 已 shutdown 的停机并发窗口 execute 拒收成孤儿：
+     * 强杀子进程 + 行标 FAILED 后照常返回 runId——终态轮询可见）。未启用/缺 key 抛
+     * {@link IllegalStateException}（手动端友好失败）；进行中抛
+     * {@link EvalRunInProgressException}。
      */
     public long triggerNow(String triggeredBy) {
         if (!props.getEval().isEnabled()) {
@@ -208,7 +211,7 @@ public class EvalScheduler {
             Path extractionReportPath = dataDir.resolve(EXTRACTION_REPORT_SUBPATH);
             deleteStaleReport(extractionReportPath);
             Path evalJar = resolveEvalJar();
-            List<String> command = command(evalJar, dataDir);
+            List<String> command = command(evalJar, "--invest.eval.data-root=" + dataDir.toAbsolutePath());
             long runId = runRepository.insertRunning(triggeredBy, EvalRunRow.TRACK_AGENT,
                     reportPath.toString());
             ProcessBuilder builder = newProcessBuilder(command, parentEnv.get());
@@ -225,12 +228,26 @@ public class EvalScheduler {
             liveProcess = process;
             log.info("eval 子进程已启动：runId={} track={} triggeredBy={} jar={} dataRoot={}",
                     runId, EvalRunRow.TRACK_AGENT, triggeredBy, evalJar, dataDir);
-            watchExecutor.execute(() -> watchAgentThenExtraction(
-                    runId, process, reportPath, extractionReportPath, evalJar, dataDir, triggeredBy));
+            try {
+                watchExecutor.execute(() -> watchAgentThenExtraction(
+                        runId, process, reportPath, extractionReportPath, evalJar, dataDir,
+                        triggeredBy));
+            } catch (RejectedExecutionException e) {
+                // 孤儿窗口修复（审查 §三.1）：@PreDestroy shutdown 与手动/定时触发精确并发时
+                // execute 拒收——handedOff=false 走 finally 释放互斥，但子进程已脱离看护
+                // （不收割、不超时、不被停机清理命中），烧 LLM 预算且 eval_run 行永滞
+                // RUNNING。补刀三件套：强杀子进程 + 行标 FAILED + 异常原因留痕。
+                log.error("eval 看护移交被拒收（runId={}，watchExecutor 已 shutdown——停机与"
+                        + "触发并发窗口）：进程已强杀、行标 FAILED、互斥旗释放", runId, e);
+                liveProcess.destroyForcibly(); // 进程已 start 成功：拒收即成孤儿，先杀
+                runRepository.markFailed(runId, List.of(
+                        "评测子进程已启动但看护移交被拒收（watchExecutor 已 shutdown，进程已强杀）"));
+                return runId; // 行已 FAILED（轮询可见终态），受理语义不变
+            }
             handedOff = true;
             return runId;
         } finally {
-            if (!handedOff) { // 未移交看护（目录/派生/插行/启动失败）即就地释放互斥旗
+            if (!handedOff) { // 未移交看护（目录/派生/插行/启动失败/看护移交被拒收）即就地释放互斥旗
                 running.set(false);
             }
         }
@@ -292,7 +309,7 @@ public class EvalScheduler {
         }
         Process process;
         try {
-            ProcessBuilder builder = newProcessBuilder(extractionCommand(evalJar), parentEnv.get());
+            ProcessBuilder builder = newProcessBuilder(command(evalJar, "--track=extraction"), parentEnv.get());
             builder.directory(dataDir.toFile());
             builder.inheritIO();
             applyDatasourceOverlay(builder.environment());
@@ -385,27 +402,19 @@ public class EvalScheduler {
                 firstNonBlank(environment.getProperty("spring.datasource.password"), "invest"));
     }
 
-    /** 命令构造：java -jar &lt;evalJar&gt; --invest.eval.data-root=&lt;绝对路径&gt;（仅此一参，Task 2 裁定）。 */
-    private static List<String> command(Path evalJar, Path dataDir) {
-        List<String> command = new ArrayList<>();
-        command.add(Path.of(System.getProperty("java.home"), "bin", "java").toString());
-        command.add("-jar");
-        command.add(evalJar.toString());
-        command.add("--invest.eval.data-root=" + dataDir.toAbsolutePath());
-        return command;
-    }
-
     /**
-     * 抽取轨命令构造（跟进②）：java -jar &lt;evalJar&gt; --track=extraction——不带 data-root
-     * （抽取轨纯 JVM 无状态目录，runner 拒未知参数；报告落 cwd 相对位
-     * {@code build/reports/eval-extraction/}，由 EvalRunner.main 分派进 ExtractionEvalRunner）。
+     * 命令构造（两轨合一，审查 §三.5）：{@code java -jar <evalJar> + extraArgs}。对话轨
+     * extraArgs = {@code --invest.eval.data-root=<绝对路径>} 仅此一参（Task 2 裁定）；
+     * 抽取轨 extraArgs = {@code --track=extraction}——不带 data-root（抽取轨纯 JVM 无
+     * 状态目录，runner 拒未知参数；报告落 cwd 相对位 {@code build/reports/eval-extraction/}，
+     * 由 EvalRunner.main 分派进 ExtractionEvalRunner）。
      */
-    private static List<String> extractionCommand(Path evalJar) {
+    private static List<String> command(Path evalJar, String... extraArgs) {
         List<String> command = new ArrayList<>();
         command.add(Path.of(System.getProperty("java.home"), "bin", "java").toString());
         command.add("-jar");
         command.add(evalJar.toString());
-        command.add("--track=extraction");
+        command.addAll(List.of(extraArgs));
         return command;
     }
 
