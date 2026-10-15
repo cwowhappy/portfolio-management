@@ -1,7 +1,9 @@
+import argparse
 import datetime as dt
 import glob
 import logging
 import os
+import sys
 
 import akshare as ak
 import psycopg
@@ -20,6 +22,7 @@ from collector.converters.field_mapping import FieldMappingConverter
 from collector.converters.registry import ConverterRegistry
 from collector.executor.executor import Executor
 from collector.executor.selector import SourceSelector
+from collector.model.run import STATUS_FAILED
 from collector.model.task import Collector
 from collector.repositories.runs import RunRepository
 from collector.repositories.tasks import TASK_COLS, TaskRepository
@@ -146,11 +149,93 @@ def make_trigger(schedule):
 
 
 def _run_task_job(runner, task):
-    """S3：job 自己兜底所有异常——异常逃出 job 会被 APScheduler 静默丢弃该任务的后续调度。"""
+    """S3：job 自己兜底所有异常——异常逃出 job 会被 APScheduler 静默丢弃该任务的后续调度。
+
+    返回是否成功（调度器路径忽略返回值；once 模式据以计退出码）：异常逃逸或
+    failed 终态 → False，success/partial/skipped → True（partial 数据已落库，
+    不健康由 P0-2 告警覆盖，不计失败）。
+    """
     try:
-        runner.run(task)
+        result = runner.run(task)
     except Exception:
         logger.exception("任务 %s 调度运行失败", task.task_code)
+        return False
+    return result is None or result.status != STATUS_FAILED
+
+
+def select_tasks(tasks, only):
+    """once 模式 --tasks 过滤：逗号分隔 task_code 子集，输出保持入参序（topo 前置）。
+
+    未知 code fail-fast（列出可选值）——静默跑空集会让 cron 伪装成功。
+    """
+    if not only:
+        return list(tasks)
+    wanted = {c.strip() for c in only.split(",") if c.strip()}
+    known = {t.task_code for t in tasks}
+    unknown = sorted(wanted - known)
+    if unknown:
+        raise ValueError(f"未知任务: {unknown}（可选: {sorted(known)}）")
+    return [t for t in tasks if t.task_code in wanted]
+
+
+def topo_sort_tasks(tasks):
+    """once 模式按 depends_on 拓扑排序（Kahn，BFS 保同层入参顺序稳定）。
+
+    集合外依赖（未 enabled / 未被过滤选中）不参与排序，运行时由 runner 的
+    succeeded_on 前置检查兜底；集合内成环 fail-fast——once 无调度器重试，
+    顺序错了下游因「依赖未满足」被 skip 且当轮无补偿。
+    """
+    by_code = {t.task_code: t for t in tasks}
+    indegree = {code: 0 for code in by_code}
+    dependents = {code: [] for code in by_code}
+    for t in tasks:
+        for dep in getattr(t, "depends_on", None) or []:
+            if dep in by_code:
+                indegree[t.task_code] += 1
+                dependents[dep].append(t.task_code)
+    ready = [t.task_code for t in tasks if indegree[t.task_code] == 0]
+    ordered = []
+    while ready:
+        code = ready.pop(0)
+        ordered.append(by_code[code])
+        for nxt in dependents[code]:
+            indegree[nxt] -= 1
+            if indegree[nxt] == 0:
+                ready.append(nxt)
+    if len(ordered) != len(tasks):
+        stuck = sorted(set(by_code) - {t.task_code for t in ordered})
+        raise ValueError(f"任务依赖存在环，无法排序: {stuck}")
+    return ordered
+
+
+def run_once(tasks, runner, database_url, calendar, alerter, only=None):
+    """--once：拓扑序顺序执行全部（或过滤后）任务一轮 + 尾部新鲜度巡检，返回退出码。
+
+    单任务异常兜底同调度路径（S3）：失败不中断其余任务。退出码：任一任务
+    failed（异常逃逸或 failed 终态）→ 1，否则 0——供宿主机 cron/CI 判定。
+    """
+    selected = topo_sort_tasks(select_tasks(tasks, only))
+    failed = sum(1 for task in selected if not _run_task_job(runner, task))
+    # 新鲜度巡检：调度器模式挂 PATROL_CRON 定时，once 模式每轮尾部执行一次
+    # （内部自带交易日闸门与告警通道，复用同一闭包）。
+    _freshness_patrol_job(database_url, alerter, calendar)()
+    if failed:
+        logger.error("once 模式：%d/%d 个任务失败", failed, len(selected))
+        return 1
+    logger.info("once 模式：%d 个任务全部完成", len(selected))
+    return 0
+
+
+def parse_args(argv=None):
+    """CLI：缺省 = 调度器长驻（现状不变）；--once = 跑一轮即退；--tasks 限定子集。"""
+    parser = argparse.ArgumentParser(prog="collector.scheduler.jobs", description="采集调度器（长驻 / --once 单轮）")
+    parser.add_argument(
+        "--once", action="store_true", help="顺序执行全部 enabled 任务一轮后退出（配合宿主机 cron 启停容器）"
+    )
+    parser.add_argument(
+        "--tasks", default=None, help="逗号分隔 task_code 子集（仅 --once 生效），如 --tasks index_close,etf_close"
+    )
+    return parser.parse_args(argv)
 
 
 def _freshness_patrol_job(database_url, alerter, calendar):
@@ -519,8 +604,9 @@ def load_calendar(conn):
     return TradingCalendar(dates)
 
 
-def main():
+def main(argv=None):
     # H1/L3：入口安装 requests 缺省超时（含调度器直跑的日历刷新 ak 调用；幂等，重复安装不叠加）
+    args = parse_args(argv)
     install_default_http_timeout()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     config = load()
@@ -535,7 +621,8 @@ def main():
         seed_tasks(conn, load_task_defs("tasks"))
         rows = TaskRepository(conn).list_enabled()
         tasks = [assemble_collector(r, registries) for r in rows]
-        never_succeeded = RunRepository(conn).never_succeeded([t.task_code for t in tasks])
+        # 冷启动补跑集合仅调度器路径消费；once 模式全量立即跑，无此概念。
+        never_succeeded = None if args.once else RunRepository(conn).never_succeeded([t.task_code for t in tasks])
 
     # 按需查库的日历：长期运行不依赖启动时的内存快照。
     calendar = TradingCalendar(
@@ -551,16 +638,19 @@ def main():
     # C2 悬挂 running reaper：启动时一次性清理被 kill 留下的 running 行（cutoff 一天），有则告警留痕
     reap_stale_running_once(config.database_url, alerter, cutoff=dt.datetime.now(dt.UTC) - dt.timedelta(days=1))
     runner = TaskRunner(config.database_url, calendar, executor, alerter=alerter)
-    scheduler = build_scheduler(
-        tasks,
-        runner,
-        never_succeeded=never_succeeded,
-        calendar_refresher=lambda: refresh_calendar_job(config.database_url),
-        patrol_fn=_freshness_patrol_job(config.database_url, alerter, calendar),
-    )
-    logger.info("调度器启动：%d 个任务，冷启动补跑 %d 个", len(tasks), len(never_succeeded))
-    scheduler.start()
+    if not args.once:
+        scheduler = build_scheduler(
+            tasks,
+            runner,
+            never_succeeded=never_succeeded,
+            calendar_refresher=lambda: refresh_calendar_job(config.database_url),
+            patrol_fn=_freshness_patrol_job(config.database_url, alerter, calendar),
+        )
+        logger.info("调度器启动：%d 个任务，冷启动补跑 %d 个", len(tasks), len(never_succeeded))
+        scheduler.start()
+        return None
+    return run_once(tasks, runner, config.database_url, calendar, alerter, only=args.tasks)
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

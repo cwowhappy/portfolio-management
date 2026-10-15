@@ -615,7 +615,8 @@ def test_main_wires_startup_reaper_before_scheduler():
             return sched  # side_effect 非 DEFAULT 时返回值取代 return_value，须回传 sched
 
         build_scheduler.side_effect = _record_scheduler
-        main()
+        # main(argv) 缺省读 sys.argv（pytest 运行时会带上测试参数），显式传 [] 表示无 CLI 参数
+        main([])
     (cutoff,), _ = run_repo_cls.return_value.reap_stale_running.call_args
     age = dt.datetime.now(dt.UTC) - cutoff
     assert dt.timedelta(hours=23) < age < dt.timedelta(hours=25)  # cutoff 一天

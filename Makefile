@@ -95,7 +95,12 @@ smoke:
 	bash scripts/smoke.sh
 
 ## 估值数据采集（Python collector）
-.PHONY: collect collect-test collect-run collect-backfill industry-stock-backfill
+.PHONY: collect collect-test collect-run collect-backfill collector-once industry-stock-backfill
+
+## 单轮跑全部 enabled 任务后退出（一次性容器，绕开 restart: unless-stopped；TASKS=<a,b> 可选过滤）
+## 配合宿主机 cron 启停容器：先 up db backend，再本目标，最后 down（见 README「定时窗口部署」）
+collector-once:
+	docker compose run --rm collector python -m collector.scheduler.jobs --once $(if $(TASKS),--tasks $(TASKS))
 
 ## 列任务
 collect:
