@@ -4,7 +4,7 @@ import sys
 import psycopg
 
 from collector.backfill import run_backfill
-from collector.config import load
+from collector.config import DB_CONNECT_TIMEOUT_SECONDS, load
 from collector.executor.executor import AllSourcesFailed, Executor, StoreError
 from collector.executor.selector import SourceSelector
 from collector.repositories.backfill import BackfillProgressRepository
@@ -18,6 +18,7 @@ from collector.scheduler.jobs import (
     seed_tasks,
 )
 from collector.scheduler.runner import TaskRunner
+from collector.sources.http_guard import install_default_http_timeout
 from collector.store.writer import Store
 
 
@@ -58,14 +59,22 @@ COMMAND_REQUIRED_KEYS = {
     "list": ("database_url",),
     "history": ("database_url",),
 }
+# C6-P3-9（2026-10-15 审查）：run/backfill 对纯 akshare/HTTP 任务也强制 token——
+# 保守可接受（装配全部数据源），报错文案注明语境，避免用户误判为过度强制。
+FULL_ASSEMBLY_HINT = "run/backfill 装配全部数据源，故需全部数据源密钥"
 
 
 def main(argv=None):
+    # H1/L3：入口安装 requests 缺省超时（akshare 内部无超时调用点获得上界；幂等，重复安装不叠加）
+    install_default_http_timeout()
     args = build_parser().parse_args(argv)
-    config = load(required=COMMAND_REQUIRED_KEYS[args.command])
+    config = load(
+        required=COMMAND_REQUIRED_KEYS[args.command],
+        hint=FULL_ASSEMBLY_HINT if args.command in ("run", "backfill") else None,
+    )
     registries = None  # 仅 run/backfill 需要（下方惰性构建）；只读命令不实例化数据源
 
-    with psycopg.connect(config.database_url) as conn:
+    with psycopg.connect(config.database_url, connect_timeout=DB_CONNECT_TIMEOUT_SECONDS) as conn:
         if args.command == "seed":
             defs = load_task_defs("tasks")
             if args.dry_run:

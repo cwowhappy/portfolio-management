@@ -146,7 +146,7 @@ def test_cli_wires_progress_repo(pg_conn, monkeypatch):
     pg_conn.commit()
     runner = MagicMock()
     runner.run.return_value = RunResult("t", MODE_BACKFILL, STATUS_SUCCESS)
-    monkeypatch.setattr(cli, "load", lambda required=None: MagicMock(database_url="unused"))
+    monkeypatch.setattr(cli, "load", lambda required=None, hint=None: MagicMock(database_url="unused"))
     registries = {k: MagicMock() for k in ("source", "converter", "calc", "validator")}
     monkeypatch.setattr(cli, "build_registries", lambda cfg: registries)
     monkeypatch.setattr(cli, "TaskRunner", lambda *a, **k: runner)

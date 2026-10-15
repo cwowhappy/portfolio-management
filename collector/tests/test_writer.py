@@ -124,6 +124,29 @@ def test_upsert_missing_required_column_fails_fast():
     conn.commit.assert_not_called()
 
 
+def test_upsert_keyset_check_is_union_not_first_row():
+    """C6-P3-6（2026-10-15 审查）：键集校验升级为全量并集——不再依赖「首行代表性」：
+    首行缺列但后续行携带，即视为批次具备该列（O(n) 一遍并集；现有 producer 均同质，
+    此处锁并集语义，消除只查首行的理论缝）。"""
+    store = Store()
+    conn = MagicMock()
+    full = {
+        "trading_day": dt.date(2026, 8, 28),
+        "stock_code": "600519",
+        "stock_name": "贵州茅台",
+        "pe_ttm": 22.5,
+        "pb": 7.8,
+        "dividend_yield": 2.1,
+        "total_mv": 2.1e12,
+        "circ_mv": 2.1e12,
+        "turnover_rate": 0.35,
+        "close": 1500.0,
+    }
+    first_broken = {k: v for k, v in full.items() if k != "close"}
+    assert store.upsert(conn, "stock_valuation_daily", [first_broken, full]) == 2
+    conn.cursor.assert_called()  # 并集具备全部必需列 → 不拒绝、正常写入
+
+
 def test_upsert_idempotent(pg_conn):
     store = Store()
     day = dt.date(2026, 8, 28)

@@ -2,6 +2,8 @@
 
 daily_basic 相关助手被个股域（估值快照主/备源）与行业域（JOIN 源）复用，
 属 tushare 口径公共件，故不归入单一域模块（2026-10-12 审查 C4 拆分）。
+trade_cal 回溯（_open_days_desc）亦收敛于此：指数域（调仓日回溯）与 ETF 域
+（_target_days 目标交易日序列，2026-10-15 审查 C6-P3-7）共用，口径单一。
 """
 
 import datetime as dt
@@ -41,6 +43,8 @@ def _open_days_desc(pro, end_ymd, lookback=45):
     """end（含）往前 lookback 自然日内的开市日（trade_cal），按降序。
 
     lookback 取 45 自然日：index_weight 仅在调仓日发布，需能回溯到最近一个调仓日。
+    ETF 域 _target_days 以 lookback=区间跨度/RECENT_OPEN_LOOKBACK_DAYS 复用本函数
+    （C6-P3-7，2026-10-15 审查：trade_cal 回溯口径收敛，勿再建平行实现）。
     """
     end = dt.datetime.strptime(end_ymd, "%Y%m%d").date()
     start = end - dt.timedelta(days=lookback)

@@ -15,7 +15,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from collector.calc.registry import CalcRegistry
 from collector.calc.snapshot import IndustryValuationCalc, SnapshotCalc
-from collector.config import load
+from collector.config import DB_CONNECT_TIMEOUT_SECONDS, load
 from collector.converters.field_mapping import FieldMappingConverter
 from collector.converters.registry import ConverterRegistry
 from collector.executor.executor import Executor
@@ -35,6 +35,7 @@ from collector.sources.etf import (
     GoldEtfCloseSource,
     TrackingIndexCloseSource,
 )
+from collector.sources.http_guard import install_default_http_timeout
 from collector.sources.index import (
     BondIndexCloseSource,
     IndexCloseSource,
@@ -159,7 +160,7 @@ def _freshness_patrol_job(database_url, alerter, calendar):
         if not calendar.is_trading_day(dt.date.today()):
             logger.info("新鲜度巡检跳过：今日非交易日")
             return
-        with psycopg.connect(database_url) as conn:
+        with psycopg.connect(database_url, connect_timeout=DB_CONNECT_TIMEOUT_SECONDS) as conn:
             findings = run_freshness_patrol(conn)
         if not findings:
             logger.info("新鲜度巡检通过：8 张规则表全部就绪")
@@ -179,7 +180,7 @@ def reap_stale_running_once(database_url, alerter, cutoff):
     有 reap 才 warning+告警留痕；alerter 未配置（webhook 未设是常态）只打日志，不拖垮启动。
     非周期 reaper：仅启动时执行一次（决策口径）。
     """
-    with psycopg.connect(database_url) as conn:
+    with psycopg.connect(database_url, connect_timeout=DB_CONNECT_TIMEOUT_SECONDS) as conn:
         reaped = RunRepository(conn).reap_stale_running(cutoff)
     if not reaped:
         return 0
@@ -408,7 +409,14 @@ def build_registries(config):
         return ts.pro_api(config.tushare_token)
 
     def conn_factory():
-        return psycopg.connect(config.database_url)
+        return psycopg.connect(config.database_url, connect_timeout=DB_CONNECT_TIMEOUT_SECONDS)
+
+    def stock_valuation_daily_backup():
+        """备源装配：先建实例再注入开市判定——判定闭包需源实例句柄（C5），trade_cal 故障
+        降级放行的 warning 挂 source.last_warnings，经 executor 合入 run.message 落 DB。"""
+        src = StockValuationDailyBackupSource("stock_valuation_daily_backup")
+        src.is_open_day = make_open_day_check(pro, source=src)
+        return src
 
     source_reg = SourceRegistry(
         tushare_token=config.tushare_token,
@@ -426,10 +434,9 @@ def build_registries(config):
             "index_constituent": IndexConstituentSource("index_constituent", pro_factory=pro),
             "all_a_spot_backup": AllASpotBackupSource("all_a_spot_backup", pro_factory=pro),
             "stock_valuation_daily": StockValuationDailySource("stock_valuation_daily", pro_factory=pro),
-            # MS-28 P2-C5：备源注入开市判定（trade_cal 单日），节假日空帧保护
-            "stock_valuation_daily_backup": StockValuationDailyBackupSource(
-                "stock_valuation_daily_backup", is_open_day=make_open_day_check(pro)
-            ),
+            # MS-28 P2-C5：备源注入开市判定（trade_cal 单日），节假日空帧保护；
+            # 装配形态见 stock_valuation_daily_backup()——判定闭包持有源实例句柄（C5）
+            "stock_valuation_daily_backup": stock_valuation_daily_backup(),
             "stock_financial": StockFinancialSource("stock_financial", pro_factory=pro),
             "index_close": IndexCloseSource("index_close", pro_factory=pro),
             "industry_index_close": IndustryIndexCloseSource("industry_index_close"),
@@ -498,7 +505,7 @@ def check_calendar_staleness(conn, today=None):
 def refresh_calendar_job(database_url):
     """APScheduler 定期刷新入口：自建连接，异常只记日志不拖垮调度器。"""
     try:
-        with psycopg.connect(database_url) as conn:
+        with psycopg.connect(database_url, connect_timeout=DB_CONNECT_TIMEOUT_SECONDS) as conn:
             refresh_calendar(conn)
             check_calendar_staleness(conn)
     except Exception:
@@ -513,6 +520,8 @@ def load_calendar(conn):
 
 
 def main():
+    # H1/L3：入口安装 requests 缺省超时（含调度器直跑的日历刷新 ak 调用；幂等，重复安装不叠加）
+    install_default_http_timeout()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     config = load()
     alembic_cfg = AlembicConfig("migrations/alembic.ini")
@@ -520,7 +529,7 @@ def main():
     command.upgrade(alembic_cfg, "head")
 
     registries = build_registries(config)
-    with psycopg.connect(config.database_url) as conn:
+    with psycopg.connect(config.database_url, connect_timeout=DB_CONNECT_TIMEOUT_SECONDS) as conn:
         refresh_calendar(conn)
         check_calendar_staleness(conn)
         seed_tasks(conn, load_task_defs("tasks"))
@@ -529,7 +538,9 @@ def main():
         never_succeeded = RunRepository(conn).never_succeeded([t.task_code for t in tasks])
 
     # 按需查库的日历：长期运行不依赖启动时的内存快照。
-    calendar = TradingCalendar(conn_factory=lambda: psycopg.connect(config.database_url))
+    calendar = TradingCalendar(
+        conn_factory=lambda: psycopg.connect(config.database_url, connect_timeout=DB_CONNECT_TIMEOUT_SECONDS)
+    )
     selector = SourceSelector()
     store = Store()
     executor = Executor(selector, store)

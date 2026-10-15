@@ -433,3 +433,27 @@ def test_run_store_error_exits_1(mocker, capsys):
         main(["run", "t"])
     assert e.value.code == 1
     assert "采集失败" in capsys.readouterr().out
+
+
+def test_run_missing_token_error_explains_full_assembly(monkeypatch):
+    """C6-P3-9（2026-10-15 审查）：run/backfill 强制全部密钥的报错注明语境——
+    装配全部数据源，即便目标任务本身不用 tushare（避免用户误判为过度强制）。"""
+    import collector.config as config_module
+
+    monkeypatch.setattr(config_module, "load_dotenv", lambda: None)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://x")
+    monkeypatch.delenv("TUSHARE_TOKEN", raising=False)
+    with pytest.raises(SystemExit, match="装配全部数据源") as e:
+        main(["run", "all_a_valuation"])
+    assert "TUSHARE_TOKEN" in str(e.value)
+
+
+def test_list_missing_database_url_no_full_assembly_hint(monkeypatch):
+    """只读命令的缺配置报错不附带 run/backfill 语境（hint 仅挂采集命令）。"""
+    import collector.config as config_module
+
+    monkeypatch.setattr(config_module, "load_dotenv", lambda: None)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    with pytest.raises(SystemExit) as e:
+        main(["list"])
+    assert "装配全部数据源" not in str(e.value)

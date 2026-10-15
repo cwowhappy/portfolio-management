@@ -16,7 +16,7 @@ import pandas as pd
 
 from collector.config import env_float
 from collector.sources.base import Source
-from collector.sources.common import _date_param, normalize_date
+from collector.sources.common import _date_param, _open_days_desc, normalize_date
 from collector.sources.constants import (
     ETF_DAILY_INTERVAL,
     ETF_DETAIL_HEADERS,
@@ -305,29 +305,23 @@ class EtfBasicSource(Source):
 #   计数（日志留痕，df 不含该码），Task 15 误差计算侧自然降级 null（报告 §六）。
 
 
-def _open_days(pro, start_ymd, end_ymd):
-    """trade_cal 开市日升序（YYYYMMDD 字符串）。"""
-    cal = pro.trade_cal(exchange="SSE", start_date=start_ymd, end_date=end_ymd, is_open="1")
-    if cal is None or cal.empty:
-        return []
-    return sorted(pd.to_datetime(cal["cal_date"]).dt.strftime("%Y%m%d").tolist())
-
-
 def _target_days(pro, params):
     """目标交易日序列：显式 start/end（backfill）→ 区间开市日；date → 单日；无参 → 最近一个开市日。
 
     无参回溯最近开市日而非直取今天：交易日 cron 下两者一致；周末/节假日手动补跑可自愈
-    最近交易日的缺口（upsert 幂等，重复行无害）。
+    最近交易日的缺口（upsert 幂等，重复行无害）。开市日统一走 common._open_days_desc
+    （C6，2026-10-15 审查 P3-7：trade_cal 回溯口径收敛到 common，消除本模块的语义重叠）。
     """
     if "start" in params or "end" in params:
         start = normalize_date(params.get("start") or params.get("end"), "start")
         end = normalize_date(params.get("end") or params.get("start"), "end")
-        return _open_days(pro, start, end)
+        # lookback 取区间自然日跨度：窗口恰为 [start, end]，升序后即区间开市日
+        span = (dt.datetime.strptime(end, "%Y%m%d") - dt.datetime.strptime(start, "%Y%m%d")).days
+        return sorted(_open_days_desc(pro, end, lookback=span))
     if params.get("date"):
         return [normalize_date(params["date"], "date")]
     today = dt.date.today().strftime("%Y%m%d")
-    lookback = (dt.date.today() - dt.timedelta(days=RECENT_OPEN_LOOKBACK_DAYS)).strftime("%Y%m%d")
-    return _open_days(pro, lookback, today)[-1:]
+    return _open_days_desc(pro, today, lookback=RECENT_OPEN_LOOKBACK_DAYS)[:1]
 
 
 def _index_ts_candidates(code):
@@ -481,6 +475,8 @@ class TrackingIndexCloseSource(Source):
 # 自行 UPDATE 该列（读+回写同连接同事务）；参与集 = tracking_index_code 非 null 的基金逐行回写
 # （值或 null——全量重算幂等自愈），tracking_index_code null（货币/商品现货）与指数码无日线行
 # （NDX100/N225 等 82 码探测不可得）自然降级 null。fetch 恒返回空帧走 writer 0 行写路径。
+# 僵尸写收口（H2，2026-10-15 审查）：fetch 内 UPDATE 与被放弃线程不兼容——本任务 YAML 显式
+# timeout_seconds=86400 让 fetch 超时包裹永不触发放弃（纯本地 DB 操作无需超时保护）。
 ETF_TRACKING_WINDOW_ROWS = 251  # join 后保留的最近共同交易日数（251 收盘 → 250 收益差）
 ETF_TRACKING_MIN_SAMPLES = 120  # 有效共同交易日下限（<120 → null，设计规格 §3.1）
 ETF_ANNUALIZATION = math.sqrt(252)  # 日频 std → 年化

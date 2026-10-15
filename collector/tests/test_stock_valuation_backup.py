@@ -179,3 +179,47 @@ def test_make_open_day_check_failure_logs_warning(caplog):
     with caplog.at_level("WARNING", logger="collector.sources.stock"):
         assert make_open_day_check(_boom)("20261001") is True
     assert "视为开市" in caplog.text and "tushare down" in caplog.text
+
+
+def test_make_open_day_check_failure_appends_source_warning():
+    """C5（2026-10-15 审查 P2-5）：降级放行除 logger 外 append 到源实例 last_warnings——
+    接入 executor 的 run.message 通道（DB 留痕），不再只存在于容器日志。"""
+    src = StockValuationDailyBackupSource("stock_valuation_daily_backup")
+
+    def _boom():
+        raise RuntimeError("tushare down")
+
+    src.is_open_day = make_open_day_check(_boom, source=src)
+    assert src.is_open_day("20261001") is True
+    assert src.last_warnings and "视为开市" in src.last_warnings[0] and "降级放行" in src.last_warnings[0]
+
+
+def test_degraded_open_day_warning_reaches_run_message():
+    """端到端：trade_cal 故障日快照成功，降级 warning 经 executor 合入 run.message——
+    「降级日整轮放行」级事件从容器日志提升到 DB 运行记录（飞书链可达）。"""
+    from unittest.mock import MagicMock, patch
+
+    from collector.executor.executor import Executor
+    from collector.executor.selector import SourceSelector
+    from collector.model.task import Collector
+
+    def _boom():
+        raise RuntimeError("tushare down")
+
+    src = StockValuationDailyBackupSource("stock_valuation_daily_backup", spot_fetch=lambda: _spot_frame())
+    src.is_open_day = make_open_day_check(_boom, source=src)
+    conv = MagicMock()
+    conv.convert.return_value = [{"stock_code": "600519"}]
+    val = MagicMock()
+    val.validate.return_value = ([{"stock_code": "600519"}], [])
+    task = Collector("t", "t", [src], conv, None, target_table="x", schedule={}, validator=val, enabled=True)
+    store = MagicMock()
+    store.upsert.return_value = 1
+    with (
+        patch("collector.executor.executor.HealthRepository") as H,
+        patch("collector.executor.executor.RunRepository"),
+    ):
+        H.return_value.get.return_value = {}
+        result = Executor(SourceSelector(), store).run(task, "incremental", {}, MagicMock())
+    assert result.status == "success"
+    assert result.message and "视为开市" in result.message
