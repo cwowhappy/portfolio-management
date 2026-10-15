@@ -217,12 +217,19 @@ export default function AdminBoard() {
   const [busyId, setBusyId] = useState<number | null>(null);
   const [resetTarget, setResetTarget] = useState<AdminUserView | null>(null);
   const [bindTarget, setBindTarget] = useState<AdminUserView | null>(null);
+  // 竞态守卫（沿 observability/TraceTable 先例）：不同用户行的 act() 可并发触发 refresh
+  // 交叠，后完成者须丢弃过期响应，避免列表闪回非最新快照
+  const requestSeqRef = useRef(0);
 
   const refresh = useCallback(async () => {
+    const seq = ++requestSeqRef.current;
     try {
-      setUsers(await adminApi.list());
+      const users = await adminApi.list();
+      if (seq !== requestSeqRef.current) return; // 已有更新的请求，丢弃过期响应
+      setUsers(users);
       setError(null);
     } catch (err) {
+      if (seq !== requestSeqRef.current) return;
       setError(err instanceof Error ? err.message : "加载用户列表失败");
     }
   }, []);

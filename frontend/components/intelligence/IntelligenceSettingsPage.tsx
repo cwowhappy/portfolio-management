@@ -68,20 +68,29 @@ export default function IntelligenceSettingsPage() {
   const [remainingMs, setRemainingMs] = useState(0);
 
   useEffect(() => {
+    let cancelled = false;
     Promise.all([getSubscription(), getBindingStatus()])
       .then(([view, status]) => {
+        if (cancelled) return;
         setPushEnabled(view.pushEnabled);
         setStocks(view.stocks);
         setIndustries(view.industries);
         setBinding(status);
         setLoaded(true);
       })
-      .catch((e) => setError((e as Error).message));
+      .catch((e) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : "操作失败");
+      });
     fetchValuationIndustries()
-      .then(setIndustryOptions)
+      .then((options) => {
+        if (!cancelled) setIndustryOptions(options);
+      })
       .catch(() => {
         // 行业枚举加载失败不阻塞页面：标签退回裸码展示、下拉空，保存仍可提交码集
       });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // 倒计时：每秒重算剩余有效期（expiresAt 服务端时刻，倒计时夹 0 不为负）
@@ -105,7 +114,7 @@ export default function IntelligenceSettingsPage() {
       setIndustries(view.industries);
       setOkMsg("已保存");
     } catch (e) {
-      setError((e as Error).message);
+      setError(e instanceof Error ? e.message : "操作失败");
     }
   };
 
@@ -115,7 +124,7 @@ export default function IntelligenceSettingsPage() {
     try {
       setHits(await searchStocks(q));
     } catch (e) {
-      setError((e as Error).message);
+      setError(e instanceof Error ? e.message : "操作失败");
     }
   };
 
@@ -142,7 +151,7 @@ export default function IntelligenceSettingsPage() {
         return [...prev, ...added];
       });
     } catch (e) {
-      setError((e as Error).message);
+      setError(e instanceof Error ? e.message : "操作失败");
     }
   };
 
@@ -160,7 +169,7 @@ export default function IntelligenceSettingsPage() {
     try {
       setCode(await createBindingCode());
     } catch (e) {
-      setError((e as Error).message);
+      setError(e instanceof Error ? e.message : "操作失败");
     }
   };
 
@@ -168,7 +177,7 @@ export default function IntelligenceSettingsPage() {
     try {
       setBinding(await getBindingStatus());
     } catch (e) {
-      setError((e as Error).message);
+      setError(e instanceof Error ? e.message : "操作失败");
     }
   };
 
@@ -180,7 +189,7 @@ export default function IntelligenceSettingsPage() {
       setBinding({ bound: false, boundAt: null });
       setCode(null);
     } catch (e) {
-      setError((e as Error).message);
+      setError(e instanceof Error ? e.message : "操作失败");
     }
   };
 

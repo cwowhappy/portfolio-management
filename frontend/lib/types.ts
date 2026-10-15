@@ -127,26 +127,10 @@ export type ValuationHistory = z.infer<typeof ValuationHistorySchema>;
 
 // —— 持仓组合 ——
 
-// 以下四个枚举别名在 schemas.ts 内联于各自 ViewSchema（未单独导出 schema），
-// 后端枚举字面量稳定，手写联合类型与 schema 等价
-export type GroupType = "ACCOUNT" | "TAG";
-export type TradeType = "BUY" | "SELL";
-export type DividendType = "CASH" | "STOCK";
-export type CashTransactionType = "DEPOSIT" | "WITHDRAW";
-
 export type GroupView = z.infer<typeof GroupViewSchema>;
 export type PositionView = z.infer<typeof PositionViewSchema>;
 export type PortfolioOverview = z.infer<typeof PortfolioOverviewSchema>;
 export type TradeView = z.infer<typeof TradeViewSchema>;
-
-/** 分红记录视图：schemas.ts 暂无对应 schema（该视图无 zod 边界校验），保留手写。 */
-export interface DividendView {
-  id: number;
-  type: DividendType;
-  exDate: string;
-  cashPerShare: number | null;
-  stockRatio: number | null;
-}
 
 export type CashTransactionView = z.infer<typeof CashTransactionViewSchema>;
 export type AllocationSlice = z.infer<typeof AllocationSliceSchema>;

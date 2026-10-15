@@ -1,5 +1,5 @@
 "use client";
-// 研究项目列表页（F07）：薄壳——过滤/搜索/归档逻辑在 components/research/ResearchBoard.tsx（F1 下沉）。
+// 研究项目详情页（F07）：薄壳——详情编排逻辑在 components/research/ProjectDetail.tsx（F1 下沉）。
 
 import { use } from "react";
 import { RequireAuth } from "@/components/auth/RequireAuth";

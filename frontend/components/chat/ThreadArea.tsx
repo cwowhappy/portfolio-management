@@ -10,22 +10,21 @@ import {
   useInterrupt,
   UseAgentUpdate,
 } from "@copilotkit/react-core/v2";
-import type { Message } from "@ag-ui/client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AGENT_ID,
-  agentMessagesToHistory,
   historyToAgentMessages,
   rebuildTrustFromHistory,
   useChatRuntime,
 } from "./RuntimeProvider";
-import { loadMessages, newThreadId, errorStatus } from "@/lib/conversations";
+import { loadMessages, newThreadId } from "@/lib/conversations";
 import { handleTrustCustomEvent } from "@/lib/trustMeta";
 import InterruptApprovalCard from "./InterruptApprovalCard";
 import ToolCallCard from "./ToolCallCard";
 import { ChartToolRenderers } from "./toolRenderers";
 import { Composer } from "./composer";
 import { AssistantMessage, ReasoningMessage, UserMessage, buildToolMessageMap } from "./messageRow";
+import { usePersistFlush } from "./usePersistFlush";
 
 // 模块级常量：避免每次渲染新建数组触发潜在的重订阅
 const AGENT_UPDATES = [UseAgentUpdate.OnMessagesChanged, UseAgentUpdate.OnRunStatusChanged];
@@ -183,17 +182,6 @@ export default function ThreadArea({ llmReady, onUnauthorized }: {
         <></>
       ),
   });
-  const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // 防抖窗口内待写入的快照：供「运行停止立即 flush」与「卸载/切线程 best-effort flush」使用
-  const pendingPersist = useRef<{ threadId: string; msgs: Message[] } | null>(null);
-  // flushPersist 并发序号（P2-F3，按线程隔离）：每次发起 flush 为该线程自增。运行停止
-  // flush 与防抖/keepalive flush 重叠时各自 async IIFE 并发，先发起者的 PUT 可能后完成、
-  // 以旧快照覆盖新快照——后发起的 flush 代表更新的消息快照；旧的让其自然作废（新快照会
-  // 带走内容）。必须按 threadId 隔离：跨线程 PUT 按 URL 隔离本就安全，全局序号会误杀旧
-  // 线程在途 flush——它携带的尾部内容只有它自己能写，丢弃后切回即被服务端记录覆盖（审查发现）。
-  const flushSeqByThreadRef = useRef(new Map<string, number>());
-  // 最新 currentThreadId：供防抖定时器到期 / 运行停止 flush 前校验 pending 是否已过期（双保险）
-  const currentThreadIdRef = useRef(currentThreadId);
   // agent.messages 当前内容归属的线程：成功回灌某线程历史后更新。为 null 表示尚未回灌任何线程。
   const hydratedThreadIdRef = useRef<string | null>(null);
   // 同一事实的渲染态镜像：Composer 禁发与 send 闸门依赖渲染周期（ref 不触发重渲染）。
@@ -206,11 +194,6 @@ export default function ThreadArea({ llmReady, onUnauthorized }: {
   // hydrateRetry 是重试 nonce：进回灌 effect 依赖，+1 即重跑回灌（「重试」按钮机制）。
   const [hydrateError, setHydrateError] = useState<string | null>(null);
   const [hydrateRetry, setHydrateRetry] = useState(0);
-
-  // 同步最新线程到 ref，供异步 flush 前比对 pending.threadId
-  useEffect(() => {
-    currentThreadIdRef.current = currentThreadId;
-  }, [currentThreadId]);
 
   // 同步运行状态到 Provider，供 Sidebar 在运行中禁用切换/新建
   useEffect(() => {
@@ -292,114 +275,18 @@ export default function ThreadArea({ llmReady, onUnauthorized }: {
     };
   }, [agent, isReady, currentThreadId, hydrateRetry]);
 
-  // 执行一次持久化。msgs 是调用点快照：若等待 loadMessages 期间发生切线程 + 历史回灌
-  // setMessages，agent.messages 会变成新线程的，若不快照会把新线程消息写进旧线程记录。
-  // keepalive 用于卸载场景：让 PUT 在页面销毁后仍能完成。
-  // B6 并发写：首次 PUT 携带 If-Match（GET 到的服务端 updatedAt）做乐观校验；
-  // 撞 409（其他窗口先写）→ 重新 GET 服务端消息，与本地快照按 id 做 union 后带新 If-Match
-  // 重试一次（agentMessagesToHistory 的 union 语义保证不互删）；重试仍 409 则提示用户刷新
-  // 确认——本地草稿消息保持不动，刷新后以服务端为准人工合并。
-  const flushPersist = useCallback(
-    (threadId: string, msgs: Message[], keepalive = false) => {
-      // 并发序号守卫（P2-F3）：为本线程登记快照序号，IIFE 内每个 await 之后、发起写之前
-      // 校验自己仍是该线程最新——后发起的 flush 代表更新的消息快照；旧的让其自然作废。
-      const seq = (flushSeqByThreadRef.current.get(threadId) ?? 0) + 1;
-      flushSeqByThreadRef.current.set(threadId, seq);
-      (async () => {
-        try {
-          const view = await loadMessages(threadId);
-          // 已有更新的 flush 发起：放弃本快照（新快照会带走内容），不再发起写
-          if (seq !== (flushSeqByThreadRef.current.get(threadId) ?? 0)) {
-            console.debug("[ThreadArea] 过期 flush 丢弃", threadId, seq);
-            return;
-          }
-          const saved = agentMessagesToHistory(msgs, view.messages);
-          if (saved.length === 0) return;
-          try {
-            await persistMessages(threadId, saved, { keepalive, ifMatch: view.updatedAt });
-            return;
-          } catch (e) {
-            if (errorStatus(e) !== 409) throw e;
-          }
-          const refreshed = await loadMessages(threadId);
-          // 重试 PUT 前同样校验：已有更新的 flush 发起即放弃，新快照会带走内容
-          if (seq !== (flushSeqByThreadRef.current.get(threadId) ?? 0)) {
-            console.debug("[ThreadArea] 过期 flush 丢弃", threadId, seq);
-            return;
-          }
-          const merged = agentMessagesToHistory(msgs, refreshed.messages);
-          try {
-            await persistMessages(threadId, merged, { keepalive, ifMatch: refreshed.updatedAt });
-          } catch (retryErr) {
-            if (errorStatus(retryErr) !== 409) throw retryErr;
-            setSendError("会话在其他窗口被修改，请刷新确认");
-          }
-        } catch (e) {
-          console.error("[ThreadArea] 持久化会话失败", threadId, e);
-        }
-      })();
-    },
-    [persistMessages],
-  );
-
-  // 消息变化 → 防抖持久化（流式期间高频触发，避免每个 token 都整段重写；400ms 后先拉取现有历史再整体 PUT）
-  useEffect(() => {
-    // 双保险 (1)：切线程/历史回灌完成前，agent.messages 仍是旧线程内容，不启动新线程的防抖持久化，
-    // 否则 400ms 后 flushPersist(newThreadId, oldMsgs) 会把旧会话内容 PUT 覆盖新线程服务端记录。
-    const hydrated = hydratedThreadIdRef.current;
-    if (hydrated !== null && hydrated !== currentThreadId) {
-      pendingPersist.current = null;
-      return;
-    }
-    pendingPersist.current = { threadId: currentThreadId, msgs: agent.messages ?? [] };
-    if (persistTimer.current) clearTimeout(persistTimer.current);
-    persistTimer.current = setTimeout(() => {
-      persistTimer.current = null;
-      const pending = pendingPersist.current;
-      pendingPersist.current = null;
-      // 双保险 (2)：防抖到期时线程已切换（pending.threadId 落后于 currentThreadId）则丢弃快照。
-      // 旧线程快照的落库由「卸载/切线程 cleanup」以 keepalive flush 负责。
-      if (pending && pending.threadId === currentThreadIdRef.current) {
-        flushPersist(pending.threadId, pending.msgs);
-      }
-    }, 400);
-    return () => {
-      if (persistTimer.current) {
-        clearTimeout(persistTimer.current);
-        persistTimer.current = null;
-      }
-    };
-  }, [agent.messages, currentThreadId, flushPersist]);
-
-  // 运行结束（isRunning true→false）立即 flush：防抖窗口内的尾部内容不等 400ms，避免停止即丢尾
-  const prevRunning = useRef(agent.isRunning);
-  useEffect(() => {
-    const wasRunning = prevRunning.current;
-    prevRunning.current = agent.isRunning;
-    if (!wasRunning || agent.isRunning) return;
-    if (persistTimer.current) {
-      clearTimeout(persistTimer.current);
-      persistTimer.current = null;
-    }
-    const pending = pendingPersist.current;
-    pendingPersist.current = null;
-    // 运行期间 RuntimeProvider 已禁止切线程，此处校验 pending.threadId === 当前线程为双保险
-    if (pending && pending.threadId === currentThreadIdRef.current) {
-      flushPersist(pending.threadId, pending.msgs);
-    }
-  }, [agent.isRunning, flushPersist]);
-
-  // 卸载/切换线程时，把仍在防抖窗口内的 pending 写入 best-effort flush（keepalive 保证请求送达）。
-  // 声明在防抖 effect 之后：cleanup 按声明顺序执行，先停掉旧定时器，再 flush 旧线程快照。
-  useEffect(() => {
-    return () => {
-      const pending = pendingPersist.current;
-      if (pending && pending.threadId === currentThreadId) {
-        pendingPersist.current = null;
-        flushPersist(pending.threadId, pending.msgs, true);
-      }
-    };
-  }, [currentThreadId, flushPersist]);
+  // flush 持久化（debounce + 三处 flush + 409 合并重试）已抽为 usePersistFlush（P4-F3）；
+  // 409 重试仍冲突时透出横幅。回调须稳定（setSendError 为稳定 setter），否则 flushPersist
+  // 身份每渲染变化会使防抖 effect 失效重跑。
+  const onMergeConflict = useCallback(() => setSendError("会话在其他窗口被修改，请刷新确认"), []);
+  usePersistFlush({
+    currentThreadId,
+    messages: agent.messages,
+    isRunning: agent.isRunning,
+    hydratedThreadIdRef,
+    persistMessages,
+    onMergeConflict,
+  });
 
   // ?? [] 移入 memo 内、依赖 prop 本体：否则每次渲染新空数组使下方 Map memo 恒重算（exhaustive-deps）
   const messages = useMemo(() => agent.messages ?? [], [agent.messages]);

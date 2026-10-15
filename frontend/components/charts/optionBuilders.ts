@@ -17,8 +17,12 @@ export interface BuilderStyle {
 const FALLBACK_UP = "#e85b55";
 const FALLBACK_DOWN = "#2fbe8f";
 
-const colorAt = (style: BuilderStyle | undefined, i: number) =>
-  style?.seriesColors?.[i % style.seriesColors!.length];
+const colorAt = (style: BuilderStyle | undefined, i: number) => {
+  const colors = style?.seriesColors;
+  // 显式长度判断：空数组/undefined 均回退主题配色（i % 0 = NaN 的隐式路径消除）
+  if (!colors || colors.length === 0) return undefined;
+  return colors[i % colors.length];
+};
 
 export function buildPieOption(spec: PieSpec, style?: BuilderStyle): ECOption {
   return {
