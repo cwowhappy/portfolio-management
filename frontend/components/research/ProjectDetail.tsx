@@ -151,6 +151,7 @@ export default function ProjectDetail({ projectId }: { projectId: number }) {
               id="project-title" aria-label="项目标题"
               className="w-full rounded-md border border-[color:var(--color-line)] px-3 py-1.5 text-sm"
               value={titleDraft}
+              disabled={acting}
               onChange={(e) => setTitleDraft(e.target.value)}
             />
           </div>
@@ -161,6 +162,7 @@ export default function ProjectDetail({ projectId }: { projectId: number }) {
               id="project-stage" aria-label="当前阶段"
               className="rounded-md border border-[color:var(--color-line)] px-3 py-1.5 text-sm"
               value={stageDraft}
+              disabled={acting}
               onChange={(e) => setStageDraft(e.target.value as ResearchStage)}
             >
               {RESEARCH_STAGES.map((s) => (

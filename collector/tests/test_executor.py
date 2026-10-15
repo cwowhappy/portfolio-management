@@ -6,7 +6,7 @@ import pytest
 from collector.executor.executor import AllSourcesFailed, Executor, StoreError
 from collector.executor.selector import SourceSelector
 from collector.model.task import Collector
-from collector.sources.base import SourceError
+from collector.sources.base import Source, SourceError
 from collector.validators.rules import RuleValidator
 
 
@@ -210,3 +210,24 @@ def test_no_candidates_records_failed_run_without_raising(repos):
     assert res.status == "failed"
     assert res.message == "所有源熔断或不可用"
     repos.record.assert_called_once_with("t", "incremental", "failed", message="所有源熔断或不可用", params={})
+
+
+def test_reset_observability_before_fetch_prevents_cross_run_leak(repos):
+    """C6-③（2026-10-15 审查 P3-8）：executor fetch 前统一重置观测状态——源实例残留的
+    上一轮 last_warnings 不会串扰进本轮 run.message（机制兜底，替代「每个源自觉重置」）。"""
+
+    class _SilentSource(Source):
+        source_id = "a"
+        supports_range = False
+
+        def fetch(self, params):
+            return MagicMock()
+
+    store = MagicMock()
+    store.upsert.return_value = 1
+    src = _SilentSource()
+    src.last_warnings = ["上一轮残留告警"]
+    ex = Executor(SourceSelector(), store)
+    ex.run(_task([src]), "incremental", {}, MagicMock())
+    assert src.last_warnings is None  # 钩子已重置，本轮无告警
+    assert repos.record.call_args.kwargs["message"] is None  # 残留告警未串扰 run.message

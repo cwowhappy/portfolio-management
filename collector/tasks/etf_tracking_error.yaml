@@ -7,7 +7,10 @@ task_name: ETF跟踪误差近1年重算
 # 依赖显式化（C1）：cron 30 16 晚于两上游（tracking_index_close 15:50 / etf_close 15:55）只是
 # 时间兜底，运行时前置检查以 depends_on 为准——上游当日无 success/partial run 则 skipped + 告警。
 source_ids:
-  - { source_id: etf_tracking_error, type: plugin, class: etf_tracking_error }
+  # timeout_seconds=86400：纯本地 DB→DB 重算无外部调用，本不需要超时保护；fetch 超时包裹的
+  # 「放弃线程」对它是僵尸写风险——线程内 UPDATE 晚提交而 run 已 failed（2026-10-15 审查 H2）。
+  # 显式大值让包裹永不触发放弃（HTTP 源缺省 90s 注入不影响本路径，见 sources/http_guard.py）。
+  - { source_id: etf_tracking_error, type: plugin, class: etf_tracking_error, timeout_seconds: 86400 }
 converter: field_mapping_etf_basic
 calc: null
 validator: null

@@ -18,15 +18,16 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+/**
+ * domain 解析器测试（供应商无关）：东财 wire fixture 已平移至
+ * {@code infrastructure/market/EastmoneyFormatTest}，本类改以 {@code Raw*} 中间结构构造入参
+ * （2026-10-15 L2 下沉），断言语义与下沉前一致；新浪/腾讯文本兜底解析用例维持原状
+ * （L2-二期）。
+ */
 class MarketDataParserTest {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static JsonNode quoteJson;
-    private static JsonNode klineJson;
-    private static JsonNode searchJson;
-    private static JsonNode financialsJson;
-    private static JsonNode newsJson;
-    private static JsonNode overviewJson;
     private static String sinaRaw;
     private static String tencentRaw;
     private static String tencentIndicesRaw;
@@ -34,19 +35,14 @@ class MarketDataParserTest {
     @BeforeAll
     static void loadFixtures() throws IOException {
         quoteJson = fixture("eastmoney-quote.json");
-        klineJson = fixture("eastmoney-kline.json");
-        searchJson = fixture("eastmoney-search.json");
-        financialsJson = fixture("eastmoney-financials.json");
-        newsJson = fixture("eastmoney-news.json");
-        overviewJson = fixture("eastmoney-overview.json");
         sinaRaw = fixtureText("sina-quote.txt");
         tencentRaw = fixtureText("tencent-quote.txt");
         tencentIndicesRaw = fixtureText("tencent-indices.txt");
     }
 
-    @DisplayName("东财行情JSON解析出报价")
+    @DisplayName("东财行情中间结构解析出报价")
     @Test
-    void givenEastmoneyQuoteJson_whenParseQuote_thenReturnQuote() {
+    void givenEastmoneyQuoteRaw_whenParseQuote_thenReturnQuote() {
         Quote q = MarketDataParser.parseQuote(EastmoneyFormat.extractQuote(quoteJson));
         assertThat(q.code()).isEqualTo("600519");
         assertThat(q.name()).isEqualTo("贵州茅台");
@@ -70,60 +66,80 @@ class MarketDataParserTest {
         assertThat(q.time()).isEqualTo("2026-08-18 14:35:00");
     }
 
-    @DisplayName("东财K线JSON解析出K线柱")
+    @DisplayName("东财K线中间结构解析出K线柱并完成手→股归一化")
     @Test
-    void givenEastmoneyKlineJson_whenParseKline_thenReturnBars() {
-        List<KlineBar> bars = MarketDataParser.parseKline(klineJson);
+    void givenKlineRaws_whenParseKline_thenReturnBars() {
+        List<RawKlineBar> raws = List.of(
+                new RawKlineBar("2026-08-14", 1405.00, 1410.50, 1412.00, 1400.00, 22110, 3123456789.00, 0.85),
+                new RawKlineBar("2026-08-15", 1410.50, 1418.00, 1420.00, 1408.00, 19876, 2812345678.00, 0.85),
+                new RawKlineBar("2026-08-18", 1418.00, 1415.00, 1428.00, 1405.50, 23456, 3312345678.00, 1.59));
+        List<KlineBar> bars = MarketDataParser.parseKline(raws);
         assertThat(bars).hasSize(3);
         assertThat(bars.get(0).date()).isEqualTo("2026-08-14");
         assertThat(bars.get(2).close()).isEqualTo(1415.0);
         assertThat(bars.get(2).volume()).isEqualTo(2345600L);
     }
 
-    @DisplayName("东财搜索JSON解析出命中并过滤指数")
+    @DisplayName("股票搜索中间结构解析出命中并归一化市场名（非A股过滤已下沉infrastructure）")
     @Test
-    void givenEastmoneySearchJson_whenParseSearch_thenReturnHitsAndFilterIndices() {
-        List<StockHit> hits = MarketDataParser.parseSearch(searchJson);
+    void givenStockHitRaws_whenParseSearch_thenReturnHitsWithMarketName() {
+        List<RawStockHit> raws = List.of(
+                new RawStockHit("600519", "贵州茅台", "1", "沪A"),
+                new RawStockHit("000858", "五粮液", "0", "深A"));
+        List<StockHit> hits = MarketDataParser.parseSearch(raws);
         assertThat(hits).hasSize(2);
         assertThat(hits.get(0).code()).isEqualTo("600519");
         assertThat(hits.get(0).marketName()).isEqualTo("沪市");
-        assertThat(hits).noneMatch(h -> "上证指数".equals(h.name()));
+        assertThat(hits.get(1).marketName()).isEqualTo("深市");
     }
 
     @DisplayName("北交所代码映射到北交所市场")
     @Test
-    void givenBeijingStockCode_whenParseSearch_thenMapToBeijingMarket() throws IOException {
-        JsonNode node = MAPPER.readTree(
-                "{\"QuotationCodeTable\":{\"Data\":["
-                        + "{\"Code\":\"830799\",\"Name\":\"艾融软件\",\"MktNum\":\"0\",\"SecurityTypeName\":\"北A\"}]}}");
-        List<StockHit> hits = MarketDataParser.parseSearch(node);
+    void givenBeijingStockCode_whenParseSearch_thenMapToBeijingMarket() {
+        List<StockHit> hits = MarketDataParser.parseSearch(
+                List.of(new RawStockHit("830799", "艾融软件", "0", "北A")));
         assertThat(hits).hasSize(1);
         assertThat(hits.get(0).marketName()).isEqualTo("北交所");
     }
 
-    @DisplayName("财务JSON构建出财务指标")
+    @DisplayName("财务中间结构构建出财务指标并截断报告期")
     @Test
-    void givenFinancialJson_whenBuildFinancials_thenReturnFinancials() {
-        Financials f = MarketDataParser.buildFinancials("600519", "贵州茅台", 21.35, 7.82, financialsJson);
+    void givenFinancialRaws_whenBuildFinancials_thenReturnFinancials() {
+        List<RawFinancialIndicator> raws = List.of(
+                new RawFinancialIndicator("2025-12-31 00:00:00", 68.26, 210.32,
+                        174100000000.0, 86200000000.0, 34.12, 91.90),
+                new RawFinancialIndicator("2024-12-31 00:00:00", 62.00, 195.10,
+                        164900000000.0, 81500000000.0, 33.50, 91.60));
+        Financials f = MarketDataParser.buildFinancials("600519", "贵州茅台", 21.35, 7.82, raws);
         assertThat(f.pe()).isEqualTo(21.35);
         assertThat(f.indicators()).hasSize(2);
         assertThat(f.indicators().get(0).reportDate()).isEqualTo("2025-12-31");
         assertThat(f.indicators().get(0).weightedRoe()).isEqualTo(34.12);
     }
 
-    @DisplayName("新闻JSON解析剥离HTML并返回条目")
+    @DisplayName("新闻中间结构解析剥离HTML并返回条目")
     @Test
-    void givenNewsJson_whenParseNews_thenStripHtmlAndReturnItems() {
-        List<NewsItem> items = MarketDataParser.parseNews(newsJson);
+    void givenNewsRaws_whenParseNews_thenStripHtmlAndReturnItems() {
+        List<RawNewsItem> raws = List.of(
+                new RawNewsItem("贵州茅台发布2025年度报告",
+                        "贵州茅台<em>发布</em>2025年年度报告，营收与净利润保持增长&nbsp;……",
+                        "证券时报", "2026-04-01 20:00:00", "https://finance.eastmoney.com/a/1.html"),
+                new RawNewsItem("北向资金增持贵州茅台", "数据显示北向资金近期持续增持……",
+                        "东方财富网", "2026-04-02 09:30:00", "https://finance.eastmoney.com/a/2.html"));
+        List<NewsItem> items = MarketDataParser.parseNews(raws);
         assertThat(items).hasSize(2);
         assertThat(items.get(0).title()).isEqualTo("贵州茅台发布2025年度报告");
         assertThat(items.get(0).summary()).doesNotContain("<em>").doesNotContain("&nbsp;");
     }
 
-    @DisplayName("大盘JSON构建出指数速览")
+    @DisplayName("指数中间结构构建出指数速览")
     @Test
-    void givenOverviewJson_whenBuildOverview_thenReturnIndices() {
-        MarketOverview o = MarketDataParser.buildOverview(overviewJson);
+    void givenIndexRaws_whenBuildOverview_thenReturnIndices() {
+        List<RawIndexQuote> raws = List.of(
+                new RawIndexQuote("000001", "上证指数", 3250.10, 27.40, 0.85),
+                new RawIndexQuote("399001", "深证成指", 10680.50, 126.60, 1.20),
+                new RawIndexQuote("399006", "创业板指", 2150.30, -7.55, -0.35));
+        MarketOverview o = MarketDataParser.buildOverview(raws);
         assertThat(o.indices()).hasSize(3);
         assertThat(o.indices().get(0).code()).isEqualTo("000001");
         assertThat(o.indices().get(0).changePct()).isEqualTo(0.85);
@@ -192,7 +208,7 @@ class MarketDataParserTest {
         assertThat(MarketDataParser.normalizeVolume(3872283, 5.007e9, 1297.99)).isEqualTo(3872283L);
     }
 
-    @DisplayName("空行情JSON解析抛异常")
+    @DisplayName("空行情帧解析抛异常（data缺失，infrastructure侧口径）")
     @Test
     void givenEmptyQuoteJson_whenParseQuote_thenThrowBadResponse() {
         assertThatThrownBy(() -> EastmoneyFormat.parseQuote(MAPPER.createObjectNode()))

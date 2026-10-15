@@ -51,6 +51,7 @@ public class ScenarioContext {
     private Long falsifierHitId;
     private Long firstFalsifierReviewId;
     private Long lastFalsifierReviewId;
+    private Long evalRunId;
     private String intelligenceNewsJson;
     private String intelligenceAnnouncementJson;
     private String intelligenceMacroBriefJson;
@@ -267,6 +268,14 @@ public class ScenarioContext {
 
     public void setLastFalsifierReviewId(Long lastFalsifierReviewId) {
         this.lastFalsifierReviewId = lastFalsifierReviewId;
+    }
+
+    public Long getEvalRunId() {
+        return evalRunId;
+    }
+
+    public void setEvalRunId(Long evalRunId) {
+        this.evalRunId = evalRunId;
     }
 
     public String getIntelligenceNewsJson() {

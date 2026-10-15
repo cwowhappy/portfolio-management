@@ -213,6 +213,10 @@ public class EvalHarvester {
             reasons.add("token 预算超限中止: 剩余题未跑即中止（invest.eval.token-budget，不任 baseline 候选）");
         }
 
+        // 短码先算（审查 §三.4）：SHA-256 缺席的 IllegalStateException 若落在告警路径——
+        // 终态已落 COMPLETED 会被 harvest 兜底覆写 FAILED；挪到落库前则行直接 FAILED，终态一致
+        String versionShortCode = versionShortCode(promptVersions);
+
         // —— ⑦ 落库（judge 结论后写；total_fail 落合并口径 = 原始 fail + error） + 报告归档 ——
         Path archived = archiveReport(runId, reportPath);
         runRepository.updateHarvested(runId, new EvalRunHarvest(status, Instant.now(clock),
@@ -224,7 +228,7 @@ public class EvalHarvester {
         // —— ⑧ 告警（留痕以库表为准 NFR-7，飞书/邮件是通知通道；恢复卡只在候选置位时发——
         //     PARTIAL 恢复数字不可靠，「待人工确认」不成立） ——
         if (EvalRunRow.ALERT_DEGRADED.equals(alertStatus)) {
-            sendDegradedAlert(runId, verdict, questionBankHash, promptVersions, pass, fail, error);
+            sendDegradedAlert(runId, verdict, questionBankHash, versionShortCode, pass, fail, error);
         } else if (baselineCandidate) {
             sendRecoveredAlert(runId, verdict, pass, fail, error);
         }
@@ -416,16 +420,20 @@ public class EvalHarvester {
 
     // ———— 告警（§3.2 文案与状态机） ————
 
-    /** 劣化卡（红）：判定理由行直取（降幅/翻转/分类数字已在 reasons）+ 运行定位 + 基准指纹。 */
+    /**
+     * 劣化卡（红）：判定理由行直取（降幅/翻转/分类数字已在 reasons）+ 运行定位 + 基准指纹。
+     * versionShortCode 由调用方在终态落库前算好传入——短码异常不再把已落 COMPLETED 行经
+     * harvest 兜底覆写 FAILED。
+     */
     private void sendDegradedAlert(long runId, JudgeVerdict verdict, String questionBankHash,
-                                   Map<String, Integer> promptVersions, int pass, int fail, int error) {
+                                   String versionShortCode, int pass, int fail, int error) {
         String title = "【eval 回归告警】" + LocalDate.now(clock);
         List<String> lines = new ArrayList<>();
         lines.add("总通过率：" + passRate(pass, fail, error));
         lines.addAll(verdict.reasons());
         lines.add("运行：eval_run#" + runId + "（明细见 eval_run 行与报告归档）");
         lines.add("基准：题库 hash " + shortHash(questionBankHash)
-                + " / 提示词版本 " + versionShortCode(promptVersions));
+                + " / 提示词版本 " + versionShortCode);
         boolean ok = notifier.send(title, "red", lines);
         if (!ok) {
             log.warn("eval 回归告警飞书推送失败（runId={}），邮件降级", runId);

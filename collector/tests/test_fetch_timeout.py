@@ -11,7 +11,12 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from collector.executor.executor import DEFAULT_FETCH_TIMEOUT_SECONDS, Executor, _fetch_with_timeout
+from collector.executor.executor import (
+    BACKFILL_FETCH_TIMEOUT_SECONDS,
+    DEFAULT_FETCH_TIMEOUT_SECONDS,
+    Executor,
+    _fetch_with_timeout,
+)
 from collector.model.run import MODE_BACKFILL, MODE_INCREMENTAL, STATUS_SUCCESS
 from collector.model.task import Collector
 from collector.scheduler.jobs import assemble_collector
@@ -61,6 +66,11 @@ def test_default_timeout_is_1800s():
     assert DEFAULT_FETCH_TIMEOUT_SECONDS == 1800
 
 
+def test_backfill_timeout_cap_is_21600s():
+    """C4（2026-10-15 审查 P2-4）：backfill 豁免改为显式 6h 上限，防人工 backfill 挂死无自清。"""
+    assert BACKFILL_FETCH_TIMEOUT_SECONDS == 21600
+
+
 # ---------------------------------------------------------------- executor 集成
 
 
@@ -99,13 +109,41 @@ def test_executor_timeout_falls_back_to_next_source():
     assert result.source_used == "good"
 
 
-def test_executor_backfill_mode_exempt_from_timeout():
+def test_executor_backfill_mode_uses_21600_cap_not_yaml_timeout():
+    """C4：backfill 不再是「豁免」——用显式 21600s 上限，且忽略 YAML 的小覆盖值
+    （0.1s 若生效必然误杀；21600s 下 0.3s 的源正常成功）。"""
     sleepy = _Src("slow", value="frame", delay=0.3)
     executor, converter = _executor([sleepy])
     task = _task([sleepy], converter, timeouts={"slow": 0.1})
     result = executor.run(task, MODE_BACKFILL, {}, conn=MagicMock())
     assert result.status == STATUS_SUCCESS
     assert result.source_used == "slow"
+
+
+def test_executor_backfill_passes_21600_to_fetch_wrap(monkeypatch):
+    """C4：backfill 分支实际把 21600s 传给超时包裹（锁死「上限替代豁免」的装配形态）。"""
+    seen = []
+    monkeypatch.setattr(
+        "collector.executor.executor._fetch_with_timeout",
+        lambda src, params, timeout_seconds: seen.append(timeout_seconds) or "frame",
+    )
+    src = _Src("s", value="frame")
+    executor, converter = _executor([src])
+    task = _task([src], converter, timeouts={"s": 0.1})
+    result = executor.run(task, MODE_BACKFILL, {}, conn=MagicMock())
+    assert result.status == STATUS_SUCCESS
+    assert seen == [BACKFILL_FETCH_TIMEOUT_SECONDS]
+
+
+def test_etf_tracking_error_yaml_timeout_never_abandons():
+    """C3/H2：纯本地 DB→DB 源显式 timeout_seconds=86400——fetch 包裹永不放弃线程，
+    消除「UPDATE 晚提交而 run 已 failed」的僵尸写窗口。"""
+    import yaml
+
+    with open("tasks/etf_tracking_error.yaml") as f:
+        defs = yaml.safe_load(f)
+    timeouts = [s.get("timeout_seconds") for s in defs["source_ids"]]
+    assert timeouts == [86400]
 
 
 # ---------------------------------------------------------------- assemble 提取 + 契约

@@ -77,16 +77,8 @@ public class PolicyExtractor {
 
     /** 解析 LLM 输出文本；不合契约返回 null（调用方按解析失败处理）。 */
     private ExtractedFields parse(String text) {
-        if (text == null || text.isBlank()) {
-            return null; // Task 4 边界：present("") 空串兜底
-        }
-        JsonNode root;
-        try {
-            root = mapper.readTree(LlmJsonParseSupport.stripFences(text));
-        } catch (Exception e) {
-            return null;
-        }
-        if (root == null || !root.isObject()) {
+        JsonNode root = LlmJsonParseSupport.readObject(mapper, text);
+        if (root == null) {
             return null;
         }
         JsonNode isPolicyNode = root.get("isPolicy");

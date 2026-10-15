@@ -1,6 +1,6 @@
 # 后端分包规范（backend package conventions）
 
-- 状态：已确认（2026-08-18，2026-08-21 更新为 DDD 分层，2026-09-12 对齐现状：分层域扩至 10 个，2026-09-18 登记 industry 域：扩至 11 个，2026-09-22 登记 wiki 域：扩至 12 个；同日补登 MS-07 漏登记的 analytics 域：扩至 13 个，控制器清单对齐 16 个；2026-09-26 MS-14 后对齐：screening 扩 ETF 筛选、industry 扩行业关注——**均无新包**，控制器清单对齐 17 个；同日补登 MS-10 漏登记的 `IndustryCurationController`（issue #39 文档卫生）：控制器清单对齐 18 个；2026-09-29 登记 invest-sop 交付的 research 域：分层域扩至 **14 个**，控制器清单对齐 **19 个**，与 `web` 包实测一致；同日登记 research-intelligence 交付的 intelligence 域（MS-20）：分层域扩至 **15 个**——无新控制器，web 清单不变；2026-10-11 登记 deep-research 交付（MS-32）：agent 扩 `report/` 子包（研报工作流编排器/校验门/用量真值钩子）、`domain.research` 扩研报实体（研报表四张 + 日配额表，V8）——无新分层域（仍 15 个），控制器清单对齐实测 **26 个**；2026-10-12 第三轮审查后对齐（P3-B6/B7/B8/B9）：分层域实测 **18 个**（补登 eval/memory/observability 三个后登记域）——`ResearchApplicationService`/`IntelligenceQueryService` 按用例族拆分为门面 + 多个 `*ApplicationService`（application 子包数不变，仍 19 个）、`InvestTools` 拆为门面 + `agent/tools/` 域子组件、`domain.market` 东财字段码下沉 `infrastructure.market.EastmoneyFormat`；agent 补登 `trust/`（可信溯源）/`observability/`（轮级观测）两个后登记子系统；ArchUnit 规则实测 **4 个测试类 24 条**（`@Test`/`@ArchTest` 注解数：PackageConventions 13、CodingConventions 5、TestSourceSet 3、DomainClockConvention 3））
+- 状态：已确认（2026-08-18，2026-08-21 更新为 DDD 分层，2026-09-12 对齐现状：分层域扩至 10 个，2026-09-18 登记 industry 域：扩至 11 个，2026-09-22 登记 wiki 域：扩至 12 个；同日补登 MS-07 漏登记的 analytics 域：扩至 13 个，控制器清单对齐 16 个；2026-09-26 MS-14 后对齐：screening 扩 ETF 筛选、industry 扩行业关注——**均无新包**，控制器清单对齐 17 个；同日补登 MS-10 漏登记的 `IndustryCurationController`（issue #39 文档卫生）：控制器清单对齐 18 个；2026-09-29 登记 invest-sop 交付的 research 域：分层域扩至 **14 个**，控制器清单对齐 **19 个**，与 `web` 包实测一致；同日登记 research-intelligence 交付的 intelligence 域（MS-20）：分层域扩至 **15 个**——无新控制器，web 清单不变；2026-10-11 登记 deep-research 交付（MS-32）：agent 扩 `report/` 子包（研报工作流编排器/校验门/用量真值钩子）、`domain.research` 扩研报实体（研报表四张 + 日配额表，V8）——无新分层域（仍 15 个），控制器清单对齐实测 **26 个**；2026-10-12 第三轮审查后对齐（P3-B6/B7/B8/B9）：分层域实测 **18 个**（补登 eval/memory/observability 三个后登记域）——`ResearchApplicationService`/`IntelligenceQueryService` 按用例族拆分为门面 + 多个 `*ApplicationService`（application 子包数不变，仍 19 个）、`InvestTools` 拆为门面 + `agent/tools/` 域子组件、`domain.market` 东财字段码下沉 `infrastructure.market.EastmoneyFormat`；agent 补登 `trust/`（可信溯源）/`observability/`（轮级观测）两个后登记子系统；ArchUnit 规则实测 **4 个测试类 24 条**（`@Test`/`@ArchTest` 注解数：PackageConventions 13、CodingConventions 5、TestSourceSet 3、DomainClockConvention 3）；2026-10-15 第四轮审查后对齐（P4-B5）：§五 落位规则表新增「新增用例先落对应族 `*ApplicationService`，门面只加一行委托」防漂移条例，§六 评审 checklist 补「门面方法体多于一行委托即打回」））
 - 适用范围：`backend` 单模块 Spring Boot 应用，根包 `com.portfolio.invest`
 - 强制方式：ArchUnit 架构测试（`PackageConventionsTest`），违反即构建失败
 - 相关文档：[ADR-0001 Agent 框架选型](../decisions/0001-agent-framework.md) · [ADR-0002 交互协议](../decisions/0002-interaction-protocol.md) · [ADR-0003 行情数据源](../decisions/0003-market-data-source.md) · [ADR-0009 后端分层 DDD](../decisions/0009-backend-ddd-layering.md)
@@ -101,6 +101,7 @@ infrastructure ──→ {domain, application, config}
 | 仓库/端口接口定义在 `domain`，实现（JPA 等）在 `infrastructure` | 依赖倒置 |
 | `application` 类以 `ApplicationService` 结尾 | 用例编排命名一致 |
 | 根包只允许 `@SpringBootApplication` 启动类 | 其余业务类必须进对应包 |
+| 新增用例先落对应族 `*ApplicationService`，门面只加一行委托 | 门面（ResearchApplicationService/IntelligenceQueryService 等）方法体仅限一行委托 + 对外 record/DTO；新用例实现禁止写在门面内（事务边界留在门面 @Transactional，实现在族服务）——2026-10-12 拆分模式的防漂移条例 |
 
 ## 六、执行与演进
 
@@ -109,3 +110,4 @@ infrastructure ──→ {domain, application, config}
   1. 判定类型：信息管理/处理且需持久化或外部端口 → 走 DDD 分层（`domain.*` + `application.*` + `infrastructure.*`）；否则维持单层能力域；
   2. 在 ArchUnit 测试中登记新包的依赖白名单；
   3. 依赖方向保持"上层→application→domain"，域之间如需互调只允许自上而下，禁止成环。
+- **评审 checklist**：PR 中门面（§五 落位规则「门面只加一行委托」条）方法体出现多于一行委托即打回——ArchUnit 只能守包结构，门面漂移（实现重新长进门面）靠评审肉眼守。

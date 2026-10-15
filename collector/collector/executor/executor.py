@@ -27,12 +27,15 @@ class AllSourcesFailed(Exception):
 # P0-1 fetch 超时全局默认（30 分钟）：覆盖一切未显式配置的源；长任务（stock_financial
 # ~30-60 分钟、etf_basic ~16 分钟）在 YAML source 条目用 timeout_seconds 覆盖。
 DEFAULT_FETCH_TIMEOUT_SECONDS = 1800
+# P2（2026-10-15 审查）：backfill 原整体豁免（None），人工 backfill 源端挂死时无自清——
+# 改为显式 6h 上限：正常区间回补远不会触顶，挂死态至多 6h 内被放弃并报错走人。
+BACKFILL_FETCH_TIMEOUT_SECONDS = 21600
 
 
 def _fetch_with_timeout(src, params, timeout_seconds):
     """daemon 线程包裹 fetch：超时抛 SourceError 走换源；被放弃的线程随上游
     socket 断开自然消亡（Python 无法强杀线程，daemon 保证不阻塞进程退出）。
-    timeout_seconds 为 None 时不包裹（backfill 豁免 / 显式禁用）。"""
+    timeout_seconds 为 None 时不包裹（显式禁用场景，如纯本地 DB→DB 源的超大值豁免）。"""
     if timeout_seconds is None:
         return src.fetch(params)
     result = {}
@@ -135,10 +138,14 @@ class Executor:
         for src in candidates:
             started = time.monotonic()
             h = health.setdefault(src.source_id, SourceHealth(src.source_id))
+            # P3-8：fetch 前统一重置观测状态，防单例源跨运行串扰；getattr 防御写法与下方
+            # last_warnings 一致，兼容 duck-type 测试替身（非 Source 子类）。
+            getattr(src, "reset_observability", lambda: None)()
             # P0-1：增量模式套 fetch 超时（YAML 覆盖 > 全局默认）；backfill 区间回补
-            # 耗时不可预估，豁免（None 即不包裹）。
+            # 耗时不可预估，用显式 6h 上限替代原豁免（None）——防人工 backfill 挂死无自清
+            # （2026-10-15 审查 P2-4），YAML 小覆盖值不穿透到 backfill。
             if mode == MODE_BACKFILL:
-                timeout = None
+                timeout = BACKFILL_FETCH_TIMEOUT_SECONDS
             else:
                 timeout = (task.source_timeouts or {}).get(src.source_id) or DEFAULT_FETCH_TIMEOUT_SECONDS
             try:

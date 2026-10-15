@@ -20,15 +20,17 @@ from collector.sources.base import Source
 
 
 class _EmptyFrameSource(Source):
-    """模拟 DB→DB 源：fetch 返回空帧（writer 0 行），实际影响行数挂属性。"""
+    """模拟 DB→DB 源：fetch 返回空帧（writer 0 行），实际影响行数在 fetch 内挂属性
+    （照真实契约——P3-8 后 executor 在 fetch 前 reset_observability，构造期赋值会被清掉）。"""
 
     def __init__(self, source_id, affected=None):
         self.source_id = source_id
-        self.last_affected_rows = affected
+        self._affected = affected
 
     def fetch(self, params):
         import pandas as pd
 
+        self.last_affected_rows = self._affected
         return pd.DataFrame(columns=["x"])
 
 

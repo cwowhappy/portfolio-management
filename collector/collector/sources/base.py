@@ -17,6 +17,13 @@ class Source(ABC):
     # 不改变终态（partial 只属于软校验剔行）。单例源须每次 fetch 重置。
     last_warnings: list[str] | None = None
 
+    def reset_observability(self) -> None:
+        """P3-8（2026-10-15 审查）：executor 在每个候选源 fetch 前统一调用——单例源跨运行
+        复用，遗忘重置会让上一轮的 last_warnings/last_affected_rows 串扰本轮 run.message；
+        新增源不再需要在 fetch 内自觉重置（既有源的自发重置保留，兼容不经 executor 的直接调用）。"""
+        self.last_warnings = None
+        self.last_affected_rows = None
+
     @abstractmethod
     def fetch(self, params: dict) -> pd.DataFrame:
         """返回原始数据。params 含运行时参数（start/end/date）。"""

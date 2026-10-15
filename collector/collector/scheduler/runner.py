@@ -4,6 +4,7 @@ import time
 
 import psycopg
 
+from collector.config import DB_CONNECT_TIMEOUT_SECONDS
 from collector.executor.executor import AllSourcesFailed, StoreError
 from collector.model.run import STATUS_FAILED, STATUS_PARTIAL, STATUS_SKIPPED, RunResult
 from collector.repositories.runs import RunRepository
@@ -60,7 +61,7 @@ class TaskRunner:
         # 不触 executor——skipped 不入失败口径（无 retry、不放大熔断计数）。
         deps = getattr(task, "depends_on", None) or []
         if deps:
-            with psycopg.connect(self.database_url) as conn:
+            with psycopg.connect(self.database_url, connect_timeout=DB_CONNECT_TIMEOUT_SECONDS) as conn:
                 ok = RunRepository(conn).succeeded_on(deps, day)
                 missing = [d for d in deps if d not in ok]
                 if missing:
@@ -78,7 +79,7 @@ class TaskRunner:
         for attempt in range(retry_max + 1):
             # 每次尝试新建连接、用完即弃：上一次失败的连接可能处于 aborted
             # transaction 状态，复用会让重试第一个查询就失败。
-            with psycopg.connect(self.database_url) as conn:
+            with psycopg.connect(self.database_url, connect_timeout=DB_CONNECT_TIMEOUT_SECONDS) as conn:
                 acquired = conn.execute(LOCK_SQL, (task.task_code,)).fetchone()[0]
                 if not acquired:
                     logger.info("任务 %s 跳过：上一实例运行中", task.task_code)
@@ -132,7 +133,7 @@ class TaskRunner:
 
     def _record_skip(self, task, mode, params, message):
         """skipped（非交易日）也落一条 task_run，满足 FR-10「每次执行记录」。"""
-        with psycopg.connect(self.database_url) as conn:
+        with psycopg.connect(self.database_url, connect_timeout=DB_CONNECT_TIMEOUT_SECONDS) as conn:
             RunRepository(conn).record(task.task_code, mode, STATUS_SKIPPED, params=params, message=message)
 
     def _abort_run(self, conn, run_id, error):

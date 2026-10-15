@@ -34,3 +34,22 @@ def test_load_db_only_missing_database_url_still_fails(monkeypatch):
     monkeypatch.setenv("TUSHARE_TOKEN", "tok")
     with pytest.raises(SystemExit, match="DATABASE_URL"):
         load(required=("database_url",))
+
+
+def test_load_hint_appended_to_missing_env_error(monkeypatch):
+    """C6-P3-9（2026-10-15 审查）：hint 附加命令级语境（如 run/backfill 装配全部数据源）。"""
+    monkeypatch.setattr("collector.config.load_dotenv", lambda: None)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("TUSHARE_TOKEN", raising=False)
+    with pytest.raises(SystemExit, match="装配全部数据源") as exc:
+        load(hint="run/backfill 装配全部数据源，故需全部数据源密钥")
+    assert "DATABASE_URL" in str(exc.value)
+
+
+def test_load_default_no_hint_unchanged(monkeypatch):
+    monkeypatch.setattr("collector.config.load_dotenv", lambda: None)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("TUSHARE_TOKEN", raising=False)
+    with pytest.raises(SystemExit) as exc:
+        load()
+    assert "装配全部数据源" not in str(exc.value)

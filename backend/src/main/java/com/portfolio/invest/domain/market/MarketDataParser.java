@@ -10,7 +10,11 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
-/** 纯函数解析器：已规范化中间结构 / wire 文本 → DTO，全部可离线单测（fixture 驱动）。 */
+/** 纯函数解析器：已规范化中间结构（{@link RawQuote}/{@link RawIndexQuote}/{@link RawStockHit}/
+ * {@link RawKlineBar}/{@link RawFinancialIndicator}/{@link RawNewsItem}）/ wire 文本 → DTO，
+ * 全部可离线单测（fixture 驱动）。东财 JSON 字段码与路径导航已全量下沉
+ * infrastructure/market/EastmoneyFormat（2026-10-15 审查 §五 L2）；本类残留的
+ * JsonNode 入参仅为腾讯 K线（parseTencentKline），属 L2-二期（新浪/腾讯文本兜底解析同批另计）。 */
 public final class MarketDataParser {
 
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
@@ -155,30 +159,28 @@ public final class MarketDataParser {
         return new MarketOverview(LocalDateTime.now(MARKET_ZONE).format(TIME_FMT), list);
     }
 
-    /** K线：klines 为 "date,open,close,high,low,volume,amount,amplitude" 字符串数组。 */
-    public static List<KlineBar> parseKline(JsonNode root) {
-        JsonNode klines = root.path("data").path("klines");
-        if (klines.isMissingNode() || klines.isNull()) {
+    /**
+     * K线解析（供应商无关）：接收 infrastructure 映射好的 {@link RawKlineBar} 中间结构
+     * （东财 data.klines CSV 行拆分见 infrastructure/market/EastmoneyFormat——2026-10-15
+     * L2 字段码下沉）。成交量手→股归一化（与 {@link #parseTencentKline} 同口径）与
+     * 空校验不变：全部行被跳过/空列表抛 BAD_RESPONSE「K线数据为空」（文案与触发口径
+     * 与下沉前一致——缺失判断在 extract 侧，空列表判断在本方法）。
+     */
+    public static List<KlineBar> parseKline(List<RawKlineBar> raws) {
+        if (raws == null || raws.isEmpty()) {
             throw new MarketDataException(MarketDataErrorCode.BAD_RESPONSE, "K线数据为空");
         }
         List<KlineBar> bars = new ArrayList<>();
-        for (JsonNode line : klines) {
-            String[] f = line.asText().split(",");
-            if (f.length < 8) {
-                continue;
-            }
+        for (RawKlineBar raw : raws) {
             bars.add(new KlineBar(
-                    f[0],
-                    numOrZero(f[1]),
-                    numOrZero(f[2]),
-                    numOrZero(f[3]),
-                    numOrZero(f[4]),
-                    parseLongOrZero(f[5]) * 100, // 东财K线成交量为手，统一转为股
-                    numOrZero(f[6]),
-                    numOrZero(f[7])));
-        }
-        if (bars.isEmpty()) {
-            throw new MarketDataException(MarketDataErrorCode.BAD_RESPONSE, "K线数据为空");
+                    raw.date(),
+                    raw.open(),
+                    raw.close(),
+                    raw.high(),
+                    raw.low(),
+                    raw.volume() * 100, // 东财K线成交量为手，统一转为股
+                    raw.amount(),
+                    raw.amplitude()));
         }
         return bars;
     }
@@ -218,25 +220,23 @@ public final class MarketDataParser {
         return bars;
     }
 
-    /** 股票搜索（过滤指数/板块/基金/债券/期货等非A股条目）。 */
-    public static List<StockHit> parseSearch(JsonNode root) {
-        JsonNode data = root.path("QuotationCodeTable").path("Data");
+    /**
+     * 股票搜索（供应商无关）：接收 infrastructure 过滤映射好的 {@link RawStockHit} 中间结构
+     * （东财 QuotationCodeTable 字段与非 A 股过滤——SecurityTypeName 判定为 wire 知识——见
+     * infrastructure/market/EastmoneyFormat，2026-10-15 L2 下沉）。本方法只做市场名归一化：
+     * 统一走 StockRef.Exchange 判定（B-25，收敛代码前缀与 MktNum 兜底）。
+     */
+    public static List<StockHit> parseSearch(List<RawStockHit> raws) {
         List<StockHit> hits = new ArrayList<>();
-        if (data.isArray()) {
-            for (JsonNode item : data) {
-                String typeName = item.path("SecurityTypeName").asText("");
-                if (typeName.contains("指数") || typeName.contains("板块") || typeName.contains("基金")
-                        || typeName.contains("债") || typeName.contains("期货")) {
-                    continue;
-                }
-                String code = item.path("Code").asText("");
-                String mkt = item.path("MktNum").asText("1");
-                hits.add(new StockHit(
-                        code,
-                        item.path("Name").asText(""),
-                        mkt,
-                        marketNameOf(code, mkt)));
-            }
+        if (raws == null) {
+            return hits;
+        }
+        for (RawStockHit raw : raws) {
+            hits.add(new StockHit(
+                    raw.code(),
+                    raw.name(),
+                    raw.mktNum(),
+                    marketNameOf(raw.code(), raw.mktNum())));
         }
         return hits;
     }
@@ -246,66 +246,77 @@ public final class MarketDataParser {
         return StockRef.Exchange.of(code, mkt).displayName();
     }
 
-    /** 财务指标序列（东财 F10 数据中台）。 */
-    public static List<FinancialIndicator> parseFinancialIndicators(JsonNode root) {
-        JsonNode data = root.path("result").path("data");
-        if (data.isMissingNode() || data.isNull() || !data.isArray()) {
-            throw new MarketDataException(MarketDataErrorCode.BAD_RESPONSE, "财务数据为空");
-        }
+    /**
+     * 财务指标序列（供应商无关）：接收 infrastructure 映射好的 {@link RawFinancialIndicator}
+     * 中间结构（东财 F10 数据中台 result.data[] 字段码见 infrastructure/market/EastmoneyFormat
+     * ——2026-10-15 L2 下沉）。报告期截断为 yyyy-MM-dd 的归一化不变；源缺失/非数值的
+     * 可空字段已由 extract 侧归 null（与下沉前 nullable(JsonNode) 同口径），空列表原样
+     * 返回空（与下沉前空 data 数组口径一致，不抛异常）。
+     */
+    public static List<FinancialIndicator> parseFinancialIndicators(List<RawFinancialIndicator> raws) {
         List<FinancialIndicator> list = new ArrayList<>();
-        for (JsonNode item : data) {
-            String date = item.path("REPORT_DATE").asText("");
-            if (date.length() >= 10) {
+        if (raws == null) {
+            return list;
+        }
+        for (RawFinancialIndicator raw : raws) {
+            String date = raw.reportDate();
+            if (date != null && date.length() >= 10) {
                 date = date.substring(0, 10);
             }
             list.add(new FinancialIndicator(
                     date,
-                    nullable(item.path("EPSJB")),
-                    nullable(item.path("BPS")),
-                    nullable(item.path("TOTALOPERATEREVE")),
-                    nullable(item.path("PARENTNETPROFIT")),
-                    nullable(item.path("ROEJQ")),
-                    nullable(item.path("XSMLL"))));
+                    raw.eps(),
+                    raw.bps(),
+                    raw.revenue(),
+                    raw.profit(),
+                    raw.roe(),
+                    raw.grossMargin()));
         }
         return list;
     }
 
-    /** 新闻（JSONP 解包后的 JSON）。 */
-    public static List<NewsItem> parseNews(JsonNode root) {
-        JsonNode data = root.path("result").path("cmsArticleWebOld");
+    /**
+     * 新闻（供应商无关）：接收 infrastructure 映射好的 {@link RawNewsItem} 中间结构
+     * （东财 result.cmsArticleWebOld 字段见 infrastructure/market/EastmoneyFormat——
+     * 2026-10-15 L2 下沉）。HTML 剥离与摘要截断（120 字加省略号）等文本归一化不变。
+     */
+    public static List<NewsItem> parseNews(List<RawNewsItem> raws) {
         List<NewsItem> list = new ArrayList<>();
-        if (data.isArray()) {
-            for (JsonNode item : data) {
-                list.add(new NewsItem(
-                        stripHtml(item.path("title").asText("")),
-                        abbreviate(stripHtml(item.path("content").asText("")), 120),
-                        item.path("mediaName").asText(""),
-                        item.path("date").asText(""),
-                        item.path("url").asText("")));
-            }
+        if (raws == null) {
+            return list;
+        }
+        for (RawNewsItem raw : raws) {
+            list.add(new NewsItem(
+                    stripHtml(raw.title()),
+                    abbreviate(stripHtml(raw.content()), 120),
+                    raw.media(),
+                    raw.date(),
+                    raw.url()));
         }
         return list;
     }
 
-    /** 指数列表。 */
-    public static List<IndexQuote> parseOverview(JsonNode root) {
-        JsonNode diff = root.path("data").path("diff");
+    /** 指数列表（供应商无关）：接收 infrastructure 映射好的 {@link RawIndexQuote} 中间结构
+     *  （东财 push2 data.diff 的 f12/f14/f2/f4/f3 字段码见 infrastructure/market/EastmoneyFormat
+     *  ——2026-10-15 L2 下沉）。本方法为 1:1 映射，无归一化。 */
+    public static List<IndexQuote> parseOverview(List<RawIndexQuote> raws) {
         List<IndexQuote> list = new ArrayList<>();
-        if (diff.isArray()) {
-            for (JsonNode item : diff) {
-                list.add(new IndexQuote(
-                        item.path("f12").asText(""),
-                        item.path("f14").asText(""),
-                        numOrZero(item.path("f2")),
-                        numOrZero(item.path("f4")),
-                        numOrZero(item.path("f3"))));
-            }
+        if (raws == null) {
+            return list;
+        }
+        for (RawIndexQuote raw : raws) {
+            list.add(new IndexQuote(
+                    raw.code(),
+                    raw.name(),
+                    raw.price(),
+                    raw.change(),
+                    raw.changePct()));
         }
         return list;
     }
 
-    public static MarketOverview buildOverview(JsonNode root) {
-        List<IndexQuote> indices = parseOverview(root);
+    public static MarketOverview buildOverview(List<RawIndexQuote> raws) {
+        List<IndexQuote> indices = parseOverview(raws);
         if (indices.isEmpty()) {
             throw new MarketDataException(MarketDataErrorCode.BAD_RESPONSE, "指数数据为空");
         }
@@ -348,8 +359,10 @@ public final class MarketDataParser {
         return id.length() > 2 ? id.substring(2) : id;
     }
 
-    public static Financials buildFinancials(String code, String name, Double pe, Double pb, JsonNode root) {
-        return new Financials(code, name, pe, pb, parseFinancialIndicators(root));
+    /** 财务总装（供应商无关）：PE/PB 为行情侧入参，指标序列收 {@link RawFinancialIndicator} 中间结构。 */
+    public static Financials buildFinancials(String code, String name, Double pe, Double pb,
+                                             List<RawFinancialIndicator> raws) {
+        return new Financials(code, name, pe, pb, parseFinancialIndicators(raws));
     }
 
     private static double numOrZero(JsonNode n) {
@@ -392,13 +405,6 @@ public final class MarketDataParser {
         } catch (Exception e) {
             return null;
         }
-    }
-
-    private static Double nullable(JsonNode n) {
-        if (n == null || n.isNull() || !n.isNumber()) {
-            return null;
-        }
-        return n.asDouble();
     }
 
     private static double round2(double v) {

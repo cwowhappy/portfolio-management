@@ -177,13 +177,16 @@ class StockValuationDailyBackupSource(Source):
         return out[self._COLUMNS]
 
 
-def make_open_day_check(pro_factory):
+def make_open_day_check(pro_factory, source=None):
     """构造单日开市判定（YYYYMMDD → bool）：trade_cal 查询，供 spot 快照类备源做
     节假日空帧保护（MS-28 P2-C5，registry 装配处注入 StockValuationDailyBackupSource）。
 
     日历访问沿 AllASpotBackupSource/_open_days_desc 的 trade_cal 方式；日历不可得
     （tushare 故障/空响应）视为开市照常快照——备源本为 tushare 故障兜底，不能因
     trade_cal 失败自废，退回注入前行为。
+    source：可选源实例句柄（C5，2026-10-15 审查 P2-5）——降级放行除 logger 外 append 到
+    source.last_warnings，经 executor 合入 run.message 落 DB（飞书链可达）；executor 的
+    reset_observability 在 fetch 前重置，追加发生在干净状态上。
     """
 
     def is_open_day(day_ymd):
@@ -193,6 +196,12 @@ def make_open_day_check(pro_factory):
             # C5（2026-10-12 审查）：日历查询失败仍视为开市（备源不能自废），但必须留痕——
             # 此时恰是 tushare 故障场景，静默放行会在节假日写入当日快照行
             logger.warning("trade_cal 查询失败（%s），%s 视为开市继续快照", e, day_ymd)
+            if source is not None:
+                # 挂源实例 last_warnings（照全仓统一挂法）→ executor run.message 通道
+                source.last_warnings = [
+                    *(source.last_warnings or []),
+                    f"trade_cal 查询失败（{e}），{day_ymd} 视为开市继续快照（降级放行）",
+                ]
             return True
         if cal is None or cal.empty:
             return True

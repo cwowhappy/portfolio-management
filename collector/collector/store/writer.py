@@ -231,11 +231,13 @@ class Store:
         except KeyError as e:
             raise StoreError(f"未知目标表: {table}") from e
         # C2 fail-fast：白名单外缺列按事故处理——converter/calc 改名漏列时 r.get() 会
-        # 静默写全表 NULL，此处拒绝。校验首行（records 由同一 converter 产出，键集一致）。
+        # 静默写全表 NULL，此处拒绝。校验全量键集并集（C6，2026-10-15 审查 P3-6）：不再
+        # 假设 records 同质（只查首行是理论缝），任一行缺必需列即拒绝，O(n) 一遍。
         optional = OPTIONAL_COLUMNS.get(table, set())
-        missing = [c for c in cols if c not in records[0] and c not in optional]
+        present = set().union(*(r.keys() for r in records))
+        missing = [c for c in cols if c not in present and c not in optional]
         if missing:
-            raise StoreError(f"目标表 {table} 缺列 {missing}：records 首行未携带，拒绝静默写 NULL")
+            raise StoreError(f"目标表 {table} 缺列 {missing}：records 键集并集未携带，拒绝静默写 NULL")
         rows = [tuple(r.get(c) for c in cols) for r in records]
         try:
             with conn.cursor() as cur:
