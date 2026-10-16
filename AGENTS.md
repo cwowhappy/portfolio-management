@@ -90,7 +90,7 @@ infrastructure ──→ {domain, application, config}
 - **后端测试四层**：`test`（单元+切片）/ `integrationTest`（Testcontainers 真实 PG）/ `bdd`（Cucumber 中文场景）/ `testFixtures`（共享 PG 容器基座 `PostgresTestSupport`），详见 `docs/technology/architecture/03-后端测试架构.md`。
 - **schema 由 Flyway 管**（`ddl-auto: none`），迁移在 `backend/src/main/resources/db/migration/`（V1 基线 squash + V2=research 域 + V3=intelligence 域，详见迁移目录）。
 - **Jackson 2 而非 Jackson 3**：`spring-boot-starter-webmvc` 已排除 `starter-jackson` 改引 `spring-boot-jackson2`，因为 AgentScope AG-UI 模型基于 Jackson 2 注解。
-- **Testcontainers 禁用 Ryuk**（`TESTCONTAINERS_RYUK_DISABLED=true`）：兼容 Colima 等本地 Docker socket 无法挂载的场景，由 JUnit 扩展启停容器。
+- **Testcontainers 与 Ryuk**：backend 侧禁用（`TESTCONTAINERS_RYUK_DISABLED=true`，容器回收由 JUnit 扩展/shutdown hook 负责）；collector 侧启用并钉 `ryuk:0.13.0` + 强制 socket override（Colima 兼容，防测试进程被杀后容器泄漏——机制与版本矩阵见 docs/technology/architecture/03-后端测试架构.md §8）。
 - **同源 Cookie 会话，无 CORS**：后端 `same-site: lax`，前端同源反代透传 cookie，这是关闭 CSRF 的安全前提（ADR-0007）。
 - 前端静态检查已启用：`pnpm lint`（eslint flat config，含 react-hooks/no-explicit-any/组件禁直接 fetch 等规则）+ `pnpm typecheck`（tsc --noEmit，类型层面的契约裂缝只有它/e2e fresh build 能拦），双双纳入 `make test` 与 CI。
 
