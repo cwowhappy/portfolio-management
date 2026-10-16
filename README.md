@@ -235,9 +235,9 @@ backend/    Spring Boot 4 + Spring Security 7 + Spring Data JPA（DDD 洋葱分�
                       UserToolkitFactory / McpClientPool / CurrentUserHolder / chart(图表spec) /
                       AguiEventNonNullCodec / AguiWireJsonConfig
     config/           配置属性：InvestProperties
-  src/main/resources/ application.yml / application-prod.yml / db/migration/(V1__baseline.sql 基线 + V2~V7 增量迁移) / skills/(内置skill)
+  src/main/resources/ application.yml / application-prod.yml / db/migration/(V1__baseline.sql 基线 + V2~V8 增量迁移) / skills/(内置skill)
 
-collector/  Python 3.12 采集服务（akshare/tushare → PostgreSQL，APScheduler 调度）：市场估值快照 / 指数估值 / 国债曲线 / 申万映射 / 指数成分股 / 个股基本面
+collector/  Python 3.12 采集服务（akshare/tushare/页面直采 → PostgreSQL，APScheduler 调度）：市场估值快照 / 个股估值与财务 / 指数·债券·黄金收盘 / 国债曲线 / 申万映射与行业估值 / 指数成分股 / ETF（目录·收盘·跟踪指数·跟踪误差）/ 新闻·公告·政策·宏观情报采集
 frontend/   Next.js 15（聊天 UI / 行情台 / 估值 / 持仓 / 配置 / 筛选 / 行业 / 投资日志 / MCP与Skill设置 / 登录注册 / 管理页 / API 反代）
 docs/       function/（产品功能）· technology/（技术文档）· plans/（跨模块/版本级计划）· deployment/（v1 发布计划与方案）· reviews/（代码审查报告与经验沉淀）· archive/（历史归档）
 features/   <feature>/（特性需求/设计/计划，如 asset-allocation、portfolio-management）· plans/（跨特性工程计划）
@@ -256,7 +256,7 @@ scripts/    smoke.sh 冒烟（6 段：健康/上游漂移/行情/反代/AI 对�
 | REMEMBER_ME_KEY | - | **必填**（remember-me 令牌签名密钥，缺失后端拒绝启动）；生成：`openssl rand -hex 32` |
 | BACKEND_URL | http://localhost:8080 | 前端反代目标 |
 | PORT | 8080 | 后端端口 |
-| TUSHARE_TOKEN | - | 采集服务（collector）tushare 数据源 token（个股基本面 / 指数估值 / 申万映射；未填则仅 akshare 数据可用） |
+| TUSHARE_TOKEN | - | 采集服务（collector）tushare 数据源 token（个股估值/财务、指数估值/收盘/成分、申万映射、ETF 等 tushare 系任务；未填则仅 akshare 数据可用） |
 | FEISHU_BOT_WEBHOOK | - | 采集告警推飞书群自定义机器人（opt-in，优先于 COLLECTOR_ALERT_WEBHOOK；卡片消息，覆盖任务终态 failed/partial + 日终新鲜度巡检） |
 | FEISHU_BOT_SECRET | - | 飞书机器人签名密钥（群机器人安全设置选「签名校验」时必填） |
 | FEISHU_APP_ID / FEISHU_APP_SECRET | - | 飞书自建应用凭证（P1 原则预警推送；开放平台「证券投资助手」） |
