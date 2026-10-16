@@ -9,10 +9,19 @@ import com.portfolio.invest.domain.screening.StockScreeningResult;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 筛选域仓库实现（stock_valuation_daily 最新快照日 LEFT JOIN 财务/行业维度；ETF 走 etf_basic 目录）。
+ *
+ * <p>动态 where 装配收敛于 {@link WhereClauseBuilder}（2026-10-16 第五轮审查扩簇归一，
+ * 原局部 {@code and()} helper + StringBuilder 誊写簇）：可空条件逐字段追加、参数顺序与
+ * 占位符一致，产出 SQL 与参数序列和原装配逐字等价。排序尾巴（{@code ORDER BY … NULLS
+ * LAST LIMIT ?}）非 D20 分页双查询形态，不走 {@link WhereClauseBuilder#paged}，按原样
+ * 拼在 {@link WhereClauseBuilder#sql()} 之后。用户输入绝不拼接进 SQL 文本——全部经
+ * {@code ?} 占位参数绑定（表名/列名/固定短语均为编译期常量）。
+ */
 @Repository
 public class ScreeningRepositoryImpl implements ScreeningRepository {
 
@@ -51,7 +60,7 @@ public class ScreeningRepositoryImpl implements ScreeningRepository {
             "scale", "scale",
             "tracking_error_1y", "tracking_error_1y");
 
-    /** etf_basic 无快照日维度；WHERE true 仅为下方动态 and() 拼接提供锚点。 */
+    /** etf_basic 无快照日维度；WHERE true 仅为动态 AND 拼接提供锚点（WhereClauseBuilder 归一）。 */
     private static final String FUND_BASE_SQL = """
             SELECT fund_code, fund_name, fee_rate, scale, tracking_index_name, category, tracking_error_1y
             FROM etf_basic
@@ -66,45 +75,46 @@ public class ScreeningRepositoryImpl implements ScreeningRepository {
 
     @Override
     public List<StockScreeningResult> findStocks(ScreeningCriteria c) {
-        StringBuilder sql = new StringBuilder(BASE_SQL);
-        List<Object> args = new ArrayList<>();
-        and(sql, args, "d.pe_ttm <= ?", c.peTtmMax());
-        and(sql, args, "d.pb <= ?", c.pbMax());
-        and(sql, args, "d.dividend_yield >= ?", c.dividendYieldMin());
-        and(sql, args, "f.roe >= ?", c.roeMin());
-        and(sql, args, "f.roa >= ?", c.roaMin());
-        and(sql, args, "f.gross_margin >= ?", c.grossMarginMin());
-        and(sql, args, "f.debt_to_assets <= ?", c.debtToAssetsMax());
-        and(sql, args, "f.current_ratio >= ?", c.currentRatioMin());
-        and(sql, args, "f.revenue_yoy >= ?", c.revenueYoyMin());
-        and(sql, args, "f.netprofit_yoy >= ?", c.netprofitYoyMin());
-        and(sql, args, "d.total_mv >= ?", c.totalMvMin());
-        and(sql, args, "d.turnover_rate >= ?", c.turnoverRateMin());
-        and(sql, args, "m.industry_code = ?", c.industryCode());
-        and(sql, args, "d.stock_code IN (SELECT stock_code FROM index_constituent WHERE index_code = ?)", c.indexCode());
+        // 动态过滤（可空条件逐一追加，参数顺序与占位符一致）——装配骨架收敛于 WhereClauseBuilder
+        WhereClauseBuilder where = WhereClauseBuilder.where(BASE_SQL)
+                .andIfNotNull("d.pe_ttm", "<=", c.peTtmMax())
+                .andIfNotNull("d.pb", "<=", c.pbMax())
+                .andIfNotNull("d.dividend_yield", ">=", c.dividendYieldMin())
+                .andIfNotNull("f.roe", ">=", c.roeMin())
+                .andIfNotNull("f.roa", ">=", c.roaMin())
+                .andIfNotNull("f.gross_margin", ">=", c.grossMarginMin())
+                .andIfNotNull("f.debt_to_assets", "<=", c.debtToAssetsMax())
+                .andIfNotNull("f.current_ratio", ">=", c.currentRatioMin())
+                .andIfNotNull("f.revenue_yoy", ">=", c.revenueYoyMin())
+                .andIfNotNull("f.netprofit_yoy", ">=", c.netprofitYoyMin())
+                .andIfNotNull("d.total_mv", ">=", c.totalMvMin())
+                .andIfNotNull("d.turnover_rate", ">=", c.turnoverRateMin())
+                .andIfNotNull("m.industry_code", c.industryCode())
+                .andIfNotNullPhrase(
+                        "d.stock_code IN (SELECT stock_code FROM index_constituent WHERE index_code = ?)",
+                        c.indexCode());
 
-        sql.append(" ORDER BY ").append(SORT_COLUMNS.get(c.sortBy())).append(" ")
-                .append(c.sortDirection().name()).append(" NULLS LAST LIMIT ?");
+        String sql = where.sql() + " ORDER BY " + SORT_COLUMNS.get(c.sortBy()) + " "
+                + c.sortDirection().name() + " NULLS LAST LIMIT ?";
+        List<Object> args = where.args();
         args.add(c.limit());
-
-        return jdbc.query(sql.toString(), ROW_MAPPER, args.toArray());
+        return jdbc.query(sql, ROW_MAPPER, args.toArray());
     }
 
     @Override
     public List<FundScreeningResult> findFunds(FundScreeningCriteria c) {
-        StringBuilder sql = new StringBuilder(FUND_BASE_SQL);
-        List<Object> args = new ArrayList<>();
         // nullable 列直接数值比较：null 行不命中（「未知值不命中数值条件」，与 findStocks 同口径）
-        and(sql, args, "fee_rate <= ?", c.feeRateMax());
-        and(sql, args, "scale >= ?", c.scaleMin());
-        and(sql, args, "tracking_error_1y <= ?", c.trackingErrorMax());
-        and(sql, args, "category = ?", c.category());
+        WhereClauseBuilder where = WhereClauseBuilder.where(FUND_BASE_SQL)
+                .andIfNotNull("fee_rate", "<=", c.feeRateMax())
+                .andIfNotNull("scale", ">=", c.scaleMin())
+                .andIfNotNull("tracking_error_1y", "<=", c.trackingErrorMax())
+                .andIfNotNull("category", c.category());
 
-        sql.append(" ORDER BY ").append(FUND_SORT_COLUMNS.get(c.sortBy())).append(" ")
-                .append(c.sortDirection().name()).append(" NULLS LAST LIMIT ?");
+        String sql = where.sql() + " ORDER BY " + FUND_SORT_COLUMNS.get(c.sortBy()) + " "
+                + c.sortDirection().name() + " NULLS LAST LIMIT ?";
+        List<Object> args = where.args();
         args.add(c.limit());
-
-        return jdbc.query(sql.toString(), FUND_ROW_MAPPER, args.toArray());
+        return jdbc.query(sql, FUND_ROW_MAPPER, args.toArray());
     }
 
     @Override
@@ -112,9 +122,9 @@ public class ScreeningRepositoryImpl implements ScreeningRepository {
         if (codes == null || codes.isEmpty()) {
             return List.of();
         }
-        String placeholders = String.join(",", java.util.Collections.nCopies(codes.size(), "?"));
-        String sql = BASE_SQL + " AND d.stock_code IN (" + placeholders + ") ORDER BY d.stock_code";
-        return jdbc.query(sql, ROW_MAPPER, codes.toArray());
+        WhereClauseBuilder where = WhereClauseBuilder.where(BASE_SQL)
+                .andIn("d.stock_code", codes);
+        return jdbc.query(where.sql() + " ORDER BY d.stock_code", ROW_MAPPER, where.args().toArray());
     }
 
     @Override
@@ -175,11 +185,4 @@ public class ScreeningRepositoryImpl implements ScreeningRepository {
                     rs.getBigDecimal("fee_rate"), rs.getBigDecimal("scale"),
                     rs.getString("tracking_index_name"), rs.getString("category"),
                     rs.getBigDecimal("tracking_error_1y"));
-
-    private void and(StringBuilder sql, List<Object> args, String clause, Object value) {
-        if (value != null) {
-            sql.append(" AND ").append(clause);
-            args.add(value);
-        }
-    }
 }
