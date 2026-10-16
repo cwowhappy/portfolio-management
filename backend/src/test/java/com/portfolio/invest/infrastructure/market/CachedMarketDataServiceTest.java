@@ -38,7 +38,8 @@ class CachedMarketDataServiceTest {
     static final class StubOrchestrator extends OrchestratingMarketDataService {
         private final MarketDataService target;
         StubOrchestrator(MarketDataService target) {
-            super(mock(MarketDataSource.class), new EastmoneyMarketDataPortImpl());
+            super(mock(MarketDataSource.class), new EastmoneyMarketDataPortImpl(),
+                    new SinaMarketDataPortImpl(), new TencentMarketDataPortImpl());
             this.target = target;
         }
         @Override public List<StockHit> search(String q) { return target.search(q); }
