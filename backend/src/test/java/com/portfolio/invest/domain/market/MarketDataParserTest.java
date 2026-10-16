@@ -8,7 +8,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.portfolio.invest.infrastructure.market.EastmoneyFormat;
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -20,24 +19,18 @@ import org.junit.jupiter.api.Test;
 
 /**
  * domain 解析器测试（供应商无关）：东财 wire fixture 已平移至
- * {@code infrastructure/market/EastmoneyFormatTest}，本类改以 {@code Raw*} 中间结构构造入参
- * （2026-10-15 L2 下沉），断言语义与下沉前一致；新浪/腾讯文本兜底解析用例维持原状
- * （L2-二期）。
+ * {@code infrastructure/market/EastmoneyFormatTest}，本类以 {@code Raw*} 中间结构构造入参
+ * （2026-10-15 L2 下沉），断言语义与下沉前一致；新浪/腾讯文本兜底解析用例已平移至
+ * {@code infrastructure/market/SinaFormatTest}/{@code TencentFormatTest}（2026-10-16 L2-二期）。
  */
 class MarketDataParserTest {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static JsonNode quoteJson;
-    private static String sinaRaw;
-    private static String tencentRaw;
-    private static String tencentIndicesRaw;
 
     @BeforeAll
     static void loadFixtures() throws IOException {
         quoteJson = fixture("eastmoney-quote.json");
-        sinaRaw = fixtureText("sina-quote.txt");
-        tencentRaw = fixtureText("tencent-quote.txt");
-        tencentIndicesRaw = fixtureText("tencent-indices.txt");
     }
 
     @DisplayName("东财行情中间结构解析出报价")
@@ -53,17 +46,6 @@ class MarketDataParserTest {
                         Instant.ofEpochSecond(1754870400L), ZoneId.of("Asia/Shanghai"))
                 .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
         assertThat(q.time()).isEqualTo(expectedTime);
-    }
-
-    @DisplayName("新浪行情文本解析出报价")
-    @Test
-    void givenSinaRawText_whenParseSinaQuote_thenReturnQuote() {
-        Quote q = MarketDataParser.parseSinaQuote(sinaRaw, "600519");
-        assertThat(q.name()).isEqualTo("贵州茅台");
-        assertThat(q.price()).isEqualTo(1415.0);
-        assertThat(q.prevClose()).isEqualTo(1400.0);
-        assertThat(q.changePct()).isEqualTo(1.07);
-        assertThat(q.time()).isEqualTo("2026-08-18 14:35:00");
     }
 
     @DisplayName("东财K线中间结构解析出K线柱并完成手→股归一化")
@@ -145,62 +127,6 @@ class MarketDataParserTest {
         assertThat(o.indices().get(0).changePct()).isEqualTo(0.85);
     }
 
-    @DisplayName("腾讯K线JSON解析出K线柱")
-    @Test
-    void givenTencentKlineJson_whenParseTencentKline_thenReturnBars() throws IOException {
-        List<KlineBar> bars = MarketDataParser.parseTencentKline(
-                fixture("tencent-kline.json"), "sh600519", "day");
-        assertThat(bars).hasSize(3);
-        assertThat(bars.get(0).date()).isEqualTo("2026-08-14");
-        assertThat(bars.get(2).close()).isEqualTo(1297.99);
-        assertThat(bars.get(2).volume()).isEqualTo(3872300L); // 手 → 股
-        assertThat(bars.get(2).amount()).isEqualTo(0.0); // 腾讯无成交额字段
-        assertThat(bars.get(2).amplitudePct()).isEqualTo(0.0); // 腾讯无振幅字段
-    }
-
-    @DisplayName("腾讯行情文本解析出报价")
-    @Test
-    void givenTencentRawText_whenParseTencentQuote_thenReturnQuote() {
-        Quote q = MarketDataParser.parseTencentQuote(tencentRaw, "600519");
-        assertThat(q.code()).isEqualTo("600519");
-        assertThat(q.name()).isEqualTo("贵州茅台");
-        assertThat(q.price()).isEqualTo(1237.00);
-        assertThat(q.prevClose()).isEqualTo(1251.24);
-        assertThat(q.open()).isEqualTo(1250.01);
-        assertThat(q.change()).isEqualTo(-14.24);
-        assertThat(q.changePct()).isEqualTo(-1.14);
-        assertThat(q.high()).isEqualTo(1256.13);
-        assertThat(q.low()).isEqualTo(1231.05);
-        assertThat(q.volume()).isEqualTo(3_123_900L);      // 31239手 ×100 → 股
-        assertThat(q.amount()).isEqualTo(3_867_310_000.0); // 386731万 ×10000 → 元
-        assertThat(q.pe()).isEqualTo(18.99);
-        assertThat(q.pb()).isEqualTo(6.15);
-        assertThat(q.time()).isEqualTo("2026-09-24 16:14");
-    }
-
-    @DisplayName("腾讯指数文本解析出三指数速览")
-    @Test
-    void givenTencentIndicesRaw_whenBuildTencentOverview_thenReturnThreeIndices() {
-        MarketOverview o = MarketDataParser.buildTencentOverview(tencentIndicesRaw);
-        assertThat(o.indices()).hasSize(3);
-        assertThat(o.indices().get(0).code()).isEqualTo("000001");
-        assertThat(o.indices().get(0).name()).isEqualTo("上证指数");
-        assertThat(o.indices().get(0).price()).isEqualTo(3888.37);
-        assertThat(o.indices().get(0).change()).isEqualTo(-48.15);
-        assertThat(o.indices().get(0).changePct()).isEqualTo(-1.22);
-        assertThat(o.time()).isNotBlank();
-    }
-
-    @DisplayName("新浪指数文本构建出指数速览")
-    @Test
-    void givenSinaIndicesRaw_whenBuildSinaOverview_thenReturnIndices() throws IOException {
-        MarketOverview o = MarketDataParser.buildSinaOverview(fixtureText("sina-indices.txt"));
-        assertThat(o.indices()).hasSize(3);
-        assertThat(o.indices().get(0).name()).isEqualTo("上证指数");
-        assertThat(o.indices().get(0).price()).isEqualTo(3990.30);
-        assertThat(o.indices().get(1).changePct()).isEqualTo(-0.56);
-    }
-
     @DisplayName("手数成交量归一化为股数")
     @Test
     void givenVolumeInLots_whenNormalizeVolume_thenConvertToShares() {
@@ -217,13 +143,9 @@ class MarketDataParserTest {
     }
 
     private static JsonNode fixture(String name) throws IOException {
-        return MAPPER.readTree(fixtureText(name));
-    }
-
-    private static String fixtureText(String name) throws IOException {
         try (InputStream in = MarketDataParserTest.class.getResourceAsStream("/fixtures/" + name)) {
             assert in != null : "fixture not found: " + name;
-            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+            return MAPPER.readTree(in);
         }
     }
 }

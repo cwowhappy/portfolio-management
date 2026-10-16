@@ -21,14 +21,18 @@ import org.springframework.jdbc.core.RowMapper;
  *
  * <p>归一对象：IntelligenceNews/Announcement/Policy/DailyBrief 四仓库 search 的
  * 「{@code StringBuilder where + List<Object> args} 逐字段 null/blank 装配 + COUNT /
- * OFFSET-LIMIT 双查询」誊写簇（原每加一个过滤字段誊写 4 份）。用户输入绝不拼接进
- * SQL 文本——全部经 {@code ?} 占位参数绑定；{@code field}/{@code base} 入参只允许
- * 编译期常量（表名/列名/固定短语），调用方不得传用户输入。
+ * OFFSET-LIMIT 双查询」誊写簇（原每加一个过滤字段誊写 4 份）；第五轮扩簇收纳
+ * Screening 仓库 findStocks/findFunds 的动态数值/等值条件（原局部 {@code and()}
+ * helper）与 findStocksByCodes 的 IN 展开。排序尾巴（{@code ORDER BY … NULLS LAST
+ * LIMIT ?}）等非 D20 分页形态不走 {@link #paged}，调用方自行拼在 {@link #sql()} 后。
+ * 用户输入绝不拼接进 SQL 文本——全部经 {@code ?} 占位参数绑定；{@code field}/
+ * {@code base} 入参只允许编译期常量（表名/列名/固定短语），调用方不得传用户输入。
  *
  * <p><b>不变式（行为红线）</b>：{@link #sql()} 产出短语与 {@link #args()} 参数序列
  * 必须与链式调用顺序逐字等价于原逐字段装配——条件追加顺序即参数顺序；改动本类
  * 或调用链顺序前，先读 {@code NewsRepositoryTest}/{@code AnnouncementRepositoryTest}/
- * {@code PolicyRepositoryTest}（integrationTest）钉住的查询行为。
+ * {@code PolicyRepositoryTest}/{@code ScreeningRepositoryImplTest}（integrationTest）
+ * 钉住的查询行为。
  */
 public final class WhereClauseBuilder {
 
@@ -101,6 +105,21 @@ public final class WhereClauseBuilder {
         if (value != null) {
             where.append(" AND ").append(field).append(" = ?");
             args.add(value.name());
+        }
+        return this;
+    }
+
+    /**
+     * 原样条件短语：value 非 null 时追加 {@code AND } + condition——condition 为自带
+     * 占位符的完整条件短语（编译期常量，如 {@code "d.stock_code IN (SELECT stock_code
+     * FROM index_constituent WHERE index_code = ?)"}），用于子查询等无法用
+     * {@code field + operator} 表达的形态；参数 value 绑定到短语占位符。condition
+     * 只接受编译期常量，调用方不得拼用户输入。
+     */
+    public WhereClauseBuilder andIfNotNullPhrase(String condition, Object value) {
+        if (value != null) {
+            where.append(" AND ").append(condition);
+            args.add(value);
         }
         return this;
     }

@@ -12,7 +12,7 @@ package com.portfolio.invest.domain.market;
  * @param high      最高价
  * @param low       最低价
  * @param volume    成交量（原始单位——东财为手，手→股归一化由 domain 解析器承担，
- *                  与 {@code parseTencentKline} 同口径）
+ *                  与 {@code TencentFormat} 腾讯 K线解析同口径）
  * @param amount    成交额
  * @param amplitude 振幅 %
  */

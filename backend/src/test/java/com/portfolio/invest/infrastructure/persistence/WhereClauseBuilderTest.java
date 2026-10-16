@@ -29,8 +29,9 @@ import org.springframework.jdbc.core.RowMapper;
  * 原逐字段装配逐字等价（integrationTest 三仓库测试钉查询行为，本类钉装配骨架）。
  *
  * <p>覆盖：锚点起手（WHERE true / 自定义基础短语）、各条件族的可空跳过语义、
- * trgm 双臂/JSONB 包含/IN 展开的参数形态、Asia/Shanghai 日界折算（UTC OffsetDateTime
- * 与 java.sql.Date 两口径）、链式顺序与参数顺序一致、paged 双查询 SQL 与参数序。
+ * trgm 双臂/JSONB 包含/IN 展开/原样条件短语（子查询形态）的参数形态、Asia/Shanghai
+ * 日界折算（UTC OffsetDateTime 与 java.sql.Date 两口径）、链式顺序与参数顺序一致、
+ * paged 双查询 SQL 与参数序。
  */
 class WhereClauseBuilderTest {
 
@@ -109,6 +110,31 @@ class WhereClauseBuilderTest {
         assertThat(where.sql()).isEqualTo(
                 " WHERE true AND e.importance >= ? AND e.direction = ? AND r.major = ?");
         assertThat(where.args()).containsExactly(80, "EASING", Boolean.TRUE);
+    }
+
+    @Test
+    @DisplayName("给定非null值，when andIfNotNullPhrase，then原样短语追加且参数绑定占位符（Screening 指数成分子查询形态）")
+    void givenNonNullValue_whenAndIfNotNullPhrase_thenRawConditionAppendedVerbatim() {
+        WhereClauseBuilder where = WhereClauseBuilder.whereTrue()
+                .andIfNotNullPhrase(
+                        "d.stock_code IN (SELECT stock_code FROM index_constituent WHERE index_code = ?)",
+                        "000300");
+
+        assertThat(where.sql()).isEqualTo(
+                " WHERE true AND d.stock_code IN (SELECT stock_code FROM index_constituent WHERE index_code = ?)");
+        assertThat(where.args()).containsExactly("000300");
+    }
+
+    @Test
+    @DisplayName("给定null值，when andIfNotNullPhrase，then短语跳过且无参数")
+    void givenNullValue_whenAndIfNotNullPhrase_thenSkipped() {
+        WhereClauseBuilder where = WhereClauseBuilder.whereTrue()
+                .andIfNotNullPhrase(
+                        "d.stock_code IN (SELECT stock_code FROM index_constituent WHERE index_code = ?)",
+                        null);
+
+        assertThat(where.sql()).isEqualTo(" WHERE true");
+        assertThat(where.args()).isEmpty();
     }
 
     @Test

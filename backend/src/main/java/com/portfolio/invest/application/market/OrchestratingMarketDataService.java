@@ -5,7 +5,6 @@ import com.portfolio.invest.domain.market.Financials;
 import com.portfolio.invest.domain.market.KlineBar;
 import com.portfolio.invest.domain.market.MarketDataException;
 import com.portfolio.invest.domain.market.MarketDataSource;
-import com.portfolio.invest.domain.market.MarketDataParser;
 import com.portfolio.invest.domain.market.MarketOverview;
 import com.portfolio.invest.domain.market.MarketParams;
 import com.portfolio.invest.domain.market.NewsItem;
@@ -32,19 +31,25 @@ public class OrchestratingMarketDataService implements MarketDataService {
 
     private final MarketDataSource source;
     private final EastmoneyMarketDataPort eastmoneyMarketData;
+    private final SinaMarketDataPort sinaMarketData;
+    private final TencentMarketDataPort tencentMarketData;
     private final Clock clock;
 
     /** 主构造器（@Autowired：存在测试专用重载构造器时需显式指定注入入口）。 */
     @Autowired
-    public OrchestratingMarketDataService(MarketDataSource source, EastmoneyMarketDataPort eastmoneyMarketData) {
+    public OrchestratingMarketDataService(MarketDataSource source, EastmoneyMarketDataPort eastmoneyMarketData,
+            SinaMarketDataPort sinaMarketData, TencentMarketDataPort tencentMarketData) {
         // A3：application 层禁止直调 System 时钟，探活耗时经注入时钟测量
-        this(source, eastmoneyMarketData, Clock.systemUTC());
+        this(source, eastmoneyMarketData, sinaMarketData, tencentMarketData, Clock.systemUTC());
     }
 
     /** 测试注入：自定义时钟（避免真实墙钟等待）。 */
-    OrchestratingMarketDataService(MarketDataSource source, EastmoneyMarketDataPort eastmoneyMarketData, Clock clock) {
+    OrchestratingMarketDataService(MarketDataSource source, EastmoneyMarketDataPort eastmoneyMarketData,
+            SinaMarketDataPort sinaMarketData, TencentMarketDataPort tencentMarketData, Clock clock) {
         this.source = source;
         this.eastmoneyMarketData = eastmoneyMarketData;
+        this.sinaMarketData = sinaMarketData;
+        this.tencentMarketData = tencentMarketData;
         this.clock = clock;
     }
 
@@ -80,10 +85,10 @@ public class OrchestratingMarketDataService implements MarketDataService {
         String symbol = ref.sinaPrefix() + ref.code();
         return withFallback(
                 () -> withFallback(
-                        () -> MarketDataParser.parseTencentQuote(source.tencentQuote(symbol), ref.code()),
+                        () -> tencentMarketData.parseQuote(source.tencentQuote(symbol), ref.code()),
                         () -> eastmoneyMarketData.parseQuote(source.quote(ref.secid())),
                         e -> log.info("腾讯行情失败({}), 降级东财: {}", ref.code(), e.getMessage())),
-                () -> MarketDataParser.parseSinaQuote(source.sinaQuote(ref.sinaPrefix(), ref.code()), ref.code()),
+                () -> sinaMarketData.parseQuote(source.sinaQuote(ref.sinaPrefix(), ref.code()), ref.code()),
                 e -> log.info("腾讯与东财行情均失败({}), 降级新浪: {}", ref.code(), e.getMessage()));
     }
 
@@ -95,7 +100,7 @@ public class OrchestratingMarketDataService implements MarketDataService {
         int n = MarketParams.clampLimit(limit, MarketParams.KLINE_MIN_LIMIT, MarketParams.KLINE_DEFAULT_LIMIT, MarketParams.MAX_LIMIT);
         String symbol = ref.sinaPrefix() + ref.code();
         return withFallback(
-                () -> MarketDataParser.parseTencentKline(source.tencentKline(symbol, periodNorm, n), symbol, periodNorm),
+                () -> tencentMarketData.parseKline(source.tencentKline(symbol, periodNorm, n), symbol, periodNorm),
                 () -> eastmoneyMarketData.parseKline(source.kline(ref.secid(), klt, n)),
                 e -> log.info("腾讯K线失败({}), 降级东财: {}", ref.code(), e.getMessage()));
     }
@@ -174,10 +179,10 @@ public class OrchestratingMarketDataService implements MarketDataService {
     public MarketOverview overview() {
         return withFallback(
                 () -> withFallback(
-                        () -> MarketDataParser.buildTencentOverview(source.tencentIndices()),
+                        () -> tencentMarketData.buildOverview(source.tencentIndices()),
                         () -> eastmoneyMarketData.buildOverview(source.overview()),
                         e -> log.info("腾讯指数失败, 降级东财: {}", e.getMessage())),
-                () -> MarketDataParser.buildSinaOverview(source.sinaIndices()),
+                () -> sinaMarketData.buildOverview(source.sinaIndices()),
                 e -> log.info("腾讯与东财指数均失败, 降级新浪: {}", e.getMessage()));
     }
 
