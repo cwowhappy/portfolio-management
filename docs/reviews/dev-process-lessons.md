@@ -220,7 +220,7 @@
 39. **部署顺序依赖写进发布方案**：先配 `MCP_SECRET_KEY` 再设 token（反序 503，P1-10）；collector 新任务 YAML 先 `seed` 登记 `collector_task` 再跑（MS-09）；eval jar 同目录分发 + `INVEST_EVAL_DATA_ROOT` 绝对路径（MS-30）；飞书 7 变量 / MAIL_* 按服务重启（飞书/account-email）。
 40. **部署机人工项与首跑观察项单独立表**（MS-28/30/31 惯例）：不阻塞合并、上线时执行、回收动作明确——避免「本地全绿」掩盖「部署环境才显形」的项（SMTP 无超时持 advisory lock 挂死、CI runner 到东财可达性、调度无分布式锁需单副本部署）。
 41. **smoke 的环境前置自检**：固定共享 threadId 一旦残留未应答 HITL 中断即永久卡死、重启不自愈、只能人工清 `.agentscope/state/`（MS-12/14 实证，同机残目录显示已多次发生）——threadId 应按次唯一；健康检查失败输出「需先 make dev」提示（MS-10）。
-42. **CI 门禁本身要治理**：main 四 required checks（backend/frontend/collector/e2e）+ link-gate（须手动加入分支保护，遗留人工动作）；本地 `make test` 不跑 collector ruff（CI 拦 E501 的盲区）；环境门控测试（env 白名单/固定码）必须「缺席即跳过」语义可验证，防止配置漂移后假红/假绿。
+42. **CI 门禁本身要治理**：main 四 required checks（backend/frontend/collector/e2e）+ link-gate（须手动加入分支保护，遗留人工动作）；~~本地 `make test` 不跑 collector ruff~~（已失效，2026-10-17 核对：`make test` 聚合 `collect-test`——ruff check + format --check + import-linter + pytest ≥80%，与 CI 四步同构）；环境门控测试（env 白名单/固定码）必须「缺席即跳过」语义可验证，防止配置漂移后假红/假绿。
 
 ### 4.7 环境与工具坑
 
