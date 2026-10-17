@@ -14,9 +14,10 @@ docs/technology/
 │   ├── 02-技术栈与工程结构.md │   技术栈版本定版、目录结构、部署拓扑
 │   ├── 03-后端测试架构.md     │   四层测试模型、source set、覆盖率门禁、ArchUnit 守护、BDD 设计
 │   ├── 04-数据采集服务架构.md │   collector 数据采集服务架构（数据源、任务调度、写入链路）
-│   └── 05-数据类型与来源.md   │   证券数据类型全景 + 各来源接口明细（东财/新浪/腾讯/Tushare/中债）
-├── modules/                 ← 二、技术视角的模块划分与设计（01–08 通用机制篇 + 09–15 业务域篇）
-│   ├── 01-Agent实现.md       │   HarnessAgent 装配、模型配置、提示词、7 个 @Tool、AG-UI 服务端状态
+│   ├── 05-数据类型与来源.md   │   证券数据类型全景 + 各来源接口明细（东财/新浪/腾讯/Tushare/中债）
+│   └── testcontainers-ryuk-colima-兼容矩阵调研.md │ Ryuk 收割兼容矩阵（collector 侧钉 0.13.0 依据）
+├── modules/                 ← 二、技术视角的模块划分与设计（01–08+16 通用机制篇 + 09–15 业务域篇）
+│   ├── 01-Agent实现.md       │   HarnessAgent 装配、模型配置、提示词、13 个 @Tool + 4 用户工具、AG-UI 服务端状态
 │   ├── 02-行情数据服务.md     │   数据源降级、代码规范化、缓存/限流
 │   ├── 03-接口设计.md        │   认证/管理员/会话/行情/AG-UI/健康检查接口
 │   ├── 04-工程与运维.md      │   配置、部署、错误处理、测试、已知限制
@@ -30,13 +31,14 @@ docs/technology/
 │   ├── 12-资产配置域.md       │   内置模板、方案 CRUD、偏离度
 │   ├── 13-投研日志域.md       │   四类决策条目、持仓联动、三路时间线
 │   ├── 14-收益分析域.md       │   读侧重算：流水重放 × 收盘价融合、TWR/IRR/基准对比、四端点
-│   └── 15-行业研究域.md       │   行业板面（四指标+5y分位+景气）、成员排名、历史重算回填
+│   ├── 15-行业研究域.md       │   行业板面（四指标+5y分位+景气）、成员排名、历史重算回填
+│   └── 16-评测与可观测性.md   │   eval 题库与定时回归、轮级观测（trace/成本/时延）、提示词版本链
 ├── conventions/             ← 三、技术规范（有约束力的执行标准）
 │   ├── 01-后端DDD分包规范.md  │   后端包划分与依赖规则（ArchUnit 强制）
 │   ├── 02-后端架构与代码规范.md │   后端接口/异常/事务/安全编码规范
 │   ├── 03-前端架构与代码规范.md │   前端反代/数据访问/流式组件规范
 │   └── 04-采集服务架构与代码规范.md │  collector 事务/调度/工具链规范
-├── decisions/               ← 四、技术决策（ADR 0001–0011 + 索引）
+├── decisions/               ← 四、技术决策（ADR 0001–0013 + 索引）
 └── research/                ← 五、技术储备与规划
     ├── 00-技术储备与规划.md    │   储备盘点 + MVP/二期/三期技术规划
     ├── 01-财经新闻与股市数据来源参考.md │   外部数据源全景（行情/新闻/基本面/宏观）与获取方法
@@ -60,11 +62,11 @@ docs/technology/
 
 ## 二、技术视角的模块划分与设计（modules/）
 
-后端按「DDD 洋葱分层 + 独立能力域」划分（ArchUnit 强制）；前端按页面 + 同源反代组织。模块篇目分**通用机制篇（01–08，跨业务域的横切机制）**与**业务域篇（09–15，DDD 各能力域）**，各技术模块的设计文档：
+后端按「DDD 洋葱分层 + 独立能力域」划分（ArchUnit 强制）；前端按页面 + 同源反代组织。模块篇目分**通用机制篇（01–08 + 16，跨业务域的横切机制）**与**业务域篇（09–15，DDD 各能力域）**，各技术模块的设计文档：
 
 | 模块 | 文档 | 内容 |
 |------|------|------|
-| Agent 能力域 | [01-Agent实现.md](modules/01-Agent实现.md) | AgentConfig 装配、InvestSystemPrompt、InvestTools（7 个 `@Tool`）、AG-UI 端点与服务端状态 |
+| Agent 能力域 | [01-Agent实现.md](modules/01-Agent实现.md) | AgentConfig 装配、InvestSystemPrompt、InvestTools（13 个 `@Tool`）+ UserInvestTools（4 个用户数据工具）、AG-UI 端点与服务端状态 |
 | 行情数据服务 | [02-行情数据服务.md](modules/02-行情数据服务.md) | 东方财富/新浪/腾讯客户端、降级策略、缓存与限流装饰器 |
 | 对外接口 | [03-接口设计.md](modules/03-接口设计.md) | 全部 REST 端点与 AG-UI 对话端点 |
 | 工程与运维（横切） | [04-工程与运维.md](modules/04-工程与运维.md) | 配置管理、部署、错误处理、可观测性、测试策略、已知限制 |
@@ -79,6 +81,7 @@ docs/technology/
 | 投研日志域 | [13-投研日志域.md](modules/13-投研日志域.md) | 四类决策条目、tradeId 反查持仓联动、三路合流时间线 |
 | 收益分析域 | [14-收益分析域.md](modules/14-收益分析域.md) | 读侧重算（零落库）：流水重放 × 收盘价融合（V1 基线 + 实时补位）、TWR/IRR/基准对比/年度收益/交易统计四端点 |
 | 行业研究域 | [15-行业研究域.md](modules/15-行业研究域.md) | 行业板面聚合（四指标 + 近 5 年分位 + 景气）与成员排名（市值/营收/ROE）；`industry_valuation` 跨域共享、历史由重算任务回填 |
+| 评测与可观测性 | [16-评测与可观测性.md](modules/16-评测与可观测性.md) | eval 题库（64 题）与定时回归（*-eval.jar 子进程）、轮级观测（trace/成本/时延）、提示词版本链与 admin 观测看板 |
 
 ## 三、技术规范（conventions/）
 
@@ -104,6 +107,8 @@ docs/technology/
 - **ADR-0009** 后端分层：DDD 洋葱分层 + 独立能力域
 - **ADR-0010** MCP 工具权限审批：readOnlyHint 缺省视为写，触发 HITL 审批
 - **ADR-0011** 服务端 Agent 状态：HarnessAgent stateStore 接管会话内存
+- **ADR-0012** AG-UI threadId 与会话绑定：CopilotChat threadId ↔ conversation 一一对应
+- **ADR-0013** 飞书消息通道：采集告警 / 原则预警 / owner 单聊对话（通道独立于 backend 存活）
 
 ## 五、技术储备与规划（research/）
 
@@ -115,7 +120,7 @@ docs/technology/
 | [03-金融机构MCP服务参考.md](research/03-金融机构MCP服务参考.md) | 金融机构/券商 MCP 全景：国内官方（东财妙想/iFinD/Wind/Tushare/长桥/老虎）、国际（Alpha Vantage/FactSet/S&P 等）、A 股社区封装、接入方式与安全注意（2026-09-06 调研核实） |
 | [04-AGUI事件全景与三场景技术方案.md](research/04-AGUI事件全景与三场景技术方案.md) | AG-UI 协议 36 事件 + AgentScope 2.0.3 的 28 事件字段级全景、CopilotKit 1.70.1 消费/发射映射、HITL/富文本（Markdown·图表·文件）/用户问答三场景技术方案与风险清单（2026-09-10 调研核实） |
 | [05-富文本场景技术方案.md](research/05-富文本场景技术方案.md) | 聊天流富文本（文字/图片/表格/图表）落地细化：单一 ChartSpec 双端契约（table 为变体之一）、AgentScope ToolEmitter 双通道（全量走 SSE、摘要进 LLM）、ECharts 6 按需引入与自写 hook、TanStack Table v9、前置缺陷修复与实施顺序（2026-09-10） |
-| [06-证券数据来源与存储管理梳理.md](research/06-证券数据来源与存储管理梳理.md) | 证券数据全景盘点：四条链路（collector 落库/backend 实时直连/MCP/混合）× 六类外部源（tushare/akshare/东财/腾讯/新浪/MCP 三家）、17 个采集任务、14 张表的迁移双轨契约与写入语义；优劣势分析 + P0/P1/P2 优化建议 + 文档漂移清单（2026-09-27 双代理取证+主会话逐条复核） |
+| [06-证券数据来源与存储管理梳理.md](research/06-证券数据来源与存储管理梳理.md) | 证券数据全景盘点：四条链路（collector 落库/backend 实时直连/MCP/混合）× 六类外部源（tushare/akshare/东财/腾讯/新浪/MCP 三家）、采集任务与目标表的迁移双轨契约与写入语义（2026-09-27 快照——任务数现为 30，见 [architecture/04](architecture/04-数据采集服务架构.md)）；优劣势分析 + P0/P1/P2 优化建议 + 文档漂移清单（2026-09-27 双代理取证+主会话逐条复核） |
 | [agentscope/](research/agentscope/) | AgentScope 官方文档离线摘录（vendored，见其 [README](research/agentscope/README.md)）：`scripts/fetch_docs.py` 抓取，上游站内链接预期断链；P0 协议勘误以 mcp-hitl 验证记录为准 |
 | [copilotkit/](research/copilotkit/) | CopilotKit × AG-UI 协议 HITL 支持调研（一手来源核实，2026-09-08）：interrupt/resume 契约、useInterrupt 等 hooks、2.0.3 修复对照 |
 
