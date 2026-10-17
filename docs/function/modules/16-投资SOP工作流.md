@@ -62,4 +62,4 @@
 ## 四、关联
 
 - **消费 M13**：PrincipleRule 4 指标（检查）、wiki seeding/回流通道；**消费 M12**：analytics nav/trade 流水（复盘快照）；**消费 M08**：portfolio 流水（归因圈选软引用）；**依赖 M15**：F11 情报订阅（已随 M15 MS-23 回收）；**journal**：RESEARCH_EVENT 时间线与反查。
-- **v2 已知限制**（终审 triage）：对话侧草稿保存为引导性死路（会话↔项目绑定未落任务——草稿生成后需到 /research 页保存）、SOP seeding 并发窗口（无 (user_id,title) 唯一约束，硬化需拍板同名语义）、research_draft 对话链缺真浏览器 e2e（需 LLM fixture harness）。
+- **v2 已知限制**（终审 triage）：~~对话侧草稿保存为引导性死路~~（**MS-32 已解除**：DraftCard「保存到项目」接通研究域 REST，见 [19-深度研究工作流](19-深度研究工作流.md)）、SOP seeding 并发窗口（无 (user_id,title) 唯一约束，硬化需拍板同名语义）、research_draft 对话链缺真浏览器 e2e（需 LLM fixture harness）。
