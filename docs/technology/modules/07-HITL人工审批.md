@@ -21,7 +21,7 @@ MCP 数据源工具可能包含写性质操作（写文件、下单、改配置�
 boolean readOnly = t.annotations() != null && Boolean.TRUE.equals(t.annotations().readOnlyHint());
 ```
 
-内置 7 个 `@Tool` 均 `readOnly=true` 直通，不受审批影响。
+内置 13 个 `@Tool`（InvestTools）与 4 个用户数据工具（UserInvestTools）均 `readOnly=true` 直通，不受审批影响。
 
 ### 2.2 端到端链路
 
