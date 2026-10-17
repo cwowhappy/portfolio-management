@@ -12,7 +12,7 @@
 
 ## 能力一览
 
-- **对话式投研问答**：自然语言问行情、走势、财务、新闻，Agent 自动调用 10 个数据工具并流式输出分析（AG-UI 协议，思考过程/工具进度可视化）——**需登录后使用**
+- **对话式投研问答**：自然语言问行情、走势、财务、新闻、宏观、行业，Agent 自动调用 17 个内置工具（13 个数据/分析工具 + 4 个用户数据工具）并流式输出分析（AG-UI 协议，思考过程/工具进度可视化；MS-29 起附信任锚定与可信溯源）——**需登录后使用**
 - **行情数据台**：指数速览、股票搜索、实时报价、K线（日/周/月 + MA5/MA20）、财务指标、新闻——**公开访问**
 - **用户管理**：注册/登录（用户名 + 密码，密码 ≥8 位含字母数字）；注册需**管理员审核通过**后方可使用 AI；支持**邮箱验证码**注册与忘记密码找回、管理员代填邮箱（需配 SMTP）；管理员可审核、停用/启用、重置密码；内置管理员（env 种子）
 - **会话持久化**：AI 对话历史存服务端 PostgreSQL、归属账号，换设备可见（标题取首条消息前 24 字）
@@ -23,8 +23,12 @@
 - **行业估值与研究**：申万 31 行业 PE/PB/ROE/股息率对比 + 估值热力图（点击跳转筛选器）+ 产业链图谱与未上市策展企业——**公开访问**（`/industry`）
 - **收益分析**：组合 TWR/年化收益/交易统计/风险指标（波动、回撤）/业绩归因——**需登录**（`/analytics`）
 - **投资日志**：投研日志 + 交易/分红事件时间线——**需登录**（`/journal`）
+- **投资知识库**：读书笔记/概念/研究笔记词条 + 原则规则（投资纪律），AI 可检索（`search_wiki`）——**需登录**（`/wiki`）
+- **智能情报**：新闻/公告/政策结构化检索 + 宏观五先行指标（CPI/PPI/PMI/LPR/社融）+ 交易日情报日报，可订阅飞书推送——**需登录**（`/intelligence`）
+- **研究项目与深度研报（SOP）**：立项→情报→策略→证伪→入局计划→复盘的投资 SOP 工作流；AI 深度研报生成（token 配额制，关键假设带数据锚点四态校验）——**需登录**（`/research`）
+- **记忆与画像**：对话中沉淀长期记忆（策展层可编辑/删除），画像四开关控制记忆注入——**需登录**（`/settings/memory`）
 - **飞书集成（opt-in）**：采集终态告警与日终新鲜度巡检推群卡片、原则预警推 owner、owner 单聊对话（事件长连接）——需配 `FEISHU_*`，未配置时全部静默
-- **技术栈**：Spring Boot 4 + Spring Security 7 + PostgreSQL/Flyway + AgentScope Java 2.0.4（含 harness）· Next.js 15 + React 19 + CopilotKit（AG-UI 前端）+ echarts + TanStack Table · 东方财富公开接口（新浪兜底）· Python 采集服务（akshare/tushare）
+- **技术栈**：Spring Boot 4 + Spring Security 7 + PostgreSQL/Flyway + AgentScope Java 2.0.4（含 harness）· Next.js 15 + React 19 + CopilotKit（AG-UI 前端）+ echarts + TanStack Table · 腾讯行情主源（东财→新浪兜底）· Python 采集服务（akshare/tushare）
 
 ## 快速开始
 
@@ -73,8 +77,8 @@ docker compose up -d db
 make test                     # 后端单元/架构/集成测试（含 ArchUnit 分包规范 + Testcontainers）+ 前端单元测试（vitest）+ collector 测试（pytest）
                               # 覆盖率强制门槛：后端 JaCoCo 指令/分支 ≥ 80%，前端 V8 语句/分支 ≥ 80%，collector pytest ≥ 80%
 make smoke                    # 端到端冒烟（含真实行情接口 + AI 对话）
-cd frontend && pnpm test:e2e  # 浏览器端到端（Playwright，24 份 spec）：导航 / 登录注册（含邮箱验证码/找回密码）/ 行情台 / AI 对话（含聊天图表、HITL 审批）
-                              #   / 用户管理 / 会话持久化 / 估值 / 持仓 / 配置 / 筛选 / 行业 / 投资日志 / 收益分析 / 记忆与画像 / 错误态
+cd frontend && pnpm test:e2e  # 浏览器端到端（Playwright，25 份 spec）：导航 / 登录注册（含邮箱验证码/找回密码）/ 行情台 / AI 对话（含聊天图表、HITL 审批）
+                              #   / 用户管理 / 会话持久化 / 估值 / 持仓 / 配置 / 筛选 / 行业 / 投资日志 / 收益分析 / 记忆与画像 / 情报 / 研究项目与研报 / 可信溯源 / 观测 / 错误态
                               #   自动拉起后端+前端（已运行时复用）；AI 用例需配置 DEEPSEEK_API_KEY
 ```
 
@@ -87,6 +91,7 @@ Playwright e2e 位于 `frontend/e2e/`，配置见 `frontend/playwright.config.ts
 | 端点 | 权限 | 说明 |
 |---|---|---|
 | POST /api/auth/register | 公开 | 注册 → 待审核 |
+| POST /api/auth/register-code | 公开 | 发送邮箱验证码（注册用，需配 SMTP） |
 | POST /api/auth/login | 公开 | 登录，`rememberMe` 可选（勾选 30 天 / 否则关浏览器失效） |
 | POST /api/auth/logout | 登录 | 登出 |
 | GET /api/auth/me | 登录 | 当前用户 |
@@ -179,6 +184,10 @@ Playwright e2e 位于 `frontend/e2e/`，配置见 `frontend/playwright.config.ts
 | PUT /api/allocation/plans/{planId} · DELETE /api/allocation/plans/{planId} | 修改 / 删除方案 |
 | POST /api/allocation/plans/{planId}/activate | 激活方案 |
 | GET /api/allocation/deviation | 目标配置 vs 持仓偏离度 |
+| GET /api/allocation/plans/{planId}/rebalance | 再平衡建议（目标 vs 当前持仓差异） |
+| POST /api/allocation/plans/{planId}/rebalance/ack | 确认执行再平衡（生成交易待办） |
+| POST /api/allocation/plans/{planId}/backtest | 配置方案回测 |
+| GET /api/allocation/plans/{planId}/assessment | 风险画像测评（画像→模板） |
 
 **MCP 数据源配置**（前端经 /api/mcp/** 反代，需登录，个人配置以当前登录用户为归属、非本人 404）：
 
@@ -209,10 +218,82 @@ Playwright e2e 位于 `frontend/e2e/`，配置见 `frontend/playwright.config.ts
 | GET /api/memory/profile-config | 画像授权四开关 + 四段预览同刻一次拉取（预览与注入同一渲染路径） |
 | PUT /api/memory/profile-config | 四开关全量保存（body `{style, industry, watchlist, holdings}`，回执返回保存后开关+预览） |
 
-**深度研究（研报）**（前端经 /api/research/** 反代，需登录，按归属隔离、非本人 404；MS-32 M19）：
+**收益分析**（前端经 /api/analytics/** 反代，需登录）：
 
 | 端点 | 说明 |
 |---|---|
+| GET /api/analytics/overview | 组合收益总览（TWR / 年化） |
+| GET /api/analytics/nav | 组合净值序列 |
+| GET /api/analytics/annual | 年度收益分解 |
+| GET /api/analytics/trade-stats | 交易统计 |
+| GET /api/analytics/risk-stats | 风险指标（波动率 / 最大回撤等） |
+| GET /api/analytics/attribution | 业绩归因 |
+
+**自选股**（前端经 /api/watchlist 反代，需登录，按归属隔离）：
+
+| 端点 | 说明 |
+|---|---|
+| GET /api/watchlist · POST /api/watchlist | 自选列表 / 添加自选 |
+| DELETE /api/watchlist/{stockCode} | 移除自选 |
+
+**行业研究**（前端经 /api/industry/**、/api/industry-watch、/api/industry-curation 反代；`/api/industry/**` 公开，后两者需登录）：
+
+| 端点 | 说明 |
+|---|---|
+| GET /api/industry/board | 行业估值板面（申万一级 PE/PB/分位） |
+| GET /api/industry/{industryCode}/stocks | 行业成分股 |
+| GET /api/industry/{industryCode}/unlisted/companies · /funding-events · /overview | 未上市企业 / 融资事件 / 概览（策展数据） |
+| GET /api/industry/{industryCode}/chains | 产业链图谱 |
+| GET /api/industry-watch · POST /api/industry-watch · DELETE /api/industry-watch/{industryCode} | 行业关注列表 / 添加 / 移除 |
+| POST /api/industry-curation/companies · PUT/DELETE /api/industry-curation/companies/{id} | 未上市企业策展增改删 |
+| GET /api/industry-curation/companies/import/template · POST /api/industry-curation/companies/import | 企业导入模板 / CSV 导入 |
+| GET /api/industry-curation/funding-events/import/template · POST /api/industry-curation/funding-events/import | 融资事件导入模板 / 导入 |
+| DELETE /api/industry-curation/funding-events/{id} | 删除融资事件 |
+| POST /api/industry-curation/chains · PUT/DELETE /api/industry-curation/chains/{id} | 产业链增改删 |
+
+**智能情报**（前端经 /api/intelligence/** 反代，需登录）：
+
+| 端点 | 说明 |
+|---|---|
+| GET /api/intelligence/news | 新闻检索（关键词/标的/日期/重要度过滤） |
+| GET /api/intelligence/announcements | 公告检索（标的/类型/日期/关键词过滤） |
+| GET /api/intelligence/policies | 政策检索 |
+| GET /api/intelligence/briefs · /briefs/{tradeDate} | 交易日情报日报列表 / 指定日详情 |
+| GET /api/intelligence/macro · /macro/calendar | 宏观五先行指标序列 / 发布日历 |
+| GET /api/intelligence/stocks/{code} | 个股情报时间线 |
+| GET /api/intelligence/subscription · PUT /api/intelligence/subscription | 飞书订阅配置查看 / 保存 |
+| POST /api/intelligence/subscription/binding-code | 生成飞书绑定码 |
+| GET /api/intelligence/subscription/binding · DELETE /api/intelligence/subscription/binding | 绑定状态查询 / 解绑 |
+
+**投资知识库**（前端经 /api/wiki/** 反代，需登录，按归属隔离）：
+
+| 端点 | 说明 |
+|---|---|
+| GET /api/wiki/entries · POST /api/wiki/entries | 词条列表（可按类型过滤）/ 新建 |
+| GET /api/wiki/entries/{entryId} · PUT /api/wiki/entries/{entryId} · DELETE /api/wiki/entries/{entryId} | 词条详情 / 修改 / 删除 |
+| GET /api/wiki/rules · POST /api/wiki/rules | 原则规则列表 / 新建 |
+| PUT /api/wiki/rules/{ruleId} · DELETE /api/wiki/rules/{ruleId} | 规则修改 / 删除 |
+
+**研究项目与深度研报**（前端经 /api/research/** 反代，需登录，按归属隔离、非本人 404；M16 SOP 工作流 + M19 深度研报）：
+
+| 端点 | 说明 |
+|---|---|
+| POST /api/research/projects · GET /api/research/projects | 新建 / 项目列表 |
+| GET /api/research/projects/{projectId} · PATCH /api/research/projects/{projectId} | 项目详情 / 更新 |
+| POST /api/research/projects/{projectId}/archive | 归档项目 |
+| PUT /api/research/projects/{projectId}/intelligence-alert | 情报提醒设置 |
+| GET /api/research/projects/{projectId}/strategy · PUT …/strategy | 策略查看 / 保存 |
+| POST /api/research/projects/{projectId}/strategy/finalize · /revise | 策略定稿 / 修订 |
+| GET /api/research/projects/{projectId}/falsifiers · PUT …/falsifiers | 证伪清单查看 / 保存 |
+| GET /api/research/projects/{projectId}/entry-plan · PUT …/entry-plan | 入局计划查看 / 保存 |
+| POST /api/research/projects/{projectId}/checks/preview · /checks | 检查项预演 / 提交 |
+| GET /api/research/projects/{projectId}/checks | 检查项列表 |
+| GET /api/research/projects/{projectId}/falsifier/hits | 证伪命中列表 |
+| GET /api/research/projects/{projectId}/falsifier/reviews · POST …/falsifier/reviews | 证伪复盘查看 / 提交 |
+| GET /api/research/projects/{projectId}/reviews · POST …/reviews | 项目复盘列表 / 提交 |
+| PUT /api/research/projects/{projectId}/reviews/{reviewId} | 修改复盘 |
+| POST /api/research/projects/{projectId}/reviews/{reviewId}/reflux | 复盘经验回灌 |
+| POST /api/research/projects/{projectId}/feedback | 项目反馈 |
 | POST /api/research/projects/{id}/report-tasks | 发起研报生成（异步受理 202 `{taskId, quotaRemaining}`；402 日配额耗尽 / 409 已有活跃任务 / 404 项目不存在） |
 | GET /api/research/projects/{id}/report-tasks/latest | 轮询最新任务（`{status, stage, tokenUsage, errorCode?, reportId?}`；FAILED 透出错误码，SUCCEEDED 回连 reportId） |
 | GET /api/research/projects/{id}/reports | 项目研报列表（createdAt 倒序，含确认状态 PENDING_CONFIRM/CONFIRMED/REJECTED） |
@@ -224,24 +305,29 @@ Playwright e2e 位于 `frontend/e2e/`，配置见 `frontend/playwright.config.ts
 ```
 backend/    Spring Boot 4 + Spring Security 7 + Spring Data JPA（DDD 洋葱分层）
   src/main/java/com/portfolio/invest/
-    web/              接入层：Auth / UserAdmin / Conversation / Market / Valuation / Screening / Portfolio /
-                      Allocation / Journal / McpConfig / SkillConfig / Health 控制器 + InvestAguiRuntimeContextResolver
-    application/      应用层：auth / useradmin / conversation / market / valuation / portfolio / allocation /
-                      screening / journal / mcp / skill / cache 用例编排
-    domain/           领域层：user / conversation / market / valuation / portfolio / allocation / screening /
-                      journal / mcp / skill（纯 POJO，零 Spring/JPA）
-    infrastructure/   基础设施：persistence(JPA+Flyway) / security / seed / market(客户端+缓存) / cache(TtlCache+CacheConfig)
-    agent/            独立能力域：AgentConfig / InvestTools / InvestSystemPrompt / HarnessAgentFactory /
-                      UserToolkitFactory / McpClientPool / CurrentUserHolder / chart(图表spec) /
-                      AguiEventNonNullCodec / AguiWireJsonConfig
+    web/              接入层：26 个 @RestController（Auth/UserAdmin/Conversation/Market/Health/Valuation/Portfolio/
+                      Allocation/Journal/Analytics/Screening/Watchlist/McpConfig/SkillConfig/Industry/IndustryWatch/
+                      Wiki/IndustryCuration/Research/ReportTask/Intelligence/IntelligenceSubscription/EvalTrigger/
+                      Observability/McpAdminToken/Memory）+ InvestAguiRuntimeContextResolver
+    application/      应用层：22 个子包（auth/useradmin/conversation/market/valuation/portfolio/allocation/screening/
+                      journal/mcp/skill/analytics/watchlist/wiki/industry/research/intelligence/memory/eval/
+                      observability/report/admin/cache 等）用例编排
+    domain/           领域层：18 个子包（user/conversation/market/valuation/portfolio/allocation/screening/journal/
+                      mcp/skill/analytics/watchlist/wiki/industry/research/intelligence/memory/eval，纯 POJO 零 Spring/JPA）
+    infrastructure/   基础设施：persistence(JPA+Flyway) / security / seed / market(腾讯主源+东财/新浪客户端+缓存限流) /
+                      cache(TtlCache) / eval / im(飞书) / intelligence / mail / workspace
+    agent/            独立能力域：AgentConfig / InvestTools(13 @Tool 门面) / UserInvestTools(4 用户数据工具) /
+                      InvestSystemPrompt / HarnessAgentFactory / UserToolkitFactory / McpClientPool / CurrentUserHolder /
+                      chart(图表spec) / tools(按域子组件) / trust(可信溯源) / report(研报工作流) /
+                      observability(轮级观测) / research(研究草稿) / AguiEventNonNullCodec / AguiWireJsonConfig
     config/           配置属性：InvestProperties
   src/main/resources/ application.yml / application-prod.yml / db/migration/(V1__baseline.sql 基线 + V2~V8 增量迁移) / skills/(内置skill)
 
 collector/  Python 3.12 采集服务（akshare/tushare/页面直采 → PostgreSQL，APScheduler 调度）：市场估值快照 / 个股估值与财务 / 指数·债券·黄金收盘 / 国债曲线 / 申万映射与行业估值 / 指数成分股 / ETF（目录·收盘·跟踪指数·跟踪误差）/ 新闻·公告·政策·宏观情报采集
-frontend/   Next.js 15（聊天 UI / 行情台 / 估值 / 持仓 / 配置 / 筛选 / 行业 / 投资日志 / MCP与Skill设置 / 登录注册 / 管理页 / API 反代）
-docs/       function/（产品功能）· technology/（技术文档）· plans/（跨模块/版本级计划）· deployment/（v1 发布计划与方案）· reviews/（代码审查报告与经验沉淀）· archive/（历史归档）
+frontend/   Next.js 15（聊天 UI / 行情台 / 估值 / 持仓 / 配置 / 筛选 / 行业 / 投资日志 / 收益分析 / 情报 / 研究项目与研报 / 知识库 / 记忆设置 / MCP与Skill设置 / 登录注册 / 管理页 / API 反代）
+docs/       function/（产品功能）· technology/（技术文档）· roadmap/（里程碑与阶段规划）· research/（调研报告）· deployment/（v1 发布计划与方案）· reviews/（代码审查报告与经验沉淀）· archive/（历史归档）
 features/   <feature>/（特性需求/设计/计划，如 asset-allocation、portfolio-management）· plans/（跨特性工程计划）
-scripts/    smoke.sh 冒烟（6 段：健康/上游漂移/行情/反代/AI 对话/邮件）· e2e-* 起停辅助
+scripts/    smoke.sh 冒烟（9 段：健康/上游漂移/行情/反代/AI 对话/邮件/研究复盘闭环/情报数据源探测/深度研究研报）· e2e-* 起停辅助
 ```
 
 ## 配置
