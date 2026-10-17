@@ -6,7 +6,7 @@
 
 | 目录 | 定位 | 入口 |
 |------|------|------|
-| [function/](function/) | 产品功能（M01–M14 + 进度看板），供产品/设计/测试/新人 | [README](function/README.md) |
+| [function/](function/) | 产品功能（M01–M19 + 进度看板），供产品/设计/测试/新人 | [README](function/README.md) |
 | [technology/](technology/) | 技术文档（架构 / 模块 01–16 / 规范 / 决策 / 储备） | [README](technology/README.md) |
 | [roadmap/](roadmap/) | 产品功能规划与进度跟踪（里程碑落地计划、产品功能规划） | [README](roadmap/README.md) |
 | [research/](research/) | 跨特性调研报告（调研与规划分离：规划入 roadmap/） | [README](research/README.md) |
@@ -42,6 +42,7 @@
 |------|------|
 | [2026-10-04-投研Agent发展趋势调研.md](research/2026-10-04-投研Agent发展趋势调研.md) | 2025–2026 金融投研 Agent 七大趋势（T1–T7）+ 本项目现状差距对照（24 项来源） |
 | [2026-10-04-国内金融MCP资源盘点.md](research/2026-10-04-国内金融MCP资源盘点.md) | 国内商业（13 项）/开源（20+ 实现）金融 MCP 盘点 + 本项目对接优先级建议 |
+| [2026-10-11-AgentScope-Java版本演进调研.md](research/2026-10-11-AgentScope-Java版本演进调研.md) | AgentScope Java 2.0.x 版本演进与本项目升级评估（升级已于 2026-10-12 执行至 2.0.4） |
 
 ## reviews/ 目录
 
@@ -50,6 +51,8 @@
 | [code-review.md](reviews/code-review.md) | 2026-08-19 首次代码审查报告 |
 | [code-review-2026-08-29.md](reviews/code-review-2026-08-29.md) | 2026-08-29 深度审查报告（含修复闭环） |
 | [code-review-2026-09-03.md](reviews/code-review-2026-09-03.md) | 2026-09-03 三端全量审查报告（双轴方法，13 处 P1） |
+| [2026-10-12-{backend,frontend,collector}-review.md](reviews/) | 2026-10-12 三端深度审查（第三轮；collector 报告含 plugins 拆分裁决） |
+| [2026-10-15-{backend,frontend,collector}-review.md](reviews/) | 2026-10-15 三端深度审查（第四轮，上轮修复逐条复审 + http_guard/僵尸写等新发现） |
 | [features/code-review-2026-10/](../features/code-review-2026-10/) | 2026-10-04 起审查报告与修复按特性目录管理（09-调研报告=审查报告，01/03/08=需求/计划/复盘） |
 | [code-review-lessons.md](reviews/code-review-lessons.md) | 代码审查经验沉淀（滚动文档，评审/开发前参考） |
 | [dev-process-lessons.md](reviews/dev-process-lessons.md) | 特性开发流程与经验沉淀（滚动文档：canonical 流程形态 + 跨特性教训，特性开发前参考） |
