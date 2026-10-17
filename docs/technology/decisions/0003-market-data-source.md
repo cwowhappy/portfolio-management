@@ -11,7 +11,7 @@ akshare（Python 库，与 Java 栈不符）、东方财富/新浪公开 HTTP �
 ## 决策
 
 主用 **东方财富公开接口**（push2 行情、push2his K线、searchapi 搜索、F10 财务、
-search-api-web 新闻），**新浪行情接口兜底**。全部为免费公开 HTTP 接口，Java WebClient 直连。
+search-api-web 新闻），**新浪行情接口兜底**。全部为免费公开 HTTP 接口，~~Java WebClient 直连~~（勘误 2026-10-17：HTTP 栈为 Spring `RestClient`——`infrastructure/market/RestClientFactory`；主源亦已于 2026-09-25 切腾讯，见文末变更记录）。
 
 ## 后果
 

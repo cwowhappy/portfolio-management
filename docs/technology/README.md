@@ -40,7 +40,6 @@ docs/technology/
 │   └── 04-采集服务架构与代码规范.md │  collector 事务/调度/工具链规范
 ├── decisions/               ← 四、技术决策（ADR 0001–0013 + 索引）
 └── research/                ← 五、技术储备与规划
-    ├── 00-技术储备与规划.md    │   储备盘点 + MVP/二期/三期技术规划
     ├── 01-财经新闻与股市数据来源参考.md │   外部数据源全景（行情/新闻/基本面/宏观）与获取方法
     ├── 02-akshare与tushare接口详析.md │   两库接口手册：87 次实测、返回字段、限制、本系统映射
     ├── 03-金融机构MCP服务参考.md   │   国内外金融机构/券商 MCP 服务全景与使用方法
@@ -114,7 +113,6 @@ docs/technology/
 
 | 文档 | 内容 |
 |---|---|
-| [00-技术储备与规划.md](research/00-技术储备与规划.md) | 已有储备盘点 + MVP/二期/三期新增技术能力规划 + 技术债清单 |
 | [01-财经新闻与股市数据来源参考.md](research/01-财经新闻与股市数据来源参考.md) | 外部数据源全景参考：行情/新闻/基本面/宏观/公告的获取方法、接口明细、推荐组合（2026-09-06 调研核实） |
 | [02-akshare与tushare接口详析.md](research/02-akshare与tushare接口详析.md) | 两库接口手册：87 次实测（真实返回字段/限制/报错根因）+ 本系统映射（已在用/可替代/可扩展） |
 | [03-金融机构MCP服务参考.md](research/03-金融机构MCP服务参考.md) | 金融机构/券商 MCP 全景：国内官方（东财妙想/iFinD/Wind/Tushare/长桥/老虎）、国际（Alpha Vantage/FactSet/S&P 等）、A 股社区封装、接入方式与安全注意（2026-09-06 调研核实） |
@@ -139,7 +137,7 @@ docs/technology/
 - 想知道**后端测试怎么分层、新测试放哪** → [architecture/03-后端测试架构.md](architecture/03-后端测试架构.md)
 - 想知道**数据采集服务怎么设计** → [architecture/04-数据采集服务架构.md](architecture/04-数据采集服务架构.md)
 - 想知道**某个技术选型为什么** → [decisions/](decisions/)
-- 想知道**后续版本要储备什么技术** → [research/00-技术储备与规划.md](research/00-技术储备与规划.md)
+- 想知道**后续版本规划** → [../roadmap/](../roadmap/)（原 research/00 技术储备与规划已于 2026-10-17 归档——储备项全部交付，规划职责移交 roadmap/）
 - 想看**产品功能** → [../function/](../function/)
 
 ## 维护约定
@@ -147,4 +145,4 @@ docs/technology/
 - 新增技术模块文档：归入 `modules/` 并登记本索引；新增 ADR：归入 `decisions/` 并更新其 README 索引。
 - 新增有约束力的规范：归入 `conventions/` 并更新其 README 索引；规范落地优先用自动化强制（如 ArchUnit、覆盖率门槛）。
 - 技术栈版本升级后同步 [architecture/02-技术栈与工程结构.md](architecture/02-技术栈与工程结构.md)。
-- 新版本（MVP/二期/三期）启动前，先在 [research/00-技术储备与规划.md](research/00-技术储备与规划.md) 评估并登记技术方案。
+- 新版本启动前的技术评估与规划入 [../roadmap/](../roadmap/)（原 research/00 已归档）。

@@ -10,6 +10,7 @@
 | [2026-08-18-投资分析AI-Agent一期设计.md](2026-08-18-投资分析AI-Agent一期设计.md) | 一期架构设计 |
 | [2026-08-19-前端迁移CopilotKit.md](2026-08-19-前端迁移CopilotKit.md) | 前端 AG-UI 框架迁移记录 |
 | [2026-08-19-skill评估-test-driven-development.md](2026-08-19-skill评估-test-driven-development.md) | superpowers skill 评估记录 |
+| [2026-09-26-技术储备与规划.md](2026-09-26-技术储备与规划.md) | 技术储备盘点与 MVP/二期/三期规划（2026-09-26 时点——储备项已全部交付，后续规划入 roadmap/，2026-10-17 归档） |
 
 ## 现行文档指路
 
