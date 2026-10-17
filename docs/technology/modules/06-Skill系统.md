@@ -1,22 +1,22 @@
 # 06 · Skill 系统
 
-> AgentScope Skill（数据源使用说明书）的内置目录、用户启用集与按用户装配。
+> AgentScope Skill 的内置目录（数据源说明 + SOP 流程指引两类）、用户启用集与按用户装配。
 > Agent 装配链路见 [01-Agent实现.md](01-Agent实现.md)；MCP 工具接入见 [05-MCP数据源集成.md](05-MCP数据源集成.md)。
-> 对应代码：`backend/src/main/java/com/portfolio/invest/web/SkillConfigController.java`、`application/skill/`、`domain/skill/`、`infrastructure/persistence/Skill*`（仓库实现）、`backend/src/main/resources/db/migration/V1__baseline.sql`（原 V11__skill.sql）、`backend/src/main/resources/skills/tushare_data/SKILL.md`、`backend/src/main/resources/skills/wind_finance/SKILL.md`、`backend/src/main/java/com/portfolio/invest/agent/HarnessAgentFactory.java`（装配）；前端 `frontend/app/settings/skills/page.tsx` + `frontend/components/skill/SkillSettingsPage.tsx` + `frontend/lib/skillApi.ts`（`application/skill/`、`domain/skill/`、`infrastructure/persistence/` 均相对 `backend/src/main/java/com/portfolio/invest/`）。
+> 对应代码：`backend/src/main/java/com/portfolio/invest/web/SkillConfigController.java`、`application/skill/`、`domain/skill/`、`infrastructure/persistence/Skill*`（仓库实现）、`backend/src/main/resources/db/migration/V1__baseline.sql`（原 V11__skill.sql）、`backend/src/main/resources/skills/`（6 个：tushare_data / wind_finance / new-analysis / strategy / position / review）、`backend/src/main/java/com/portfolio/invest/agent/HarnessAgentFactory.java`（装配）；前端 `frontend/app/settings/skills/page.tsx` + `frontend/components/skill/SkillSettingsPage.tsx` + `frontend/lib/skillApi.ts`（`application/skill/`、`domain/skill/`、`infrastructure/persistence/` 均相对 `backend/src/main/java/com/portfolio/invest/`）。
 
 ## 1. 概述
 
 Skill 是**提示词层的领域知识**：一份 SKILL.md 告诉模型「某数据源覆盖什么、何时用、怎么取数、如何标注来源」。与 MCP 的分工——MCP 提供**工具**（能用什么），Skill 提供**用法**（怎么用）。本模块：
 
 - **目录在 classpath**：内置 skill 以 `resources/skills/**/SKILL.md` 随应用发布，**DB 不存目录**，只存用户选择（`V1__baseline.sql` 原 V11 段单表 `skill_user_config`）——目录与代码同版本演进，无目录漂移问题。
-- **用户级启用集**：每个用户独立勾选；未选择时按 SKILL.md front-matter 的 `default_enabled` 兜底（两个内置 skill 均 `false`）。
+- **用户级启用集**：每个用户独立勾选；未选择时按 SKILL.md front-matter 的 `default_enabled` 兜底（数据源类 2 个均 `false`）。
 - **装配进 HarnessAgent**：`HarnessAgentFactory` 用 `SkillFilter.only(启用集)` 装配，未启用 skill 不进入 Agent 上下文。
 
 ## 2. 架构与数据流
 
 ### 2.1 内置目录（resources/skills/）
 
-两个 `category: data_source` 的 skill，front-matter metadata 经 `SkillView` 透出：
+数据源类（`category: data_source`）2 个，front-matter metadata 经 `SkillView` 透出；另有 SOP 类（`category: sop`）4 个（`new-analysis` 新分析 / `strategy` 策略 / `position` 持仓 / `review` 复盘，MS-32 随投资 SOP 工作流交付，为研究各阶段提供流程指引）：
 
 | skill | depends_on_provider | 定位 |
 |---|---|---|
